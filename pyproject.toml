@@ -1,7 +1,7 @@
 [project]
 name = "tic"
 version = "0.1.0"
-description = "A tic-tac-toe game."
+description = "Python emulation for agents."
 requires-python = ">=3.12"
 dependencies = []
 
@@ -9,6 +9,7 @@ dependencies = []
 dev = [
     "ruff",
     "pre-commit",
+    "pytest",
 ]
 
 [tool.ruff]
@@ -21,4 +22,5 @@ select = ["E4", "E7", "E9", "F", "I"]
 dev-dependencies = [
     "ruff",
     "pre-commit",
-] 
+    "pytest",
+]

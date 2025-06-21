@@ -1,0 +1,36 @@
+from typing import Any, Iterator
+
+from .core import State
+
+
+class Ephemeral(State):
+    def __init__(self):
+        self.store = {}
+
+    @property
+    def base_store(self) -> "State":
+        return self
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.store.get(key, default)
+
+    def set(self, key: str, value: Any) -> None:
+        self.store[key] = value
+
+    def remove(self, key: str) -> bool:
+        if key in self.store:
+            del self.store[key]
+            return True
+        return False
+
+    def keys(self) -> Iterator[str]:
+        return self.store.keys()
+
+    def values(self) -> Iterator[Any]:
+        return self.store.values()
+
+    def items(self) -> Iterator[tuple[str, Any]]:
+        return self.store.items()
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.store
