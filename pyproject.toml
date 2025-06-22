@@ -11,6 +11,9 @@ dev = [
     "pre-commit",
     "pytest",
 ]
+test = [
+    "pytest",
+]
 
 [tool.ruff]
 line-length = 88
@@ -18,9 +21,7 @@ line-length = 88
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
 
-[tool.uv]
-dev-dependencies = [
-    "ruff",
-    "pre-commit",
-    "pytest",
+[tool.pytest.ini_options]
+pythonpath = [
+  "."
 ]
