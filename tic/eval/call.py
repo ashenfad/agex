@@ -40,6 +40,8 @@ BUILTINS: dict[str, Callable[..., Any]] = {
     "reversed": lambda x: list(reversed(x)),
     "zip": lambda *args: list(zip(*args)),
     "enumerate": lambda x: list(enumerate(x)),
+    "map": lambda f, it: list(map(f, it)),
+    "filter": lambda f, it: list(filter(f, it)),
 }
 
 WHITELISTED_METHODS = {

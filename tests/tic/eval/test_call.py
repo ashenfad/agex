@@ -223,3 +223,26 @@ data_to_sort.sort(key=lambda t: t[1])
     # Check the result of the list.sort() method
     expected_in_place = [("z", 7), ("y", 8), ("x", 9)]
     assert state.get("data_to_sort") == expected_in_place
+
+
+def test_map_and_filter_builtins():
+    """Tests that map() and filter() work with user-defined functions."""
+    program = """
+numbers = [1, 2, 3, 4, 5]
+
+def square(x):
+    return x * x
+
+# Test map with a named function
+squared_numbers = map(square, numbers)
+
+# Test filter with a lambda
+even_numbers = filter(lambda x: x % 2 == 0, numbers)
+
+# Test map and filter together
+even_squares = map(square, filter(lambda x: x % 2 == 0, numbers))
+"""
+    state = eval_and_get_state(program)
+    assert state.get("squared_numbers") == [1, 4, 9, 16, 25]
+    assert state.get("even_numbers") == [2, 4]
+    assert state.get("even_squares") == [4, 16]
