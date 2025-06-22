@@ -78,12 +78,22 @@ class ExpressionEvaluator(BaseEvaluator):
         )
 
     def visit_Subscript(self, node: ast.Subscript) -> Any:
-        """Handles subscript access like `d['key']` or `l[0]`."""
+        """Handles subscript access like `d['key']` or `l[0]` or `l[1:5]`."""
         container = self.visit(node.value)
-        key = self.visit(node.slice)
+
+        if isinstance(node.slice, ast.Slice):
+            lower = self.visit(node.slice.lower) if node.slice.lower else None
+            upper = self.visit(node.slice.upper) if node.slice.upper else None
+            step = self.visit(node.slice.step) if node.slice.step else None
+            key = slice(lower, upper, step)
+        else:
+            key = self.visit(node.slice)
+
         try:
             return container[key]
         except (KeyError, IndexError):
             raise EvalError(f"Key or index not found: {key}", node)
         except TypeError:
-            raise EvalError("This object is not subscriptable.", node)
+            raise EvalError(
+                "This object is not subscriptable or does not support slicing.", node
+            )
