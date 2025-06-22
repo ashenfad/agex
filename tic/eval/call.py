@@ -1,9 +1,17 @@
 import ast
 from typing import Any, Callable
 
+from ..agent import ExitClarify, ExitFail, ExitSuccess, _AgentExit
 from .base import BaseEvaluator
 from .error import EvalError
 from .functions import UserFunction
+from .user_errors import (
+    TicError,
+    TicIndexError,
+    TicKeyError,
+    TicTypeError,
+    TicValueError,
+)
 
 MAX_RANGE_SIZE = 10_000
 
@@ -42,6 +50,16 @@ BUILTINS: dict[str, Callable[..., Any]] = {
     "enumerate": lambda x: list(enumerate(x)),
     "map": lambda f, it: list(map(f, it)),
     "filter": lambda f, it: list(filter(f, it)),
+    # User-level exceptions, mapped from Python's names
+    "Exception": TicError,
+    "ValueError": TicValueError,
+    "TypeError": TicTypeError,
+    "KeyError": TicKeyError,
+    "IndexError": TicIndexError,
+    # Agent exit signals
+    "exit_success": ExitSuccess,
+    "exit_fail": ExitFail,
+    "exit_clarify": ExitClarify,
 }
 
 WHITELISTED_METHODS = {
@@ -112,8 +130,14 @@ class CallEvaluator(BaseEvaluator):
 
             # It must be a builtin
             try:
-                return fn(*args, **kwargs)
+                result = fn(*args, **kwargs)
+                if isinstance(fn, type) and issubclass(fn, _AgentExit):
+                    raise result
+                return result
             except Exception as e:
+                # Re-raise agent exit signals immediately
+                if isinstance(e, _AgentExit):
+                    raise e
                 raise EvalError(
                     f"Error calling builtin function '{fn_name}': {e}", node, cause=e
                 )

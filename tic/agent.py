@@ -1,5 +1,46 @@
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
+
+
+class _AgentExit(Exception):
+    """Base class for agent exit signals. Should not be caught by user code."""
+
+    pass
+
+
+@dataclass
+class ExitSuccess(_AgentExit):
+    """Signal that the agent has completed its task successfully."""
+
+    result: Any
+
+
+@dataclass
+class ExitFail(_AgentExit):
+    """Signal that the agent has failed and cannot complete its task."""
+
+    reason: str
+
+
+@dataclass
+class ExitClarify(_AgentExit):
+    """Signal that the agent needs clarification from the user."""
+
+    question: str
+
+
+@dataclass
+class Task:
+    """A placeholder for a task definition."""
+
+    # For now, we don't need any fields.
+    # This will be fleshed out later.
+    pass
+
+
+def task(func):
+    """A decorator to mark a function as an agent task."""
+    return Task()
 
 
 @dataclass

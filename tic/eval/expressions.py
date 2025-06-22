@@ -2,6 +2,7 @@ import ast
 from typing import Any
 
 from .base import BaseEvaluator
+from .call import BUILTINS
 from .error import EvalError
 
 
@@ -14,6 +15,11 @@ class ExpressionEvaluator(BaseEvaluator):
 
     def visit_Name(self, node: ast.Name) -> Any:
         """Handles variable lookups."""
+        # Check for builtins first.
+        if node.id in BUILTINS:
+            return BUILTINS[node.id]
+
+        # If not a builtin, check the state.
         value = self.state.get(node.id)
         if value is None and node.id not in self.state:
             raise EvalError(f"Name '{node.id}' is not defined.", node)

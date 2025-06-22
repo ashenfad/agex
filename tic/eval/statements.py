@@ -1,6 +1,9 @@
 import ast
 from typing import Any
 
+from tic.agent import _AgentExit
+from tic.eval.functions import _ReturnException
+
 from .base import BaseEvaluator
 from .binop import OPERATOR_MAP
 from .error import EvalError
@@ -137,3 +140,81 @@ class StatementEvaluator(BaseEvaluator):
             setter(new_value)
         except Exception as e:
             raise EvalError(f"Failed to execute operation: {e}", node, cause=e)
+
+    def visit_Try(self, node: ast.Try) -> None:
+        """Handles try...except...else...finally blocks."""
+        # The 'finally' block must execute regardless of what happens.
+        try:
+            # We track if an exception was caught to decide if we run 'else'.
+            exception_was_caught = False
+            try:
+                # Execute the main 'try' block.
+                for stmt in node.body:
+                    self.visit(stmt)
+            except Exception as e:
+                # An exception occurred.
+                exception_was_caught = True
+
+                # IMPORTANT: If this is an internal control-flow exception,
+                # we must not let the user's code catch it. Re-raise it.
+                if isinstance(e, (_ReturnException, _AgentExit)):
+                    raise e
+
+                # Find a matching 'except' handler in the user's code.
+                matched_handler = None
+                for handler in node.handlers:
+                    # handler.type can be None for a bare 'except:'.
+                    if handler.type is None:
+                        matched_handler = handler
+                        break
+
+                    # Evaluate the exception type specified by the user.
+                    exc_type_to_catch = self.visit(handler.type)
+
+                    # Check if it's a valid type and if our error is an instance.
+                    if isinstance(exc_type_to_catch, type) and isinstance(
+                        e, exc_type_to_catch
+                    ):
+                        matched_handler = handler
+                        break
+
+                if matched_handler:
+                    # If we found a handler, execute its body.
+                    # If 'as' is used, set the exception instance in the state.
+                    if matched_handler.name:
+                        self.state.set(matched_handler.name, e)
+
+                    for handler_stmt in matched_handler.body:
+                        self.visit(handler_stmt)
+
+                    # Clean up the 'as' variable if it was set.
+                    if matched_handler.name:
+                        self.state.remove(matched_handler.name)
+                else:
+                    # No matching handler was found, so re-raise the exception.
+                    raise e
+
+            # The 'else' block runs only if the 'try' block completed
+            # without raising any exceptions.
+            if not exception_was_caught:
+                for else_stmt in node.orelse:
+                    self.visit(else_stmt)
+
+        finally:
+            # The 'finally' block always runs.
+            for final_stmt in node.finalbody:
+                self.visit(final_stmt)
+
+    def visit_Raise(self, node: ast.Raise) -> None:
+        """Handles the 'raise' statement."""
+        if node.exc:
+            exc = self.visit(node.exc)
+            if isinstance(exc, type) and issubclass(exc, BaseException):
+                raise exc()
+            if isinstance(exc, BaseException):
+                raise exc
+            raise EvalError(
+                f"Can only raise exception classes or instances, not {type(exc).__name__}",
+                node,
+            )
+        raise
