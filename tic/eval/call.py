@@ -50,6 +50,9 @@ BUILTINS: dict[str, Callable[..., Any]] = {
     "enumerate": lambda x: list(enumerate(x)),
     "map": lambda f, it: list(map(f, it)),
     "filter": lambda f, it: list(filter(f, it)),
+    # Type introspection
+    "isinstance": isinstance,
+    "type": type,
     # User-level exceptions, mapped from Python's names
     "Exception": TicError,
     "ValueError": TicValueError,

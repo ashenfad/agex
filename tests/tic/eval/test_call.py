@@ -246,3 +246,45 @@ even_squares = map(square, filter(lambda x: x % 2 == 0, numbers))
     assert state.get("squared_numbers") == [1, 4, 9, 16, 25]
     assert state.get("even_numbers") == [2, 4]
     assert state.get("even_squares") == [4, 16]
+
+
+def test_type_introspection_builtins():
+    """Tests the isinstance() and type() builtins."""
+    program = """
+a = 1
+b = "hello"
+c = [1, 2]
+d = {"key": "value"}
+
+is_a_int = isinstance(a, int)
+is_a_str = isinstance(a, str)
+is_b_str = isinstance(b, str)
+is_c_list = isinstance(c, list)
+is_d_dict = isinstance(d, dict)
+
+type_a = type(a)
+type_b = type(b)
+type_c = type(c)
+type_d = type(d)
+
+def my_func():
+    pass
+
+is_f_func = isinstance(my_func, type(my_func))
+"""
+    state = eval_and_get_state(program)
+
+    assert state.get("is_a_int") is True
+    assert state.get("is_a_str") is False
+    assert state.get("is_b_str") is True
+    assert state.get("is_c_list") is True
+    assert state.get("is_d_dict") is True
+
+    assert state.get("type_a") is int
+    assert state.get("type_b") is str
+    assert state.get("type_c") is list
+    assert state.get("type_d") is dict
+
+    # This is a bit of a trick to test the type of a user function,
+    # since we don't have a direct name for UserFunction in the environment.
+    assert state.get("is_f_func") is True
