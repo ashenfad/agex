@@ -170,3 +170,56 @@ def add(a, b):
     # Test with keyword arguments
     result_kwargs = add_func(a=5, b=6)
     assert result_kwargs == 11
+
+
+def test_sort_with_key_function():
+    """
+    Tests that `sorted()` and `list.sort()` work with a tic UserFunction as a key.
+    """
+    program = """
+data = [("a", 3), ("b", 1), ("c", 2)]
+
+def get_second_element(t):
+    return t[1]
+
+# Test the sorted() builtin
+sorted_data = sorted(data, key=get_second_element)
+
+# Test the list.sort() method
+data_to_sort = [("x", 9), ("y", 8), ("z", 7)]
+data_to_sort.sort(key=get_second_element)
+"""
+    state = eval_and_get_state(program)
+
+    # Check the result of the sorted() builtin
+    expected_sorted = [("b", 1), ("c", 2), ("a", 3)]
+    assert state.get("sorted_data") == expected_sorted
+
+    # Check the result of the list.sort() method
+    expected_in_place = [("z", 7), ("y", 8), ("x", 9)]
+    assert state.get("data_to_sort") == expected_in_place
+
+
+def test_sort_with_lambda_key():
+    """
+    Tests that `sorted()` and `list.sort()` work with a tic lambda as a key.
+    """
+    program = """
+data = [("a", 3), ("b", 1), ("c", 2)]
+
+# Test the sorted() builtin with a lambda
+sorted_data = sorted(data, key=lambda t: t[1])
+
+# Test the list.sort() method with a lambda
+data_to_sort = [("x", 9), ("y", 8), ("z", 7)]
+data_to_sort.sort(key=lambda t: t[1])
+"""
+    state = eval_and_get_state(program)
+
+    # Check the result of the sorted() builtin
+    expected_sorted = [("b", 1), ("c", 2), ("a", 3)]
+    assert state.get("sorted_data") == expected_sorted
+
+    # Check the result of the list.sort() method
+    expected_in_place = [("z", 7), ("y", 8), ("x", 9)]
+    assert state.get("data_to_sort") == expected_in_place
