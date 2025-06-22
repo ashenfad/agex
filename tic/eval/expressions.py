@@ -4,6 +4,7 @@ from typing import Any
 from .base import BaseEvaluator
 from .call import BUILTINS
 from .error import EvalError
+from .objects import TicObject
 
 
 class ExpressionEvaluator(BaseEvaluator):
@@ -65,6 +66,16 @@ class ExpressionEvaluator(BaseEvaluator):
             return self.visit(node.body)
         else:
             return self.visit(node.orelse)
+
+    def visit_Attribute(self, node: ast.Attribute) -> Any:
+        """Handles attribute access like `obj.x`."""
+        obj = self.visit(node.value)
+        if isinstance(obj, TicObject):
+            return obj.getattr(node.attr)
+
+        raise EvalError(
+            f"Attribute access is not supported for type '{type(obj).__name__}'.", node
+        )
 
     def visit_Subscript(self, node: ast.Subscript) -> Any:
         """Handles subscript access like `d['key']` or `l[0]`."""

@@ -5,6 +5,7 @@ from ..agent import ExitClarify, ExitFail, ExitSuccess, _AgentExit
 from .base import BaseEvaluator
 from .error import EvalError
 from .functions import UserFunction
+from .objects import TicDataClass, TicObject
 from .user_errors import (
     TicError,
     TicIndexError,
@@ -14,6 +15,25 @@ from .user_errors import (
 )
 
 MAX_RANGE_SIZE = 10_000
+
+
+# A simple placeholder object to act as the @dataclass decorator.
+# Its only purpose is to be recognized by the evaluator.
+class _DataclassDecorator:
+    pass
+
+
+dataclass = _DataclassDecorator()
+
+
+def _tic_isinstance(obj: Any, class_or_tuple: Any) -> bool:
+    """Custom isinstance function for the tic evaluator."""
+    if isinstance(class_or_tuple, TicDataClass):
+        if isinstance(obj, TicObject):
+            return obj.cls is class_or_tuple
+        return False
+    # TODO: Handle tuple of types
+    return isinstance(obj, class_or_tuple)
 
 
 def _constrained_range(*args, **kwargs):
@@ -51,8 +71,10 @@ BUILTINS: dict[str, Callable[..., Any]] = {
     "map": lambda f, it: list(map(f, it)),
     "filter": lambda f, it: list(filter(f, it)),
     # Type introspection
-    "isinstance": isinstance,
+    "isinstance": _tic_isinstance,
     "type": type,
+    # Dataclasses
+    "dataclass": dataclass,
     # User-level exceptions, mapped from Python's names
     "Exception": TicError,
     "ValueError": TicValueError,
@@ -131,6 +153,9 @@ class CallEvaluator(BaseEvaluator):
             if isinstance(fn, UserFunction):
                 return fn.execute(args, kwargs, self.source_code)
 
+            if isinstance(fn, TicDataClass):
+                return fn(*args, **kwargs)
+
             # It must be a builtin
             try:
                 result = fn(*args, **kwargs)
@@ -177,6 +202,9 @@ class CallEvaluator(BaseEvaluator):
             fn = self.visit(node.func)
             if isinstance(fn, UserFunction):
                 return fn.execute(args, kwargs, self.source_code)
+
+            if isinstance(fn, TicDataClass):
+                return fn(*args, **kwargs)
 
             raise EvalError(
                 f"Indirect call on a non-user function is not supported. Got: {type(fn).__name__}",

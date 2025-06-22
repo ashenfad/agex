@@ -6,7 +6,9 @@ from tic.eval.functions import _ReturnException
 
 from .base import BaseEvaluator
 from .binop import OPERATOR_MAP
+from .call import dataclass
 from .error import EvalError
+from .objects import TicDataClass, TicObject
 
 
 class StatementEvaluator(BaseEvaluator):
@@ -85,6 +87,14 @@ class StatementEvaluator(BaseEvaluator):
                     raise EvalError("List assignment index out of range.", target)
 
                 self.state.set(root_name, root_container)
+            elif isinstance(target, ast.Attribute):
+                obj = self.visit(target.value)
+                if not isinstance(obj, TicObject):
+                    raise EvalError(
+                        "Attribute assignment is only supported for dataclass instances.",
+                        target,
+                    )
+                obj.setattr(target.attr, value)
             else:
                 raise EvalError(
                     "This type of assignment target is not supported.", node
@@ -218,3 +228,48 @@ class StatementEvaluator(BaseEvaluator):
                 node,
             )
         raise
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """Handles class definitions (only dataclasses are supported)."""
+        # 1. Check for the @dataclass decorator.
+        is_dataclass = False
+        if node.decorator_list:
+            # For simplicity, we only support a single decorator, @dataclass.
+            if len(node.decorator_list) > 1:
+                raise EvalError(
+                    "Only a single @dataclass decorator is supported.", node
+                )
+            decorator = self.visit(node.decorator_list[0])
+            if decorator is dataclass:
+                is_dataclass = True
+
+        if not is_dataclass:
+            raise EvalError(
+                "Class definitions must use the @dataclass decorator.", node
+            )
+
+        # 2. Forbid inheritance.
+        if node.bases or node.keywords:
+            raise EvalError("Dataclass inheritance is not supported.", node)
+
+        # 3. Extract fields and forbid methods.
+        fields = []
+        for stmt in node.body:
+            if isinstance(stmt, ast.AnnAssign):
+                if not isinstance(stmt.target, ast.Name):
+                    raise EvalError("Dataclass fields must be simple names.", stmt)
+                fields.append(stmt.target.id)
+            elif isinstance(stmt, ast.FunctionDef):
+                raise EvalError("Methods are not supported in dataclasses.", stmt)
+            else:
+                raise EvalError(
+                    "Only annotated assignments (e.g., 'x: int') are allowed in dataclass bodies.",
+                    stmt,
+                )
+
+        if not fields:
+            raise EvalError("Dataclasses must define at least one field.", node)
+
+        # 4. Create and store the TicDataClass object.
+        cls_obj = TicDataClass(name=node.name, fields=fields)
+        self.state.set(node.name, cls_obj)
