@@ -2,6 +2,7 @@ import ast
 from typing import Any, Callable
 
 from ..agent import ExitClarify, ExitFail, ExitSuccess, _AgentExit
+from ..state import State
 from .base import BaseEvaluator
 from .error import EvalError
 from .functions import UserFunction
@@ -131,6 +132,32 @@ MATERIALIZE_METHODS = {
 }
 
 
+class PrintTuple(tuple):
+    """A wrapper to distinguish tuples created by print() for special rendering."""
+
+    pass
+
+
+def _print_stateful(*args: Any, state: State):
+    """
+    A custom implementation of 'print' that appends its arguments to the
+    `__stdout__` list in the agent's state as a single `PrintTuple`.
+    """
+    # Ensure __stdout__ exists and is a list
+    current_stdout = state.get("__stdout__")
+    if not isinstance(current_stdout, list):
+        current_stdout = []
+
+    # Append all arguments as a single entry
+    new_stdout = current_stdout + [PrintTuple(args)]
+    state.set("__stdout__", new_stdout)
+
+
+STATEFUL_BUILTINS: dict[str, Callable[..., Any]] = {
+    "print": _print_stateful,
+}
+
+
 class CallEvaluator(BaseEvaluator):
     """A mixin for evaluating function call nodes."""
 
@@ -143,6 +170,22 @@ class CallEvaluator(BaseEvaluator):
         # Case 1: Direct call by name (e.g., `my_func()`, `len()`)
         if isinstance(node.func, ast.Name):
             fn_name = node.func.id
+
+            # Check for stateful builtins first
+            if (stateful_fn := STATEFUL_BUILTINS.get(fn_name)) is not None:
+                try:
+                    # This allows stateful builtins to accept a 'state' kwarg.
+                    return stateful_fn(*args, **kwargs, state=self.state)
+                except Exception as e:
+                    # Re-raise agent exit signals immediately
+                    if isinstance(e, _AgentExit):
+                        raise e
+                    raise EvalError(
+                        f"Error calling stateful builtin function '{fn_name}': {e}",
+                        node,
+                        cause=e,
+                    )
+
             fn = BUILTINS.get(fn_name)
             if fn is None:
                 fn = self.state.get(fn_name)

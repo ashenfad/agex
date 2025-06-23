@@ -1,5 +1,6 @@
 from typing import Any
 
+from ..eval.call import PrintTuple
 from ..eval.functions import UserFunction
 from ..eval.objects import TicObject
 
@@ -21,6 +22,8 @@ class ValueRenderer:
             return self._render_user_function(value)
         if isinstance(value, TicObject):
             return self._render_tic_object(value, current_depth)
+        if isinstance(value, PrintTuple):
+            return self._render_print_tuple(value, current_depth)
 
         # Then primitives
         if isinstance(value, (int, float, bool, type(None))):
@@ -116,6 +119,12 @@ class ValueRenderer:
                 break
             items.append(item_str)
         return f"{value.cls.name}({', '.join(items)})"
+
+    def _render_print_tuple(self, value: PrintTuple, depth: int) -> str:
+        """Renders the content of a PrintTuple space-separated."""
+        # This rendering ignores max_len for now, as it's for a single line.
+        items = [self.render(item, depth + 1) for item in value]
+        return " ".join(items)
 
     def _render_opaque(self, value: Any) -> str:
         type_name = type(value).__name__
