@@ -2,11 +2,10 @@ import fnmatch
 import inspect
 from dataclasses import dataclass, field, fields, is_dataclass
 from types import ModuleType
-from typing import Any, Callable, Iterable, Literal, Set, Union
+from typing import Any, Callable, Iterable, Literal, Union
 
 Selector = Union[str, Iterable[str], Callable[[str], bool]]
 Visibility = Literal["high", "medium", "low"]
-_sentinel = object()
 
 
 class _AgentExit(Exception):
@@ -90,8 +89,8 @@ class RegisteredModule(RegisteredItem):
 
     name: str  # The name the agent will use to import it
     module: ModuleType
-    fns: Set[str] = field(default_factory=set)
-    consts: Set[str] = field(default_factory=set)
+    fns: dict[str, MemberInfo] = field(default_factory=dict)
+    consts: dict[str, MemberInfo] = field(default_factory=dict)
     classes: dict[str, RegisteredClass] = field(default_factory=dict)
 
 
@@ -236,58 +235,73 @@ class Agent:
         classes: Selector | None = Select.non_private,
         class_attrs: Selector | None = Select.non_private,
         class_methods: Selector | None = Select.non_private,
+        overrides: dict[str, dict[str, Any]] | None = None,
     ):
         """
         Registers a module, making it available for the agent to import.
         """
-        module_name = name
-        if module_name is None:
-            module_name = mod.__name__
-            if module_name == "__main__":
-                raise ValueError(
-                    "Cannot infer module name for '__main__'. Please provide 'name'."
-                )
+        module_name = name or mod.__name__
+        if module_name == "__main__":
+            raise ValueError(
+                "Cannot infer module name for '__main__'. Please provide 'name'."
+            )
+        final_overrides = overrides or {}
 
         fn_pred = _create_predicate(fns)
         const_pred = _create_predicate(consts)
         class_pred = _create_predicate(classes)
-        class_attr_pred = _create_predicate(class_attrs)
-        class_meth_pred = _create_predicate(class_methods)
 
-        selected_fns = set()
-        selected_consts = set()
-        selected_classes = {}
+        selected_fns: dict[str, MemberInfo] = {}
+        selected_consts: dict[str, MemberInfo] = {}
+        selected_classes: dict[str, RegisteredClass] = {}
 
-        for name, member in inspect.getmembers(mod):
+        # 1. Broad selection pass
+        for member_name, member in inspect.getmembers(mod):
             if inspect.isroutine(member):
-                if fn_pred(name):
-                    selected_fns.add(name)
+                if fn_pred(member_name):
+                    selected_fns[member_name] = MemberInfo(visibility=visibility)
             elif inspect.isclass(member):
-                if class_pred(name):
-                    # For each selected class, determine its own attrs and methods
-                    attrs = {
-                        m_name: MemberInfo(visibility=visibility)
-                        for m_name, _ in inspect.getmembers(member)
-                        if not inspect.isroutine(_) and class_attr_pred(m_name)
-                    }
-                    methods = {
-                        m_name: MemberInfo(visibility=visibility)
-                        for m_name, _ in inspect.getmembers(member)
-                        if inspect.isroutine(_) and class_meth_pred(m_name)
-                    }
-                    selected_classes[name] = RegisteredClass(
-                        cls=member,
-                        visibility=visibility,
-                        constructable=True,  # Default for module-registered classes
-                        attrs=attrs,
-                        methods=methods,
+                if class_pred(member_name):
+                    # We create the RegisteredClass here, applying nested overrides.
+                    class_vis = final_overrides.get(member_name, {}).get(
+                        "visibility", visibility
                     )
+                    nested_overrides = final_overrides.get(member_name, {}).get(
+                        "overrides", None
+                    )
+
+                    # Use the main `cls` registration logic by calling it directly.
+                    # This avoids re-implementing the logic and ensures consistency.
+                    # We pass `_cls` to call it directly instead of as a decorator.
+                    temp_agent = Agent()
+                    temp_agent.cls(
+                        member,
+                        visibility=class_vis,
+                        constructable=True,
+                        attrs=class_attrs,
+                        methods=class_methods,
+                        overrides=nested_overrides,
+                    )
+                    selected_classes[member_name] = temp_agent.cls_registry[member_name]
+
             elif (
                 not callable(member)
                 and not inspect.ismodule(member)
-                and const_pred(name)
+                and const_pred(member_name)
             ):
-                selected_consts.add(name)
+                selected_consts[member_name] = MemberInfo(visibility=visibility)
+
+        # 2. Apply top-level overrides
+        for member_name, override_settings in final_overrides.items():
+            if member_name in selected_classes:
+                continue  # Class overrides are handled during their creation
+
+            vis = override_settings.get("visibility", visibility)
+            member = getattr(mod, member_name, None)
+            if inspect.isroutine(member):
+                selected_fns[member_name] = MemberInfo(visibility=vis)
+            elif not callable(member) and not inspect.ismodule(member):
+                selected_consts[member_name] = MemberInfo(visibility=vis)
 
         self.importable_modules[module_name] = RegisteredModule(
             name=module_name,

@@ -243,9 +243,9 @@ class StatementEvaluator(BaseEvaluator):
 
             # Create a sandboxed module object
             tic_module = TicModule(name=module_name_to_find)
-            for fn_name in reg_module.fns:
+            for fn_name in reg_module.fns.keys():
                 setattr(tic_module, fn_name, getattr(reg_module.module, fn_name))
-            for const_name in reg_module.consts:
+            for const_name in reg_module.consts.keys():
                 setattr(tic_module, const_name, getattr(reg_module.module, const_name))
             for cls_name, reg_class in reg_module.classes.items():
                 setattr(tic_module, cls_name, reg_class.cls)

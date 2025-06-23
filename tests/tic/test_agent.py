@@ -173,8 +173,16 @@ def test_agent_module_registration():
     assert reg.module == math
     assert reg.name == "math"
     assert reg.visibility == "low"
-    assert reg.fns == {"sqrt", "isclose", "isfinite", "isinf", "isnan", "isqrt"}
-    assert reg.consts == {"pi", "e"}
+    assert set(reg.fns.keys()) == {
+        "sqrt",
+        "isclose",
+        "isfinite",
+        "isinf",
+        "isnan",
+        "isqrt",
+    }
+    assert set(reg.consts.keys()) == {"pi", "e"}
+    assert reg.fns["sqrt"].visibility == "low"
 
 
 def test_agent_module_registration_defaults():
@@ -185,8 +193,8 @@ def test_agent_module_registration_defaults():
     reg = agent.importable_modules["tests.tic.test_module"]
 
     assert reg.name == "tests.tic.test_module"
-    assert reg.fns == {"public_fn"}
-    assert reg.consts == {"PI"}
+    assert set(reg.fns.keys()) == {"public_fn"}
+    assert set(reg.consts.keys()) == {"PI"}
     assert "PublicClass" in reg.classes
     assert "_PrivateClass" not in reg.classes
 
@@ -195,26 +203,34 @@ def test_agent_module_registration_defaults():
     assert set(public_class_reg.methods.keys()) == {"public_method"}
 
 
-def test_agent_module_registration_custom():
+def test_agent_module_with_overrides():
     agent = Agent()
     agent.module(
         test_module,
         name="sample",
-        visibility="low",
-        fns="*",  # select all fns
-        consts=None,  # select no consts
-        classes=["Public*"],
-        class_methods=None,  # select no methods for found classes
+        visibility="low",  # default for selected items
+        fns=["public_fn"],
+        classes=["PublicClass"],
+        class_methods=["public_method"],
+        overrides={
+            "PI": {"visibility": "high"},
+            "PublicClass": {
+                "visibility": "high",
+                "overrides": {"public_method": {"visibility": "high"}},
+            },
+        },
     )
 
     assert "sample" in agent.importable_modules
     reg = agent.importable_modules["sample"]
 
-    assert reg.visibility == "low"
-    assert reg.fns == {"public_fn", "_private_fn"}
-    assert reg.consts == set()
-    assert "PublicClass" in reg.classes
-    assert not reg.classes["PublicClass"].methods
+    # Check top-level consts and fns
+    assert reg.consts["PI"].visibility == "high"
+    assert reg.fns["public_fn"].visibility == "low"
+
+    # Check class and its nested method
+    assert reg.classes["PublicClass"].visibility == "high"
+    assert reg.classes["PublicClass"].methods["public_method"].visibility == "high"
 
 
 def test_agent_cls_no_parens():
