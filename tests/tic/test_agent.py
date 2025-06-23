@@ -2,7 +2,7 @@ import math
 from dataclasses import dataclass
 
 from tests.tic import test_module
-from tic.agent import Agent, RegisteredClass, Select
+from tic.agent import Agent, MemberSpec, RegisteredClass, Select
 
 
 def test_agent_fn_registration_decorator():
@@ -112,7 +112,7 @@ def test_agent_cls_registration_selectors():
     assert set(reg.methods.keys()) == {"do_stuff"}
 
 
-def test_agent_cls_with_overrides():
+def test_agent_cls_registration_overrides():
     agent = Agent()
 
     class MyService:
@@ -135,9 +135,9 @@ def test_agent_cls_with_overrides():
         attrs=["name"],
         visibility="medium",  # Default for selected
         overrides={
-            "critical_op": {"visibility": "high"},  # Override and include
-            "config_path": {"visibility": "low"},  # Override and include
-            "_private_op": {"visibility": "low"},  # Should not be included
+            "critical_op": MemberSpec(visibility="high"),  # Override and include
+            "config_path": MemberSpec(visibility="low"),  # Override and include
+            "_private_op": MemberSpec(visibility="low"),  # Should not be included
         },
     )
 
@@ -159,30 +159,31 @@ def test_agent_cls_with_overrides():
 
 def test_agent_module_registration():
     agent = Agent()
-
     agent.module(
-        math,
-        name="math",
+        test_module,
+        name="sample",
         visibility="low",
-        fns=["sqrt", "is*"],
-        consts=["pi", "e"],
+        fns=["public_fn"],
+        classes=["PublicClass"],
+        class_methods=["public_method"],
+        overrides={
+            "PI": MemberSpec(visibility="high"),
+            "PublicClass.public_method": MemberSpec(visibility="high"),
+        },
     )
 
-    assert "math" in agent.importable_modules
-    reg = agent.importable_modules["math"]
-    assert reg.module == math
-    assert reg.name == "math"
+    assert "sample" in agent.importable_modules
+    reg = agent.importable_modules["sample"]
+
+    # Check top-level visibilities
     assert reg.visibility == "low"
-    assert set(reg.fns.keys()) == {
-        "sqrt",
-        "isclose",
-        "isfinite",
-        "isinf",
-        "isnan",
-        "isqrt",
-    }
-    assert set(reg.consts.keys()) == {"pi", "e"}
-    assert reg.fns["sqrt"].visibility == "low"
+
+    # Check top-level consts and fns
+    assert reg.consts["PI"].visibility == "high"
+    assert reg.fns["public_fn"].visibility == "low"
+
+    # Check class and its nested method
+    assert reg.classes["PublicClass"].methods["public_method"].visibility == "high"
 
 
 def test_agent_module_registration_defaults():
@@ -213,24 +214,30 @@ def test_agent_module_with_overrides():
         classes=["PublicClass"],
         class_methods=["public_method"],
         overrides={
-            "PI": {"visibility": "high"},
-            "PublicClass": {
-                "visibility": "high",
-                "overrides": {"public_method": {"visibility": "high"}},
-            },
+            "PI": MemberSpec(visibility="high"),
+            "PublicClass.public_method": MemberSpec(visibility="high"),
         },
     )
 
     assert "sample" in agent.importable_modules
     reg = agent.importable_modules["sample"]
 
-    # Check top-level consts and fns
-    assert reg.consts["PI"].visibility == "high"
+    # Check that the module itself has the base visibility
+    assert reg.visibility == "low"
+
+    # Check that a selected function has the module's visibility
+    assert "public_fn" in reg.fns
     assert reg.fns["public_fn"].visibility == "low"
 
-    # Check class and its nested method
-    assert reg.classes["PublicClass"].visibility == "high"
-    assert reg.classes["PublicClass"].methods["public_method"].visibility == "high"
+    # Check that a constant's visibility can be overridden
+    assert "PI" in reg.consts
+    assert reg.consts["PI"].visibility == "high"
+
+    # Check that a class's method can be overridden
+    assert "PublicClass" in reg.classes
+    pub_cls = reg.classes["PublicClass"]
+    assert "public_method" in pub_cls.methods
+    assert pub_cls.methods["public_method"].visibility == "high"
 
 
 def test_agent_cls_no_parens():

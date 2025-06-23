@@ -50,7 +50,7 @@ def task(func):
 
 
 @dataclass
-class MemberInfo:
+class MemberSpec:
     visibility: Visibility
 
 
@@ -79,8 +79,8 @@ class RegisteredClass(RegisteredItem):
     cls: type
     constructable: bool
     # 'visibility' on RegisteredItem is the default.
-    attrs: dict[str, MemberInfo] = field(default_factory=dict)
-    methods: dict[str, MemberInfo] = field(default_factory=dict)
+    attrs: dict[str, MemberSpec] = field(default_factory=dict)
+    methods: dict[str, MemberSpec] = field(default_factory=dict)
 
 
 @dataclass
@@ -89,8 +89,8 @@ class RegisteredModule(RegisteredItem):
 
     name: str  # The name the agent will use to import it
     module: ModuleType
-    fns: dict[str, MemberInfo] = field(default_factory=dict)
-    consts: dict[str, MemberInfo] = field(default_factory=dict)
+    fns: dict[str, MemberSpec] = field(default_factory=dict)
+    consts: dict[str, MemberSpec] = field(default_factory=dict)
     classes: dict[str, RegisteredClass] = field(default_factory=dict)
 
 
@@ -157,7 +157,7 @@ class Agent:
         constructable: bool = True,
         attrs: Selector | None = None,
         methods: Selector | None = None,
-        overrides: dict[str, dict[str, Any]] | None = None,
+        overrides: dict[str, MemberSpec] | None = None,
     ):
         """
         Registers a class with the agent.
@@ -166,15 +166,15 @@ class Agent:
         final_overrides = overrides or {}
 
         def decorator(c: type) -> type:
-            final_attrs: dict[str, MemberInfo] = {}
-            final_methods: dict[str, MemberInfo] = {}
+            final_attrs: dict[str, MemberSpec] = {}
+            final_methods: dict[str, MemberSpec] = {}
             default_visibility = visibility
 
             # 1. Populate with defaults based on broad selectors
             # Special case for dataclasses where attrs is not specified
             if attrs is None and is_dataclass(c):
                 for f in fields(c):
-                    final_attrs[f.name] = MemberInfo(visibility=default_visibility)
+                    final_attrs[f.name] = MemberSpec(visibility=default_visibility)
             else:  # General attribute selector
                 attr_pred = _create_predicate(attrs)
                 all_possible_attrs = {
@@ -184,15 +184,15 @@ class Agent:
                 }.union(getattr(c, "__annotations__", {}))
                 for name in all_possible_attrs:
                     if attr_pred(name):
-                        final_attrs[name] = MemberInfo(visibility=default_visibility)
+                        final_attrs[name] = MemberSpec(visibility=default_visibility)
 
             meth_pred = _create_predicate(methods)
             for name, member in inspect.getmembers(c):
                 if inspect.isroutine(member) and meth_pred(name):
-                    final_methods[name] = MemberInfo(visibility=default_visibility)
+                    final_methods[name] = MemberSpec(visibility=default_visibility)
 
             # 2. Apply overrides
-            for name, override_settings in final_overrides.items():
+            for name, override_spec in final_overrides.items():
                 # Don't allow overrides to implicitly expose private members,
                 # unless they were already explicitly selected by the main selectors.
                 if (
@@ -206,12 +206,12 @@ class Agent:
                 if not member:
                     continue  # Skip if the attribute doesn't exist on the class
 
-                vis = override_settings.get("visibility", default_visibility)
+                vis = override_spec.visibility
 
                 if inspect.isroutine(member):
-                    final_methods[name] = MemberInfo(visibility=vis)
+                    final_methods[name] = MemberSpec(visibility=vis)
                 else:
-                    final_attrs[name] = MemberInfo(visibility=vis)
+                    final_attrs[name] = MemberSpec(visibility=vis)
 
             self.cls_registry[c.__name__] = RegisteredClass(
                 cls=c,
@@ -235,7 +235,7 @@ class Agent:
         classes: Selector | None = Select.non_private,
         class_attrs: Selector | None = Select.non_private,
         class_methods: Selector | None = Select.non_private,
-        overrides: dict[str, dict[str, Any]] | None = None,
+        overrides: dict[str, MemberSpec] | None = None,
     ):
         """
         Registers a module, making it available for the agent to import.
@@ -245,30 +245,40 @@ class Agent:
             raise ValueError(
                 "Cannot infer module name for '__main__'. Please provide 'name'."
             )
-        final_overrides = overrides or {}
+
+        # Pre-process overrides to separate top-level from nested
+        top_level_overrides: dict[str, MemberSpec] = {}
+        nested_overrides_by_class: dict[str, dict[str, MemberSpec]] = {}
+        if overrides:
+            for key, spec in overrides.items():
+                if "." in key:
+                    class_name, member_name = key.split(".", 1)
+                    if class_name not in nested_overrides_by_class:
+                        nested_overrides_by_class[class_name] = {}
+                    nested_overrides_by_class[class_name][member_name] = spec
+                else:
+                    top_level_overrides[key] = spec
 
         fn_pred = _create_predicate(fns)
         const_pred = _create_predicate(consts)
         class_pred = _create_predicate(classes)
 
-        selected_fns: dict[str, MemberInfo] = {}
-        selected_consts: dict[str, MemberInfo] = {}
+        selected_fns: dict[str, MemberSpec] = {}
+        selected_consts: dict[str, MemberSpec] = {}
         selected_classes: dict[str, RegisteredClass] = {}
 
         # 1. Broad selection pass
         for member_name, member in inspect.getmembers(mod):
             if inspect.isroutine(member):
                 if fn_pred(member_name):
-                    selected_fns[member_name] = MemberInfo(visibility=visibility)
+                    selected_fns[member_name] = MemberSpec(visibility=visibility)
             elif inspect.isclass(member):
                 if class_pred(member_name):
                     # We create the RegisteredClass here, applying nested overrides.
-                    class_vis = final_overrides.get(member_name, {}).get(
-                        "visibility", visibility
+                    class_vis = getattr(
+                        top_level_overrides.get(member_name), "visibility", visibility
                     )
-                    nested_overrides = final_overrides.get(member_name, {}).get(
-                        "overrides", None
-                    )
+                    nested_overrides = nested_overrides_by_class.get(member_name)
 
                     # Use the main `cls` registration logic by calling it directly.
                     # This avoids re-implementing the logic and ensures consistency.
@@ -289,19 +299,19 @@ class Agent:
                 and not inspect.ismodule(member)
                 and const_pred(member_name)
             ):
-                selected_consts[member_name] = MemberInfo(visibility=visibility)
+                selected_consts[member_name] = MemberSpec(visibility=visibility)
 
         # 2. Apply top-level overrides
-        for member_name, override_settings in final_overrides.items():
+        for member_name, override_spec in top_level_overrides.items():
             if member_name in selected_classes:
                 continue  # Class overrides are handled during their creation
 
-            vis = override_settings.get("visibility", visibility)
+            vis = override_spec.visibility
             member = getattr(mod, member_name, None)
             if inspect.isroutine(member):
-                selected_fns[member_name] = MemberInfo(visibility=vis)
+                selected_fns[member_name] = MemberSpec(visibility=vis)
             elif not callable(member) and not inspect.ismodule(member):
-                selected_consts[member_name] = MemberInfo(visibility=vis)
+                selected_consts[member_name] = MemberSpec(visibility=vis)
 
         self.importable_modules[module_name] = RegisteredModule(
             name=module_name,
