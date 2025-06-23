@@ -1,10 +1,10 @@
 import fnmatch
 import inspect
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field
 from types import ModuleType
 from typing import Any, Callable, Iterable, Literal, Union
 
-Selector = Union[str, Iterable[str], Callable[[str], bool]]
+Pattern = Union[str, Iterable[str], Callable[[str], bool]]
 Visibility = Literal["high", "medium", "low"]
 
 
@@ -51,7 +51,9 @@ def task(func):
 
 @dataclass
 class MemberSpec:
-    visibility: Visibility
+    visibility: Visibility | None = None
+    docstring: str | None = None
+    constructable: bool | None = None
 
 
 @dataclass
@@ -94,31 +96,17 @@ class RegisteredModule(RegisteredItem):
     classes: dict[str, RegisteredClass] = field(default_factory=dict)
 
 
-def _create_predicate(selector: Selector | None) -> Callable[[str], bool]:
-    """Creates a predicate function from a selector."""
-    if selector is None:
+def _create_predicate(pattern: Pattern | None) -> Callable[[str], bool]:
+    """Creates a predicate function from a pattern."""
+    if pattern is None:
         return lambda _: False  # Select nothing
-    if callable(selector):
-        return selector
-    if isinstance(selector, str):
-        return lambda name: fnmatch.fnmatch(name, selector)
-    if isinstance(selector, (list, set)):
-        return lambda name: any(fnmatch.fnmatch(name, pattern) for pattern in selector)
-    raise TypeError(f"Unsupported selector type: {type(selector)}")
-
-
-class Select:
-    """Provides common selection predicates."""
-
-    @staticmethod
-    def non_private(name: str) -> bool:
-        """
-        Selects items that do not start with a single underscore and are not
-        "dunder" methods/attributes.
-        """
-        return not name.startswith("_") and not (
-            name.startswith("__") and name.endswith("__")
-        )
+    if callable(pattern):
+        return pattern
+    if isinstance(pattern, str):
+        return lambda name: fnmatch.fnmatch(name, pattern)
+    if isinstance(pattern, (list, set)):
+        return lambda name: any(fnmatch.fnmatch(name, p) for p in pattern)
+    raise TypeError(f"Unsupported pattern type: {type(pattern)}")
 
 
 class Agent:
@@ -155,63 +143,54 @@ class Agent:
         *,
         visibility: Visibility = "high",
         constructable: bool = True,
-        attrs: Selector | None = None,
-        methods: Selector | None = None,
-        overrides: dict[str, MemberSpec] | None = None,
+        include: Pattern | None = "*",
+        exclude: Pattern | None = "_*",
+        configure: dict[str, MemberSpec] | None = None,
     ):
         """
         Registers a class with the agent.
         Can be used as a decorator (`@agent.cls`) or a direct call (`agent.cls(MyClass)`).
         """
-        final_overrides = overrides or {}
+        final_configure = configure or {}
 
         def decorator(c: type) -> type:
+            # 1. Generate all possible members
+            all_members = {
+                name
+                for name, member in inspect.getmembers(c)
+                if not name.startswith("__") or name == "__init__"
+            }.union(getattr(c, "__annotations__", {}))
+
+            # 2. Filter members based on include/exclude patterns
+            include_pred = _create_predicate(include)
+            exclude_pred = _create_predicate(exclude)
+            selected_names = {
+                name
+                for name in all_members
+                if include_pred(name) and not exclude_pred(name)
+            }
+
+            # 3. Create MemberSpec objects and apply configurations
             final_attrs: dict[str, MemberSpec] = {}
             final_methods: dict[str, MemberSpec] = {}
-            default_visibility = visibility
 
-            # 1. Populate with defaults based on broad selectors
-            # Special case for dataclasses where attrs is not specified
-            if attrs is None and is_dataclass(c):
-                for f in fields(c):
-                    final_attrs[f.name] = MemberSpec(visibility=default_visibility)
-            else:  # General attribute selector
-                attr_pred = _create_predicate(attrs)
-                all_possible_attrs = {
-                    name
-                    for name, member in inspect.getmembers(c)
-                    if not inspect.isroutine(member)
-                }.union(getattr(c, "__annotations__", {}))
-                for name in all_possible_attrs:
-                    if attr_pred(name):
-                        final_attrs[name] = MemberSpec(visibility=default_visibility)
+            # Handle __init__ separately based on `constructable` flag
+            if constructable:
+                selected_names.add("__init__")
+            elif "__init__" in selected_names:
+                selected_names.remove("__init__")
 
-            meth_pred = _create_predicate(methods)
-            for name, member in inspect.getmembers(c):
-                if inspect.isroutine(member) and meth_pred(name):
-                    final_methods[name] = MemberSpec(visibility=default_visibility)
-
-            # 2. Apply overrides
-            for name, override_spec in final_overrides.items():
-                # Don't allow overrides to implicitly expose private members,
-                # unless they were already explicitly selected by the main selectors.
-                if (
-                    name.startswith("_")
-                    and name not in final_methods
-                    and name not in final_attrs
-                ):
-                    continue
+            for name in selected_names:
+                config = final_configure.get(name, MemberSpec())
+                # If visibility is not specified in config, use class default
+                vis = config.visibility or visibility
+                doc = config.docstring
 
                 member = getattr(c, name, None)
-                if not member:
-                    continue  # Skip if the attribute doesn't exist on the class
-
-                vis = override_spec.visibility
-
                 if inspect.isroutine(member):
-                    final_methods[name] = MemberSpec(visibility=vis)
+                    final_methods[name] = MemberSpec(visibility=vis, docstring=doc)
                 else:
-                    final_attrs[name] = MemberSpec(visibility=vis)
+                    final_attrs[name] = MemberSpec(visibility=vis, docstring=doc)
 
             self.cls_registry[c.__name__] = RegisteredClass(
                 cls=c,
@@ -230,97 +209,124 @@ class Agent:
         *,
         name: str | None = None,
         visibility: Visibility = "high",
-        fns: Selector | None = Select.non_private,
-        consts: Selector | None = Select.non_private,
-        classes: Selector | None = Select.non_private,
-        class_attrs: Selector | None = Select.non_private,
-        class_methods: Selector | None = Select.non_private,
-        overrides: dict[str, MemberSpec] | None = None,
+        include: Pattern | None = "*",
+        exclude: Pattern | None = "_*",
+        configure: dict[str, MemberSpec] | None = None,
     ):
         """
-        Registers a module, making it available for the agent to import.
+        Registers a module and its members with the agent.
         """
-        module_name = name or mod.__name__
-        if module_name == "__main__":
-            raise ValueError(
-                "Cannot infer module name for '__main__'. Please provide 'name'."
-            )
+        final_name = name or mod.__name__.split(".")[-1]
+        final_configure = configure or {}
 
-        # Pre-process overrides to separate top-level from nested
-        top_level_overrides: dict[str, MemberSpec] = {}
-        nested_overrides_by_class: dict[str, dict[str, MemberSpec]] = {}
-        if overrides:
-            for key, spec in overrides.items():
-                if "." in key:
-                    class_name, member_name = key.split(".", 1)
-                    if class_name not in nested_overrides_by_class:
-                        nested_overrides_by_class[class_name] = {}
-                    nested_overrides_by_class[class_name][member_name] = spec
-                else:
-                    top_level_overrides[key] = spec
-
-        fn_pred = _create_predicate(fns)
-        const_pred = _create_predicate(consts)
-        class_pred = _create_predicate(classes)
-
-        selected_fns: dict[str, MemberSpec] = {}
-        selected_consts: dict[str, MemberSpec] = {}
-        selected_classes: dict[str, RegisteredClass] = {}
-
-        # 1. Broad selection pass
+        # 1. Generate all possible members with dot-notation for class members
+        all_members = set()
         for member_name, member in inspect.getmembers(mod):
+            if member_name.startswith("@"):
+                continue
+            all_members.add(member_name)
+            if inspect.isclass(member):
+                for class_member_name, _ in inspect.getmembers(member):
+                    if (
+                        not class_member_name.startswith("_")
+                        or class_member_name == "__init__"
+                    ):
+                        all_members.add(f"{member_name}.{class_member_name}")
+
+        # 2. Filter members based on include/exclude patterns
+        include_pred = _create_predicate(include)
+        exclude_pred = _create_predicate(exclude)
+        selected_names = {
+            name
+            for name in all_members
+            if include_pred(name) and not exclude_pred(name)
+        }
+
+        # 3. Process selected members and apply configurations
+        mod_fns: dict[str, MemberSpec] = {}
+        mod_consts: dict[str, MemberSpec] = {}
+        mod_classes: dict[str, RegisteredClass] = {}
+
+        # Separate class members from top-level members for processing
+        top_level_names = {n for n in selected_names if "." not in n}
+        class_member_names = selected_names - top_level_names
+
+        for member_name in top_level_names:
+            member = getattr(mod, member_name)
+            config = final_configure.get(member_name, MemberSpec())
+            vis = config.visibility or visibility
+            doc = config.docstring
+
             if inspect.isroutine(member):
-                if fn_pred(member_name):
-                    selected_fns[member_name] = MemberSpec(visibility=visibility)
+                mod_fns[member_name] = MemberSpec(visibility=vis, docstring=doc)
             elif inspect.isclass(member):
-                if class_pred(member_name):
-                    # We create the RegisteredClass here, applying nested overrides.
-                    class_vis = getattr(
-                        top_level_overrides.get(member_name), "visibility", visibility
-                    )
-                    nested_overrides = nested_overrides_by_class.get(member_name)
+                cls_attrs: dict[str, MemberSpec] = {}
+                cls_methods: dict[str, MemberSpec] = {}
 
-                    # Use the main `cls` registration logic by calling it directly.
-                    # This avoids re-implementing the logic and ensures consistency.
-                    # We pass `_cls` to call it directly instead of as a decorator.
-                    temp_agent = Agent()
-                    temp_agent.cls(
-                        member,
-                        visibility=class_vis,
-                        constructable=True,
-                        attrs=class_attrs,
-                        methods=class_methods,
-                        overrides=nested_overrides,
-                    )
-                    selected_classes[member_name] = temp_agent.cls_registry[member_name]
+                # Determine constructability from config, defaulting to True
+                cls_is_constructable = (
+                    config.constructable if config.constructable is not None else True
+                )
 
-            elif (
-                not callable(member)
-                and not inspect.ismodule(member)
-                and const_pred(member_name)
-            ):
-                selected_consts[member_name] = MemberSpec(visibility=visibility)
+                # Get all members for this specific class from the selection
+                cls_selected_members = {
+                    cm.split(".", 1)[1]
+                    for cm in class_member_names
+                    if cm.startswith(f"{member_name}.")
+                }
 
-        # 2. Apply top-level overrides
-        for member_name, override_spec in top_level_overrides.items():
-            if member_name in selected_classes:
-                continue  # Class overrides are handled during their creation
+                # Also apply the top-level exclude predicate to these members
+                exclude_pred = _create_predicate(exclude)
+                cls_selected_members = {
+                    m
+                    for m in cls_selected_members
+                    if not exclude_pred(f"{member_name}.{m}")
+                }
 
-            vis = override_spec.visibility
-            member = getattr(mod, member_name, None)
-            if inspect.isroutine(member):
-                selected_fns[member_name] = MemberSpec(visibility=vis)
-            elif not callable(member) and not inspect.ismodule(member):
-                selected_consts[member_name] = MemberSpec(visibility=vis)
+                # Handle __init__ based on constructability, overriding include/exclude
+                if cls_is_constructable:
+                    cls_selected_members.add("__init__")
+                elif "__init__" in cls_selected_members:
+                    cls_selected_members.remove("__init__")
 
-        self.importable_modules[module_name] = RegisteredModule(
-            name=module_name,
+                for short_name in cls_selected_members:
+                    class_member = getattr(member, short_name, None)
+                    if not class_member:
+                        continue
+
+                    cm_config_key = f"{member_name}.{short_name}"
+                    cm_config = final_configure.get(cm_config_key, MemberSpec())
+                    cm_vis = cm_config.visibility or vis
+                    cm_doc = cm_config.docstring
+
+                    if inspect.isroutine(class_member):
+                        cls_methods[short_name] = MemberSpec(
+                            visibility=cm_vis, docstring=cm_doc
+                        )
+                    else:
+                        cls_attrs[short_name] = MemberSpec(
+                            visibility=cm_vis, docstring=cm_doc
+                        )
+
+                mod_classes[member_name] = RegisteredClass(
+                    cls=member,
+                    visibility=vis,
+                    constructable=cls_is_constructable,
+                    attrs=cls_attrs,
+                    methods=cls_methods,
+                )
+            else:  # It's a constant
+                mod_consts[member_name] = MemberSpec(visibility=vis, docstring=doc)
+
+        self.importable_modules[final_name] = RegisteredModule(
+            name=final_name,
             module=mod,
             visibility=visibility,
-            fns=selected_fns,
-            consts=selected_consts,
-            classes=selected_classes,
+            fns=mod_fns,
+            consts=mod_consts,
+            classes=mod_classes,
         )
 
     def task(self, func):
-        pass
+        """A decorator to mark a function as an agent task."""
+        return Task()

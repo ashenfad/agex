@@ -2,7 +2,7 @@ import math
 from dataclasses import dataclass
 
 from tests.tic import test_module
-from tic.agent import Agent, MemberSpec, RegisteredClass, Select
+from tic.agent import Agent, MemberSpec, RegisteredClass
 
 
 def test_agent_fn_registration_decorator():
@@ -58,16 +58,20 @@ def test_agent_fn_registration_functional_builtin():
     assert reg.fn == math.sqrt
 
 
-def test_agent_cls_registration_dataclass_defaults():
+def test_agent_cls_registration_defaults():
     agent = Agent()
 
-    @agent.cls()
+    @agent.cls
     @dataclass
     class MyData:
         x: int
         y: str
+        _z: float
 
         def do_stuff(self):
+            pass
+
+        def _do_private_stuff(self):
             pass
 
     assert "MyData" in agent.cls_registry
@@ -75,9 +79,12 @@ def test_agent_cls_registration_dataclass_defaults():
     assert reg.cls == MyData
     assert reg.visibility == "high"
     assert reg.constructable is True
-    assert set(reg.attrs.keys()) == {"x", "y"}
+    assert set(reg.attrs.keys()) == {"x", "y"}  # _z is excluded
     assert reg.attrs["x"].visibility == "high"
-    assert not reg.methods  # Methods are not selected by default
+    assert set(reg.methods.keys()) == {
+        "do_stuff",
+        "__init__",
+    }  # _do_private_stuff is excluded
 
 
 def test_agent_cls_registration_selectors():
@@ -95,30 +102,34 @@ def test_agent_cls_registration_selectors():
 
     # Use as a decorator factory
     agent.cls(
+        MyClass,
         visibility="medium",
         constructable=False,
-        attrs=Select.non_private,
-        methods=["do_stuff"],
-    )(MyClass)
+        include=["x", "do_stuff", "_y"],
+        exclude=None,  # Include everything from the list
+    )
 
     assert "MyClass" in agent.cls_registry
     reg = agent.cls_registry["MyClass"]
     assert reg.cls == MyClass
     assert reg.visibility == "medium"
     assert reg.constructable is False
-    assert reg.attrs["x"].visibility == "medium"
-    assert set(reg.attrs.keys()) == {"x"}
-    assert reg.methods["do_stuff"].visibility == "medium"
-    assert set(reg.methods.keys()) == {"do_stuff"}
+    assert set(reg.attrs.keys()) == {"x", "_y"}
+    assert set(reg.methods.keys()) == {
+        "do_stuff"
+    }  # constructable=False removed __init__
 
 
-def test_agent_cls_registration_overrides():
+def test_agent_cls_registration_configure_and_exclude():
     agent = Agent()
 
     class MyService:
         config_path = "/etc/service.conf"
         name: str = "default_name"
         _internal_id = "xyz-123"
+
+        def __init__(self):
+            pass
 
         def critical_op(self):
             pass
@@ -131,30 +142,28 @@ def test_agent_cls_registration_overrides():
 
     agent.cls(
         MyService,
-        methods=["regular_op"],
-        attrs=["name"],
         visibility="medium",  # Default for selected
-        overrides={
-            "critical_op": MemberSpec(visibility="high"),  # Override and include
-            "config_path": MemberSpec(visibility="low"),  # Override and include
-            "_private_op": MemberSpec(visibility="low"),  # Should not be included
+        include="*",  # Explicitly include everything to start
+        exclude=["regular_op", "_*"],  # Exclude one public and all private
+        configure={
+            "critical_op": MemberSpec(visibility="high"),
+            "config_path": MemberSpec(visibility="low"),
         },
     )
 
     assert "MyService" in agent.cls_registry
     reg = agent.cls_registry["MyService"]
 
-    # Check methods: regular_op was selected, critical_op was added by override
-    assert set(reg.methods.keys()) == {"critical_op", "regular_op"}
+    # Check methods: critical_op was included and configured, regular_op was excluded.
+    # __init__ is included because constructable=True by default.
+    assert set(reg.methods.keys()) == {"critical_op", "__init__"}
     assert reg.methods["critical_op"].visibility == "high"
-    assert reg.methods["regular_op"].visibility == "medium"
     assert "_private_op" not in reg.methods
 
-    # Check attrs: name was selected, config_path was added by override
+    # Check attrs: name and config_path included, _internal_id excluded.
     assert set(reg.attrs.keys()) == {"config_path", "name"}
     assert reg.attrs["config_path"].visibility == "low"
     assert reg.attrs["name"].visibility == "medium"
-    assert "_internal_id" not in reg.attrs
 
 
 def test_agent_module_registration():
@@ -163,11 +172,11 @@ def test_agent_module_registration():
         test_module,
         name="sample",
         visibility="low",
-        fns=["public_fn"],
-        classes=["PublicClass"],
-        class_methods=["public_method"],
-        overrides={
+        include=["public_fn", "PI", "PublicClass", "PublicClass.*"],
+        exclude=["*.secret_*", "*._*"],
+        configure={
             "PI": MemberSpec(visibility="high"),
+            "PublicClass": MemberSpec(constructable=True),  # Ensure it's constructable
             "PublicClass.public_method": MemberSpec(visibility="high"),
         },
     )
@@ -183,17 +192,20 @@ def test_agent_module_registration():
     assert reg.fns["public_fn"].visibility == "low"
 
     # Check class and its nested method
-    assert reg.classes["PublicClass"].methods["public_method"].visibility == "high"
+    cls_reg = reg.classes["PublicClass"]
+    assert cls_reg.constructable is True
+    assert "__init__" in cls_reg.methods
+    assert cls_reg.methods["public_method"].visibility == "high"
 
 
 def test_agent_module_registration_defaults():
     agent = Agent()
-    agent.module(test_module)  # name should be inferred
+    agent.module(test_module, name="test_module")
 
-    assert "tests.tic.test_module" in agent.importable_modules
-    reg = agent.importable_modules["tests.tic.test_module"]
+    assert "test_module" in agent.importable_modules
+    reg = agent.importable_modules["test_module"]
 
-    assert reg.name == "tests.tic.test_module"
+    assert reg.name == "test_module"
     assert set(reg.fns.keys()) == {"public_fn"}
     assert set(reg.consts.keys()) == {"PI"}
     assert "PublicClass" in reg.classes
@@ -201,21 +213,23 @@ def test_agent_module_registration_defaults():
 
     public_class_reg = reg.classes["PublicClass"]
     assert isinstance(public_class_reg, RegisteredClass)
-    assert set(public_class_reg.methods.keys()) == {"public_method"}
+    assert public_class_reg.constructable is True
+    assert set(public_class_reg.methods.keys()) == {"public_method", "__init__"}
 
 
-def test_agent_module_with_overrides():
+def test_agent_module_with_configure():
     agent = Agent()
     agent.module(
         test_module,
         name="sample",
         visibility="low",  # default for selected items
-        fns=["public_fn"],
-        classes=["PublicClass"],
-        class_methods=["public_method"],
-        overrides={
+        include=["*"],
+        exclude=["_*"],
+        configure={
             "PI": MemberSpec(visibility="high"),
+            "PublicClass": MemberSpec(constructable=False),
             "PublicClass.public_method": MemberSpec(visibility="high"),
+            "public_fn": MemberSpec(visibility="medium"),
         },
     )
 
@@ -225,18 +239,19 @@ def test_agent_module_with_overrides():
     # Check that the module itself has the base visibility
     assert reg.visibility == "low"
 
-    # Check that a selected function has the module's visibility
+    # Check that a selected function has the configured visibility
     assert "public_fn" in reg.fns
-    assert reg.fns["public_fn"].visibility == "low"
+    assert reg.fns["public_fn"].visibility == "medium"
 
-    # Check that a constant's visibility can be overridden
+    # Check that a constant's visibility can be configured
     assert "PI" in reg.consts
     assert reg.consts["PI"].visibility == "high"
 
-    # Check that a class's method can be overridden
+    # Check that a class's method can be configured and it is not constructable
     assert "PublicClass" in reg.classes
     pub_cls = reg.classes["PublicClass"]
-    assert "public_method" in pub_cls.methods
+    assert pub_cls.constructable is False
+    assert set(pub_cls.methods.keys()) == {"public_method"}  # No __init__
     assert pub_cls.methods["public_method"].visibility == "high"
 
 
