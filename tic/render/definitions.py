@@ -10,17 +10,18 @@ from ..agent import (
 )
 
 
-def render_definitions(agent: Agent) -> str:
+def render_definitions(agent: Agent, full: bool = False) -> str:
     """
     Renders the registered functions, classes, and modules of an agent
     into a Python-like string of signatures and docstrings.
+    If `full` is True, all members are rendered regardless of visibility.
     """
     output = []
     # Render standalone functions
     for name, spec in agent.fn_registry.items():
-        if spec.visibility != "high":
+        if not full and spec.visibility != "high":
             continue
-        output.append(_render_function(name, spec))
+        output.append(_render_function(name, spec, full=full))
 
     # Render classes
     for name, spec in agent.cls_registry.items():
@@ -32,22 +33,26 @@ def render_definitions(agent: Agent) -> str:
         if spec.visibility == "low" and is_promoted:
             effective_visibility = "medium"
 
-        if effective_visibility != "low":
+        if full or effective_visibility != "low":
             # We create a new spec with the effective visibility to pass down.
             spec_to_render = dataclasses.replace(spec, visibility=effective_visibility)
-            output.append(_render_class(name, spec_to_render))
+            output.append(_render_class(name, spec_to_render, full=full))
 
     # Render modules
     for name, spec in agent.importable_modules.items():
-        rendered_module = _render_module(name, spec)
+        rendered_module = _render_module(name, spec, full=full)
         if rendered_module:
             output.append(rendered_module)
 
     return "\n\n".join(output)
 
 
-def _should_render_member(member_vis: Visibility, container_vis: Visibility) -> bool:
+def _should_render_member(
+    member_vis: Visibility, container_vis: Visibility, full: bool = False
+) -> bool:
     """Determines if a member should be rendered based on its and its container's visibility."""
+    if full:
+        return True
     if member_vis == "high":
         return True
     if member_vis == "medium" and container_vis == "high":
@@ -72,7 +77,7 @@ def _is_module_promoted(spec: RegisteredModule) -> bool:
     return False
 
 
-def _render_module(name: str, spec: RegisteredModule) -> str:
+def _render_module(name: str, spec: RegisteredModule, full: bool = False) -> str:
     """Renders a single module definition based on its visibility and its members' visibilities."""
     # Determine the module's effective visibility. A low-vis module can be
     # "promoted" to medium-vis if it contains a high-vis member.
@@ -81,8 +86,8 @@ def _render_module(name: str, spec: RegisteredModule) -> str:
     if spec.visibility == "low" and is_promoted:
         effective_visibility = "medium"
 
-    # Don't render low-visibility modules at all.
-    if effective_visibility == "low":
+    # Don't render low-visibility modules at all, unless in full mode.
+    if not full and effective_visibility == "low":
         return ""
 
     output = [f"module {name}:"]
@@ -92,7 +97,9 @@ def _render_module(name: str, spec: RegisteredModule) -> str:
 
     # Render functions
     for fn_name, fn_member_spec in spec.fns.items():
-        if _should_render_member(fn_member_spec.visibility, effective_visibility):
+        if _should_render_member(
+            fn_member_spec.visibility, effective_visibility, full=full
+        ):
             fn = getattr(spec.module, fn_name)
             doc = (
                 fn_member_spec.docstring
@@ -104,7 +111,9 @@ def _render_module(name: str, spec: RegisteredModule) -> str:
             fn_spec = RegisteredFn(
                 fn=fn, docstring=doc, visibility=fn_member_spec.visibility
             )
-            rendered_fns.append(_render_function(fn_name, fn_spec, indent=indent))
+            rendered_fns.append(
+                _render_function(fn_name, fn_spec, indent=indent, full=full)
+            )
 
     # Render classes
     for cls_name, cls_spec in spec.classes.items():
@@ -116,16 +125,19 @@ def _render_module(name: str, spec: RegisteredModule) -> str:
         # A class is rendered if it's high-vis, or if it's medium-vis in a
         # high-vis container. A promoted class inside a promoted module also
         # needs a special check.
-        if effective_cls_visibility != "low" and (
-            _should_render_member(effective_cls_visibility, effective_visibility)
-            or is_cls_promoted
+        if full or (
+            effective_cls_visibility != "low"
+            and (
+                _should_render_member(effective_cls_visibility, effective_visibility)
+                or is_cls_promoted
+            )
         ):
             # Create a new spec with the correct effective visibility to pass down
             spec_to_render = dataclasses.replace(
                 cls_spec, visibility=effective_cls_visibility
             )
             rendered_classes.append(
-                _render_class(cls_name, spec_to_render, indent=indent)
+                _render_class(cls_name, spec_to_render, indent=indent, full=full)
             )
 
     rendered_classes.sort()
@@ -141,7 +153,11 @@ def _render_module(name: str, spec: RegisteredModule) -> str:
 
 
 def _render_function(
-    name: str, spec: RegisteredFn, indent: str = "", is_method: bool = False
+    name: str,
+    spec: RegisteredFn,
+    indent: str = "",
+    is_method: bool = False,
+    full: bool = False,
 ) -> str:
     """Renders a single function or method signature."""
     signature = inspect.signature(spec.fn)
@@ -165,14 +181,16 @@ def _render_function(
     signature_line = f"{indent}def {name}({', '.join(params)}){return_str}:"
 
     # For medium visibility, just show that there's a body but no details.
-    if spec.visibility == "medium":
+    if not full and spec.visibility == "medium":
         return f"{signature_line}\n{indent}    ..."
 
-    docstring = _render_docstring(spec.docstring, indent=indent + "    ")
+    docstring = _render_docstring(spec.docstring, indent=indent + "    ", full=full)
     return f"{signature_line}\n{docstring}"
 
 
-def _render_class(name: str, spec: RegisteredClass, indent: str = "") -> str:
+def _render_class(
+    name: str, spec: RegisteredClass, indent: str = "", full: bool = False
+) -> str:
     """Renders a single class definition based on its visibility."""
     member_indent = indent + "    "
     output = [f"{indent}class {name}:"]
@@ -194,16 +212,20 @@ def _render_class(name: str, spec: RegisteredClass, indent: str = "") -> str:
         init_fn_spec = RegisteredFn(fn=init_fn, docstring=doc, visibility="high")
         init_str.append(
             _render_function(
-                "__init__", init_fn_spec, indent=member_indent, is_method=True
+                "__init__",
+                init_fn_spec,
+                indent=member_indent,
+                is_method=True,
+                full=full,
             )
         )
 
     # For high- or medium-visibility classes, render all high-visibility members.
     # A medium-visibility class still needs to show its high-visibility children.
-    if spec.visibility in ("high", "medium"):
+    if spec.visibility in ("high", "medium") or full:
         # Render attributes
         for attr_name, attr_spec in spec.attrs.items():
-            if attr_spec.visibility != "high":
+            if not full and attr_spec.visibility != "high":
                 continue
             type_hint = ""
             if attr_name in spec.cls.__annotations__:
@@ -214,7 +236,7 @@ def _render_class(name: str, spec: RegisteredClass, indent: str = "") -> str:
         for meth_name, meth_spec in spec.methods.items():
             if meth_name == "__init__":
                 continue  # Already handled
-            if not _should_render_member(meth_spec.visibility, spec.visibility):
+            if not _should_render_member(meth_spec.visibility, spec.visibility, full):
                 continue
             method = getattr(spec.cls, meth_name)
             doc = (
@@ -227,7 +249,11 @@ def _render_class(name: str, spec: RegisteredClass, indent: str = "") -> str:
             )
             meth_strs.append(
                 _render_function(
-                    meth_name, meth_fn_spec, indent=member_indent, is_method=True
+                    meth_name,
+                    meth_fn_spec,
+                    indent=member_indent,
+                    is_method=True,
+                    full=full,
                 )
             )
 
@@ -244,9 +270,11 @@ def _render_class(name: str, spec: RegisteredClass, indent: str = "") -> str:
     return "\n".join(output)
 
 
-def _render_docstring(doc: str | None, indent: str = "") -> str:
+def _render_docstring(doc: str | None, indent: str = "", full: bool = False) -> str:
     """Renders a formatted docstring."""
     if not doc:
+        if full:
+            return f'{indent}""""""'
         return f'{indent}"""..."""'
 
     clean_doc = inspect.cleandoc(doc)

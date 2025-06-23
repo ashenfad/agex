@@ -1,8 +1,78 @@
 import pytest
 
+from tic.agent import Agent, MemberSpec
 from tic.render.view import view
 from tic.state import kv
 from tic.state.versioned import Versioned
+
+
+def test_view_agent_default():
+    agent = Agent()
+
+    class MyClass:
+        def high_vis_method(self):
+            """High visibility"""
+            pass
+
+        def medium_vis_method(self):
+            pass
+
+        def low_vis_method(self):
+            pass
+
+    agent.cls(
+        MyClass,
+        include=["high_vis_method", "medium_vis_method", "low_vis_method"],
+        configure={
+            "high_vis_method": MemberSpec(visibility="high"),
+            "medium_vis_method": MemberSpec(visibility="medium"),
+            "low_vis_method": MemberSpec(visibility="low"),
+        },
+    )
+
+    output = view(agent)
+    assert "high_vis_method" in output
+    assert "medium_vis_method" in output
+    assert "low_vis_method" not in output
+    # Medium-vis methods should not show their docstrings
+    assert "High visibility" in output
+    assert "..." in output
+
+
+def test_view_agent_full():
+    agent = Agent()
+
+    class MyClass:
+        def high_vis_method(self):
+            """High visibility"""
+            pass
+
+        def medium_vis_method(self):
+            pass
+
+        def low_vis_method(self):
+            """Low visibility"""
+            pass
+
+    agent.cls(
+        MyClass,
+        visibility="low",  # Set class low to test promotion
+        include=["high_vis_method", "medium_vis_method", "low_vis_method"],
+        configure={
+            "high_vis_method": MemberSpec(visibility="high"),
+            "medium_vis_method": MemberSpec(visibility="medium"),
+            "low_vis_method": MemberSpec(visibility="low"),
+        },
+    )
+
+    output = view(agent, full=True)
+    # Full view should render everything, including docstrings
+    assert "high_vis_method" in output
+    assert "medium_vis_method" in output
+    assert "low_vis_method" in output
+    assert "High visibility" in output
+    assert "Low visibility" in output
+    assert "..." not in output
 
 
 def test_view_full():
