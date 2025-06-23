@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 import secrets
 from typing import Any, Iterator
@@ -85,9 +87,18 @@ class Versioned(State):
             current_hash = self.long_term.get(PARENT_COMMIT % current_hash)
 
     def snapshot(self) -> str:
+        if not self.ephemeral.keys():
+            # If nothing happened, don't create an empty commit.
+            # Just return the current commit hash.
+            return self.current_commit
+
         new_hash = _get_commit_hash()
         diffs = {}
         new_commit_keys = {}
+
+        # Store the order of changes for later diffing.
+        diff_keys = tuple(k for k in self.ephemeral.keys() if not k.startswith("__"))
+        self.ephemeral.set("__diff_keys__", diff_keys)
 
         # carry over existing keys that were not removed
         for key, value in self.commit_keys.items():
@@ -120,5 +131,37 @@ class Versioned(State):
         self.commit_keys = new_commit_keys
         self.current_commit = new_hash
         self.removed = set()
+        self.ephemeral = Ephemeral()
 
         return new_hash
+
+    def checkout(self, commit_hash: str) -> "Versioned" | None:
+        """
+        Return a new Versioned state object at a specific commit hash.
+        """
+        # First, validate that the commit is in our history.
+        if commit_hash not in list(self.history()):
+            return None
+        return Versioned(self.long_term, commit_hash=commit_hash)
+
+    def diffs(self, commit_hash: str | None = None) -> dict[str, Any]:
+        """
+        Returns the state changes for a given commit.
+
+        If commit_hash is None, the current commit will be used.
+
+        Returns:
+            An ordered dictionary of state changes.
+        """
+        target_hash = commit_hash or self.current_commit
+        if not target_hash:
+            return {}
+
+        commit_state = self.checkout(target_hash)
+        if not commit_state:
+            # This can happen if the hash is invalid.
+            return {}
+
+        # Get ordered state changes
+        diff_keys = commit_state.get("__diff_keys__", [])
+        return {key: commit_state.get(key) for key in diff_keys}
