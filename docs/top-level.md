@@ -110,34 +110,28 @@ agent.cls(UserProfile, attrs=Select.non_private, visibility="medium")
 
 ### Registering Modules (`.module`)
 
-For exposing entire libraries (like `math` or `json`), `agent.module()` is the preferred method. It's a "power tool" designed for the convenient, bulk registration of functions, constants, and classes under a single namespace. This implies that the agent's language should support standard `import` statements.
+For exposing entire libraries, `agent.module()` is the preferred "power tool." It offers three modes for namespacing, controlled by the `as_name` parameter:
 
-The `.module()` method takes selectors for `fns`, `consts`, and `classes`. By default, all selectors are set to `Select.non_private`, making it safe and easy to expose the public API of a trusted library.
+1.  **Default Namespace (Recommended):** If `as_name` is omitted, the module's canonical `__name__` is used.
+    `agent.module(math)` -> Agent sees `math`.
+2.  **Aliased Namespace:** If `as_name` is a string, the agent will use that string as an alias.
+    `agent.module(pandas, as_name="pd")` -> Agent sees `pd`.
+3.  **Flattened Namespace:** If `as_name=None` is passed explicitly, the module's members are registered in the agent's global scope, without any namespace. This is useful for utility libraries but should be used with caution to avoid name collisions.
+
+By default, all selectors (`fns`, `consts`, `classes`, etc.) are set to `Select.non_private`, making it safe and easy to expose the public API of a trusted library.
 
 ```python
-import pandas
-from tic.agent import Agent, Select
+# Default: Agent sees `math.sqrt`, `math.pi`, etc.
+agent.module(math)
 
-agent = Agent()
+# Aliased: Agent sees `pd.DataFrame`, etc.
+agent.module(pandas, as_name="pd")
 
-# The simple, powerful way to unlock a trusted library.
-# This registers all non-private fns, consts, and classes from pandas
-# under the "pandas" namespace with low visibility.
-agent.module(pandas, as_name="pandas", visibility="low")
-
-# A more customized example.
-agent.module(
-    math,
-    as_name="math",
-    fns="is*",          # Only expose functions starting with "is"
-    consts=["pi", "e"],   # Expose pi and e
-    classes=None,       # Expose NO classes from the math module
-    class_attrs=None,   # This will be ignored since no classes are selected
-    visibility="medium"
-)
+# Flattened: Agent sees `my_util_func()` directly.
+agent.module(my_utils, as_name=None)
 ```
 
-The `as` parameter is mandatory and defines the namespace the agent will use. This avoids polluting the global namespace and prevents name collisions between different libraries. If you need more fine-grained control over individual members (e.g., making one class non-constructable), you should use the more specific "scalpel" methods like `.cls()` and `.fn()` after the initial bulk registration.
+If you need more fine-grained control over individual members (e.g., making one class non-constructable), you should use the more specific "scalpel" methods like `.cls()` and `.fn()` after the initial bulk registration.
 
 ### Overriding
 

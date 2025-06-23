@@ -2,6 +2,8 @@ import ast
 from dataclasses import dataclass
 from typing import Any
 
+from tic.agent import Agent
+
 from ..state import State
 from ..state.closure import LiveClosureState
 from ..state.scoped import Scoped
@@ -25,38 +27,37 @@ class UserFunction:
     body: list[ast.stmt]
     closure_state: State  # A *reference* to the state where the function was defined.
     source_text: str | None = None
+    agent: Agent | None = None  # The agent context this function was defined in.
 
-    def __call__(self, *args, **kwargs) -> Any:
-        # Defer to the new execute method, providing a way for Python code
-        # to call this function.
-        return self.execute(list(args), kwargs, self.source_text)
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if not self.agent:
+            raise RuntimeError(
+                "UserFunction cannot be called directly without an Agent context."
+            )
+        # The agent provides the top-level source code for consistent errors.
+        source_code = getattr(self.agent, "_source_code_for_eval", None)
+        return self.execute(list(args), kwargs, source_code)
 
-    def execute(self, args: list, kwargs: dict, full_source_code: str | None) -> Any:
+    def execute(self, args: list, kwargs: dict, source_code: str | None):
         """Execute the function with a new evaluator."""
-        # This needs to be imported here to avoid a circular dependency
         from tic.eval.arguments import bind_arguments
         from tic.eval.core import Evaluator
 
-        # The evaluator needs the source to provide good error messages
-        evaluator = Evaluator(source_code=full_source_code)
-
-        # Step 1: Create the execution scope. The Scoped state will create its
-        # own Ephemeral local store for arguments.
         exec_state = Scoped(self.closure_state)
 
-        # Step 2: Bind arguments to the new local scope. Note that we are just
-        # passing the raw Python values, not visiting them. This is because
-        # we are at the boundary between Python and the tic interpreter.
         bound_args = bind_arguments(self.name, self.args, args, kwargs)
         for name, value in bound_args.items():
             exec_state.set(name, value)
 
-        # Step 3: Execute the function's body within the new scope.
-        evaluator.state = exec_state
+        evaluator = Evaluator(
+            agent=self.agent,
+            state=exec_state,
+            source_code=source_code,
+        )
         try:
             for node in self.body:
                 evaluator.visit(node)
-            return None  # No explicit return means the function returns None
+            return None
         except _ReturnException as e:
             return e.value
 
@@ -75,6 +76,7 @@ class FunctionEvaluator(BaseEvaluator):
             body=node.body,
             closure_state=closure,
             source_text=ast.get_source_segment(self.source_code, node),
+            agent=self.agent,
         )
         self.state.set(node.name, func)
 
@@ -89,6 +91,7 @@ class FunctionEvaluator(BaseEvaluator):
             body=[ast.Return(value=node.body)],  # Lambdas are a single expression
             closure_state=closure,
             source_text=ast.get_source_segment(self.source_code, node),
+            agent=self.agent,
         )
 
     def visit_Return(self, node: ast.Return) -> None:

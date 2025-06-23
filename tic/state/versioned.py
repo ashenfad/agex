@@ -1,7 +1,7 @@
+import copy
 import secrets
 from typing import Any, Iterator
 
-from ..eval.functions import UserFunction
 from . import kv
 from .closure import LiveClosureState
 from .core import State
@@ -98,20 +98,16 @@ class Versioned(State):
         # layer recent writes on top of existing keys
         for key, value in self.ephemeral.items():
             # This is the "freeze" logic for closures.
-            if isinstance(value, UserFunction):
-                if isinstance(value.closure_state, LiveClosureState):
-                    # Resolve the live closure into a static, ephemeral one.
-                    frozen_closure = Ephemeral()
-                    for k, v in value.closure_state.items():
-                        frozen_closure.set(k, v)
-                    # Replace the closure on a copy of the function object
-                    value = UserFunction(
-                        name=value.name,
-                        args=value.args,
-                        body=value.body,
-                        closure_state=frozen_closure,
-                        source_text=value.source_text,
-                    )
+            if hasattr(value, "closure_state") and isinstance(
+                value.closure_state, LiveClosureState
+            ):
+                # Resolve the live closure into a static, ephemeral one.
+                frozen_closure = Ephemeral()
+                for k, v in value.closure_state.items():
+                    frozen_closure.set(k, v)
+                # Replace the closure on a shallow copy of the function object
+                value = copy.copy(value)
+                value.closure_state = frozen_closure
 
             versioned_key = self._versioned_key(key, new_hash)
             diffs[versioned_key] = value

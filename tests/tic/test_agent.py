@@ -114,16 +114,16 @@ def test_agent_module_registration():
 
     agent.module(
         math,
-        as_name="math",
+        name="math",
         visibility="low",
         fns=["sqrt", "is*"],
         consts=["pi", "e"],
     )
 
-    assert "math" in agent.module_registry
-    reg = agent.module_registry["math"]
+    assert "math" in agent.importable_modules
+    reg = agent.importable_modules["math"]
     assert reg.module == math
-    assert reg.as_name == "math"
+    assert reg.name == "math"
     assert reg.visibility == "low"
     assert reg.fns == {"sqrt", "isclose", "isfinite", "isinf", "isnan", "isqrt"}
     assert reg.consts == {"pi", "e"}
@@ -131,12 +131,12 @@ def test_agent_module_registration():
 
 def test_agent_module_registration_defaults():
     agent = Agent()
-    agent.module(test_module, as_name="sample")
+    agent.module(test_module)  # name should be inferred
 
-    assert "sample" in agent.module_registry
-    reg = agent.module_registry["sample"]
+    assert "tests.tic.test_module" in agent.importable_modules
+    reg = agent.importable_modules["tests.tic.test_module"]
 
-    assert reg.as_name == "sample"
+    assert reg.name == "tests.tic.test_module"
     assert reg.fns == {"public_fn"}
     assert reg.consts == {"PI"}
     assert "PublicClass" in reg.classes
@@ -151,7 +151,7 @@ def test_agent_module_registration_custom():
     agent = Agent()
     agent.module(
         test_module,
-        as_name="sample",
+        name="sample",
         visibility="low",
         fns="*",  # select all fns
         consts=None,  # select no consts
@@ -159,8 +159,8 @@ def test_agent_module_registration_custom():
         class_methods=None,  # select no methods for found classes
     )
 
-    assert "sample" in agent.module_registry
-    reg = agent.module_registry["sample"]
+    assert "sample" in agent.importable_modules
+    reg = agent.importable_modules["sample"]
 
     assert reg.visibility == "low"
     assert reg.fns == {"public_fn", "_private_fn"}

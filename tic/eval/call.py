@@ -5,7 +5,7 @@ from ..agent import ExitClarify, ExitFail, ExitSuccess, _AgentExit
 from .base import BaseEvaluator
 from .error import EvalError
 from .functions import UserFunction
-from .objects import TicDataClass, TicObject
+from .objects import TicDataClass, TicModule, TicObject
 from .user_errors import (
     TicError,
     TicIndexError,
@@ -174,6 +174,24 @@ class CallEvaluator(BaseEvaluator):
         elif isinstance(node.func, ast.Attribute):
             obj = self.visit(node.func.value)
             method_name = node.func.attr
+
+            # Special case for our sandboxed modules
+            if isinstance(obj, TicModule):
+                method = getattr(obj, method_name, None)
+                if not callable(method):
+                    raise EvalError(
+                        f"Attribute '{method_name}' on module '{obj.name}' is not callable.",
+                        node,
+                    )
+                try:
+                    return method(*args, **kwargs)
+                except Exception as e:
+                    raise EvalError(
+                        f"Error calling '{method_name}' on module '{obj.name}': {e}",
+                        node,
+                        cause=e,
+                    )
+
             obj_type = type(obj)
 
             allowed_methods = WHITELISTED_METHODS.get(obj_type)

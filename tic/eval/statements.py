@@ -8,7 +8,7 @@ from .base import BaseEvaluator
 from .binop import OPERATOR_MAP
 from .call import dataclass
 from .error import EvalError
-from .objects import TicDataClass, TicObject
+from .objects import TicDataClass, TicModule, TicObject
 
 
 class StatementEvaluator(BaseEvaluator):
@@ -228,6 +228,64 @@ class StatementEvaluator(BaseEvaluator):
                 node,
             )
         raise
+
+    def visit_Import(self, node: ast.Import) -> None:
+        """Handles `import <module>` and `import <module> as <alias>`."""
+        for alias in node.names:
+            module_name_to_find = alias.name
+            reg_module = self.agent.importable_modules.get(module_name_to_find)
+
+            if not reg_module:
+                raise EvalError(
+                    f"Module '{module_name_to_find}' is not registered or whitelisted.",
+                    node,
+                )
+
+            # Create a sandboxed module object
+            tic_module = TicModule(name=module_name_to_find)
+            for fn_name in reg_module.fns:
+                setattr(tic_module, fn_name, getattr(reg_module.module, fn_name))
+            for const_name in reg_module.consts:
+                setattr(tic_module, const_name, getattr(reg_module.module, const_name))
+            for cls_name, reg_class in reg_module.classes.items():
+                setattr(tic_module, cls_name, reg_class.cls)
+
+            # The name used in the agent's code, e.g., `m` in `import math as m`
+            import_name = alias.asname or module_name_to_find
+            self.state.set(import_name, tic_module)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        """Handles `from <module> import <name>`."""
+        module_name_to_find = node.module
+        if not module_name_to_find:
+            raise EvalError("Relative imports are not supported.", node)
+
+        reg_module = self.agent.importable_modules.get(module_name_to_find)
+        if not reg_module:
+            raise EvalError(
+                f"Module '{module_name_to_find}' is not registered or whitelisted.",
+                node,
+            )
+
+        for alias in node.names:
+            name_to_import = alias.name
+            import_as = alias.asname or name_to_import
+
+            # Check fns, consts, and classes
+            if name_to_import in reg_module.fns:
+                obj = getattr(reg_module.module, name_to_import)
+            elif name_to_import in reg_module.consts:
+                obj = getattr(reg_module.module, name_to_import)
+            elif name_to_import in reg_module.classes:
+                obj = reg_module.classes[name_to_import].cls
+            elif name_to_import == "*":
+                raise EvalError("Wildcard imports are not supported.", node)
+            else:
+                raise EvalError(
+                    f"Cannot import name '{name_to_import}' from module '{module_name_to_find}'.",
+                    node,
+                )
+            self.state.set(import_as, obj)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         """Handles class definitions (only dataclasses are supported)."""

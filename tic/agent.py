@@ -6,6 +6,7 @@ from typing import Any, Callable, Iterable, Literal, Set, Union
 
 Selector = Union[str, Iterable[str], Callable[[str], bool]]
 Visibility = Literal["high", "medium", "low"]
+_sentinel = object()
 
 
 class _AgentExit(Exception):
@@ -72,8 +73,8 @@ class RegisteredClass(RegisteredItem):
 class RegisteredModule(RegisteredItem):
     """Represents a registered module with its selected members."""
 
+    name: str  # The name the agent will use to import it
     module: ModuleType
-    as_name: str
     fns: Set[str] = field(default_factory=set)
     consts: Set[str] = field(default_factory=set)
     classes: dict[str, RegisteredClass] = field(default_factory=dict)
@@ -111,7 +112,7 @@ class Agent:
         self.primer = primer
         self.fn_registry: dict[str, RegisteredFn] = {}
         self.cls_registry: dict[str, RegisteredClass] = {}
-        self.module_registry: dict[str, RegisteredModule] = {}
+        self.importable_modules: dict[str, RegisteredModule] = {}
 
     def fn(
         self,
@@ -187,7 +188,7 @@ class Agent:
         self,
         mod: ModuleType,
         *,
-        as_name: str,
+        name: str | None = None,
         visibility: Visibility = "high",
         fns: Selector | None = Select.non_private,
         consts: Selector | None = Select.non_private,
@@ -196,8 +197,16 @@ class Agent:
         class_methods: Selector | None = Select.non_private,
     ):
         """
-        Registers a module's members under a namespace.
+        Registers a module, making it available for the agent to import.
         """
+        module_name = name
+        if module_name is None:
+            module_name = mod.__name__
+            if module_name == "__main__":
+                raise ValueError(
+                    "Cannot infer module name for '__main__'. Please provide 'name'."
+                )
+
         fn_pred = _create_predicate(fns)
         const_pred = _create_predicate(consts)
         class_pred = _create_predicate(classes)
@@ -239,9 +248,9 @@ class Agent:
             ):
                 selected_consts.add(name)
 
-        self.module_registry[as_name] = RegisteredModule(
+        self.importable_modules[module_name] = RegisteredModule(
+            name=module_name,
             module=mod,
-            as_name=as_name,
             visibility=visibility,
             fns=selected_fns,
             consts=selected_consts,

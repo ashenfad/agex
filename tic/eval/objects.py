@@ -13,7 +13,7 @@ class TicDataClass:
     """Represents a dataclass definition. It's a callable factory for TicObjects."""
 
     name: str
-    fields: list[str]
+    fields: dict[str, Any]
 
     def __call__(self, *args: Any, **kwargs: Any) -> "TicObject":
         """Creates an instance of this dataclass."""
@@ -76,3 +76,13 @@ class TicObject:
                 node=None,
             )
         self.attributes[name] = value
+
+
+class TicModule:
+    """A sandboxed module object for use within the Tic evaluator."""
+
+    def __init__(self, name: str):
+        self.__name__ = name
+
+    def __repr__(self):
+        return f"<ticmodule '{self.__name__}'>"
