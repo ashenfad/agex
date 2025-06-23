@@ -7,9 +7,10 @@ from ..eval.objects import TicObject
 class ValueRenderer:
     """Renders any Python value into a string suitable for an LLM prompt."""
 
-    def __init__(self, max_len: int = 128, max_depth: int = 2):
+    def __init__(self, max_len: int = 128, max_depth: int = 2, max_items: int = 50):
         self.max_len = max_len
         self.max_depth = max_depth
+        self.max_items = max_items
 
     def render(self, value: Any, current_depth: int = 0) -> str:
         """
@@ -58,6 +59,8 @@ class ValueRenderer:
         return repr(value)
 
     def _render_list(self, value: list, depth: int) -> str:
+        if len(value) > self.max_items:
+            return f"[... ({len(value)} items)]"
         items = []
         for item in value:
             rendered_item = self.render(item, depth + 1)
@@ -69,6 +72,8 @@ class ValueRenderer:
         return f"[{', '.join(items)}]"
 
     def _render_dict(self, value: dict, depth: int) -> str:
+        if len(value) > self.max_items:
+            return f"{{... ({len(value)} items)}}"
         items = []
         for k, v in value.items():
             rendered_key = self.render(k, depth + 1)
@@ -81,6 +86,8 @@ class ValueRenderer:
         return f"{{{', '.join(items)}}}"
 
     def _render_set(self, value: set, depth: int) -> str:
+        if len(value) > self.max_items:
+            return f"{{... ({len(value)} items)}}"
         # Very similar to list rendering
         items = []
         for item in value:
