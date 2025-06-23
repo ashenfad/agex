@@ -20,6 +20,131 @@ The primary goal is to make defining an agent task feel as natural as defining a
     *   If a `State` object is provided, the agent will use it for long-term memory across multiple calls.
     *   If no `State` object is provided (the default), the agent will operate in a single-shot, ephemeral mode for that call.
 
+## API Design Philosophy: Definable vs. Configurable
+
+The agent registration API is built on a core principle that makes its syntax consistent and predictable:
+
+*   **Definable** methods are for registering new functions (`def`) and classes (`class`) as they are being defined. These methods (`.fn`, `.cls`) support the decorator pattern (`@agent.fn`) and therefore use a "decorator factory" syntax: `agent.fn(...)(my_func)`. This separates configuration from application.
+
+*   **Configurable** methods are for exposing parts of *already existing* objects, like imported modules. These methods (`.module`, and in the future, `.method` and `.attr`) are direct function calls: `agent.module(math, ...)`.
+
+This distinction means the syntax itself tells you what kind of operation you are performing.
+
+## Registering Capabilities (`.fn`, `.cls`, `.module`)
+
+Before an agent can execute a task, it needs capabilities: functions it can call and data structures it can understand. We register these using methods on the `Agent` instance. This design allows for multiple, independent agents with different skill sets.
+
+### Visibility Control
+
+A core challenge is managing the LLM's context window. We don't want to overwhelm the agent's prompt with docs for every single available function. To solve this, all registration methods have a `visibility` parameter. The meaning of each level depends on the type of object being registered:
+
+| Visibility | For a Function (`my_func`)                                 | For a Constant (`pi`)                              |
+| :--- | :--- | :--- |
+| **`high`**   | Shows signature + docstring                                | Shows name + value                                 |
+| **`medium`** | Shows signature only                                       | Shows name + type                                  |
+| **`low`**    | Available, but not shown                                   | Available, but not shown                           |
+
+### Registering Functions (`.fn`)
+
+The `.fn()` method registers a function as a tool the agent can use. It can be used as a decorator or a direct function call. It also allows for overriding the function's docstring, which is useful when a function needs a different prompt for an agent than its standard documentation.
+
+```python
+agent = Agent()
+
+# As a decorator, overriding the docstring
+@agent.fn(docstring="A simple tool that returns a boolean.")
+def my_tool(arg: str) -> bool:
+    """This is the original, detailed docstring for human developers."""
+    return True
+
+# As a direct call with low visibility
+import math
+# Note the double parentheses: the first call configures, the second applies.
+agent.fn(visibility="low")(math.sqrt)
+```
+
+### Registering Classes (`.cls`)
+
+The `.cls()` method registers a class, giving the agent access to its attributes and methods. This is where fine-grained control becomes essential.
+
+#### Selector Logic
+
+The `attrs` and `methods` parameters accept a flexible selector to specify what members to expose:
+
+1.  **String (Glob Pattern):** A single string is treated as a glob pattern (e.g., `"get_*"`). `"*"` selects all members.
+2.  **List/Set of Strings:** A collection of glob patterns. A member is included if it matches any pattern in the list.
+3.  **Callable Predicate:** A function that takes the member name and returns `True` or `False`. This allows for arbitrary custom logic.
+
+#### Helper Predicates
+
+To make common patterns easy, the library can provide helper predicates.
+
+```python
+class Select:
+    @staticmethod
+    def non_private(name: str) -> bool:
+        return not name.startswith('_')
+```
+
+#### Example Usage
+
+```python
+from tic.agent import Agent, Select
+
+agent = Agent()
+
+@dataclass
+class UserProfile:
+    user_id: str
+    _internal_key: str
+    name: str
+
+# Register the class, exposing all non-private attributes
+# with medium visibility to save context.
+agent.cls(UserProfile, attrs=Select.non_private, visibility="medium")
+
+# This is equivalent to:
+# agent.cls(UserProfile, attrs=lambda n: not n.startswith('_'), ...)
+# agent.cls(UserProfile, attrs=["user_id", "name"], ...)
+```
+
+### Registering Modules (`.module`)
+
+For exposing entire libraries (like `math` or `json`), `agent.module()` is the preferred method. It's a "power tool" designed for the convenient, bulk registration of functions, constants, and classes under a single namespace. This implies that the agent's language should support standard `import` statements.
+
+The `.module()` method takes selectors for `fns`, `consts`, and `classes`. By default, all selectors are set to `Select.non_private`, making it safe and easy to expose the public API of a trusted library.
+
+```python
+import pandas
+from tic.agent import Agent, Select
+
+agent = Agent()
+
+# The simple, powerful way to unlock a trusted library.
+# This registers all non-private fns, consts, and classes from pandas
+# under the "pandas" namespace with low visibility.
+agent.module(pandas, as_name="pandas", visibility="low")
+
+# A more customized example.
+agent.module(
+    math,
+    as_name="math",
+    fns="is*",          # Only expose functions starting with "is"
+    consts=["pi", "e"],   # Expose pi and e
+    classes=None,       # Expose NO classes from the math module
+    class_attrs=None,   # This will be ignored since no classes are selected
+    visibility="medium"
+)
+```
+
+The `as` parameter is mandatory and defines the namespace the agent will use. This avoids polluting the global namespace and prevents name collisions between different libraries. If you need more fine-grained control over individual members (e.g., making one class non-constructable), you should use the more specific "scalpel" methods like `.cls()` and `.fn()` after the initial bulk registration.
+
+### Overriding
+
+A key principle is that **more specific registrations override more general ones**. This allows for powerful workflows where you can bulk-register a class or module with low visibility, and then "promote" specific, important members to high visibility using a more specific registration method.
+
+For example, `agent.module(..., visibility="low")` can be partially overridden by a future direct call like `agent.method(module.some_func, visibility="high")`.
+
 ## Developer Experience Example
 
 From the developer's perspective, defining and using an agent task should be as simple as:
