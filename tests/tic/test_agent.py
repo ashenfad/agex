@@ -75,8 +75,9 @@ def test_agent_cls_registration_dataclass_defaults():
     assert reg.cls == MyData
     assert reg.visibility == "high"
     assert reg.constructable is True
-    assert reg.allowed_attrs == {"x", "y"}
-    assert reg.allowed_methods == set()  # Methods are not selected by default
+    assert set(reg.attrs.keys()) == {"x", "y"}
+    assert reg.attrs["x"].visibility == "high"
+    assert not reg.methods  # Methods are not selected by default
 
 
 def test_agent_cls_registration_selectors():
@@ -105,8 +106,55 @@ def test_agent_cls_registration_selectors():
     assert reg.cls == MyClass
     assert reg.visibility == "medium"
     assert reg.constructable is False
-    assert reg.allowed_attrs == {"x"}
-    assert reg.allowed_methods == {"do_stuff"}
+    assert reg.attrs["x"].visibility == "medium"
+    assert set(reg.attrs.keys()) == {"x"}
+    assert reg.methods["do_stuff"].visibility == "medium"
+    assert set(reg.methods.keys()) == {"do_stuff"}
+
+
+def test_agent_cls_with_overrides():
+    agent = Agent()
+
+    class MyService:
+        config_path = "/etc/service.conf"
+        name: str = "default_name"
+        _internal_id = "xyz-123"
+
+        def critical_op(self):
+            pass
+
+        def regular_op(self):
+            pass
+
+        def _private_op(self):
+            pass
+
+    agent.cls(
+        MyService,
+        methods=["regular_op"],
+        attrs=["name"],
+        visibility="medium",  # Default for selected
+        overrides={
+            "critical_op": {"visibility": "high"},  # Override and include
+            "config_path": {"visibility": "low"},  # Override and include
+            "_private_op": {"visibility": "low"},  # Should not be included
+        },
+    )
+
+    assert "MyService" in agent.cls_registry
+    reg = agent.cls_registry["MyService"]
+
+    # Check methods: regular_op was selected, critical_op was added by override
+    assert set(reg.methods.keys()) == {"critical_op", "regular_op"}
+    assert reg.methods["critical_op"].visibility == "high"
+    assert reg.methods["regular_op"].visibility == "medium"
+    assert "_private_op" not in reg.methods
+
+    # Check attrs: name was selected, config_path was added by override
+    assert set(reg.attrs.keys()) == {"config_path", "name"}
+    assert reg.attrs["config_path"].visibility == "low"
+    assert reg.attrs["name"].visibility == "medium"
+    assert "_internal_id" not in reg.attrs
 
 
 def test_agent_module_registration():
@@ -144,7 +192,7 @@ def test_agent_module_registration_defaults():
 
     public_class_reg = reg.classes["PublicClass"]
     assert isinstance(public_class_reg, RegisteredClass)
-    assert public_class_reg.allowed_methods == {"public_method"}
+    assert set(public_class_reg.methods.keys()) == {"public_method"}
 
 
 def test_agent_module_registration_custom():
@@ -166,4 +214,20 @@ def test_agent_module_registration_custom():
     assert reg.fns == {"public_fn", "_private_fn"}
     assert reg.consts == set()
     assert "PublicClass" in reg.classes
-    assert reg.classes["PublicClass"].allowed_methods == set()
+    assert not reg.classes["PublicClass"].methods
+
+
+def test_agent_cls_no_parens():
+    """Tests that the @agent.cls decorator works without parentheses."""
+    agent = Agent()
+
+    @agent.cls
+    @dataclass
+    class SimpleData:
+        value: str
+
+    assert "SimpleData" in agent.cls_registry
+    reg = agent.cls_registry["SimpleData"]
+    assert reg.cls == SimpleData
+    assert reg.visibility == "high"  # Check default visibility
+    assert set(reg.attrs.keys()) == {"value"}  # Check default attr selection

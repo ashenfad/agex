@@ -51,6 +51,18 @@ def task(func):
 
 
 @dataclass
+class MemberInfo:
+    visibility: Visibility
+
+
+@dataclass
+class AttrDescriptor:
+    # A descriptor to hold metadata until the class is processed.
+    default: Any
+    visibility: Visibility
+
+
+@dataclass
 class RegisteredItem:
     visibility: Visibility
 
@@ -63,10 +75,13 @@ class RegisteredFn(RegisteredItem):
 
 @dataclass
 class RegisteredClass(RegisteredItem):
+    """Represents a registered class and its members."""
+
     cls: type
     constructable: bool
-    allowed_methods: Set[str] = field(default_factory=set)
-    allowed_attrs: Set[str] = field(default_factory=set)
+    # 'visibility' on RegisteredItem is the default.
+    attrs: dict[str, MemberInfo] = field(default_factory=dict)
+    methods: dict[str, MemberInfo] = field(default_factory=dict)
 
 
 @dataclass
@@ -143,42 +158,68 @@ class Agent:
         constructable: bool = True,
         attrs: Selector | None = None,
         methods: Selector | None = None,
+        overrides: dict[str, dict[str, Any]] | None = None,
     ):
         """
         Registers a class with the agent.
         Can be used as a decorator (`@agent.cls`) or a direct call (`agent.cls(MyClass)`).
         """
+        final_overrides = overrides or {}
 
         def decorator(c: type) -> type:
-            final_attrs: set[str]
-            # Special case: if attrs isn't specified, default to dataclass fields.
+            final_attrs: dict[str, MemberInfo] = {}
+            final_methods: dict[str, MemberInfo] = {}
+            default_visibility = visibility
+
+            # 1. Populate with defaults based on broad selectors
+            # Special case for dataclasses where attrs is not specified
             if attrs is None and is_dataclass(c):
-                final_attrs = {f.name for f in fields(c)}
-            else:
+                for f in fields(c):
+                    final_attrs[f.name] = MemberInfo(visibility=default_visibility)
+            else:  # General attribute selector
                 attr_pred = _create_predicate(attrs)
-                # Combine attributes from __annotations__ and class members
-                annotated_attrs = {name for name in getattr(c, "__annotations__", {})}
-                member_attrs = {
+                all_possible_attrs = {
                     name
                     for name, member in inspect.getmembers(c)
-                    if not callable(member)
-                }
-                all_possible_attrs = annotated_attrs.union(member_attrs)
-                final_attrs = {name for name in all_possible_attrs if attr_pred(name)}
+                    if not inspect.isroutine(member)
+                }.union(getattr(c, "__annotations__", {}))
+                for name in all_possible_attrs:
+                    if attr_pred(name):
+                        final_attrs[name] = MemberInfo(visibility=default_visibility)
 
             meth_pred = _create_predicate(methods)
-            final_methods = {
-                name
-                for name, member in inspect.getmembers(c)
-                if callable(member) and meth_pred(name)
-            }
+            for name, member in inspect.getmembers(c):
+                if inspect.isroutine(member) and meth_pred(name):
+                    final_methods[name] = MemberInfo(visibility=default_visibility)
+
+            # 2. Apply overrides
+            for name, override_settings in final_overrides.items():
+                # Don't allow overrides to implicitly expose private members,
+                # unless they were already explicitly selected by the main selectors.
+                if (
+                    name.startswith("_")
+                    and name not in final_methods
+                    and name not in final_attrs
+                ):
+                    continue
+
+                member = getattr(c, name, None)
+                if not member:
+                    continue  # Skip if the attribute doesn't exist on the class
+
+                vis = override_settings.get("visibility", default_visibility)
+
+                if inspect.isroutine(member):
+                    final_methods[name] = MemberInfo(visibility=vis)
+                else:
+                    final_attrs[name] = MemberInfo(visibility=vis)
 
             self.cls_registry[c.__name__] = RegisteredClass(
                 cls=c,
                 visibility=visibility,
                 constructable=constructable,
-                allowed_attrs=final_attrs,
-                allowed_methods=final_methods,
+                attrs=final_attrs,
+                methods=final_methods,
             )
             return c
 
@@ -225,21 +266,21 @@ class Agent:
                 if class_pred(name):
                     # For each selected class, determine its own attrs and methods
                     attrs = {
-                        m_name
+                        m_name: MemberInfo(visibility=visibility)
                         for m_name, _ in inspect.getmembers(member)
-                        if not callable(_) and class_attr_pred(m_name)
+                        if not inspect.isroutine(_) and class_attr_pred(m_name)
                     }
                     methods = {
-                        m_name
+                        m_name: MemberInfo(visibility=visibility)
                         for m_name, _ in inspect.getmembers(member)
-                        if callable(_) and class_meth_pred(m_name)
+                        if inspect.isroutine(_) and class_meth_pred(m_name)
                     }
                     selected_classes[name] = RegisteredClass(
                         cls=member,
                         visibility=visibility,
                         constructable=True,  # Default for module-registered classes
-                        allowed_attrs=attrs,
-                        allowed_methods=methods,
+                        attrs=attrs,
+                        methods=methods,
                     )
             elif (
                 not callable(member)
