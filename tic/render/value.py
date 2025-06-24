@@ -1,8 +1,7 @@
 from typing import Any
 
-from ..eval.call import PrintTuple
 from ..eval.functions import UserFunction
-from ..eval.objects import TicObject
+from ..eval.objects import PrintTuple, TicObject
 
 
 class ValueRenderer:

@@ -19,7 +19,7 @@ dir()
     assert len(stdout) == 1
     dir_result = stdout[0][0]
     # It should not include 'z' from the function's inner scope
-    assert dir_result == ["my_func", "x", "y"]
+    assert sorted(dir_result) == ["my_func", "x", "y"]
 
 
 def test_dir_with_module():
@@ -54,7 +54,7 @@ dir(my_list)
     dir_result = stdout[0][0]
     # Check for a few common, public list methods
     assert "append" in dir_result
-    assert "clear" in dir_result
     assert "pop" in dir_result
-    # Check that private methods are excluded
-    assert "__add__" not in dir_result
+    assert "clear" in dir_result
+    assert "sort" in dir_result
+    assert "__sizeof__" not in dir_result

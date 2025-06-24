@@ -29,6 +29,10 @@ class NativeFunction:
         # Directly call the wrapped native function.
         return self.fn(*args, **kwargs)
 
+    @property
+    def __doc__(self):
+        return self.fn.__doc__
+
 
 @dataclass
 class UserFunction:

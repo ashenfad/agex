@@ -114,6 +114,7 @@ class Agent:
         self.primer = primer
         self.fn_registry: dict[str, RegisteredFn] = {}
         self.cls_registry: dict[str, RegisteredClass] = {}
+        self.cls_registry_by_type: dict[type, RegisteredClass] = {}
         self.importable_modules: dict[str, RegisteredModule] = {}
 
     def fn(
@@ -164,6 +165,11 @@ class Agent:
                 if not name.startswith("__") or name == "__init__"
             }.union(getattr(c, "__annotations__", {}))
 
+            if isinstance(include, (list, set)):
+                # Explicitly add the included names, as they might be instance attributes
+                # not found by inspect.getmembers on the class.
+                all_members.update(include)
+
             # 2. Filter members based on include/exclude patterns
             include_pred = _create_predicate(include)
             exclude_pred = _create_predicate(exclude)
@@ -185,26 +191,41 @@ class Agent:
 
             for member_name in selected_names:
                 config = final_configure.get(member_name, MemberSpec())
-                # If visibility is not specified in config, use class default
                 vis = config.visibility or visibility
                 doc = config.docstring
 
-                member = getattr(c, member_name, None)
-                if inspect.isroutine(member):
+                # Check if the member is a method/routine on the class
+                if hasattr(c, member_name) and inspect.isroutine(
+                    getattr(c, member_name)
+                ):
                     final_methods[member_name] = MemberSpec(
                         visibility=vis, docstring=doc
                     )
+                # If it's not a method, and it was in the include list, treat it as a data attribute
                 else:
                     final_attrs[member_name] = MemberSpec(visibility=vis, docstring=doc)
 
             final_name = name or c.__name__
-            self.cls_registry[final_name] = RegisteredClass(
+
+            # Create the spec for the current class
+            spec = RegisteredClass(
                 cls=c,
                 visibility=visibility,
                 constructable=constructable,
                 attrs=final_attrs,
                 methods=final_methods,
             )
+
+            # Inherit from parent specs if they exist
+            for parent in c.__bases__:
+                # We can only inherit from registered classes
+                parent_spec = self.cls_registry_by_type.get(parent)
+                if parent_spec:
+                    spec.attrs.update(parent_spec.attrs)
+                    spec.methods.update(parent_spec.methods)
+
+            self.cls_registry[final_name] = spec
+            self.cls_registry_by_type[c] = spec
             return c
 
         return decorator(_cls) if _cls else decorator
@@ -324,7 +345,7 @@ class Agent:
             else:  # It's a constant
                 mod_consts[member_name] = MemberSpec(visibility=vis, docstring=doc)
 
-        self.importable_modules[final_name] = RegisteredModule(
+        reg_mod = RegisteredModule(
             name=final_name,
             module=mod,
             visibility=visibility,
@@ -332,6 +353,11 @@ class Agent:
             consts=mod_consts,
             classes=mod_classes,
         )
+        self.importable_modules[final_name] = reg_mod
+
+        # Also add all registered classes to the agent's central by-type registry
+        for spec in mod_classes.values():
+            self.cls_registry_by_type[spec.cls] = spec
 
     def task(self, func):
         """A decorator to mark a function as an agent task."""

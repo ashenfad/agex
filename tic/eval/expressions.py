@@ -1,8 +1,9 @@
 import ast
 from typing import Any
 
+from ..eval.utils import get_allowed_attributes_for_instance
 from .base import BaseEvaluator
-from .call import BUILTINS
+from .builtins import BUILTINS
 from .error import EvalError
 from .objects import TicModule, TicObject
 
@@ -10,33 +11,37 @@ from .objects import TicModule, TicObject
 class ExpressionEvaluator(BaseEvaluator):
     """A mixin for evaluating expression nodes."""
 
-    def visit_Constant(self, node: ast.Constant) -> Any:
-        """Handles literal values like numbers, strings, True, False, None."""
-        return node.value
-
-    def visit_Name(self, node: ast.Name) -> Any:
-        """Handles variable lookups."""
-        name = node.id
+    def _resolve_name(self, name: str, node: ast.AST) -> Any:
+        """Resolve a name by checking builtins, state, and agent registries."""
+        # 1. Check builtins
         if name in BUILTINS:
             return BUILTINS[name]
 
-        # Check the current execution state
+        # 2. Check the current execution state
         value = self.state.get(name)
         if value is not None or name in self.state:
             return value
 
-        # If not in state, check agent function registry
+        # 3. Check agent function registry
         if name in self.agent.fn_registry:
             from .functions import NativeFunction
 
             spec = self.agent.fn_registry[name]
             return NativeFunction(name=name, fn=spec.fn)
 
-        # If not a function, check agent class registry
+        # 4. Check agent class registry
         if name in self.agent.cls_registry:
             return self.agent.cls_registry[name].cls
 
         raise EvalError(f"Name '{name}' is not defined.", node)
+
+    def visit_Constant(self, node: ast.Constant) -> Any:
+        """Handles literal values like numbers, strings, True, False, None."""
+        return node.value
+
+    def visit_Name(self, node: ast.Name) -> Any:
+        """Handles variable lookups."""
+        return self._resolve_name(node.id, node)
 
     def visit_List(self, node: ast.List) -> list:
         """Handles list literals."""
@@ -85,13 +90,22 @@ class ExpressionEvaluator(BaseEvaluator):
     def visit_Attribute(self, node: ast.Attribute) -> Any:
         """Handles attribute access like `obj.x`."""
         obj = self.visit(node.value)
+
+        # Sandboxed TicObjects have their own logic
         if isinstance(obj, TicObject):
             return obj.getattr(node.attr)
+
+        # Allow access to module attributes
         if isinstance(obj, TicModule):
             return getattr(obj, node.attr)
 
+        # Check for registered host classes and whitelisted methods
+        allowed_attrs = get_allowed_attributes_for_instance(self.agent, obj)
+        if node.attr in allowed_attrs:
+            return getattr(obj, node.attr)
+
         raise EvalError(
-            f"Attribute access is not supported for type '{type(obj).__name__}'.", node
+            f"'{type(obj).__name__}' object has no attribute '{node.attr}'", node
         )
 
     def visit_Subscript(self, node: ast.Subscript) -> Any:

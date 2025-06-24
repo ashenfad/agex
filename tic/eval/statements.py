@@ -16,36 +16,42 @@ class StatementEvaluator(BaseEvaluator):
 
     def _resolve_subscript_for_mutation(
         self, node: ast.Subscript
-    ) -> tuple[str, Any, Any, Any]:
+    ) -> tuple[str | None, Any, Any, Any]:
         """
         Resolves a (potentially nested) subscript target for mutation.
 
         Returns a tuple of:
-        - root_name: The name of the variable in the state.
-        - root_container: The direct container to be mutated.
+        - root_name: The name of the variable in the state, if any.
+        - root_container: The top-level container from the state.
         - container_to_modify: The direct container to be mutated.
         - final_key: The key/index for the final assignment.
         """
         keys = []
-        curr = node
+        curr: ast.AST = node
         while isinstance(curr, ast.Subscript):
             keys.append(curr.slice)
             curr = curr.value
 
-        if not isinstance(curr, ast.Name):
-            raise EvalError(
-                "Indexed assignment must start with a named variable.", node
-            )
-
         keys.reverse()
-        root_name = curr.id
+        container_to_modify = self.visit(curr)
 
-        root_container = self.state.get(root_name)
-        if root_container is None:
-            raise EvalError(f"Name '{root_name}' is not defined.", node)
+        # To update state correctly, we need to find the root variable.
+        root_name: str | None = None
+        root_container = None
+        temp_curr = curr
+        if isinstance(temp_curr, ast.Attribute):
+            while isinstance(temp_curr, ast.Attribute):
+                temp_curr = temp_curr.value
+            if isinstance(temp_curr, ast.Name):
+                root_name = temp_curr.id
+                root_container = self.state.get(root_name)
+        elif isinstance(temp_curr, ast.Name):
+            root_name = temp_curr.id
+            root_container = self.state.get(root_name)
 
-        container_to_modify = root_container
-        for key_node in keys[:-1]:
+        # Traverse the keys to get to the final container
+        final_key_node = keys.pop()
+        for key_node in keys:
             key = self.visit(key_node)
             try:
                 container_to_modify = container_to_modify[key]
@@ -56,7 +62,7 @@ class StatementEvaluator(BaseEvaluator):
             except TypeError:
                 raise EvalError("This object is not subscriptable.", key_node)
 
-        final_key = self.visit(keys[-1])
+        final_key = self.visit(final_key_node)
 
         if not isinstance(container_to_modify, (dict, list)):
             raise EvalError(
@@ -86,7 +92,8 @@ class StatementEvaluator(BaseEvaluator):
                 except IndexError:
                     raise EvalError("List assignment index out of range.", target)
 
-                self.state.set(root_name, root_container)
+                if root_name:
+                    self.state.set(root_name, root_container)
             elif isinstance(target, ast.Attribute):
                 obj = self.visit(target.value)
                 if not isinstance(obj, TicObject):
@@ -99,6 +106,11 @@ class StatementEvaluator(BaseEvaluator):
                 raise EvalError(
                     "This type of assignment target is not supported.", node
                 )
+
+    def visit_Pass(self, node: ast.Pass) -> None:
+        """Handles the 'pass' statement."""
+        # The 'pass' statement does nothing.
+        pass
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         """Handles augmented assignment statements like '+='."""
@@ -135,7 +147,8 @@ class StatementEvaluator(BaseEvaluator):
 
             def setter(value):
                 container[key] = value
-                self.state.set(root_name, root_container)
+                if root_name:
+                    self.state.set(root_name, root_container)
 
         else:
             raise EvalError(

@@ -5,12 +5,10 @@ from typing import Any, Callable
 from ..agent import _AgentExit
 from ..state import State
 from .base import BaseEvaluator
-from .builtins import BUILTINS
-from .dir import dir_builtin
+from .builtins import _dir, _hasattr, _help
 from .error import EvalError
 from .functions import UserFunction
-from .help import help_builtin
-from .objects import PrintTuple, TicDataClass, TicModule
+from .objects import PrintTuple
 
 
 @dataclass
@@ -18,52 +16,7 @@ class StatefulFn:
     """A wrapper for stateful builtins to declare their dependencies."""
 
     fn: Callable[..., Any]
-    needs_state: bool = False
-    needs_agent: bool = False
-
-
-WHITELISTED_METHODS = {
-    list: {
-        "append",
-        "clear",
-        "copy",
-        "count",
-        "extend",
-        "index",
-        "insert",
-        "pop",
-        "remove",
-        "reverse",
-        "sort",
-    },
-    dict: {
-        "clear",
-        "copy",
-        "get",
-        "items",
-        "keys",
-        "pop",
-        "setdefault",
-        "update",
-        "values",
-    },
-    set: {"add", "clear", "copy", "discard", "pop", "remove", "update"},
-    str: {
-        "upper",
-        "lower",
-        "strip",
-        "split",
-        "replace",
-        "startswith",
-        "endswith",
-        "join",
-    },
-}
-
-# Methods that return iterators/views and need to be materialized
-MATERIALIZE_METHODS = {
-    dict: {"keys": list, "values": list, "items": list},
-}
+    needs_evaluator: bool = False
 
 
 def _print_stateful(*args: Any, state: State):
@@ -82,9 +35,10 @@ def _print_stateful(*args: Any, state: State):
 
 
 STATEFUL_BUILTINS: dict[str, StatefulFn] = {
-    "print": StatefulFn(_print_stateful, needs_state=True),
-    "help": StatefulFn(help_builtin, needs_agent=True, needs_state=True),
-    "dir": StatefulFn(dir_builtin, needs_state=True),
+    "print": StatefulFn(_print_stateful, needs_evaluator=False),
+    "help": StatefulFn(_help, needs_evaluator=True),
+    "dir": StatefulFn(_dir, needs_evaluator=True),
+    "hasattr": StatefulFn(_hasattr, needs_evaluator=True),
 }
 
 
@@ -96,23 +50,21 @@ class CallEvaluator(BaseEvaluator):
         args = [self.visit(arg) for arg in node.args]
         kwargs = {kw.arg: self.visit(kw.value) for kw in node.keywords if kw.arg}
 
-        # Case 1: Direct call by name (e.g., `my_func()`, `len()`)
+        # Handle stateful builtins first, as they need dependency injection.
         if isinstance(node.func, ast.Name):
             fn_name = node.func.id
-
-            # Check for stateful builtins first
             if (stateful_fn_wrapper := STATEFUL_BUILTINS.get(fn_name)) is not None:
-                # Inject dependencies based on the wrapper's flags
-                inj_kwargs: dict[str, Any] = {}
-                if stateful_fn_wrapper.needs_state:
-                    inj_kwargs["state"] = self.state
-                if stateful_fn_wrapper.needs_agent:
-                    inj_kwargs["agent"] = self.agent
-
                 try:
-                    return stateful_fn_wrapper.fn(*args, **kwargs, **inj_kwargs)
+                    # Special case for print, which doesn't get evaluator but needs state
+                    if fn_name == "print":
+                        return _print_stateful(*args, state=self.state)
+
+                    if stateful_fn_wrapper.needs_evaluator:
+                        return stateful_fn_wrapper.fn(self, *args, **kwargs)
+                    else:
+                        # For builtins that don't need the evaluator
+                        return stateful_fn_wrapper.fn(*args, **kwargs)
                 except Exception as e:
-                    # Re-raise agent exit signals immediately
                     if isinstance(e, _AgentExit):
                         raise e
                     raise EvalError(
@@ -121,88 +73,29 @@ class CallEvaluator(BaseEvaluator):
                         cause=e,
                     )
 
-            fn = BUILTINS.get(fn_name)
-            if fn is None:
-                fn = self.state.get(fn_name)
+        fn = self.visit(node.func)
 
-            if fn is None:
-                raise EvalError(f"Function '{fn_name}' is not defined.", node)
-
+        try:
             if isinstance(fn, UserFunction):
                 return fn.execute(args, kwargs, self.source_code)
 
-            if isinstance(fn, TicDataClass):
-                return fn(*args, **kwargs)
-
-            # It must be a builtin
-            try:
-                result = fn(*args, **kwargs)
-                if isinstance(fn, type) and issubclass(fn, _AgentExit):
-                    raise result
-                return result
-            except Exception as e:
-                # Re-raise agent exit signals immediately
-                if isinstance(e, _AgentExit):
-                    raise e
-                raise EvalError(
-                    f"Error calling builtin function '{fn_name}': {e}", node, cause=e
+            if not callable(fn):
+                fn_name_for_error = getattr(
+                    node.func, "attr", getattr(node.func, "id", "object")
                 )
+                raise EvalError(f"'{fn_name_for_error}' is not callable.", node)
 
-        # Case 2: Attribute call (e.g., `my_list.append()`)
-        elif isinstance(node.func, ast.Attribute):
-            obj = self.visit(node.func.value)
-            method_name = node.func.attr
+            result = fn(*args, **kwargs)
 
-            # Special case for our sandboxed modules
-            if isinstance(obj, TicModule):
-                method = getattr(obj, method_name, None)
-                if not callable(method):
-                    raise EvalError(
-                        f"Attribute '{method_name}' on module '{obj.__name__}' is not callable.",
-                        node,
-                    )
-                try:
-                    return method(*args, **kwargs)
-                except Exception as e:
-                    raise EvalError(
-                        f"Error calling '{method_name}' on module '{obj.__name__}': {e}",
-                        node,
-                        cause=e,
-                    )
+            # Special handling for agent exit signals
+            if isinstance(fn, type) and issubclass(fn, _AgentExit):
+                raise result  # type: ignore
 
-            obj_type = type(obj)
-
-            allowed_methods = WHITELISTED_METHODS.get(obj_type)
-            if not allowed_methods or method_name not in allowed_methods:
-                raise EvalError(
-                    f"Method '{method_name}' is not allowed on type '{obj_type.__name__}'.",
-                    node,
-                )
-
-            method = getattr(obj, method_name)
-
-            try:
-                result = method(*args, **kwargs)
-            except Exception as e:
-                raise EvalError(
-                    f"Error calling method '{method_name}': {e}", node, cause=e
-                )
-
-            materializer_map = MATERIALIZE_METHODS.get(obj_type, {})
-            if materializer := materializer_map.get(method_name):
-                return materializer(result)
             return result
-
-        # Case 3: Indirect call (e.g., `get_func()()`)
-        else:
-            fn = self.visit(node.func)
-            if isinstance(fn, UserFunction):
-                return fn.execute(args, kwargs, self.source_code)
-
-            if isinstance(fn, TicDataClass):
-                return fn(*args, **kwargs)
-
-            raise EvalError(
-                f"Indirect call on a non-user function is not supported. Got: {type(fn).__name__}",
-                node,
+        except Exception as e:
+            if isinstance(e, _AgentExit):
+                raise e
+            fn_name_for_error = getattr(
+                node.func, "attr", getattr(node.func, "id", "object")
             )
+            raise EvalError(f"Error calling '{fn_name_for_error}': {e}", node, cause=e)

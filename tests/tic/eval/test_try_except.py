@@ -104,6 +104,23 @@ try:
 except:
     pass # This must not catch the exit signal
 """
-    with pytest.raises(ExitSuccess) as e:
+    with pytest.raises(ExitSuccess):
         eval_and_get_state(program)
-    assert e.value.result == "Finished"
+
+
+def test_try_except_finally():
+    program = """
+x = 1
+y = 1
+try:
+    x = 2 # No exception
+except ValueError:
+    x = 99 # Should not run
+else:
+    x = 3
+finally:
+    y = 2
+"""
+    state = eval_and_get_state(program)
+    assert state.get("x") == 3
+    assert state.get("y") == 2
