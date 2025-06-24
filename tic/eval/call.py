@@ -58,7 +58,7 @@ def _constrained_range(*args, **kwargs):
     return list(r)
 
 
-BUILTINS: dict[str, Callable[..., Any]] = {
+BUILTINS: dict[str, Any] = {
     "len": len,
     "max": max,
     "min": min,
@@ -177,7 +177,7 @@ class CallEvaluator(BaseEvaluator):
         """Handles function calls."""
         # Common argument processing
         args = [self.visit(arg) for arg in node.args]
-        kwargs = {kw.arg: self.visit(kw.value) for kw in node.keywords}
+        kwargs = {kw.arg: self.visit(kw.value) for kw in node.keywords if kw.arg}
 
         # Case 1: Direct call by name (e.g., `my_func()`, `len()`)
         if isinstance(node.func, ast.Name):
@@ -241,14 +241,14 @@ class CallEvaluator(BaseEvaluator):
                 method = getattr(obj, method_name, None)
                 if not callable(method):
                     raise EvalError(
-                        f"Attribute '{method_name}' on module '{obj.name}' is not callable.",
+                        f"Attribute '{method_name}' on module '{obj.__name__}' is not callable.",
                         node,
                     )
                 try:
                     return method(*args, **kwargs)
                 except Exception as e:
                     raise EvalError(
-                        f"Error calling '{method_name}' on module '{obj.name}': {e}",
+                        f"Error calling '{method_name}' on module '{obj.__name__}': {e}",
                         node,
                         cause=e,
                     )

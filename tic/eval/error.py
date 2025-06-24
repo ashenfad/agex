@@ -13,6 +13,10 @@ class EvalError(Exception):
         super().__init__(self.message)
 
     def __str__(self):
-        if self.node:
-            return f"Error at line {self.node.lineno}, col {self.node.col_offset}: {self.message}"
+        if (
+            self.node
+            and hasattr(self.node, "lineno")
+            and hasattr(self.node, "col_offset")
+        ):
+            return f"Error at line {self.node.lineno}, col {self.node.col_offset}: {self.message}"  # type: ignore
         return self.message

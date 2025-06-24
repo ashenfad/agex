@@ -38,7 +38,11 @@ class ExpressionEvaluator(BaseEvaluator):
 
     def visit_Dict(self, node: ast.Dict) -> dict:
         """Handles dict literals."""
-        return {self.visit(k): self.visit(v) for k, v in zip(node.keys, node.values)}
+        return {
+            self.visit(k): self.visit(v)
+            for k, v in zip(node.keys, node.values)
+            if k is not None
+        }
 
     def visit_BoolOp(self, node: ast.BoolOp) -> Any:
         """Handles boolean logic with short-circuiting ('and', 'or')."""

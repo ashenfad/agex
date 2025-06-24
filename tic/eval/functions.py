@@ -49,6 +49,9 @@ class UserFunction:
         for name, value in bound_args.items():
             exec_state.set(name, value)
 
+        if not self.agent:
+            raise RuntimeError("Cannot execute function without an agent context.")
+
         evaluator = Evaluator(
             agent=self.agent,
             state=exec_state,
@@ -70,12 +73,16 @@ class FunctionEvaluator(BaseEvaluator):
         free_vars = get_free_variables(node)
         closure = LiveClosureState(self.state, free_vars)
 
+        source_text = None
+        if self.source_code:
+            source_text = ast.get_source_segment(self.source_code, node)
+
         func = UserFunction(
             name=node.name,
             args=node.args,
             body=node.body,
             closure_state=closure,
-            source_text=ast.get_source_segment(self.source_code, node),
+            source_text=source_text,
             agent=self.agent,
         )
         self.state.set(node.name, func)
@@ -85,12 +92,16 @@ class FunctionEvaluator(BaseEvaluator):
         free_vars = get_free_variables(node)
         closure = LiveClosureState(self.state, free_vars)
 
+        source_text = None
+        if self.source_code:
+            source_text = ast.get_source_segment(self.source_code, node)
+
         return UserFunction(
             name="<lambda>",
             args=node.args,
             body=[ast.Return(value=node.body)],  # Lambdas are a single expression
             closure_state=closure,
-            source_text=ast.get_source_segment(self.source_code, node),
+            source_text=source_text,
             agent=self.agent,
         )
 

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Iterator
+from typing import Any, Iterable
 
 
 class State(ABC):
@@ -22,15 +22,15 @@ class State(ABC):
         pass
 
     @abstractmethod
-    def keys(self) -> Iterator[str]:
+    def keys(self) -> Iterable[str]:
         pass
 
     @abstractmethod
-    def values(self) -> Iterator[Any]:
+    def values(self) -> Iterable[Any]:
         pass
 
     @abstractmethod
-    def items(self) -> Iterator[tuple[str, Any]]:
+    def items(self) -> Iterable[tuple[str, Any]]:
         pass
 
     @abstractmethod

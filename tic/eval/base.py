@@ -10,7 +10,7 @@ from .error import EvalError
 class BaseEvaluator(ast.NodeVisitor):
     """A base class for evaluators, holding shared state."""
 
-    def __init__(self, agent: Agent | None = None, state: State | None = None):
+    def __init__(self, agent: Agent, state: State):
         self.agent = agent
         self.state = state
         self.source_code: str | None = None

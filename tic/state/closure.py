@@ -1,4 +1,4 @@
-from typing import Any, Iterator
+from typing import Any, Iterable
 
 from .core import State
 
@@ -37,14 +37,14 @@ class LiveClosureState(State):
     def remove(self, key: str) -> bool:
         raise TypeError("Closures are read-only.")
 
-    def keys(self) -> Iterator[str]:
+    def keys(self) -> Iterable[str]:
         return iter(self._keys)
 
-    def values(self) -> Iterator[Any]:
+    def values(self) -> Iterable[Any]:
         for key in self._keys:
             yield self.get(key)
 
-    def items(self) -> Iterator[tuple[str, Any]]:
+    def items(self) -> Iterable[tuple[str, Any]]:
         for key in self._keys:
             yield key, self.get(key)
 

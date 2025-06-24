@@ -1,4 +1,4 @@
-from typing import Any, Iterator
+from typing import Any, Iterable
 
 from .core import State
 
@@ -23,14 +23,20 @@ class Ephemeral(State):
             return True
         return False
 
-    def keys(self) -> Iterator[str]:
+    def keys(self) -> Iterable[str]:
         return self.store.keys()
 
-    def values(self) -> Iterator[Any]:
+    def values(self) -> Iterable[Any]:
         return self.store.values()
 
-    def items(self) -> Iterator[tuple[str, Any]]:
+    def items(self) -> Iterable[tuple[str, Any]]:
         return self.store.items()
 
     def __contains__(self, key: str) -> bool:
         return key in self.store
+
+    def __len__(self) -> int:
+        return len(self.store)
+
+    def __bool__(self) -> bool:
+        return bool(self.store)

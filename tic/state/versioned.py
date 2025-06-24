@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import secrets
-from typing import Any, Iterator
+from typing import Any, Iterable
 
 from . import kv
 from .closure import LiveClosureState
@@ -58,15 +58,14 @@ class Versioned(State):
             return True
         return False
 
-    def keys(self) -> Iterator[str]:
-        ks = set(self.ephemeral.keys()) | set(self.commit_keys.keys()) - self.removed
-        return iter(ks)
+    def keys(self) -> Iterable[str]:
+        return set(self.ephemeral.keys()) | set(self.commit_keys.keys()) - self.removed
 
-    def values(self) -> Iterator[Any]:
+    def values(self) -> Iterable[Any]:
         for key in self.keys():
             yield self.get(key)
 
-    def items(self) -> Iterator[tuple[str, Any]]:
+    def items(self) -> Iterable[tuple[str, Any]]:
         for key in self.keys():
             yield key, self.get(key)
 
@@ -75,7 +74,7 @@ class Versioned(State):
             key not in self.removed and key in self.commit_keys
         )
 
-    def history(self, commit_hash: str | None = None) -> Iterator[str]:
+    def history(self, commit_hash: str | None = None) -> Iterable[str]:
         """
         Return the commit chain given a commit_hash.
 
@@ -86,8 +85,8 @@ class Versioned(State):
             yield current_hash
             current_hash = self.long_term.get(PARENT_COMMIT % current_hash)
 
-    def snapshot(self) -> str:
-        if not self.ephemeral.keys():
+    def snapshot(self) -> str | None:
+        if not self.ephemeral:
             # If nothing happened, don't create an empty commit.
             # Just return the current commit hash.
             return self.current_commit
@@ -135,7 +134,7 @@ class Versioned(State):
 
         return new_hash
 
-    def checkout(self, commit_hash: str) -> "Versioned" | None:
+    def checkout(self, commit_hash: str) -> "Versioned | None":
         """
         Return a new Versioned state object at a specific commit hash.
         """

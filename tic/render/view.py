@@ -60,7 +60,7 @@ def view(
 
     if isinstance(obj, Versioned):
         state = obj
-        if state.ephemeral.keys():
+        if state.ephemeral:
             raise ValueError("Cannot view state with uncommitted ephemeral changes.")
 
         if focus == "full":

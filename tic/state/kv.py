@@ -1,11 +1,11 @@
 import pickle
 from abc import ABC, abstractmethod
-from typing import Any, Iterator, Mapping
+from typing import Any, Iterable, Mapping
 
 
 class KVStore(ABC):
     @abstractmethod
-    def get(self, key: str) -> Any:
+    def get(self, key: str, default: Any = None) -> Any:
         pass
 
     @abstractmethod
@@ -21,7 +21,7 @@ class KVStore(ABC):
         pass
 
     @abstractmethod
-    def items(self) -> Iterator[tuple[str, Any]]:
+    def items(self) -> Iterable[tuple[str, Any]]:
         pass
 
     @abstractmethod
@@ -61,7 +61,7 @@ class Memory(KVStore):
         else:
             self.memory.update(kwargs)
 
-    def items(self) -> Iterator[tuple[str, Any]]:
+    def items(self) -> Iterable[tuple[str, Any]]:
         return self.memory.items()
 
     def __contains__(self, key: str) -> bool:

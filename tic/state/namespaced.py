@@ -1,4 +1,4 @@
-from typing import Any, Iterator
+from typing import Any, Iterable
 
 from .core import State
 
@@ -29,17 +29,17 @@ class Namespaced(State):
     def remove(self, key: str) -> bool:
         return self.state.remove(f"{self.namespace}/{key}")
 
-    def keys(self) -> Iterator[str]:
+    def keys(self) -> Iterable[str]:
         return (
             lcl
             for k in self.base_store.keys()
             if (lcl := self._local_namespace(k)) is not None
         )
 
-    def values(self) -> Iterator[Any]:
+    def values(self) -> Iterable[Any]:
         return (self.get(k) for k in self.keys())
 
-    def items(self) -> Iterator[tuple[str, Any]]:
+    def items(self) -> Iterable[tuple[str, Any]]:
         return ((k, self.get(k)) for k in self.keys())
 
     def __contains__(self, key: str) -> bool:

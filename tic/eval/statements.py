@@ -329,5 +329,5 @@ class StatementEvaluator(BaseEvaluator):
             raise EvalError("Dataclasses must define at least one field.", node)
 
         # 4. Create and store the TicDataClass object.
-        cls_obj = TicDataClass(name=node.name, fields=fields)
+        cls_obj = TicDataClass(name=node.name, fields=fields)  # type: ignore
         self.state.set(node.name, cls_obj)

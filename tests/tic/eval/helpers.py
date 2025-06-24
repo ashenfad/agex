@@ -8,6 +8,7 @@ def eval_and_get_state(
 ) -> State:
     """A test helper to evaluate a program and return the final state."""
     agent = agent or Agent()
-    state = state or Ephemeral()
+    if state is None:
+        state = Ephemeral()
     evaluate_program(program, agent, state)
     return state

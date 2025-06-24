@@ -3,7 +3,7 @@ A state wrapper that provides a local scope for temporary operations,
 falling back to a parent scope for reads. Writes are always local.
 """
 
-from typing import Any, Iterator
+from typing import Any, Iterable
 
 from .core import State
 from .ephemeral import Ephemeral
@@ -40,19 +40,14 @@ class Scoped(State):
     def remove(self, key: str) -> bool:
         raise NotImplementedError("Not supported for scoped state.")
 
-    def keys(self) -> Iterator[str]:
+    def keys(self) -> Iterable[str]:
         raise NotImplementedError("Not supported for scoped state.")
 
-    def values(self) -> Iterator[Any]:
+    def values(self) -> Iterable[Any]:
         raise NotImplementedError("Not supported for scoped state.")
 
-    def items(self) -> Iterator[tuple[str, Any]]:
+    def items(self) -> Iterable[tuple[str, Any]]:
         raise NotImplementedError("Not supported for scoped state.")
 
     def __contains__(self, key: str) -> bool:
         return key in self._local_store or key in self._parent_store
-
-    def __delitem__(self, key: str) -> None:
-        if key in self._local_store:
-            del self._local_store[key]
-        # We don't delete from the parent store, as this scope is read-only for it.

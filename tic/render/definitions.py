@@ -98,7 +98,9 @@ def _render_module(name: str, spec: RegisteredModule, full: bool = False) -> str
     # Render functions
     for fn_name, fn_member_spec in spec.fns.items():
         if _should_render_member(
-            fn_member_spec.visibility, effective_visibility, full=full
+            fn_member_spec.visibility or spec.visibility,
+            effective_visibility,
+            full=full,
         ):
             fn = getattr(spec.module, fn_name)
             doc = (
@@ -109,7 +111,9 @@ def _render_module(name: str, spec: RegisteredModule, full: bool = False) -> str
             # We pass the member's own visibility down so the function renderer
             # knows whether to render the docstring or not.
             fn_spec = RegisteredFn(
-                fn=fn, docstring=doc, visibility=fn_member_spec.visibility
+                fn=fn,
+                docstring=doc,
+                visibility=fn_member_spec.visibility or spec.visibility,
             )
             rendered_fns.append(
                 _render_function(fn_name, fn_spec, indent=indent, full=full)
@@ -236,7 +240,9 @@ def _render_class(
         for meth_name, meth_spec in spec.methods.items():
             if meth_name == "__init__":
                 continue  # Already handled
-            if not _should_render_member(meth_spec.visibility, spec.visibility, full):
+            if not _should_render_member(
+                meth_spec.visibility or spec.visibility, spec.visibility, full
+            ):
                 continue
             method = getattr(spec.cls, meth_name)
             doc = (
@@ -245,7 +251,9 @@ def _render_class(
                 else method.__doc__
             )
             meth_fn_spec = RegisteredFn(
-                fn=method, docstring=doc, visibility=meth_spec.visibility
+                fn=method,
+                docstring=doc,
+                visibility=meth_spec.visibility or spec.visibility,
             )
             meth_strs.append(
                 _render_function(
