@@ -111,3 +111,20 @@ c.my_dict.popitem() # This should fail as popitem is not in WHITELISTED_METHODS
     container_instance = final_state.get("c")
     assert container_instance.my_list == [1, 2, 3]
     assert container_instance.my_dict == {"a": 1, "b": 2}
+
+
+def test_str_format_sandbox_escape_is_blocked():
+    """
+    Tests that the str.format escape vector is neutralized by the sandboxed
+    type() built-in, which returns a placeholder instead of a raw type.
+    """
+    # This program would have been able to read __subclasses__ if `int` referred
+    # to the real type object.
+    program = "subclasses_str = '{0.__subclasses__}'.format(int)"
+
+    # We expect this to fail because our sandboxed `int` is a placeholder,
+    # and the format mini-language will fail to find `__subclasses__` on it.
+    # The error comes from inside Python's format logic, hence the AttributeError,
+    # which is wrapped in our EvalError.
+    with pytest.raises(EvalError, match="object has no attribute '__subclasses__'"):
+        eval_and_get_state(program)

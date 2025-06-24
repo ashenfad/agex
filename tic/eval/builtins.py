@@ -26,14 +26,50 @@ class _DataclassDecorator:
 dataclass = _DataclassDecorator()
 
 
+class _TicTypePlaceholder:
+    """
+    A callable, safe placeholder for native Python types to prevent sandbox escapes.
+    Instead of giving the user access to the raw `type` object, we give them
+    this safe placeholder. It can be called like a constructor, but it doesn't
+    expose dangerous attributes like `__subclasses__`.
+    """
+
+    def __init__(self, wrapped_type: type):
+        self._wrapped_type = wrapped_type
+        # To make it look like a type, we'll copy its name.
+        self.__name__ = wrapped_type.__name__
+
+    def __call__(self, *args, **kwargs):
+        # Delegate the call to the real type constructor.
+        return self._wrapped_type(*args, **kwargs)
+
+    def __repr__(self) -> str:
+        return f"<class '{self.__name__}'>"
+
+
 def _tic_isinstance(obj: Any, class_or_tuple: Any) -> bool:
     """Custom isinstance function for the tic evaluator."""
+    if isinstance(class_or_tuple, _TicTypePlaceholder):
+        return isinstance(obj, class_or_tuple._wrapped_type)
     if isinstance(class_or_tuple, TicDataClass):
         if isinstance(obj, TicObject):
             return obj.cls is class_or_tuple
         return False
+    if isinstance(class_or_tuple, type):
+        return isinstance(obj, class_or_tuple)
+
     # TODO: Handle tuple of types
-    return isinstance(obj, class_or_tuple)
+    raise TicTypeError("isinstance() arg 2 must be a type or a tuple of types")
+
+
+def _tic_type(obj: Any) -> _TicTypePlaceholder:
+    """
+    Sandboxed version of the `type()` built-in.
+
+    To prevent sandbox escapes, this function returns a `_TicTypePlaceholder`
+    containing the *name* of the type, rather than the type object itself.
+    """
+    return _TicTypePlaceholder(type(obj))
 
 
 def _constrained_range(*args, **kwargs):
@@ -183,14 +219,14 @@ BUILTINS: dict[str, Any] = {
     "max": max,
     "min": min,
     "sum": sum,
-    "str": str,
-    "int": int,
-    "float": float,
-    "bool": bool,
-    "dict": dict,
-    "set": set,
-    "tuple": tuple,
-    "list": list,
+    "str": _TicTypePlaceholder(str),
+    "int": _TicTypePlaceholder(int),
+    "float": _TicTypePlaceholder(float),
+    "bool": _TicTypePlaceholder(bool),
+    "dict": _TicTypePlaceholder(dict),
+    "set": _TicTypePlaceholder(set),
+    "tuple": _TicTypePlaceholder(tuple),
+    "list": _TicTypePlaceholder(list),
     "abs": abs,
     "round": round,
     "all": all,
@@ -204,7 +240,7 @@ BUILTINS: dict[str, Any] = {
     "filter": lambda f, it: list(filter(f, it)),
     # Type introspection
     "isinstance": _tic_isinstance,
-    "type": type,
+    "type": _tic_type,
     # Dataclasses
     "dataclass": dataclass,
     # User-level exceptions, mapped from Python's names

@@ -273,10 +273,10 @@ is_f_func = isinstance(my_func, type(my_func))
     assert state.get("is_c_list") is True
     assert state.get("is_d_dict") is True
 
-    assert state.get("type_a") is int
-    assert state.get("type_b") is str
-    assert state.get("type_c") is list
-    assert state.get("type_d") is dict
+    assert state.get("type_a").__name__ == "int"
+    assert state.get("type_b").__name__ == "str"
+    assert state.get("type_c").__name__ == "list"
+    assert state.get("type_d").__name__ == "dict"
 
     # This is a bit of a trick to test the type of a user function,
     # since we don't have a direct name for UserFunction in the environment.
