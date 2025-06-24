@@ -199,3 +199,19 @@ s = f"hello {inst.safe_method()}"
 """
     state = eval_and_get_state(program_safe, agent)
     assert state.get("s") == "hello SAFE"
+
+
+def test_multiline_strings():
+    """Tests that various ways of defining multi-line strings work."""
+    expected = "hello\nworld"
+    programs = {
+        "triple_double": 's = """hello\nworld"""',
+        "triple_single": "s = '''hello\nworld'''",
+        "implicit_concat_parens": 's = ("hello" "\\n" "world")',
+        "explicit_backslash": 's = "hello\\n" \\\n    "world"',
+        "list_join": 's = "\\n".join(["hello", "world"])',
+    }
+
+    for name, program in programs.items():
+        state = eval_and_get_state(program)
+        assert state.get("s") == expected, f"Test case '{name}' failed"
