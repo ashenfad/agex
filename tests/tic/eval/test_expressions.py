@@ -201,17 +201,54 @@ s = f"hello {inst.safe_method()}"
     assert state.get("s") == "hello SAFE"
 
 
-def test_multiline_strings():
+@pytest.mark.parametrize(
+    "name,program,expected",
+    [
+        (
+            "triple_double",
+            's = """hello\nworld"""',
+            "hello\nworld",
+        ),
+        (
+            "triple_single",
+            "s = '''hello\nworld'''",
+            "hello\nworld",
+        ),
+        (
+            "implicit_concat_parens",
+            's = ("hello" "\\n" "world")',
+            "hello\nworld",
+        ),
+        (
+            "explicit_backslash",
+            's = "hello\\n" \\\n    "world"',
+            "hello\nworld",
+        ),
+        (
+            "list_join",
+            's = "\\n".join(["hello", "world"])',
+            "hello\nworld",
+        ),
+    ],
+)
+def test_multiline_strings(name, program, expected):
     """Tests that various ways of defining multi-line strings work."""
-    expected = "hello\nworld"
-    programs = {
-        "triple_double": 's = """hello\nworld"""',
-        "triple_single": "s = '''hello\nworld'''",
-        "implicit_concat_parens": 's = ("hello" "\\n" "world")',
-        "explicit_backslash": 's = "hello\\n" \\\n    "world"',
-        "list_join": 's = "\\n".join(["hello", "world"])',
-    }
+    state = eval_and_get_state(program)
+    assert state.get("s") == expected, f"Test case '{name}' failed"
 
-    for name, program in programs.items():
-        state = eval_and_get_state(program)
-        assert state.get("s") == expected, f"Test case '{name}' failed"
+
+def test_is_operator():
+    """Tests the 'is' and 'is not' operators."""
+    program = """
+a = [1, 2]
+b = a
+c = [1, 2]
+
+x = a is b  # Should be True
+y = a is c  # Should be False
+z = a is not c # Should be True
+"""
+    state = eval_and_get_state(program)
+    assert state.get("x") is True
+    assert state.get("y") is False
+    assert state.get("z") is True
