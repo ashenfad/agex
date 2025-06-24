@@ -29,3 +29,18 @@ def test_stateful_help_builtin_general():
     assert "help" not in help_str
     assert "Classes:" in help_str
     assert "- MyTestClass" in help_str
+
+
+def test_help_with_simple_name_argument():
+    """
+    Tests that `help(x)` where `x` is a simple variable (a name) correctly
+    triggers the help lookup for the object referred to by `x`.
+    """
+    agent = Agent()
+    code = """
+x = 1
+help_text = help(x)
+"""
+    state = eval_and_get_state(code, agent)
+    help_str = state.get("help_text")
+    assert "Convert a number or string to an integer" in help_str

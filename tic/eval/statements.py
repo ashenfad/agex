@@ -2,11 +2,11 @@ import ast
 from typing import Any
 
 from tic.agent import _AgentExit
+from tic.eval.builtins import dataclass
 from tic.eval.functions import _ReturnException
 
 from .base import BaseEvaluator
 from .binop import OPERATOR_MAP
-from .call import dataclass
 from .error import EvalError
 from .objects import TicDataClass, TicModule, TicObject
 

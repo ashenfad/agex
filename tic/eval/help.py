@@ -1,6 +1,8 @@
 from typing import Any
 
 from tic.agent import Agent
+from tic.eval.functions import NativeFunction
+from tic.eval.objects import TicModule
 
 
 def _get_general_help_text(agent: "Agent") -> str:
@@ -40,6 +42,30 @@ def help_builtin(obj: Any = None, *, agent: "Agent") -> str:
     """Provides help information about a registered object or lists all available items."""
     if obj is None:
         return _get_general_help_text(agent)
+
+    doc = None
+    if isinstance(obj, NativeFunction):
+        doc = obj.fn.__doc__
+    elif isinstance(obj, TicModule):
+        # Special handling to render help for a TicModule
+        parts = ["Help on module " + obj.__name__ + ":\n"]
+        # Introspect the module for contents
+        contents = sorted([attr for attr in dir(obj) if not attr.startswith("_")])
+        if contents:
+            parts.append("CONTENTS")
+            parts.extend([f"    {item}" for item in contents])
+        return "\n".join(parts)
+    else:
+        doc = getattr(obj, "__doc__", None)
+
+    if doc:
+        # A simple docstring renderer for now.
+        name = (
+            obj.name
+            if isinstance(obj, NativeFunction)
+            else getattr(obj, "__name__", "object")
+        )
+        return f"Help for {name}:\n\n{doc.strip()}"
 
     # Fallback for now
     # TODO: Implement help for specific objects

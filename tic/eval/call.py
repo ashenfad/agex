@@ -2,22 +2,14 @@ import ast
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ..agent import ExitClarify, ExitFail, ExitSuccess, _AgentExit
+from ..agent import _AgentExit
 from ..state import State
 from .base import BaseEvaluator
+from .builtins import BUILTINS
 from .error import EvalError
 from .functions import UserFunction
 from .help import help_builtin
-from .objects import TicDataClass, TicModule, TicObject
-from .user_errors import (
-    TicError,
-    TicIndexError,
-    TicKeyError,
-    TicTypeError,
-    TicValueError,
-)
-
-MAX_RANGE_SIZE = 10_000
+from .objects import TicDataClass, TicModule
 
 
 @dataclass
@@ -28,76 +20,6 @@ class StatefulFn:
     needs_state: bool = False
     needs_agent: bool = False
 
-
-# A simple placeholder object to act as the @dataclass decorator.
-# Its only purpose is to be recognized by the evaluator.
-class _DataclassDecorator:
-    pass
-
-
-dataclass = _DataclassDecorator()
-
-
-def _tic_isinstance(obj: Any, class_or_tuple: Any) -> bool:
-    """Custom isinstance function for the tic evaluator."""
-    if isinstance(class_or_tuple, TicDataClass):
-        if isinstance(obj, TicObject):
-            return obj.cls is class_or_tuple
-        return False
-    # TODO: Handle tuple of types
-    return isinstance(obj, class_or_tuple)
-
-
-def _constrained_range(*args, **kwargs):
-    """A wrapper around range() that enforces a maximum size."""
-    if kwargs:
-        raise TypeError("range() does not take keyword arguments.")
-    r = range(*args)
-    if len(r) > MAX_RANGE_SIZE:
-        raise ValueError(f"Range exceeds maximum size of {MAX_RANGE_SIZE}")
-    return list(r)
-
-
-BUILTINS: dict[str, Any] = {
-    "len": len,
-    "max": max,
-    "min": min,
-    "sum": sum,
-    "str": str,
-    "int": int,
-    "float": float,
-    "bool": bool,
-    "dict": dict,
-    "set": set,
-    "tuple": tuple,
-    "list": list,
-    "abs": abs,
-    "round": round,
-    "all": all,
-    "any": any,
-    "sorted": sorted,
-    "range": _constrained_range,
-    "reversed": lambda x: list(reversed(x)),
-    "zip": lambda *args: list(zip(*args)),
-    "enumerate": lambda x: list(enumerate(x)),
-    "map": lambda f, it: list(map(f, it)),
-    "filter": lambda f, it: list(filter(f, it)),
-    # Type introspection
-    "isinstance": _tic_isinstance,
-    "type": type,
-    # Dataclasses
-    "dataclass": dataclass,
-    # User-level exceptions, mapped from Python's names
-    "Exception": TicError,
-    "ValueError": TicValueError,
-    "TypeError": TicTypeError,
-    "KeyError": TicKeyError,
-    "IndexError": TicIndexError,
-    # Agent exit signals
-    "exit_success": ExitSuccess,
-    "exit_fail": ExitFail,
-    "exit_clarify": ExitClarify,
-}
 
 WHITELISTED_METHODS = {
     list: {
@@ -175,7 +97,6 @@ class CallEvaluator(BaseEvaluator):
 
     def visit_Call(self, node: ast.Call) -> Any:
         """Handles function calls."""
-        # Common argument processing
         args = [self.visit(arg) for arg in node.args]
         kwargs = {kw.arg: self.visit(kw.value) for kw in node.keywords if kw.arg}
 
@@ -186,7 +107,7 @@ class CallEvaluator(BaseEvaluator):
             # Check for stateful builtins first
             if (stateful_fn_wrapper := STATEFUL_BUILTINS.get(fn_name)) is not None:
                 # Inject dependencies based on the wrapper's flags
-                inj_kwargs = {}
+                inj_kwargs: dict[str, Any] = {}
                 if stateful_fn_wrapper.needs_state:
                     inj_kwargs["state"] = self.state
                 if stateful_fn_wrapper.needs_agent:

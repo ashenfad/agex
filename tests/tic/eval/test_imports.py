@@ -1,4 +1,5 @@
 import math
+from types import ModuleType
 
 import pytest
 
@@ -88,3 +89,35 @@ def test_unregistered_from_import_error():
 
     with pytest.raises(EvalError, match="Cannot import name 'non_existent_function'"):
         evaluate_program(program, agent, state)
+
+
+def test_import_submodule_patterns():
+    """
+    Tests that submodule-like import patterns using dotted names work correctly.
+    e.g., `import parent.child as c` and `from parent.child import member`.
+    """
+    # 1. Setup a dummy module to act as our "submodule"
+    child_mod = ModuleType("child")
+    child_mod.member_fn = lambda: "success"
+
+    agent = Agent()
+    # 2. Register it with a dotted name to simulate a submodule structure
+    agent.module(child_mod, name="parent.child")
+
+    # 3. Test `import parent.child as c`
+    program1 = """
+import parent.child as c
+result1 = c.member_fn()
+"""
+    state1 = Ephemeral()
+    evaluate_program(program1, agent, state1)
+    assert state1.get("result1") == "success"
+
+    # 4. Test `from parent.child import member_fn`
+    program2 = """
+from parent.child import member_fn
+result2 = member_fn()
+"""
+    state2 = Ephemeral()
+    evaluate_program(program2, agent, state2)
+    assert state2.get("result2") == "success"

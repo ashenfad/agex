@@ -16,13 +16,27 @@ class ExpressionEvaluator(BaseEvaluator):
 
     def visit_Name(self, node: ast.Name) -> Any:
         """Handles variable lookups."""
-        if node.id in BUILTINS:
-            return BUILTINS[node.id]
+        name = node.id
+        if name in BUILTINS:
+            return BUILTINS[name]
 
-        value = self.state.get(node.id)
-        if value is None and node.id not in self.state:
-            raise EvalError(f"Name '{node.id}' is not defined.", node)
-        return value
+        # Check the current execution state
+        value = self.state.get(name)
+        if value is not None or name in self.state:
+            return value
+
+        # If not in state, check agent function registry
+        if name in self.agent.fn_registry:
+            from .functions import NativeFunction
+
+            spec = self.agent.fn_registry[name]
+            return NativeFunction(name=name, fn=spec.fn)
+
+        # If not a function, check agent class registry
+        if name in self.agent.cls_registry:
+            return self.agent.cls_registry[name].cls
+
+        raise EvalError(f"Name '{name}' is not defined.", node)
 
     def visit_List(self, node: ast.List) -> list:
         """Handles list literals."""

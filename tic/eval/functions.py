@@ -1,6 +1,6 @@
 import ast
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from tic.agent import Agent
 
@@ -16,6 +16,18 @@ class _ReturnException(Exception):
 
     def __init__(self, value: Any):
         self.value = value
+
+
+@dataclass
+class NativeFunction:
+    """Represents a native Python function available in the Tic environment."""
+
+    name: str
+    fn: Callable[..., Any]
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        # Directly call the wrapped native function.
+        return self.fn(*args, **kwargs)
 
 
 @dataclass

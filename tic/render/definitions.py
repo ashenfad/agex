@@ -189,7 +189,9 @@ def _render_function(
         return f"{signature_line}\n{indent}    ..."
 
     docstring = _render_docstring(spec.docstring, indent=indent + "    ", full=full)
-    return f"{signature_line}\n{docstring}"
+    if docstring:
+        return f"{signature_line}\n{docstring}"
+    return f"{signature_line}\n{indent}    pass"
 
 
 def _render_class(
@@ -271,7 +273,7 @@ def _render_class(
 
     if not rendered_members:
         # Only "class MyClass:" if nothing was rendered
-        output.append(f"{member_indent}...")
+        output.append(f"{member_indent}pass")
     else:
         output.extend(rendered_members)
 
@@ -283,7 +285,7 @@ def _render_docstring(doc: str | None, indent: str = "", full: bool = False) -> 
     if not doc:
         if full:
             return f'{indent}""""""'
-        return f'{indent}"""..."""'
+        return ""
 
     clean_doc = inspect.cleandoc(doc)
     # Add indentation to each line

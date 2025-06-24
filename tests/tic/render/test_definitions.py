@@ -35,7 +35,7 @@ def test_render_function_with_no_docstring():
     output = render_definitions(agent)
     expected = """
 def no_doc(x, y):
-    \"\"\"...\"\"\"
+    pass
 """.strip()
     assert output.strip() == expected
 
@@ -67,7 +67,7 @@ def test_render_high_visibility_class():
     expected = """
 class MyTestClass:
     def __init__(self, val: int):
-        \"\"\"...\"\"\"
+        pass
     my_attr: int
     def do_something(self):
         \"\"\"
@@ -92,7 +92,7 @@ def test_render_medium_visibility_class():
     expected = """
 class MediumVis:
     def __init__(self, val: int):
-        \"\"\"...\"\"\"
+        pass
 """.strip()
     assert output.strip() == expected
 
@@ -206,7 +206,7 @@ def test_render_high_vis_module(dummy_module):
 module my_mod:
     class ClsHigh:
         def __init__(self):
-            """..."""
+            pass
         def meth_high(self):
             """
             High-vis meth doc.
@@ -241,7 +241,7 @@ def test_render_medium_vis_module(dummy_module):
 module my_mod:
     class ClsHigh:
         def __init__(self):
-            """..."""
+            pass
         def meth_high(self):
             """
             High-vis meth doc.
@@ -305,7 +305,7 @@ def test_render_low_vis_module_promoted_by_class(dummy_module):
 module my_mod:
     class ClsHigh:
         def __init__(self):
-            """..."""
+            pass
         def meth_high(self):
             """
             High-vis meth doc.
@@ -334,7 +334,7 @@ def test_render_low_vis_module_promoted_by_method(dummy_module):
 module my_mod:
     class ClsMed:
         def __init__(self):
-            """..."""
+            pass
         def meth_high_promote(self):
             """
             Promoting meth doc.
@@ -363,7 +363,7 @@ def test_low_vis_class_in_low_vis_module_promoted_by_method(dummy_module):
 module my_mod:
     class ClsLow:
         def __init__(self):
-            """..."""
+            pass
         def meth_high_promote(self):
             """
             Promoting meth doc.
