@@ -86,9 +86,9 @@ def _render_module(name: str, spec: RegisteredModule, full: bool = False) -> str
     if spec.visibility == "low" and is_promoted:
         effective_visibility = "medium"
 
-    # Don't render low-visibility modules at all, unless in full mode.
+    # If a module is low-vis and not promoted, just show that it exists.
     if not full and effective_visibility == "low":
-        return ""
+        return f"module {name}:\n    ..."
 
     output = [f"module {name}:"]
     indent = "    "

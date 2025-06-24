@@ -265,10 +265,10 @@ def test_render_low_vis_module_is_empty(dummy_module):
         configure={"func_med": MemberSpec(visibility="medium")},
     )
     output = render_definitions(agent)
-    assert output.strip() == ""
+    assert output.strip() == "module my_mod:\n    ..."
 
 
-def test_render_low_vis_module_promoted_by_func(dummy_module):
+def test_render_low_vis_module_promoted_by_high_vis_func(dummy_module):
     agent = Agent()
     agent.module(
         dummy_module,
