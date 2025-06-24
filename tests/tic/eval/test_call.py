@@ -1,6 +1,7 @@
 import pytest
 
 from tic.eval.error import EvalError
+from tic.eval.user_errors import TicError
 
 from .helpers import eval_and_get_state
 
@@ -284,6 +285,6 @@ is_f_func = isinstance(my_func, type(my_func))
 
 
 def test_call_on_non_callable():
-    with pytest.raises(EvalError) as e:
+    with pytest.raises(TicError) as e:
         eval_and_get_state("x = 123()")
-    assert "is not callable" in str(e.value)
+    assert "'object' is not callable" in str(e.value)

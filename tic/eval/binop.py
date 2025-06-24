@@ -4,6 +4,7 @@ from typing import Any
 
 from .base import BaseEvaluator
 from .error import EvalError
+from .user_errors import TicTypeError
 
 # Mapping from ast operator nodes to Python's operator functions
 OPERATOR_MAP = {
@@ -70,19 +71,25 @@ class BinOpEvaluator(BaseEvaluator):
     def visit_Compare(self, node: ast.Compare) -> bool:
         """Handles comparison operations."""
         left_val = self.visit(node.left)
-        # TODO: This doesn't support chained comparisons like `1 < x < 10`.
-        if len(node.ops) != 1:
-            raise EvalError("Chained comparisons are not yet supported.", node)
 
-        op_node = node.ops[0]
-        op_func = COMPARISON_MAP.get(type(op_node))
-        if not op_func:
-            raise EvalError(
-                f"Comparison operator {type(op_node).__name__} not supported.", node
-            )
+        for op, comparator_node in zip(node.ops, node.comparators):
+            right_val = self.visit(comparator_node)
 
-        right_val = self.visit(node.comparators[0])
-        try:
-            return op_func(left_val, right_val)
-        except Exception as e:
-            raise EvalError(f"Failed to execute comparison: {e}", node, cause=e)
+            op_func = COMPARISON_MAP.get(type(op))
+            if not op_func:
+                raise EvalError(
+                    f"Comparison operator {type(op).__name__} not supported.", node
+                )
+
+            try:
+                if not op_func(left_val, right_val):
+                    # Short-circuit
+                    return False
+            except TypeError as e:
+                # Re-raise as a user-catchable error
+                raise TicTypeError(str(e), node) from e
+
+            # The right value becomes the left value for the next comparison
+            left_val = right_val
+
+        return True

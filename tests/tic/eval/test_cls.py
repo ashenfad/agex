@@ -1,6 +1,7 @@
 import pytest
 
 from tic.eval.error import EvalError
+from tic.eval.user_errors import TicAttributeError, TicTypeError
 
 from .helpers import eval_and_get_state
 
@@ -120,7 +121,7 @@ class MyClass:
 inst = MyClass()
 x = inst.non_existent
 """
-    with pytest.raises(EvalError) as excinfo:
+    with pytest.raises(TicAttributeError) as excinfo:
         eval_and_get_state(program)
     assert "'MyClass' object has no attribute 'non_existent'" in str(excinfo.value)
 
@@ -133,7 +134,7 @@ class MyClass:
 inst = MyClass()
 inst.non_existent()
 """
-    with pytest.raises(EvalError) as excinfo:
+    with pytest.raises(TicAttributeError) as excinfo:
         eval_and_get_state(program)
     assert "'MyClass' object has no attribute 'non_existent'" in str(excinfo.value)
 
@@ -148,6 +149,6 @@ class Point:
 
 p = Point(10)
 """
-    with pytest.raises(EvalError) as excinfo:
+    with pytest.raises(TicTypeError) as excinfo:
         eval_and_get_state(program)
     assert "missing required positional argument: 'y'" in str(excinfo.value)

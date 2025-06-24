@@ -1,5 +1,6 @@
 import inspect
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Callable
 
 from tic.agent import Agent, ExitClarify, ExitFail, ExitSuccess
 from tic.eval.base import BaseEvaluator
@@ -20,6 +21,7 @@ from tic.eval.user_errors import (
     TicValueError,
 )
 from tic.eval.utils import find_class_spec, get_allowed_attributes_for_instance
+from tic.state import State
 
 MAX_RANGE_SIZE = 10_000
 
@@ -28,6 +30,29 @@ MAX_RANGE_SIZE = 10_000
 # Its only purpose is to be recognized by the evaluator.
 class _DataclassDecorator:
     pass
+
+
+@dataclass
+class StatefulFn:
+    """A wrapper for stateful builtins to declare their dependencies."""
+
+    fn: Callable[..., Any]
+    needs_evaluator: bool = False
+
+
+def _print_stateful(*args: Any, state: State):
+    """
+    A custom implementation of 'print' that appends its arguments to the
+    `__stdout__` list in the agent's state as a single `PrintTuple`.
+    """
+    # Ensure __stdout__ exists and is a list
+    current_stdout = state.get("__stdout__")
+    if not isinstance(current_stdout, list):
+        current_stdout = []
+
+    # Append all arguments as a single entry
+    new_stdout = current_stdout + [PrintTuple(args)]
+    state.set("__stdout__", new_stdout)
 
 
 dataclass = _DataclassDecorator()
@@ -252,17 +277,28 @@ def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
         doc = inspect.getdoc(obj)
 
     if doc is None:
-        doc = f"No documentation available for {obj!r}"
+        doc = "No help available."
 
+    # All help output goes to stdout
     current_stdout = evaluator.state.get("__stdout__")
     if not isinstance(current_stdout, list):
         current_stdout = []
+
     new_stdout = current_stdout + [PrintTuple((doc,))]
     evaluator.state.set("__stdout__", new_stdout)
 
 
-BUILTINS: dict[str, Any] = {
-    "print": lambda *args: PrintTuple(args),
+STATEFUL_BUILTINS: dict[str, StatefulFn] = {
+    "print": StatefulFn(_print_stateful),
+    "help": StatefulFn(_help, needs_evaluator=True),
+    "dir": StatefulFn(_dir, needs_evaluator=True),
+    "hasattr": StatefulFn(_hasattr, needs_evaluator=True),
+}
+
+
+# This is the main registry of built-in functions available in the sandbox.
+BUILTINS = {
+    "abs": abs,
     "len": len,
     "max": max,
     "min": min,
@@ -275,7 +311,6 @@ BUILTINS: dict[str, Any] = {
     "set": _TicTypePlaceholder(set),
     "tuple": _TicTypePlaceholder(tuple),
     "list": _TicTypePlaceholder(list),
-    "abs": abs,
     "round": round,
     "all": all,
     "any": any,
@@ -302,8 +337,4 @@ BUILTINS: dict[str, Any] = {
     "exit_success": ExitSuccess,
     "exit_fail": ExitFail,
     "exit_clarify": ExitClarify,
-    # Sandbox-aware builtins
-    "dir": _dir,
-    "hasattr": _hasattr,
-    "help": _help,
 }

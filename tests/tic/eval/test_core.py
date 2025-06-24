@@ -1,5 +1,5 @@
 from tic.agent import Agent
-from tic.eval.call import PrintTuple
+from tic.eval.objects import PrintTuple
 
 from .helpers import eval_and_get_state
 

@@ -1,7 +1,7 @@
 import ast
 from typing import Any, Callable
 
-from .error import EvalError
+from .user_errors import TicTypeError
 
 
 def bind_arguments(
@@ -37,33 +37,29 @@ def bind_arguments(
 
     # 1. Handle positional arguments
     if len(call_args) > num_positional_args and not func_args.vararg:
-        raise EvalError(
-            f"{func_name}() takes {num_positional_args} positional arguments but {len(call_args)} were given",
-            None,
+        raise TicTypeError(
+            f"{func_name}() takes {num_positional_args} positional arguments but {len(call_args)} were given"
         )
 
     for i, arg_name in enumerate(arg_names):
         if i < len(call_args):
             if arg_name in call_kwargs:
-                raise EvalError(
-                    f"{func_name}() got multiple values for argument '{arg_name}'",
-                    None,
+                raise TicTypeError(
+                    f"{func_name}() got multiple values for argument '{arg_name}'"
                 )
             bound_args[arg_name] = call_args[i]
         elif arg_name in call_kwargs:
             bound_args[arg_name] = call_kwargs.pop(arg_name)
         elif i >= first_default_idx:
             if not eval_fn:
-                raise EvalError(
-                    f"Cannot evaluate default argument for '{arg_name}' without an evaluator.",
-                    None,
+                raise TicTypeError(
+                    f"Cannot evaluate default argument for '{arg_name}' without an evaluator."
                 )
             default_val = func_args.defaults[i - first_default_idx]
             bound_args[arg_name] = eval_fn(default_val)
         else:
-            raise EvalError(
-                f"{func_name}() missing required positional argument: '{arg_name}'",
-                None,
+            raise TicTypeError(
+                f"{func_name}() missing required positional argument: '{arg_name}'"
             )
 
     # 2. Handle vararg (*args)
@@ -78,23 +74,20 @@ def bind_arguments(
             bound_args[arg_name] = call_kwargs.pop(arg_name)
         elif arg.arg in func_args.kw_defaults:
             if not eval_fn:
-                raise EvalError(
-                    f"Cannot evaluate default keyword-only argument for '{arg_name}' without an evaluator.",
-                    None,
+                raise TicTypeError(
+                    f"Cannot evaluate default keyword-only argument for '{arg_name}' without an evaluator."
                 )
             default_val = func_args.kw_defaults[kwonly_arg_names.index(arg_name)]
             if default_val is not None:
                 bound_args[arg_name] = eval_fn(default_val)
             else:
                 # This case is for keyword-only args with no default
-                raise EvalError(
-                    f"{func_name}() missing required keyword-only argument: '{arg_name}'",
-                    None,
+                raise TicTypeError(
+                    f"{func_name}() missing required keyword-only argument: '{arg_name}'"
                 )
         else:
-            raise EvalError(
-                f"{func_name}() missing required keyword-only argument: '{arg_name}'",
-                None,
+            raise TicTypeError(
+                f"{func_name}() missing required keyword-only argument: '{arg_name}'"
             )
 
     # 4. Handle kwarg (**kwargs)
@@ -102,9 +95,8 @@ def bind_arguments(
         bound_args[func_args.kwarg.arg] = call_kwargs
     elif call_kwargs:
         unexpected_arg = next(iter(call_kwargs))
-        raise EvalError(
-            f"{func_name}() got an unexpected keyword argument '{unexpected_arg}'",
-            None,
+        raise TicTypeError(
+            f"{func_name}() got an unexpected keyword argument '{unexpected_arg}'"
         )
 
     return bound_args

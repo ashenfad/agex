@@ -6,6 +6,7 @@ import pytest
 
 from tests.tic.eval.helpers import eval_and_get_state
 from tic.eval.error import EvalError
+from tic.eval.user_errors import TicAttributeError, TicTypeError
 
 
 def test_dataclass_definition_and_instantiation():
@@ -103,7 +104,7 @@ class Point:
 p = Point(1, 2)
 p.z = 3 # Should fail
 """
-    with pytest.raises(EvalError) as e:
+    with pytest.raises(TicAttributeError) as e:
         eval_and_get_state(program)
     assert "object has no attribute 'z'" in str(e.value)
 
@@ -116,7 +117,7 @@ class Point:
     y: int
 p = Point(1)
 """
-    with pytest.raises(EvalError) as e:
+    with pytest.raises(TicTypeError) as e:
         eval_and_get_state(program)
     assert "missing required positional argument: 'y'" in str(e.value)
 
@@ -131,7 +132,7 @@ p = Point(1, 2)
     # Our simple constructor doesn't give a great error message here,
     # but it should fail because 'y' will be an unexpected keyword.
     # This is an area for future improvement.
-    with pytest.raises(EvalError):
+    with pytest.raises(TicTypeError):
         eval_and_get_state(program)
 
 
@@ -142,7 +143,7 @@ class Point:
     x: int
 p = Point(x=1, z=3)
 """
-    with pytest.raises(EvalError) as e:
+    with pytest.raises(TicTypeError) as e:
         eval_and_get_state(program)
     assert "got an unexpected keyword argument 'z'" in str(e.value)
 

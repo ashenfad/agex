@@ -5,7 +5,7 @@ Internal representation of user-defined objects (dataclasses).
 from dataclasses import dataclass, field
 from typing import Any
 
-from .error import EvalError
+from .user_errors import TicAttributeError, TicTypeError
 
 
 @dataclass
@@ -18,9 +18,8 @@ class TicDataClass:
     def __call__(self, *args: Any, **kwargs: Any) -> "TicObject":
         """Creates an instance of this dataclass."""
         if len(args) > len(self.fields):
-            raise EvalError(
-                f"{self.name}() takes {len(self.fields)} positional arguments but {len(args)} were given",
-                node=None,
+            raise TicTypeError(
+                f"{self.name}() takes {len(self.fields)} positional arguments but {len(args)} were given"
             )
 
         bound_args = {}
@@ -28,24 +27,21 @@ class TicDataClass:
         for i, field_name in enumerate(self.fields):
             if i < len(args):
                 if field_name in kwargs:
-                    raise EvalError(
-                        f"{self.name}() got multiple values for argument '{field_name}'",
-                        node=None,
+                    raise TicTypeError(
+                        f"{self.name}() got multiple values for argument '{field_name}'"
                     )
                 bound_args[field_name] = args[i]
             elif field_name in kwargs:
                 bound_args[field_name] = kwargs.pop(field_name)
             else:
-                raise EvalError(
-                    f"{self.name}() missing required positional argument: '{field_name}'",
-                    node=None,
+                raise TicTypeError(
+                    f"{self.name}() missing required positional argument: '{field_name}'"
                 )
 
         if kwargs:
             unexpected = next(iter(kwargs))
-            raise EvalError(
-                f"{self.name}() got an unexpected keyword argument '{unexpected}'",
-                node=None,
+            raise TicTypeError(
+                f"{self.name}() got an unexpected keyword argument '{unexpected}'"
             )
 
         return TicObject(cls=self, attributes=bound_args)
@@ -64,23 +60,22 @@ class TicObject:
 
     def getattr(self, name: str) -> Any:
         if name not in self.attributes:
-            raise EvalError(
-                f"'{self.cls.name}' object has no attribute '{name}'", node=None
+            raise TicAttributeError(
+                f"'{self.cls.name}' object has no attribute '{name}'"
             )
         return self.attributes[name]
 
     def setattr(self, name: str, value: Any):
         if name not in self.cls.fields:
-            raise EvalError(
-                f"'{self.cls.name}' object has no attribute '{name}' (cannot add new attributes)",
-                node=None,
+            raise TicAttributeError(
+                f"'{self.cls.name}' object has no attribute '{name}' (cannot add new attributes)"
             )
         self.attributes[name] = value
 
     def delattr(self, name: str):
         if name not in self.attributes:
-            raise EvalError(
-                f"'{self.cls.name}' object has no attribute '{name}'", node=None
+            raise TicAttributeError(
+                f"'{self.cls.name}' object has no attribute '{name}'"
             )
         del self.attributes[name]
 
@@ -129,9 +124,7 @@ class TicInstance:
             function = self.cls.methods[name]
             return TicMethod(instance=self, function=function)
 
-        raise EvalError(
-            f"'{self.cls.name}' object has no attribute '{name}'", node=None
-        )
+        raise TicAttributeError(f"'{self.cls.name}' object has no attribute '{name}'")
 
     def setattr(self, name: str, value: Any):
         """Set an attribute on the instance."""
@@ -140,8 +133,8 @@ class TicInstance:
     def delattr(self, name: str):
         """Delete an attribute from the instance."""
         if name not in self.attributes:
-            raise EvalError(
-                f"'{self.cls.name}' object has no attribute '{name}'", node=None
+            raise TicAttributeError(
+                f"'{self.cls.name}' object has no attribute '{name}'"
             )
         del self.attributes[name]
 

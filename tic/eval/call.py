@@ -1,45 +1,13 @@
 import ast
-from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from ..agent import _AgentExit
-from ..state import State
 from .base import BaseEvaluator
-from .builtins import _dir, _hasattr, _help
+from .builtins import STATEFUL_BUILTINS, _print_stateful
 from .error import EvalError
 from .functions import UserFunction
-from .objects import PrintTuple, TicClass
-
-
-@dataclass
-class StatefulFn:
-    """A wrapper for stateful builtins to declare their dependencies."""
-
-    fn: Callable[..., Any]
-    needs_evaluator: bool = False
-
-
-def _print_stateful(*args: Any, state: State):
-    """
-    A custom implementation of 'print' that appends its arguments to the
-    `__stdout__` list in the agent's state as a single `PrintTuple`.
-    """
-    # Ensure __stdout__ exists and is a list
-    current_stdout = state.get("__stdout__")
-    if not isinstance(current_stdout, list):
-        current_stdout = []
-
-    # Append all arguments as a single entry
-    new_stdout = current_stdout + [PrintTuple(args)]
-    state.set("__stdout__", new_stdout)
-
-
-STATEFUL_BUILTINS: dict[str, StatefulFn] = {
-    "print": StatefulFn(_print_stateful),
-    "help": StatefulFn(_help, needs_evaluator=True),
-    "dir": StatefulFn(_dir, needs_evaluator=True),
-    "hasattr": StatefulFn(_hasattr, needs_evaluator=True),
-}
+from .objects import TicClass, TicDataClass
+from .user_errors import TicError
 
 
 class CallEvaluator(BaseEvaluator):
@@ -64,6 +32,8 @@ class CallEvaluator(BaseEvaluator):
                     else:
                         # For builtins that don't need the evaluator
                         return stateful_fn_wrapper.fn(*args, **kwargs)
+                except TicError:
+                    raise
                 except Exception as e:
                     if isinstance(e, _AgentExit):
                         raise e
@@ -77,7 +47,7 @@ class CallEvaluator(BaseEvaluator):
 
         try:
             # Handle calling a TicClass to create an instance
-            if isinstance(fn, TicClass):
+            if isinstance(fn, (TicClass, TicDataClass)):
                 return fn(*args, **kwargs)
 
             if isinstance(fn, UserFunction):
@@ -87,7 +57,7 @@ class CallEvaluator(BaseEvaluator):
                 fn_name_for_error = getattr(
                     node.func, "attr", getattr(node.func, "id", "object")
                 )
-                raise EvalError(f"'{fn_name_for_error}' is not callable.", node)
+                raise TicError(f"'{fn_name_for_error}' is not callable.", node)
 
             result = fn(*args, **kwargs)
 
@@ -96,6 +66,9 @@ class CallEvaluator(BaseEvaluator):
                 raise result  # type: ignore
 
             return result
+        except TicError:
+            # Re-raise user-facing errors directly without wrapping
+            raise
         except Exception as e:
             if isinstance(e, _AgentExit):
                 raise e
