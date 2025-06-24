@@ -2,7 +2,7 @@
 Internal representation of user-defined objects (dataclasses).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .error import EvalError
@@ -76,6 +76,72 @@ class TicObject:
                 node=None,
             )
         self.attributes[name] = value
+
+
+class TicClass:
+    """Represents a user-defined class created with the 'class' keyword."""
+
+    def __init__(self, name: str, methods: dict[str, Any]):
+        self.name = name
+        self.methods = methods
+
+    def __repr__(self):
+        return f"<class '{self.name}'>"
+
+    def __call__(self, *args: Any, **kwargs: Any) -> "TicInstance":
+        """Create an instance of the class."""
+        instance = TicInstance(cls=self)
+
+        # Look for an __init__ method and call it if it exists.
+        if "__init__" in self.methods:
+            init_method = self.methods["__init__"]
+            bound_init = TicMethod(instance=instance, function=init_method)
+            bound_init(*args, **kwargs)  # Call __init__
+
+        return instance
+
+
+@dataclass
+class TicInstance:
+    """Represents an instance of a user-defined TicClass."""
+
+    cls: TicClass
+    attributes: dict[str, Any] = field(default_factory=dict)
+
+    def __repr__(self) -> str:
+        return f"<{self.cls.name} object>"
+
+    def getattr(self, name: str) -> Any:
+        """Get an attribute from the instance, or a method from the class."""
+        # Instance attributes take precedence
+        if name in self.attributes:
+            return self.attributes[name]
+
+        # Then, look for a method on the class
+        if name in self.cls.methods:
+            function = self.cls.methods[name]
+            return TicMethod(instance=self, function=function)
+
+        raise EvalError(
+            f"'{self.cls.name}' object has no attribute '{name}'", node=None
+        )
+
+    def setattr(self, name: str, value: Any):
+        """Set an attribute on the instance."""
+        self.attributes[name] = value
+
+
+@dataclass
+class TicMethod:
+    """A method bound to a TicInstance. It's a callable wrapper."""
+
+    instance: TicInstance
+    function: Any  # This will be a tic.eval.functions.UserFunction
+
+    def __call__(self, *args, **kwargs):
+        """Call the underlying function with the instance as the first argument."""
+        # This allows TicMethod to wrap any callable, not just UserFunction.
+        return self.function(self.instance, *args, **kwargs)
 
 
 class TicModule:

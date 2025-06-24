@@ -3,8 +3,15 @@ from typing import Any
 
 from tic.agent import Agent, ExitClarify, ExitFail, ExitSuccess
 from tic.eval.base import BaseEvaluator
-from tic.eval.functions import NativeFunction
-from tic.eval.objects import PrintTuple, TicDataClass, TicModule, TicObject
+from tic.eval.functions import NativeFunction, UserFunction
+from tic.eval.objects import (
+    PrintTuple,
+    TicClass,
+    TicDataClass,
+    TicInstance,
+    TicModule,
+    TicObject,
+)
 from tic.eval.user_errors import (
     TicError,
     TicIndexError,
@@ -95,6 +102,14 @@ def _dir(evaluator: BaseEvaluator, *args, **kwargs) -> None:
     if obj is None:
         # If no object, dir() lists names in the current scope.
         attrs = tuple(sorted(evaluator.state.keys()))
+    elif isinstance(obj, TicInstance):
+        # Instance attributes and class methods
+        instance_attrs = set(obj.attributes.keys())
+        class_methods = set(obj.cls.methods.keys())
+        attrs = tuple(sorted(list(instance_attrs.union(class_methods))))
+    elif isinstance(obj, TicClass):
+        # Class methods
+        attrs = tuple(sorted(obj.methods.keys()))
     elif isinstance(obj, TicObject):
         attrs = tuple(sorted(obj.attributes.keys()))
     elif isinstance(obj, TicModule):
@@ -170,6 +185,13 @@ def _get_general_help_text(agent: "Agent") -> str:
     return "Available items:\n" + "\n".join(parts)
 
 
+def _format_user_function_sig(fn: UserFunction) -> str:
+    """Creates a string signature for a UserFunction."""
+    # This is a simplified formatter. A real one would handle more arg types.
+    arg_names = [arg.arg for arg in fn.args.args]
+    return f"{fn.name}({', '.join(arg_names)})"
+
+
 def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
     """Implementation of the help() builtin."""
     if kwargs:
@@ -182,6 +204,24 @@ def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
     doc = None
     if obj is None:
         doc = _get_general_help_text(evaluator.agent)
+    elif isinstance(obj, TicInstance):
+        # For an instance, show help for its class.
+        return _help(evaluator, obj.cls)
+    elif isinstance(obj, TicClass):
+        parts = [f"Help on class {obj.name}:\n"]
+        if "__init__" in obj.methods:
+            init_sig = _format_user_function_sig(obj.methods["__init__"])
+            parts.append(f"{obj.name}{init_sig.replace('__init__', '', 1)}")
+        else:
+            parts.append(f"{obj.name}()")
+
+        methods = sorted(obj.methods.keys())
+        if methods:
+            parts.append("\nMethods defined here:")
+            for method_name in methods:
+                method_sig = _format_user_function_sig(obj.methods[method_name])
+                parts.append(f"  {method_sig}")
+        doc = "\n".join(parts)
     elif isinstance(obj, TicModule):
         # Special handling to render help for a TicModule
         parts = ["Help on module " + obj.__name__ + ":\n"]

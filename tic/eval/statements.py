@@ -3,12 +3,13 @@ from typing import Any
 
 from tic.agent import _AgentExit
 from tic.eval.builtins import dataclass
-from tic.eval.functions import _ReturnException
+from tic.eval.functions import UserFunction, _ReturnException
+from tic.state.scoped import Scoped
 
 from .base import BaseEvaluator
 from .binop import OPERATOR_MAP
 from .error import EvalError
-from .objects import TicDataClass, TicModule, TicObject
+from .objects import TicClass, TicDataClass, TicInstance, TicModule, TicObject
 
 
 class StatementEvaluator(BaseEvaluator):
@@ -96,9 +97,9 @@ class StatementEvaluator(BaseEvaluator):
                     self.state.set(root_name, root_container)
             elif isinstance(target, ast.Attribute):
                 obj = self.visit(target.value)
-                if not isinstance(obj, TicObject):
+                if not isinstance(obj, (TicObject, TicInstance)):
                     raise EvalError(
-                        "Attribute assignment is only supported for dataclass instances.",
+                        "Attribute assignment is only supported for dataclass or class instances.",
                         target,
                     )
                 obj.setattr(target.attr, value)
@@ -273,35 +274,52 @@ class StatementEvaluator(BaseEvaluator):
         if not module_name_to_find:
             raise EvalError("Relative imports are not supported.", node)
 
+        # Special case: allow `from dataclasses import dataclass` as a no-op
+        # because we provide our own built-in `dataclass` object.
+        if module_name_to_find == "dataclasses":
+            is_just_dataclass_import = all(
+                alias.name == "dataclass" and alias.asname is None
+                for alias in node.names
+            )
+            if is_just_dataclass_import:
+                return  # Silently ignore and succeed.
+
         reg_module = self.agent.importable_modules.get(module_name_to_find)
         if not reg_module:
             raise EvalError(
-                f"Module '{module_name_to_find}' is not registered or whitelisted.",
-                node,
+                f"No module named '{module_name_to_find}' is registered.", node
             )
 
         for alias in node.names:
             name_to_import = alias.name
-            import_as = alias.asname or name_to_import
+            target_name = alias.asname or name_to_import
 
-            # Check fns, consts, and classes
-            if name_to_import in reg_module.fns:
-                obj = getattr(reg_module.module, name_to_import)
-            elif name_to_import in reg_module.consts:
-                obj = getattr(reg_module.module, name_to_import)
-            elif name_to_import in reg_module.classes:
-                obj = reg_module.classes[name_to_import].cls
-            elif name_to_import == "*":
-                raise EvalError("Wildcard imports are not supported.", node)
+            # This is a simplified import model. We don't build a full TicModule
+            # instance here, we just grab the member directly from the host module.
+            # A more robust version would handle TicModule sub-members.
+            if hasattr(reg_module.module, name_to_import):
+                member = getattr(reg_module.module, name_to_import)
+                self.state.set(target_name, member)
             else:
                 raise EvalError(
                     f"Cannot import name '{name_to_import}' from module '{module_name_to_find}'.",
                     node,
                 )
-            self.state.set(import_as, obj)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        """
+        Handles annotated assignments (e.g., `x: int`).
+
+        In the context of a class body, this is used to collect field names
+        for dataclasses. We don't actually evaluate the annotation, we just
+        record the variable name. In other contexts, it's a no-op.
+        """
+        # This visitor is primarily for dataclass parsing. The logic to use
+        # the result is within visit_ClassDef. Outside of a class, it does nothing.
+        pass
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        """Handles class definitions (only dataclasses are supported)."""
+        """Handles class definition statements, supporting both regular and dataclasses."""
         # 1. Check for the @dataclass decorator.
         is_dataclass = False
         if node.decorator_list:
@@ -314,16 +332,19 @@ class StatementEvaluator(BaseEvaluator):
             if decorator is dataclass:
                 is_dataclass = True
 
-        if not is_dataclass:
+        if node.bases or node.keywords:
             raise EvalError(
-                "Class definitions must use the @dataclass decorator.", node
+                "Inheritance and other advanced class features are not supported.", node
             )
 
-        # 2. Forbid inheritance.
-        if node.bases or node.keywords:
-            raise EvalError("Dataclass inheritance is not supported.", node)
+        # 2. Dispatch to the correct handler based on decorator.
+        if is_dataclass:
+            self._create_dataclass(node)
+        else:
+            self._create_regular_class(node)
 
-        # 3. Extract fields and forbid methods.
+    def _create_dataclass(self, node: ast.ClassDef):
+        """Creates a TicDataClass from a class definition node."""
         fields = []
         for stmt in node.body:
             if isinstance(stmt, ast.AnnAssign):
@@ -341,6 +362,35 @@ class StatementEvaluator(BaseEvaluator):
         if not fields:
             raise EvalError("Dataclasses must define at least one field.", node)
 
-        # 4. Create and store the TicDataClass object.
-        cls_obj = TicDataClass(name=node.name, fields=fields)  # type: ignore
+        cls_obj = TicDataClass(name=node.name, fields={f: None for f in fields})
         self.state.set(node.name, cls_obj)
+
+    def _create_regular_class(self, node: ast.ClassDef):
+        """Creates a TicClass for a regular class definition."""
+        from tic.eval.core import Evaluator
+
+        # To execute the class body in isolation, we create a new evaluator
+        # with its own temporary, scoped state.
+        class_exec_state = Scoped(self.state)
+        class_evaluator = Evaluator(
+            agent=self.agent,
+            state=class_exec_state,
+            source_code=self.source_code,
+        )
+
+        # Execute the body of the class using the new evaluator.
+        for stmt in node.body:
+            class_evaluator.visit(stmt)
+
+        # Extract methods (UserFunctions) from the temporary state's local scope.
+        methods = {
+            name: value
+            for name, value in class_exec_state._local_store.items()
+            if isinstance(value, UserFunction)
+        }
+
+        # Create the TicClass object.
+        cls = TicClass(name=node.name, methods=methods)
+
+        # Assign the new class to its name in the *main* state.
+        self.state.set(node.name, cls)

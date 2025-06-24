@@ -6,6 +6,7 @@ from typing import Any, Callable, Iterable, Literal, Union
 
 Pattern = Union[str, Iterable[str], Callable[[str], bool]]
 Visibility = Literal["high", "medium", "low"]
+RESERVED_NAMES = {"dataclass", "dataclasses"}
 
 
 class _AgentExit(Exception):
@@ -132,6 +133,10 @@ class Agent:
 
         def decorator(f: Callable) -> Callable:
             final_name = name or f.__name__
+            if final_name in RESERVED_NAMES:
+                raise ValueError(
+                    f"The name '{final_name}' is reserved and cannot be registered."
+                )
             final_doc = docstring if docstring is not None else f.__doc__
             self.fn_registry[final_name] = RegisteredFn(
                 fn=f, visibility=visibility, docstring=final_doc
@@ -158,6 +163,12 @@ class Agent:
         final_configure = configure or {}
 
         def decorator(c: type) -> type:
+            final_name = name or c.__name__
+            if final_name in RESERVED_NAMES:
+                raise ValueError(
+                    f"The name '{final_name}' is reserved and cannot be registered."
+                )
+
             # 1. Generate all possible members
             all_members = {
                 name
@@ -205,8 +216,6 @@ class Agent:
                 else:
                     final_attrs[member_name] = MemberSpec(visibility=vis, docstring=doc)
 
-            final_name = name or c.__name__
-
             # Create the spec for the current class
             spec = RegisteredClass(
                 cls=c,
@@ -244,6 +253,10 @@ class Agent:
         Registers a module and its members with the agent.
         """
         final_name = name or mod.__name__.split(".")[-1]
+        if final_name in RESERVED_NAMES:
+            raise ValueError(
+                f"The name '{final_name}' is reserved and cannot be registered."
+            )
         final_configure = configure or {}
 
         # 1. Generate all possible members with dot-notation for class members

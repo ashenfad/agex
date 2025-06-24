@@ -62,14 +62,8 @@ is_a_B = isinstance(a_inst, B)
     assert state.get("is_a_B") is False
 
 
-def test_error_on_non_dataclass():
-    program = "class MyClass: pass"
-    with pytest.raises(EvalError) as e:
-        eval_and_get_state(program)
-    assert "must use the @dataclass decorator" in str(e.value)
-
-
 def test_error_on_inheritance():
+    """Tests that an error is raised for dataclass inheritance."""
     program = """
 @dataclass
 class Parent:
@@ -81,7 +75,9 @@ class Child(Parent):
 """
     with pytest.raises(EvalError) as e:
         eval_and_get_state(program)
-    assert "inheritance is not supported" in str(e.value)
+    assert "Inheritance and other advanced class features are not supported" in str(
+        e.value
+    )
 
 
 def test_error_on_methods():
@@ -149,3 +145,35 @@ p = Point(x=1, z=3)
     with pytest.raises(EvalError) as e:
         eval_and_get_state(program)
     assert "got an unexpected keyword argument 'z'" in str(e.value)
+
+
+def test_import_dataclass_is_allowed():
+    """
+    Tests that `from dataclasses import dataclass` is silently ignored and works.
+    """
+    program = """
+from dataclasses import dataclass
+
+@dataclass
+class Point:
+    x: int
+    y: int
+
+p = Point(1, 2)
+x_val = p.x
+"""
+    state = eval_and_get_state(program)
+    assert state.get("x_val") == 1
+
+
+def test_import_other_from_dataclasses_fails():
+    """
+    Tests that importing anything other than `dataclass` from the `dataclasses`
+    module fails, as the module is not actually registered.
+    """
+    program = """
+from dataclasses import field
+"""
+    with pytest.raises(EvalError) as e:
+        eval_and_get_state(program)
+    assert "No module named 'dataclasses' is registered" in str(e.value)

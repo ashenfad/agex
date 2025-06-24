@@ -1,7 +1,7 @@
 from typing import Any
 
 from ..eval.functions import UserFunction
-from ..eval.objects import PrintTuple, TicObject
+from ..eval.objects import PrintTuple, TicClass, TicInstance, TicObject
 
 
 class ValueRenderer:
@@ -20,9 +20,13 @@ class ValueRenderer:
         if isinstance(value, UserFunction):
             return self._render_user_function(value)
         if isinstance(value, TicObject):
-            return self._render_tic_object(value, current_depth)
+            return self._render_tic_instance_or_object(value, current_depth)
         if isinstance(value, PrintTuple):
             return self._render_print_tuple(value, current_depth)
+        if isinstance(value, TicInstance):
+            return self._render_tic_instance_or_object(value, current_depth)
+        if isinstance(value, TicClass):
+            return self._render_tic_class(value)
 
         # Then primitives
         if isinstance(value, (int, float, bool, type(None))):
@@ -108,7 +112,7 @@ class ValueRenderer:
     def _render_user_function(self, value: UserFunction) -> str:
         return f"<function {value.name}>"
 
-    def _render_tic_object(self, value: TicObject, depth: int) -> str:
+    def _render_tic_instance_or_object(self, value: Any, depth: int) -> str:
         items = []
         for k, v in value.attributes.items():
             rendered_value = self.render(v, depth + 1)
@@ -118,6 +122,9 @@ class ValueRenderer:
                 break
             items.append(item_str)
         return f"{value.cls.name}({', '.join(items)})"
+
+    def _render_tic_class(self, value: TicClass) -> str:
+        return f"<class '{value.name}'>"
 
     def _render_print_tuple(self, value: PrintTuple, depth: int) -> str:
         """Renders the content of a PrintTuple space-separated."""

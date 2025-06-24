@@ -5,7 +5,7 @@ from ..eval.utils import get_allowed_attributes_for_instance
 from .base import BaseEvaluator
 from .builtins import BUILTINS
 from .error import EvalError
-from .objects import TicModule, TicObject
+from .objects import TicInstance, TicModule, TicObject
 
 
 class ExpressionEvaluator(BaseEvaluator):
@@ -92,7 +92,7 @@ class ExpressionEvaluator(BaseEvaluator):
         obj = self.visit(node.value)
 
         # Sandboxed TicObjects have their own logic
-        if isinstance(obj, TicObject):
+        if isinstance(obj, (TicObject, TicInstance)):
             return obj.getattr(node.attr)
 
         # Allow access to module attributes

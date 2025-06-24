@@ -1,5 +1,8 @@
 import math
 from dataclasses import dataclass
+from types import ModuleType
+
+import pytest
 
 from tests.tic import test_module
 from tic.agent import Agent, MemberSpec, RegisteredClass
@@ -78,6 +81,28 @@ def test_agent_fn_registration_with_name_alias():
     assert "original_function_name" not in agent.fn_registry
     reg = agent.fn_registry["alias"]
     assert reg.fn() == "aliased"
+
+
+def test_registering_reserved_name_fails():
+    """Tests that registering a reserved name raises a ValueError."""
+    agent = Agent()
+
+    def my_fn():
+        pass
+
+    class MyClass:
+        pass
+
+    dummy_module = ModuleType("dummy")
+
+    with pytest.raises(ValueError, match="is reserved"):
+        agent.fn(my_fn, name="dataclass")
+
+    with pytest.raises(ValueError, match="is reserved"):
+        agent.cls(MyClass, name="dataclass")
+
+    with pytest.raises(ValueError, match="is reserved"):
+        agent.module(dummy_module, name="dataclasses")
 
 
 def test_agent_cls_registration_defaults():

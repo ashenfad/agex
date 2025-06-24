@@ -8,7 +8,7 @@ from .base import BaseEvaluator
 from .builtins import _dir, _hasattr, _help
 from .error import EvalError
 from .functions import UserFunction
-from .objects import PrintTuple
+from .objects import PrintTuple, TicClass
 
 
 @dataclass
@@ -76,6 +76,10 @@ class CallEvaluator(BaseEvaluator):
         fn = self.visit(node.func)
 
         try:
+            # Handle calling a TicClass to create an instance
+            if isinstance(fn, TicClass):
+                return fn(*args, **kwargs)
+
             if isinstance(fn, UserFunction):
                 return fn.execute(args, kwargs, self.source_code)
 
