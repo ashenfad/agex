@@ -115,10 +115,12 @@ def test_help_on_registered_module():
 
     program = """
 import my_mod
-help_text = help(my_mod)
+help(my_mod)
 """
     state = eval_and_get_state(program, agent)
-    help_text = state.get("help_text")
+    stdout = state.get("__stdout__")
+    assert len(stdout) == 1
+    help_text = stdout[0][0]
     assert "Help on module my_mod" in help_text
     assert "my_fn" in help_text
 
@@ -134,8 +136,10 @@ def test_help_on_registered_fn():
 
     # Note that `my_reg_fn_for_help` is NOT defined in the program string.
     # The evaluator should find it in the agent's registry via `visit_Name`.
-    program = "help_text = help(my_reg_fn_for_help)"
+    program = "help(my_reg_fn_for_help)"
 
     state = eval_and_get_state(program, agent)
-    help_text = state.get("help_text")
+    stdout = state.get("__stdout__")
+    assert len(stdout) == 1
+    help_text = stdout[0][0]
     assert "A docstring for help." in help_text

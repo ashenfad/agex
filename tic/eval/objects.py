@@ -86,3 +86,9 @@ class TicModule:
 
     def __repr__(self):
         return f"<ticmodule '{self.__name__}'>"
+
+
+class PrintTuple(tuple):
+    """A wrapper to distinguish tuples created by print() for special rendering."""
+
+    pass

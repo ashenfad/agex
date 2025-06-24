@@ -6,7 +6,7 @@ from .helpers import eval_and_get_state
 def test_stateful_help_builtin_general():
     """
     Tests that the stateful `help()` function, when called with no arguments,
-    returns a string listing available items from the agent's registry.
+    writes its output to __stdout__.
     """
     agent = Agent()
 
@@ -19,8 +19,10 @@ def test_stateful_help_builtin_general():
     class MyTestClass:
         pass
 
-    state = eval_and_get_state("help_text = help()", agent)
-    help_str = state.get("help_text")
+    state = eval_and_get_state("help()", agent)
+    stdout = state.get("__stdout__")
+    assert len(stdout) == 1
+    help_str = stdout[0][0]  # It's a PrintTuple with one string inside
 
     assert "Available items:" in help_str
     assert "Functions:" in help_str
@@ -39,8 +41,10 @@ def test_help_with_simple_name_argument():
     agent = Agent()
     code = """
 x = 1
-help_text = help(x)
+help(x)
 """
     state = eval_and_get_state(code, agent)
-    help_str = state.get("help_text")
+    stdout = state.get("__stdout__")
+    assert len(stdout) == 1
+    help_str = stdout[0][0]
     assert "Convert a number or string to an integer" in help_str

@@ -2,7 +2,8 @@ from typing import Any
 
 from tic.agent import Agent
 from tic.eval.functions import NativeFunction
-from tic.eval.objects import TicModule
+from tic.eval.objects import PrintTuple, TicModule
+from tic.state import State
 
 
 def _get_general_help_text(agent: "Agent") -> str:
@@ -38,35 +39,51 @@ def _get_general_help_text(agent: "Agent") -> str:
     return "Available items:\n" + "\n".join(parts)
 
 
-def help_builtin(obj: Any = None, *, agent: "Agent") -> str:
-    """Provides help information about a registered object or lists all available items."""
+def help_builtin(obj: Any = None, *, agent: "Agent", state: "State") -> None:
+    """
+    Provides help information about a registered object or lists all available items.
+    This is a side-effect function that writes to __stdout__ in the state.
+    """
+    # First, generate the help string exactly as before.
+    help_text: str
     if obj is None:
-        return _get_general_help_text(agent)
-
-    doc = None
-    if isinstance(obj, NativeFunction):
-        doc = obj.fn.__doc__
-    elif isinstance(obj, TicModule):
-        # Special handling to render help for a TicModule
-        parts = ["Help on module " + obj.__name__ + ":\n"]
-        # Introspect the module for contents
-        contents = sorted([attr for attr in dir(obj) if not attr.startswith("_")])
-        if contents:
-            parts.append("CONTENTS")
-            parts.extend([f"    {item}" for item in contents])
-        return "\n".join(parts)
+        help_text = _get_general_help_text(agent)
     else:
-        doc = getattr(obj, "__doc__", None)
+        doc = None
+        if isinstance(obj, NativeFunction):
+            doc = obj.fn.__doc__
+        elif isinstance(obj, TicModule):
+            # Special handling to render help for a TicModule
+            parts = ["Help on module " + obj.__name__ + ":\n"]
+            # Introspect the module for contents
+            contents = sorted([attr for attr in dir(obj) if not attr.startswith("_")])
+            if contents:
+                parts.append("CONTENTS")
+                parts.extend([f"    {item}" for item in contents])
+            help_text = "\n".join(parts)
+        else:
+            doc = getattr(obj, "__doc__", None)
 
-    if doc:
-        # A simple docstring renderer for now.
-        name = (
-            obj.name
-            if isinstance(obj, NativeFunction)
-            else getattr(obj, "__name__", "object")
-        )
-        return f"Help for {name}:\n\n{doc.strip()}"
+        if doc:
+            # A simple docstring renderer for now.
+            name = (
+                obj.name
+                if isinstance(obj, NativeFunction)
+                else getattr(obj, "__name__", "object")
+            )
+            help_text = f"Help for {name}:\n\n{doc.strip()}"
+        elif not isinstance(obj, TicModule):  # Already handled TicModule case
+            # Fallback for now
+            # TODO: Implement help for specific objects
+            help_text = (
+                f"Help is not yet available for objects of type: {type(obj).__name__}"
+            )
 
-    # Fallback for now
-    # TODO: Implement help for specific objects
-    return f"Help is not yet available for objects of type: {type(obj).__name__}"
+    # Now, write the generated string to stdout.
+    current_stdout = state.get("__stdout__")
+    if not isinstance(current_stdout, list):
+        current_stdout = []
+
+    # Append all arguments as a single entry
+    new_stdout = current_stdout + [PrintTuple([help_text])]
+    state.set("__stdout__", new_stdout)

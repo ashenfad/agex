@@ -6,10 +6,11 @@ from ..agent import _AgentExit
 from ..state import State
 from .base import BaseEvaluator
 from .builtins import BUILTINS
+from .dir import dir_builtin
 from .error import EvalError
 from .functions import UserFunction
 from .help import help_builtin
-from .objects import TicDataClass, TicModule
+from .objects import PrintTuple, TicDataClass, TicModule
 
 
 @dataclass
@@ -65,12 +66,6 @@ MATERIALIZE_METHODS = {
 }
 
 
-class PrintTuple(tuple):
-    """A wrapper to distinguish tuples created by print() for special rendering."""
-
-    pass
-
-
 def _print_stateful(*args: Any, state: State):
     """
     A custom implementation of 'print' that appends its arguments to the
@@ -88,7 +83,8 @@ def _print_stateful(*args: Any, state: State):
 
 STATEFUL_BUILTINS: dict[str, StatefulFn] = {
     "print": StatefulFn(_print_stateful, needs_state=True),
-    "help": StatefulFn(help_builtin, needs_agent=True),
+    "help": StatefulFn(help_builtin, needs_agent=True, needs_state=True),
+    "dir": StatefulFn(dir_builtin, needs_state=True),
 }
 
 
