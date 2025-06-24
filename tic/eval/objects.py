@@ -77,6 +77,13 @@ class TicObject:
             )
         self.attributes[name] = value
 
+    def delattr(self, name: str):
+        if name not in self.attributes:
+            raise EvalError(
+                f"'{self.cls.name}' object has no attribute '{name}'", node=None
+            )
+        del self.attributes[name]
+
 
 class TicClass:
     """Represents a user-defined class created with the 'class' keyword."""
@@ -129,6 +136,14 @@ class TicInstance:
     def setattr(self, name: str, value: Any):
         """Set an attribute on the instance."""
         self.attributes[name] = value
+
+    def delattr(self, name: str):
+        """Delete an attribute from the instance."""
+        if name not in self.attributes:
+            raise EvalError(
+                f"'{self.cls.name}' object has no attribute '{name}'", node=None
+            )
+        del self.attributes[name]
 
 
 @dataclass

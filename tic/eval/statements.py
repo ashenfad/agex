@@ -130,9 +130,17 @@ class StatementEvaluator(BaseEvaluator):
 
                 if root_name:
                     self.state.set(root_name, root_container)
+            elif isinstance(target, ast.Attribute):
+                obj = self.visit(target.value)
+                if not isinstance(obj, (TicObject, TicInstance)):
+                    raise EvalError(
+                        "del is only supported on attributes of custom class or dataclass instances.",
+                        target,
+                    )
+                obj.delattr(target.attr)
             else:
                 raise EvalError(
-                    "del is currently only supported for variables and subscripts.",
+                    "del is currently only supported for variables, subscripts, and attributes.",
                     target,
                 )
 

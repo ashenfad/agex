@@ -162,3 +162,21 @@ del nested["list"][0]
     assert state.get("my_list") == [1, 3, 4]
     assert state.get("my_dict") == {"a": 1, "c": 3}
     assert state.get("nested")["list"] == [20, 30]
+
+
+def test_del_statement_attributes():
+    """Tests the 'del' statement for object attributes."""
+    program = """
+class MyClass:
+    def __init__(self):
+        self.a = 1
+        self.b = 2
+
+inst = MyClass()
+del inst.a
+"""
+    state = eval_and_get_state(program)
+    inst = state.get("inst")
+    assert "a" not in inst.attributes
+    assert "b" in inst.attributes
+    assert inst.attributes["b"] == 2
