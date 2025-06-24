@@ -132,3 +132,33 @@ d["a"][0] = 99
     # The key assertion: the original `l` variable should also be mutated.
     assert state.get("l") == [99, 2, 3]
     assert state.get("d")["a"] is state.get("l")  # They should be the same object
+
+
+def test_del_statement():
+    """Tests the 'del' statement for deleting variables."""
+    program = """
+x = 10
+y = 20
+del x
+"""
+    state = eval_and_get_state(program)
+    assert "x" not in state
+    assert state.get("y") == 20
+
+
+def test_del_statement_nested():
+    """Tests the 'del' statement for nested data structures."""
+    program = """
+my_list = [1, 2, 3, 4]
+my_dict = {"a": 1, "b": 2, "c": 3}
+nested = {"list": [10, 20, 30]}
+
+del my_list[1]
+del my_dict["b"]
+del nested["list"][0]
+"""
+    state = eval_and_get_state(program)
+
+    assert state.get("my_list") == [1, 3, 4]
+    assert state.get("my_dict") == {"a": 1, "c": 3}
+    assert state.get("nested")["list"] == [20, 30]

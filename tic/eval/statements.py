@@ -108,6 +108,34 @@ class StatementEvaluator(BaseEvaluator):
                     "This type of assignment target is not supported.", node
                 )
 
+    def visit_Delete(self, node: ast.Delete) -> None:
+        """Handles the 'del' statement."""
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                if target.id in self.state:
+                    self.state.remove(target.id)
+                else:
+                    raise NameError(f"name '{target.id}' is not defined")
+            elif isinstance(target, ast.Subscript):
+                (
+                    root_name,
+                    root_container,
+                    container,
+                    key,
+                ) = self._resolve_subscript_for_mutation(target)
+                try:
+                    del container[key]
+                except (KeyError, IndexError) as e:
+                    raise EvalError(f"Cannot delete item: {e}", target, cause=e)
+
+                if root_name:
+                    self.state.set(root_name, root_container)
+            else:
+                raise EvalError(
+                    "del is currently only supported for variables and subscripts.",
+                    target,
+                )
+
     def visit_Pass(self, node: ast.Pass) -> None:
         """Handles the 'pass' statement."""
         # The 'pass' statement does nothing.
