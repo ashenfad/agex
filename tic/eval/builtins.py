@@ -89,8 +89,12 @@ def _constrained_range(*args, **kwargs):
     return list(r)
 
 
-def _dir(evaluator: BaseEvaluator, *args, **kwargs) -> None:
-    """Implementation of the dir() builtin."""
+def _dir(evaluator: BaseEvaluator, *args, **kwargs) -> list[str]:
+    """
+    Implementation of the dir() builtin.
+    NOTE: This is not like Python's dir(). It always prints to stdout and
+    returns the list of attributes.
+    """
     if kwargs:
         raise TicError("dir() does not take keyword arguments.")
     if len(args) > 1:
@@ -98,36 +102,36 @@ def _dir(evaluator: BaseEvaluator, *args, **kwargs) -> None:
 
     obj = args[0] if args else None
 
-    attrs: tuple[str, ...]
+    attrs: list[str]
     if obj is None:
         # If no object, dir() lists names in the current scope.
-        attrs = tuple(sorted(evaluator.state.keys()))
+        attrs = sorted(evaluator.state.keys())
     elif isinstance(obj, TicInstance):
         # Instance attributes and class methods
         instance_attrs = set(obj.attributes.keys())
         class_methods = set(obj.cls.methods.keys())
-        attrs = tuple(sorted(list(instance_attrs.union(class_methods))))
+        attrs = sorted(list(instance_attrs.union(class_methods)))
     elif isinstance(obj, TicClass):
         # Class methods
-        attrs = tuple(sorted(obj.methods.keys()))
+        attrs = sorted(obj.methods.keys())
     elif isinstance(obj, TicObject):
-        attrs = tuple(sorted(obj.attributes.keys()))
+        attrs = sorted(obj.attributes.keys())
     elif isinstance(obj, TicModule):
         # For modules, list their sandboxed contents.
-        attrs = tuple(sorted([a for a in dir(obj) if not a.startswith("_")]))
+        attrs = sorted([a for a in dir(obj) if not a.startswith("_")])
     else:
-        # Check registered classes and native types
+        # For all other objects, respect the agent's sandbox rules.
         allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
-        attrs = tuple(sorted(list(allowed)))
+        attrs = sorted(list(allowed))
 
     current_stdout = evaluator.state.get("__stdout__")
     if not isinstance(current_stdout, list):
         current_stdout = []
 
-    # The result of dir() is a list of strings. We wrap it in a PrintTuple
-    # to match the behavior of how print() writes to stdout.
-    new_stdout = current_stdout + [PrintTuple((list(attrs),))]
+    new_stdout = current_stdout + [PrintTuple((attrs,))]
     evaluator.state.set("__stdout__", new_stdout)
+
+    return attrs
 
 
 def _hasattr(evaluator: BaseEvaluator, *args, **kwargs) -> bool:
@@ -144,6 +148,10 @@ def _hasattr(evaluator: BaseEvaluator, *args, **kwargs) -> bool:
     # Handle TicObjects first
     if isinstance(obj, TicObject):
         return name in obj.attributes
+    if isinstance(obj, TicInstance):
+        return name in obj.attributes or name in obj.cls.methods
+    if isinstance(obj, TicClass):
+        return name in obj.methods
     if isinstance(obj, TicModule):
         return hasattr(obj, name) and not name.startswith("_")
 

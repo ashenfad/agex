@@ -35,7 +35,7 @@ def _print_stateful(*args: Any, state: State):
 
 
 STATEFUL_BUILTINS: dict[str, StatefulFn] = {
-    "print": StatefulFn(_print_stateful, needs_evaluator=False),
+    "print": StatefulFn(_print_stateful),
     "help": StatefulFn(_help, needs_evaluator=True),
     "dir": StatefulFn(_dir, needs_evaluator=True),
     "hasattr": StatefulFn(_hasattr, needs_evaluator=True),

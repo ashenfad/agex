@@ -1,7 +1,9 @@
 import ast
 
+from .user_errors import TicError
 
-class EvalError(Exception):
+
+class EvalError(TicError):
     """Custom exception for evaluation errors."""
 
     def __init__(
