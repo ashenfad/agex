@@ -52,10 +52,32 @@ def test_agent_fn_registration_functional():
 
 def test_agent_fn_registration_functional_builtin():
     agent = Agent()
-    agent.fn()(math.sqrt)
+    agent.fn()(math.sqrt)  # Test the decorator factory style
     assert "sqrt" in agent.fn_registry
     reg = agent.fn_registry["sqrt"]
     assert reg.fn == math.sqrt
+
+
+def test_agent_fn_registration_direct_call():
+    agent = Agent()
+    agent.fn(math.sqrt)  # Test the direct call style
+    assert "sqrt" in agent.fn_registry
+    reg = agent.fn_registry["sqrt"]
+    assert reg.fn == math.sqrt
+
+
+def test_agent_fn_registration_with_name_alias():
+    agent = Agent()
+
+    def original_function_name():
+        return "aliased"
+
+    agent.fn(original_function_name, name="alias")
+
+    assert "alias" in agent.fn_registry
+    assert "original_function_name" not in agent.fn_registry
+    reg = agent.fn_registry["alias"]
+    assert reg.fn() == "aliased"
 
 
 def test_agent_cls_registration_defaults():
@@ -195,6 +217,7 @@ def test_agent_module_registration():
     cls_reg = reg.classes["PublicClass"]
     assert cls_reg.constructable is True
     assert "__init__" in cls_reg.methods
+    assert "public_method" in cls_reg.methods
     assert cls_reg.methods["public_method"].visibility == "high"
 
 
@@ -269,3 +292,32 @@ def test_agent_cls_no_parens():
     assert reg.cls == SimpleData
     assert reg.visibility == "high"  # Check default visibility
     assert set(reg.attrs.keys()) == {"value"}  # Check default attr selection
+
+
+def test_agent_cls_direct_call():
+    agent = Agent()
+
+    class MyClass:
+        pass
+
+    agent.cls(MyClass, visibility="low")
+
+    assert "MyClass" in agent.cls_registry
+    reg = agent.cls_registry["MyClass"]
+    assert reg.cls == MyClass
+    assert reg.visibility == "low"
+
+
+def test_agent_cls_with_name_alias():
+    agent = Agent()
+
+    class OriginalClassName:
+        pass
+
+    agent.cls(OriginalClassName, name="AliasClass")
+
+    assert "AliasClass" in agent.cls_registry
+    assert "OriginalClassName" not in agent.cls_registry
+
+    reg = agent.cls_registry["AliasClass"]
+    assert reg.cls == OriginalClassName

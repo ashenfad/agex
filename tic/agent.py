@@ -120,17 +120,19 @@ class Agent:
         self,
         _fn: Callable | None = None,
         *,
+        name: str | None = None,
         visibility: Visibility = "high",
         docstring: str | None = None,
     ):
         """
         Registers a function with the agent.
-        Can be used as a decorator (`@agent.fn`) or a direct call (`agent.fn(...)(...)`).
+        Can be used as a decorator (`@agent.fn`) or a direct call (`agent.fn(...)`).
         """
 
         def decorator(f: Callable) -> Callable:
+            final_name = name or f.__name__
             final_doc = docstring if docstring is not None else f.__doc__
-            self.fn_registry[f.__name__] = RegisteredFn(
+            self.fn_registry[final_name] = RegisteredFn(
                 fn=f, visibility=visibility, docstring=final_doc
             )
             return f
@@ -141,6 +143,7 @@ class Agent:
         self,
         _cls: type | None = None,
         *,
+        name: str | None = None,
         visibility: Visibility = "high",
         constructable: bool = True,
         include: Pattern | None = "*",
@@ -180,19 +183,22 @@ class Agent:
             elif "__init__" in selected_names:
                 selected_names.remove("__init__")
 
-            for name in selected_names:
-                config = final_configure.get(name, MemberSpec())
+            for member_name in selected_names:
+                config = final_configure.get(member_name, MemberSpec())
                 # If visibility is not specified in config, use class default
                 vis = config.visibility or visibility
                 doc = config.docstring
 
-                member = getattr(c, name, None)
+                member = getattr(c, member_name, None)
                 if inspect.isroutine(member):
-                    final_methods[name] = MemberSpec(visibility=vis, docstring=doc)
+                    final_methods[member_name] = MemberSpec(
+                        visibility=vis, docstring=doc
+                    )
                 else:
-                    final_attrs[name] = MemberSpec(visibility=vis, docstring=doc)
+                    final_attrs[member_name] = MemberSpec(visibility=vis, docstring=doc)
 
-            self.cls_registry[c.__name__] = RegisteredClass(
+            final_name = name or c.__name__
+            self.cls_registry[final_name] = RegisteredClass(
                 cls=c,
                 visibility=visibility,
                 constructable=constructable,

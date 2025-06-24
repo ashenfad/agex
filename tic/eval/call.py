@@ -1,4 +1,5 @@
 import ast
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from ..agent import ExitClarify, ExitFail, ExitSuccess, _AgentExit
@@ -6,6 +7,7 @@ from ..state import State
 from .base import BaseEvaluator
 from .error import EvalError
 from .functions import UserFunction
+from .help import help_builtin
 from .objects import TicDataClass, TicModule, TicObject
 from .user_errors import (
     TicError,
@@ -16,6 +18,15 @@ from .user_errors import (
 )
 
 MAX_RANGE_SIZE = 10_000
+
+
+@dataclass
+class StatefulFn:
+    """A wrapper for stateful builtins to declare their dependencies."""
+
+    fn: Callable[..., Any]
+    needs_state: bool = False
+    needs_agent: bool = False
 
 
 # A simple placeholder object to act as the @dataclass decorator.
@@ -153,8 +164,9 @@ def _print_stateful(*args: Any, state: State):
     state.set("__stdout__", new_stdout)
 
 
-STATEFUL_BUILTINS: dict[str, Callable[..., Any]] = {
-    "print": _print_stateful,
+STATEFUL_BUILTINS: dict[str, StatefulFn] = {
+    "print": StatefulFn(_print_stateful, needs_state=True),
+    "help": StatefulFn(help_builtin, needs_agent=True),
 }
 
 
@@ -172,10 +184,16 @@ class CallEvaluator(BaseEvaluator):
             fn_name = node.func.id
 
             # Check for stateful builtins first
-            if (stateful_fn := STATEFUL_BUILTINS.get(fn_name)) is not None:
+            if (stateful_fn_wrapper := STATEFUL_BUILTINS.get(fn_name)) is not None:
+                # Inject dependencies based on the wrapper's flags
+                inj_kwargs = {}
+                if stateful_fn_wrapper.needs_state:
+                    inj_kwargs["state"] = self.state
+                if stateful_fn_wrapper.needs_agent:
+                    inj_kwargs["agent"] = self.agent
+
                 try:
-                    # This allows stateful builtins to accept a 'state' kwarg.
-                    return stateful_fn(*args, **kwargs, state=self.state)
+                    return stateful_fn_wrapper.fn(*args, **kwargs, **inj_kwargs)
                 except Exception as e:
                     # Re-raise agent exit signals immediately
                     if isinstance(e, _AgentExit):
