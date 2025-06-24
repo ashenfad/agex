@@ -128,3 +128,28 @@ class ExpressionEvaluator(BaseEvaluator):
             raise EvalError(
                 "This object is not subscriptable or does not support slicing.", node
             )
+
+    def visit_FormattedValue(self, node: ast.FormattedValue) -> str:
+        """Handles formatted values in f-strings."""
+        value = self.visit(node.value)
+
+        # First, apply conversion if any is specified (!s, !r, !a).
+        if node.conversion == 115:  # !s
+            value_to_format = str(value)
+        elif node.conversion == 114:  # !r
+            value_to_format = repr(value)
+        elif node.conversion == 97:  # !a
+            value_to_format = ascii(value)
+        else:
+            value_to_format = value
+
+        if node.format_spec:
+            # The format_spec is an expression (often a JoinedStr) that needs evaluation.
+            format_spec = self.visit(node.format_spec)
+            return format(value_to_format, format_spec)
+
+        return str(value_to_format)
+
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> str:
+        """Handles f-strings by joining all the parts."""
+        return "".join([self.visit(v) for v in node.values])

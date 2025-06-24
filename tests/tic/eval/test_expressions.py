@@ -1,6 +1,9 @@
 from types import ModuleType
 
+import pytest
+
 from tic.agent import Agent
+from tic.eval.error import EvalError
 from tic.eval.functions import NativeFunction
 
 from .helpers import eval_and_get_state
@@ -143,3 +146,56 @@ def test_help_on_registered_fn():
     assert len(stdout) == 1
     help_text = stdout[0][0]
     assert "A docstring for help." in help_text
+
+
+def test_f_string_formatting():
+    """Tests that f-string formatting works as expected."""
+    program = """
+name = "world"
+s = f"hello {name.upper()}"
+"""
+    state = eval_and_get_state(program)
+    assert state.get("s") == "hello WORLD"
+
+
+def test_percent_string_formatting():
+    """Tests that %-string formatting works as expected."""
+    program = """
+name = "world"
+s = "hello %s" % name.upper()
+"""
+    state = eval_and_get_state(program)
+    assert state.get("s") == "hello WORLD"
+
+
+def test_f_string_sandbox():
+    """Tests that f-string expressions cannot call un-whitelisted methods."""
+    agent = Agent()
+
+    class MyHostClass:
+        def safe_method(self):
+            return "SAFE"
+
+        def unsafe_method(self):
+            return "UNSAFE"
+
+    agent.cls(MyHostClass, include=["safe_method"])
+
+    # This program tries to call the un-whitelisted `unsafe_method` inside an f-string.
+    program = """
+inst = MyHostClass()
+s = f"hello {inst.unsafe_method()}"
+"""
+
+    with pytest.raises(EvalError) as excinfo:
+        eval_and_get_state(program, agent)
+
+    assert "object has no attribute 'unsafe_method'" in str(excinfo.value)
+
+    # Also test that the safe method works.
+    program_safe = """
+inst = MyHostClass()
+s = f"hello {inst.safe_method()}"
+"""
+    state = eval_and_get_state(program_safe, agent)
+    assert state.get("s") == "hello SAFE"
