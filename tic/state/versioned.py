@@ -1,12 +1,9 @@
 import secrets
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import Any, Iterable
 
 from . import kv
 from .core import State
 from .ephemeral import Ephemeral
-
-if TYPE_CHECKING:
-    from ..agent import Agent
 
 PARENT_COMMIT = "__parent_commit__%s"
 COMMIT_KEYSET = "__commit_keyset__%s"
@@ -22,7 +19,7 @@ class Versioned(State):
         self.removed = set()
         self.long_term = store
         self.current_commit = commit_hash
-        self._rehydration_agent: "Agent | None" = None  # Store agent for rehydration
+
         self.commit_keys: dict[str, str]
         if self.current_commit is not None:
             self.commit_keys = self.long_term.get(
@@ -45,18 +42,7 @@ class Versioned(State):
             key not in self.removed
             and (versioned_key := self.commit_keys.get(key)) is not None
         ):
-            value = self.long_term.get(versioned_key, default)
-            # Rehydrate objects when loading from storage
-            if self._rehydration_agent is not None:
-                try:
-                    # Import here to avoid circular dependencies
-                    from ..eval.freezing import ObjectFreezer
-
-                    value = ObjectFreezer.rehydrate(value, self._rehydration_agent)
-                except ImportError:
-                    # Fallback if eval package not available
-                    pass
-            return value
+            return self.long_term.get(versioned_key, default)
         return default
 
     def set(self, key: str, value: Any) -> None:
@@ -118,18 +104,8 @@ class Versioned(State):
 
         # layer recent writes on top of existing keys
         for key, value in self.ephemeral.items():
-            # Use ObjectFreezer to handle all eval object freezing
-            try:
-                # Import here to avoid circular dependencies
-                from ..eval.freezing import ObjectFreezer
-
-                frozen_value = ObjectFreezer.freeze(value)
-            except ImportError:
-                # Fallback if eval package not available
-                frozen_value = value
-
             versioned_key = self._versioned_key(key, new_hash)
-            diffs[versioned_key] = frozen_value
+            diffs[versioned_key] = value
             new_commit_keys[key] = versioned_key
 
         diffs[COMMIT_KEYSET % new_hash] = new_commit_keys
@@ -143,47 +119,18 @@ class Versioned(State):
 
         return new_hash
 
-    def checkout(
-        self, commit_hash: str, agent: "Agent | None" = None
-    ) -> "Versioned | None":
+    def checkout(self, commit_hash: str) -> "Versioned | None":
         """
         Return a new Versioned state object at a specific commit hash.
 
         Args:
             commit_hash: The commit to checkout
-            agent: Optional agent to reattach to stored objects
         """
         # First, validate that the commit is in our history.
         if commit_hash not in list(self.history()):
             return None
 
-        new_state = Versioned(self.long_term, commit_hash=commit_hash)
-
-        # If an agent is provided, rehydrate stored objects
-        if agent is not None:
-            new_state._rehydrate_functions(agent)
-
-        return new_state
-
-    def _rehydrate_functions(self, agent: "Agent") -> None:
-        """
-        Store the agent for future rehydration when objects are loaded from storage.
-        """
-        # Store the agent for future lazy rehydration in get()
-        self._rehydration_agent = agent
-
-        # Rehydrate functions in the current ephemeral state
-        try:
-            # Import here to avoid circular dependencies
-            from ..eval.freezing import ObjectFreezer
-
-            for key, value in list(self.ephemeral.items()):
-                rehydrated_value = ObjectFreezer.rehydrate(value, agent)
-                if rehydrated_value is not value:
-                    self.ephemeral.set(key, rehydrated_value)
-        except ImportError:
-            # Fallback if eval package not available
-            pass
+        return Versioned(self.long_term, commit_hash=commit_hash)
 
     def diffs(self, commit_hash: str | None = None) -> dict[str, Any]:
         """

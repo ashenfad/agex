@@ -156,21 +156,14 @@ class TicMethod:
         return self.function(self.instance, *args, **kwargs)
 
 
-class TicModule:
-    """A sandboxed module object for use within the Tic evaluator."""
-
-    def __init__(self, name: str):
-        self.__name__ = name
-
-    def __repr__(self):
-        return f"<ticmodule '{self.__name__}'>"
-
-
 @dataclass
-class TicModuleStub:
-    """A serializable placeholder for a TicModule."""
+class TicModule:
+    """A sandboxed, serializable module object for use within the Tic evaluator."""
 
     name: str
+
+    def __repr__(self):
+        return f"<ticmodule '{self.name}'>"
 
 
 class PrintTuple(tuple):

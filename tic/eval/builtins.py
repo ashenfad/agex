@@ -142,8 +142,12 @@ def _dir(evaluator: BaseEvaluator, *args, **kwargs) -> list[str]:
     elif isinstance(obj, TicObject):
         attrs = sorted(obj.attributes.keys())
     elif isinstance(obj, TicModule):
-        # For modules, list their sandboxed contents.
-        attrs = sorted([a for a in dir(obj) if not a.startswith("_")])
+        # For modules, introspect the actual registered module
+        reg_module = evaluator.agent.importable_modules.get(obj.name)
+        if reg_module:
+            attrs = sorted([a for a in dir(reg_module.module) if not a.startswith("_")])
+        else:
+            attrs = []
     else:
         # For all other objects, respect the agent's sandbox rules.
         allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
@@ -178,7 +182,11 @@ def _hasattr(evaluator: BaseEvaluator, *args, **kwargs) -> bool:
     if isinstance(obj, TicClass):
         return name in obj.methods
     if isinstance(obj, TicModule):
-        return hasattr(obj, name) and not name.startswith("_")
+        # Use JIT resolution to check if the attribute exists on the real module
+        reg_module = evaluator.agent.importable_modules.get(obj.name)
+        if not reg_module:
+            return False
+        return hasattr(reg_module.module, name) and not name.startswith("_")
 
     # Check registered classes and native types
     allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
@@ -257,12 +265,16 @@ def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
         doc = "\n".join(parts)
     elif isinstance(obj, TicModule):
         # Special handling to render help for a TicModule
-        parts = ["Help on module " + obj.__name__ + ":\n"]
-        # Introspect the module for contents
-        contents = sorted([attr for attr in dir(obj) if not attr.startswith("_")])
-        if contents:
-            parts.append("CONTENTS")
-            parts.extend([f"    {item}" for item in contents])
+        parts = ["Help on module " + obj.name + ":\n"]
+        # Introspect the actual registered module for contents
+        reg_module = evaluator.agent.importable_modules.get(obj.name)
+        if reg_module:
+            contents = sorted(
+                [attr for attr in dir(reg_module.module) if not attr.startswith("_")]
+            )
+            if contents:
+                parts.append("CONTENTS")
+                parts.extend([f"    {item}" for item in contents])
         doc = "\n".join(parts)
     else:
         # For everything else (TicObject, NativeFunction, raw Python objects/functions),

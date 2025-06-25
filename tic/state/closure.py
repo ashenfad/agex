@@ -1,4 +1,4 @@
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 from .core import State
 
@@ -15,20 +15,35 @@ class LiveClosureState(State):
     When a variable is requested, this class performs a live lookup in the
     original state, thus preserving Python's late-binding semantics for
     closures.
+
+    When pickled (during state snapshots), it automatically freezes itself
+    into static storage by capturing the current values of all free variables.
     """
 
     def __init__(self, state_source: State, free_vars: set[str]):
-        self._source = state_source
+        self._source: Optional[State] = state_source
         self._keys = free_vars
+        self._frozen_store: Optional[dict[str, Any]] = (
+            None  # Will be set if we're in frozen state
+        )
 
     @property
     def base_store(self) -> "State":
+        if self._frozen_store is not None:
+            return self  # We are the base store when frozen
+        assert self._source is not None
         return self._source.base_store
 
     def get(self, key: str, default: Any = None) -> Any:
         if key not in self._keys:
             # This should ideally not be hit if the analyzer is correct.
             raise KeyError(f"'{key}' is not a valid variable in this closure.")
+
+        # If we're in frozen state, use the frozen store
+        if self._frozen_store is not None:
+            return self._frozen_store.get(key, default)
+
+        assert self._source is not None
         return self._source.get(key, default)
 
     def set(self, key: str, value: Any) -> None:
@@ -50,3 +65,40 @@ class LiveClosureState(State):
 
     def __contains__(self, key: str) -> bool:
         return key in self._keys
+
+    def __getstate__(self) -> dict[str, Any]:
+        """
+        Freeze the live closure into static state when pickling.
+
+        Captures the current values of all free variables and returns them
+        as a static dictionary, converting this from a live view to frozen storage.
+        """
+        from types import ModuleType
+
+        from ..eval.objects import TicModule
+
+        # If already frozen, return the frozen state
+        if self._source is None:
+            assert self._frozen_store is not None
+            return {"frozen_values": self._frozen_store, "keys": self._keys}
+
+        frozen_values = {}
+        for key in self._keys:
+            value = self._source.get(key)
+            # Convert any raw modules to TicModule (safety net)
+            if isinstance(value, ModuleType):
+                frozen_values[key] = TicModule(name=value.__name__)
+            else:
+                frozen_values[key] = value
+
+        return {"frozen_values": frozen_values, "keys": self._keys}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """
+        Restore from frozen state with static storage.
+
+        After unpickling, we behave like static storage rather than a live view.
+        """
+        self._keys = state["keys"]
+        self._source = None  # No longer needed
+        self._frozen_store = state["frozen_values"]  # Use frozen values directly

@@ -2,7 +2,7 @@ import ast
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from tic.agent import Agent
+from tic.agent import resolve_agent
 
 from ..state import State
 from ..state.closure import LiveClosureState
@@ -43,16 +43,17 @@ class UserFunction:
     body: list[ast.stmt]
     closure_state: State  # A *reference* to the state where the function was defined.
     source_text: str | None = None
-    agent: Agent | None = None  # The agent context this function was defined in.
+    agent_fingerprint: str | None = (
+        None  # Fingerprint of the agent this function was defined in
+    )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        if not self.agent:
+        if not self.agent_fingerprint:
             raise RuntimeError(
                 "UserFunction cannot be called directly without an Agent context."
             )
-        # The agent provides the top-level source code for consistent errors.
-        source_code = getattr(self.agent, "_source_code_for_eval", None)
-        return self.execute(list(args), kwargs, source_code)
+        # No source code available from fingerprint
+        return self.execute(list(args), kwargs, None)
 
     def execute(self, args: list, kwargs: dict, source_code: str | None):
         """Execute the function with a new evaluator."""
@@ -65,11 +66,14 @@ class UserFunction:
         for name, value in bound_args.items():
             exec_state.set(name, value)
 
-        if not self.agent:
+        if not self.agent_fingerprint:
             raise RuntimeError("Cannot execute function without an agent context.")
 
+        # Resolve agent from fingerprint
+        agent = resolve_agent(self.agent_fingerprint)
+
         evaluator = Evaluator(
-            agent=self.agent,
+            agent=agent,
             state=exec_state,
             source_code=source_code,
         )
@@ -99,7 +103,7 @@ class FunctionEvaluator(BaseEvaluator):
             body=node.body,
             closure_state=closure,
             source_text=source_text,
-            agent=self.agent,
+            agent_fingerprint=self.agent.fingerprint,
         )
         self.state.set(node.name, func)
 
@@ -118,7 +122,7 @@ class FunctionEvaluator(BaseEvaluator):
             body=[ast.Return(value=node.body)],  # Lambdas are a single expression
             closure_state=closure,
             source_text=source_text,
-            agent=self.agent,
+            agent_fingerprint=self.agent.fingerprint,
         )
 
     def visit_Return(self, node: ast.Return) -> None:

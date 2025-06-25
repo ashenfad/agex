@@ -5,7 +5,7 @@ from ..eval.utils import get_allowed_attributes_for_instance
 from .base import BaseEvaluator
 from .builtins import BUILTINS
 from .error import EvalError
-from .objects import TicInstance, TicModule, TicModuleStub, TicObject
+from .objects import TicInstance, TicModule, TicObject
 from .user_errors import TicAttributeError
 
 
@@ -21,15 +21,6 @@ class ExpressionEvaluator(BaseEvaluator):
         # 2. Check the current execution state
         value = self.state.get(name)
         if value is not None or name in self.state:
-            # If it's a TicModuleStub, restore it to a full TicModule
-            if isinstance(value, TicModuleStub):
-                try:
-                    rebuilt_module = self._create_tic_module(value.name)
-                    self.state.set(name, rebuilt_module)
-                    return rebuilt_module
-                except EvalError as e:
-                    e.node = node
-                    raise
             return value
 
         # 3. Check agent function registry
@@ -101,17 +92,7 @@ class ExpressionEvaluator(BaseEvaluator):
         """Handles attribute access like 'obj.attr'."""
         value = self.visit(node.value)
 
-        if isinstance(value, TicModuleStub):
-            # Rehydrate the module on first access
-            try:
-                rebuilt_module = self._create_tic_module(value.name)
-            except EvalError as e:
-                e.node = node.value  # Pinpoint error to the module name
-                raise
-
-            if isinstance(node.value, ast.Name):
-                self.state.set(node.value.id, rebuilt_module)
-            value = rebuilt_module
+        # Handle TicModule with JIT resolution (implemented below)
 
         attr_name = node.attr
 
@@ -119,14 +100,31 @@ class ExpressionEvaluator(BaseEvaluator):
         if isinstance(value, (TicObject, TicInstance)):
             return value.getattr(attr_name)
 
-        # Allow access to module attributes
+        # Handle TicModule attribute access with JIT resolution
         if isinstance(value, TicModule):
+            # Look up the real module from the agent's registry
+            reg_module = self.agent.importable_modules.get(value.name)
+            if not reg_module:
+                raise TicAttributeError(
+                    f"Module '{value.name}' is not registered", node
+                )
+
+            # Get the attribute from the real module
             try:
-                return getattr(value, attr_name)
+                real_attr = getattr(reg_module.module, attr_name)
             except AttributeError:
                 raise TicAttributeError(
-                    f"module '{value.__name__}' has no attribute '{attr_name}'", node
+                    f"module '{value.name}' has no attribute '{attr_name}'", node
                 )
+
+            # If the attribute is a module, return a new TicModule
+            # Otherwise, return the actual value
+            import types
+
+            if isinstance(real_attr, types.ModuleType):
+                return TicModule(name=f"{value.name}.{attr_name}")
+
+            return real_attr
 
         # Check for registered host classes and whitelisted methods
         allowed_attrs = get_allowed_attributes_for_instance(self.agent, value)
@@ -142,6 +140,13 @@ class ExpressionEvaluator(BaseEvaluator):
         raise TicAttributeError(
             f"'{type(value).__name__}' object has no attribute '{attr_name}'", node
         )
+
+    def visit_Slice(self, node: ast.Slice) -> slice:
+        """Handles slice objects."""
+        lower = self.visit(node.lower) if node.lower else None
+        upper = self.visit(node.upper) if node.upper else None
+        step = self.visit(node.step) if node.step else None
+        return slice(lower, upper, step)
 
     def visit_Subscript(self, node: ast.Subscript) -> Any:
         """Handles subscript access like `d['key']` or `l[0]` or `l[1:5]`."""

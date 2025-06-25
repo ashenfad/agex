@@ -1,100 +1,21 @@
 import fnmatch
 import inspect
-from dataclasses import dataclass, field
 from types import ModuleType
-from typing import Any, Callable, Iterable, Literal, Union
+from typing import Callable, Dict
 
-Pattern = Union[str, Iterable[str], Callable[[str], bool]]
-Visibility = Literal["high", "medium", "low"]
-RESERVED_NAMES = {"dataclass", "dataclasses"}
+from .datatypes import (
+    RESERVED_NAMES,
+    MemberSpec,
+    Pattern,
+    RegisteredClass,
+    RegisteredFn,
+    RegisteredModule,
+    Visibility,
+)
+from .fingerprint import compute_agent_fingerprint
 
-
-class _AgentExit(Exception):
-    """Base class for agent exit signals. Should not be caught by user code."""
-
-    pass
-
-
-@dataclass
-class ExitSuccess(_AgentExit):
-    """Signal that the agent has completed its task successfully."""
-
-    result: Any
-
-
-@dataclass
-class ExitFail(_AgentExit):
-    """Signal that the agent has failed and cannot complete its task."""
-
-    reason: str
-
-
-@dataclass
-class ExitClarify(_AgentExit):
-    """Signal that the agent needs clarification from the user."""
-
-    question: str
-
-
-@dataclass
-class Task:
-    """A placeholder for a task definition."""
-
-    # For now, we don't need any fields.
-    # This will be fleshed out later.
-    pass
-
-
-def task(func):
-    """A decorator to mark a function as an agent task."""
-    return Task()
-
-
-@dataclass
-class MemberSpec:
-    visibility: Visibility | None = None
-    docstring: str | None = None
-    constructable: bool | None = None
-
-
-@dataclass
-class AttrDescriptor:
-    # A descriptor to hold metadata until the class is processed.
-    default: Any
-    visibility: Visibility
-
-
-@dataclass
-class RegisteredItem:
-    visibility: Visibility
-
-
-@dataclass
-class RegisteredFn(RegisteredItem):
-    fn: Callable
-    docstring: str | None
-
-
-@dataclass
-class RegisteredClass(RegisteredItem):
-    """Represents a registered class and its members."""
-
-    cls: type
-    constructable: bool
-    # 'visibility' on RegisteredItem is the default.
-    attrs: dict[str, MemberSpec] = field(default_factory=dict)
-    methods: dict[str, MemberSpec] = field(default_factory=dict)
-
-
-@dataclass
-class RegisteredModule(RegisteredItem):
-    """Represents a registered module with its selected members."""
-
-    name: str  # The name the agent will use to import it
-    module: ModuleType
-    fns: dict[str, MemberSpec] = field(default_factory=dict)
-    consts: dict[str, MemberSpec] = field(default_factory=dict)
-    classes: dict[str, RegisteredClass] = field(default_factory=dict)
+# Global registry mapping fingerprints to agents
+_AGENT_REGISTRY: Dict[str, "Agent"] = {}
 
 
 def _create_predicate(pattern: Pattern | None) -> Callable[[str], bool]:
@@ -110,6 +31,41 @@ def _create_predicate(pattern: Pattern | None) -> Callable[[str], bool]:
     raise TypeError(f"Unsupported pattern type: {type(pattern)}")
 
 
+def register_agent(agent: "Agent") -> str:
+    """
+    Register an agent in the global registry.
+
+    Returns the agent's fingerprint.
+    """
+    fingerprint = compute_agent_fingerprint(
+        agent.primer, agent.fn_registry, agent.cls_registry, agent.importable_modules
+    )
+    _AGENT_REGISTRY[fingerprint] = agent
+    return fingerprint
+
+
+def resolve_agent(fingerprint: str) -> "Agent":
+    """
+    Resolve an agent by its fingerprint.
+
+    Raises RuntimeError if no matching agent is found.
+    """
+    agent = _AGENT_REGISTRY.get(fingerprint)
+    if not agent:
+        available = list(_AGENT_REGISTRY.keys())
+        raise RuntimeError(
+            f"No agent found with fingerprint '{fingerprint[:8]}...'. "
+            f"Available fingerprints: {[fp[:8] + '...' for fp in available]}"
+        )
+    return agent
+
+
+def clear_agent_registry() -> None:
+    """Clear the global registry. Primarily for testing."""
+    global _AGENT_REGISTRY
+    _AGENT_REGISTRY = {}
+
+
 class Agent:
     def __init__(self, primer: str | None = None):
         self.primer = primer
@@ -117,6 +73,13 @@ class Agent:
         self.cls_registry: dict[str, RegisteredClass] = {}
         self.cls_registry_by_type: dict[type, RegisteredClass] = {}
         self.importable_modules: dict[str, RegisteredModule] = {}
+
+        # Auto-register this agent
+        self.fingerprint = register_agent(self)
+
+    def _update_fingerprint(self):
+        """Update the fingerprint after registration changes."""
+        self.fingerprint = register_agent(self)
 
     def fn(
         self,
@@ -141,6 +104,7 @@ class Agent:
             self.fn_registry[final_name] = RegisteredFn(
                 fn=f, visibility=visibility, docstring=final_doc
             )
+            self._update_fingerprint()
             return f
 
         return decorator(_fn) if _fn else decorator
@@ -235,6 +199,7 @@ class Agent:
 
             self.cls_registry[final_name] = spec
             self.cls_registry_by_type[c] = spec
+            self._update_fingerprint()
             return c
 
         return decorator(_cls) if _cls else decorator
@@ -372,6 +337,10 @@ class Agent:
         for spec in mod_classes.values():
             self.cls_registry_by_type[spec.cls] = spec
 
+        self._update_fingerprint()
+
     def task(self, func):
         """A decorator to mark a function as an agent task."""
+        from .datatypes import Task
+
         return Task()
