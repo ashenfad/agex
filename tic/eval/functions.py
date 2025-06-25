@@ -95,7 +95,12 @@ class FunctionEvaluator(BaseEvaluator):
 
         source_text = None
         if self.source_code:
-            source_text = ast.get_source_segment(self.source_code, node)
+            try:
+                source_text = ast.get_source_segment(self.source_code, node)
+            except (IndexError, ValueError):
+                # Source extraction can fail in rehydrated contexts
+                # where line numbers don't align properly
+                source_text = None
 
         func = UserFunction(
             name=node.name,
@@ -114,7 +119,12 @@ class FunctionEvaluator(BaseEvaluator):
 
         source_text = None
         if self.source_code:
-            source_text = ast.get_source_segment(self.source_code, node)
+            try:
+                source_text = ast.get_source_segment(self.source_code, node)
+            except (IndexError, ValueError):
+                # Source extraction can fail in rehydrated contexts
+                # where line numbers don't align properly
+                source_text = None
 
         return UserFunction(
             name="<lambda>",

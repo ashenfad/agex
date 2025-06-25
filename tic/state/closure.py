@@ -41,26 +41,23 @@ class LiveClosureState(State):
 
         assert self._source is not None
 
-        # If the key is in our captured variables, get it from source
-        if key in self._keys:
-            return self._source.get(key, default)
-
         # Allow access to system variables (starting with __) even if not captured
         if key.startswith("__"):
             return self._source.get(key, default)
 
-        # Allow access to builtins even if not captured
-        from ..eval.builtins import BUILTINS
+        # Check builtins to handle name collisions (e.g. user variable named 'hasattr')
+        from ..eval.builtins import BUILTINS, STATEFUL_BUILTINS
 
         if key in BUILTINS:
             return BUILTINS[key]
+        if key in STATEFUL_BUILTINS:
+            return STATEFUL_BUILTINS[key]
 
-        # For other variables, check if they exist in source before restricting
-        # This allows access to global variables and prevents the "list index out of range" issue
-        if key in self._source:
+        # If the key is in our captured variables, get it from source
+        if key in self._keys:
             return self._source.get(key, default)
 
-        # If the variable doesn't exist anywhere, raise an appropriate error
+        # If the variable doesn't exist in captured vars or builtins, it's undefined
         from ..eval.error import EvalError
 
         raise EvalError(f"Name '{key}' is not defined.", None)
@@ -103,7 +100,7 @@ class LiveClosureState(State):
 
         frozen_values = {}
         for key in self._keys:
-            value = self._source.get(key)
+            value = self.get(key)  # Use self.get() to properly resolve variables
             # Convert any raw modules to TicModule (safety net)
             if isinstance(value, ModuleType):
                 frozen_values[key] = TicModule(name=value.__name__)
