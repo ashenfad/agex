@@ -2,6 +2,7 @@ import pytest
 
 from tic.agent import Agent
 from tic.eval.error import EvalError
+from tic.eval.user_errors import TicAttributeError
 
 from .helpers import eval_and_get_state
 
@@ -66,7 +67,8 @@ dir(c)
 
     # Verify direct access to unincluded parent attribute fails
     with pytest.raises(
-        EvalError, match="'Child' object has no attribute 'parent_unincluded_attr'"
+        TicAttributeError,
+        match="'Child' object has no attribute 'parent_unincluded_attr'",
     ):
         eval_and_get_state("c.parent_unincluded_attr", agent, state)
 
@@ -93,7 +95,9 @@ c = Container()
 c.my_list.append(3)  # This should work
 c.my_list.__sizeof__()  # This should fail
 """
-    with pytest.raises(EvalError, match="'list' object has no attribute '__sizeof__'"):
+    with pytest.raises(
+        TicAttributeError, match="'list' object has no attribute '__sizeof__'"
+    ):
         eval_and_get_state(program1, agent)
 
     # 2. Try to call a non-whitelisted method on the dict
@@ -102,7 +106,9 @@ c = Container()
 c.my_dict["b"] = 2  # This should work
 c.my_dict.popitem() # This should fail as popitem is not in WHITELISTED_METHODS
 """
-    with pytest.raises(EvalError, match="'dict' object has no attribute 'popitem'"):
+    with pytest.raises(
+        TicAttributeError, match="'dict' object has no attribute 'popitem'"
+    ):
         eval_and_get_state(program2, agent)
 
     # 3. Verify the successful mutation worked before the failure

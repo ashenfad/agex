@@ -1,7 +1,7 @@
 import pytest
 
 from tic.eval.error import EvalError
-from tic.eval.user_errors import TicError
+from tic.eval.user_errors import TicAttributeError, TicError
 
 from .helpers import eval_and_get_state
 
@@ -140,7 +140,7 @@ my_str = my_str.strip().upper()
 
 def test_disallowed_method_call():
     # list.sort is whitelisted, but list.__sizeof__ is not
-    with pytest.raises(EvalError) as e:
+    with pytest.raises(TicAttributeError) as e:
         eval_and_get_state("x = [].__sizeof__()")
     assert "object has no attribute '__sizeof__'" in str(e.value)
 

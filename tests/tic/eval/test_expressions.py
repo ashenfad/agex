@@ -3,8 +3,8 @@ from types import ModuleType
 import pytest
 
 from tic.agent import Agent
-from tic.eval.error import EvalError
 from tic.eval.functions import NativeFunction
+from tic.eval.user_errors import TicAttributeError
 
 from .helpers import eval_and_get_state
 
@@ -187,7 +187,7 @@ inst = MyHostClass()
 s = f"hello {inst.unsafe_method()}"
 """
 
-    with pytest.raises(EvalError) as excinfo:
+    with pytest.raises(TicAttributeError) as excinfo:
         eval_and_get_state(program, agent)
 
     assert "object has no attribute 'unsafe_method'" in str(excinfo.value)

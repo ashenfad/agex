@@ -90,6 +90,10 @@ class TicClass:
     def __repr__(self):
         return f"<class '{self.name}'>"
 
+    def __setstate__(self, state):
+        """Custom unpickle behavior - restore all fields."""
+        self.__dict__.update(state)
+
     def __call__(self, *args: Any, **kwargs: Any) -> "TicInstance":
         """Create an instance of the class."""
         instance = TicInstance(cls=self)

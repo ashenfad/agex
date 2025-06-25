@@ -6,6 +6,7 @@ from .base import BaseEvaluator
 from .builtins import BUILTINS
 from .error import EvalError
 from .objects import TicInstance, TicModule, TicModuleStub, TicObject
+from .user_errors import TicAttributeError
 
 
 class ExpressionEvaluator(BaseEvaluator):
@@ -20,6 +21,15 @@ class ExpressionEvaluator(BaseEvaluator):
         # 2. Check the current execution state
         value = self.state.get(name)
         if value is not None or name in self.state:
+            # If it's a TicModuleStub, restore it to a full TicModule
+            if isinstance(value, TicModuleStub):
+                try:
+                    rebuilt_module = self._create_tic_module(value.name)
+                    self.state.set(name, rebuilt_module)
+                    return rebuilt_module
+                except EvalError as e:
+                    e.node = node
+                    raise
             return value
 
         # 3. Check agent function registry
@@ -111,14 +121,25 @@ class ExpressionEvaluator(BaseEvaluator):
 
         # Allow access to module attributes
         if isinstance(value, TicModule):
-            return getattr(value, attr_name)
+            try:
+                return getattr(value, attr_name)
+            except AttributeError:
+                raise TicAttributeError(
+                    f"module '{value.__name__}' has no attribute '{attr_name}'", node
+                )
 
         # Check for registered host classes and whitelisted methods
         allowed_attrs = get_allowed_attributes_for_instance(self.agent, value)
         if attr_name in allowed_attrs:
-            return getattr(value, attr_name)
+            try:
+                return getattr(value, attr_name)
+            except AttributeError:
+                raise TicAttributeError(
+                    f"'{type(value).__name__}' object has no attribute '{attr_name}'",
+                    node,
+                )
 
-        raise EvalError(
+        raise TicAttributeError(
             f"'{type(value).__name__}' object has no attribute '{attr_name}'", node
         )
 

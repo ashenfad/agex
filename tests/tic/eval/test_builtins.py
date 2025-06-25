@@ -3,8 +3,8 @@ from types import ModuleType
 import pytest
 
 from tic.agent import Agent
-from tic.eval.error import EvalError
 from tic.eval.objects import PrintTuple
+from tic.eval.user_errors import TicAttributeError
 
 from .helpers import eval_and_get_state
 
@@ -147,12 +147,14 @@ host = RegisteredHost()
 
     # Verify that direct access fails for unregistered attributes/methods
     with pytest.raises(
-        EvalError, match="'UnregisteredContainer' object has no attribute 'safe_attr'"
+        TicAttributeError,
+        match="'UnregisteredContainer' object has no attribute 'safe_attr'",
     ):
         eval_and_get_state("host.unregistered_obj.safe_attr", agent, state)
 
     with pytest.raises(
-        EvalError, match="'UnregisteredContainer' object has no attribute 'safe_method'"
+        TicAttributeError,
+        match="'UnregisteredContainer' object has no attribute 'safe_method'",
     ):
         eval_and_get_state("host.unregistered_obj.safe_method()", agent, state)
 
@@ -198,11 +200,12 @@ has_get_value = hasattr(x, "get_value")
 
     # Direct access should fail
     with pytest.raises(
-        EvalError, match="'UnregisteredResult' object has no attribute 'value'"
+        TicAttributeError, match="'UnregisteredResult' object has no attribute 'value'"
     ):
         eval_and_get_state("get_unregistered_object().value", agent)
 
     with pytest.raises(
-        EvalError, match="'UnregisteredResult' object has no attribute 'get_value'"
+        TicAttributeError,
+        match="'UnregisteredResult' object has no attribute 'get_value'",
     ):
         eval_and_get_state("get_unregistered_object().get_value()", agent)

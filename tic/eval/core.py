@@ -54,6 +54,11 @@ def evaluate_program(program: str, agent: Agent, state: State):
     Updates state with the result of running the program. The agent provides
     whitelisted functions and classes valid for the program.
     """
+    # If this is a Versioned state, store the agent for UserFunction rehydration
+    if hasattr(state, "_rehydration_agent") and hasattr(state, "__class__"):
+        if state.__class__.__name__ == "Versioned":
+            state._rehydration_agent = agent  # type: ignore
+
     tree = ast.parse(program)
     evaluator = Evaluator(agent, state, source_code=program)
     evaluator.visit(tree)
