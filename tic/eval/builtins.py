@@ -87,10 +87,22 @@ def _tic_isinstance(obj: Any, class_or_tuple: Any) -> bool:
         if isinstance(obj, TicObject):
             return obj.cls is class_or_tuple
         return False
+    if isinstance(class_or_tuple, TicClass):
+        # Handle user-defined classes
+        if isinstance(obj, TicInstance):
+            return obj.cls is class_or_tuple
+        return False
     if isinstance(class_or_tuple, type):
         return isinstance(obj, class_or_tuple)
 
-    # TODO: Handle tuple of types
+    # Handle tuple of types
+    if isinstance(class_or_tuple, (tuple, list)):
+        # Check each type in the tuple/list
+        for single_type in class_or_tuple:
+            if _tic_isinstance(obj, single_type):
+                return True
+        return False
+
     raise TicTypeError("isinstance() arg 2 must be a type or a tuple of types")
 
 

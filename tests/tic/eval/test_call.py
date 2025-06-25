@@ -287,6 +287,76 @@ is_f_func = isinstance(my_func, type(my_func))
     assert state.get("is_f_func") is True
 
 
+def test_isinstance_with_tuple():
+    """Tests isinstance() with tuple of types."""
+    program = """
+# Test with native types
+result1 = isinstance(5, (int, str))      # Should be True (5 is int)
+result2 = isinstance("hello", (int, str))  # Should be True ("hello" is str)
+result3 = isinstance(5.5, (int, str))    # Should be False (5.5 is float)
+result4 = isinstance([], (list, dict))   # Should be True ([] is list)
+result5 = isinstance({}, (list, dict))   # Should be True ({} is dict)
+result6 = isinstance(5, (str, dict))     # Should be False (5 is not str or dict)
+
+# Test with user-defined classes
+class MyClass:
+    def __init__(self, value):
+        self.value = value
+
+from dataclasses import dataclass
+
+@dataclass
+class Point:
+    x: float
+    y: float
+
+# Create instances
+obj = MyClass(42)
+p = Point(1.0, 2.0)
+
+# Test isinstance with tuples on custom types
+result7 = isinstance(p, (Point, MyClass))      # Should be True
+result8 = isinstance(obj, (Point, MyClass))    # Should be True  
+result9 = isinstance(p, (MyClass, str))        # Should be False
+result10 = isinstance(obj, (Point, str))       # Should be False
+result11 = isinstance(5, (Point, MyClass))     # Should be False
+
+# Test edge cases
+result12 = isinstance(5, ())               # Empty tuple - should be False
+result13 = isinstance(5, (int,))           # Single-element tuple - should be True
+result14 = isinstance(5, (str,))           # Single-element tuple - should be False
+
+# Test mixed native and custom types
+result15 = isinstance("hello", (str, Point))    # Should be True
+result16 = isinstance(p, (int, Point))         # Should be True
+"""
+    state = eval_and_get_state(program)
+
+    # Test native types
+    assert state.get("result1") is True
+    assert state.get("result2") is True
+    assert state.get("result3") is False
+    assert state.get("result4") is True
+    assert state.get("result5") is True
+    assert state.get("result6") is False
+
+    # Test custom types
+    assert state.get("result7") is True
+    assert state.get("result8") is True
+    assert state.get("result9") is False
+    assert state.get("result10") is False
+    assert state.get("result11") is False
+
+    # Test edge cases
+    assert state.get("result12") is False
+    assert state.get("result13") is True
+    assert state.get("result14") is False
+
+    # Test mixed types
+    assert state.get("result15") is True
+    assert state.get("result16") is True
+
+
 def test_call_on_non_callable():
     with pytest.raises(TicError) as e:
         eval_and_get_state("x = 123()")
