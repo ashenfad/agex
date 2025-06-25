@@ -440,6 +440,7 @@ class StatementEvaluator(BaseEvaluator):
             agent=self.agent,
             state=class_exec_state,
             source_code=self.source_code,
+            # Class definitions inherit the agent's timeout
         )
 
         # Execute the body of the class using the new evaluator.

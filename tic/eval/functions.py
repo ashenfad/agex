@@ -76,6 +76,7 @@ class UserFunction:
             agent=agent,
             state=exec_state,
             source_code=source_code,
+            # Functions inherit the agent's timeout
         )
         try:
             for node in self.body:

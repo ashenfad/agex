@@ -75,7 +75,8 @@ def test_comprehensive_serialization_stress():
     EXTREME stress test for the serialization system, covering every possible
     edge case, complex nested scenarios, exception handling, circular refs, etc.
     """
-    agent = Agent()
+    # This test creates 10,000+ objects and needs more time than the default 5 seconds
+    agent = Agent(timeout_seconds=15.0)
     agent.module(np, name="np")
 
     store = Memory(as_bytes=True)

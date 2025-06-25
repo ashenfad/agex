@@ -67,8 +67,9 @@ def clear_agent_registry() -> None:
 
 
 class Agent:
-    def __init__(self, primer: str | None = None):
+    def __init__(self, primer: str | None = None, timeout_seconds: float = 5.0):
         self.primer = primer
+        self.timeout_seconds = timeout_seconds
         self.fn_registry: dict[str, RegisteredFn] = {}
         self.cls_registry: dict[str, RegisteredClass] = {}
         self.cls_registry_by_type: dict[type, RegisteredClass] = {}

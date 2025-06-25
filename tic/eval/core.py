@@ -32,8 +32,12 @@ class Evaluator(
         agent: Agent,
         state: State,
         source_code: str | None = None,
+        timeout_seconds: float | None = None,
     ):
-        super().__init__(agent, state)
+        actual_timeout = (
+            timeout_seconds if timeout_seconds is not None else agent.timeout_seconds
+        )
+        super().__init__(agent, state, actual_timeout)
         self.source_code = source_code
 
     def visit_Module(self, node: ast.Module):
@@ -49,11 +53,24 @@ class Evaluator(
         self.visit(node.value)
 
 
-def evaluate_program(program: str, agent: Agent, state: State):
+def evaluate_program(
+    program: str, agent: Agent, state: State, timeout_seconds: float | None = None
+):
     """
     Updates state with the result of running the program. The agent provides
     whitelisted functions and classes valid for the program.
+
+    Args:
+        program: The Python code to execute
+        agent: The agent providing the execution context
+        state: The state to execute in
+        timeout_seconds: Optional timeout override. If None, uses agent.timeout_seconds
     """
+    actual_timeout = (
+        timeout_seconds if timeout_seconds is not None else agent.timeout_seconds
+    )
     tree = ast.parse(program)
-    evaluator = Evaluator(agent, state, source_code=program)
+    evaluator = Evaluator(
+        agent, state, source_code=program, timeout_seconds=actual_timeout
+    )
     evaluator.visit(tree)

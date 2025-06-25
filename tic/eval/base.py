@@ -1,4 +1,5 @@
 import ast
+import time
 from typing import Any
 
 from tic.agent import Agent
@@ -11,10 +12,13 @@ from .objects import TicModule
 class BaseEvaluator(ast.NodeVisitor):
     """A base class for evaluators, holding shared state."""
 
-    def __init__(self, agent: "Agent", state: "State"):
+    def __init__(self, agent: "Agent", state: "State", timeout_seconds: float = 5.0):
         self.agent = agent
         self.state = state
         self.source_code: str | None = None
+        self._start_time = time.time()
+        self._timeout_seconds = timeout_seconds
+        self._operation_count = 0
 
     def _create_tic_module(self, module_name: str) -> TicModule:
         """Creates a sandboxed TicModule from the agent's registry."""
@@ -68,6 +72,36 @@ class BaseEvaluator(ast.NodeVisitor):
         target = node.targets[0]
         value = node.value
         self._handle_destructuring_assignment(target, value)
+
+    def visit(self, node: ast.AST) -> Any:
+        """Override visit to add timeout checking on every AST node visit."""
+        self._check_timeout()
+        return super().visit(node)
+
+    def _check_timeout(self) -> None:
+        """Check if execution has exceeded time or operation limits."""
+        self._operation_count += 1
+
+        # Check time-based timeout
+        elapsed = time.time() - self._start_time
+        if elapsed > self._timeout_seconds:
+            raise EvalError(
+                f"Program execution timed out after {self._timeout_seconds:.1f} seconds. "
+                f"Consider optimizing your code or reducing computational complexity.",
+                None,
+            )
+
+        # Check operation-based timeout (backup safety net)
+        # This catches cases where time.time() calls are expensive or unreliable
+        max_operations = max(
+            50000, int(self._timeout_seconds * 10000)
+        )  # ~10000 ops/sec baseline
+        if self._operation_count > max_operations:
+            raise EvalError(
+                f"Program exceeded maximum operation limit ({max_operations:,} operations). "
+                f"This likely indicates an infinite loop or very inefficient algorithm.",
+                None,
+            )
 
     def generic_visit(self, node: ast.AST) -> None:
         """
