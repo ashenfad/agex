@@ -4,7 +4,12 @@ from typing import Any
 
 from .base import BaseEvaluator
 from .error import EvalError
-from .user_errors import TicTypeError
+from .user_errors import (
+    TicArithmeticError,
+    TicOverflowError,
+    TicTypeError,
+    TicZeroDivisionError,
+)
 
 # Mapping from ast operator nodes to Python's operator functions
 OPERATOR_MAP = {
@@ -52,7 +57,20 @@ class BinOpEvaluator(BaseEvaluator):
             raise EvalError(f"Operator {type(node.op).__name__} not supported.", node)
         try:
             return op_func(left_val, right_val)
+        except ZeroDivisionError as e:
+            # Agent-catchable arithmetic error
+            raise TicZeroDivisionError(str(e), node) from e
+        except OverflowError as e:
+            # Agent-catchable arithmetic error
+            raise TicOverflowError(str(e), node) from e
+        except (ArithmeticError, ValueError) as e:
+            # Other arithmetic errors that agents should be able to catch
+            raise TicArithmeticError(str(e), node) from e
+        except TypeError as e:
+            # Type errors are also agent-catchable
+            raise TicTypeError(str(e), node) from e
         except Exception as e:
+            # System-level errors remain as EvalError
             raise EvalError(f"Failed to execute operation: {e}", node, cause=e)
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
@@ -65,7 +83,20 @@ class BinOpEvaluator(BaseEvaluator):
             )
         try:
             return op_func(operand_val)
+        except ZeroDivisionError as e:
+            # Agent-catchable arithmetic error
+            raise TicZeroDivisionError(str(e), node) from e
+        except OverflowError as e:
+            # Agent-catchable arithmetic error
+            raise TicOverflowError(str(e), node) from e
+        except (ArithmeticError, ValueError) as e:
+            # Other arithmetic errors that agents should be able to catch
+            raise TicArithmeticError(str(e), node) from e
+        except TypeError as e:
+            # Type errors are also agent-catchable
+            raise TicTypeError(str(e), node) from e
         except Exception as e:
+            # System-level errors remain as EvalError
             raise EvalError(f"Failed to execute unary operation: {e}", node, cause=e)
 
     def visit_Compare(self, node: ast.Compare) -> bool:

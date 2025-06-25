@@ -6,7 +6,7 @@ from .base import BaseEvaluator
 from .builtins import BUILTINS
 from .error import EvalError
 from .objects import TicInstance, TicModule, TicObject
-from .user_errors import TicAttributeError
+from .user_errors import TicAttributeError, TicIndexError, TicKeyError, TicTypeError
 
 
 class ExpressionEvaluator(BaseEvaluator):
@@ -170,10 +170,12 @@ class ExpressionEvaluator(BaseEvaluator):
 
         try:
             return container[key]
-        except (KeyError, IndexError):
-            raise EvalError(f"Key or index not found: {key}", node)
+        except KeyError:
+            raise TicKeyError(f"Key not found: {key}", node)
+        except IndexError:
+            raise TicIndexError(f"Index out of range: {key}", node)
         except TypeError:
-            raise EvalError(
+            raise TicTypeError(
                 "This object is not subscriptable or does not support slicing.", node
             )
 

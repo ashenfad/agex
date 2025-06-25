@@ -58,3 +58,21 @@ class TicNameError(TicError):
     """Raised when a local or global name is not found."""
 
     pass
+
+
+class TicZeroDivisionError(TicError):
+    """Raised when the second argument of a division or modulo operation is zero."""
+
+    pass
+
+
+class TicArithmeticError(TicError):
+    """Base class for arithmetic errors (overflow, underflow, etc.)."""
+
+    pass
+
+
+class TicOverflowError(TicArithmeticError):
+    """Raised when the result of an arithmetic operation is too large to be represented."""
+
+    pass

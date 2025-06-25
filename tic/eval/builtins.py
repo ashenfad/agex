@@ -14,11 +14,13 @@ from tic.eval.objects import (
     TicObject,
 )
 from tic.eval.user_errors import (
+    TicArithmeticError,
     TicError,
     TicIndexError,
     TicKeyError,
     TicTypeError,
     TicValueError,
+    TicZeroDivisionError,
 )
 from tic.eval.utils import get_allowed_attributes_for_instance
 from tic.state import State
@@ -325,6 +327,8 @@ BUILTINS = {
     "TypeError": TicTypeError,
     "KeyError": TicKeyError,
     "IndexError": TicIndexError,
+    "ZeroDivisionError": TicZeroDivisionError,
+    "ArithmeticError": TicArithmeticError,
     # Agent exit signals
     "exit": ExitSuccess,
     "exit_success": ExitSuccess,

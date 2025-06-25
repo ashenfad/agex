@@ -7,7 +7,13 @@ from .builtins import STATEFUL_BUILTINS, _print_stateful
 from .error import EvalError
 from .functions import UserFunction
 from .objects import TicClass, TicDataClass
-from .user_errors import TicError
+from .user_errors import (
+    TicError,
+    TicIndexError,
+    TicKeyError,
+    TicTypeError,
+    TicValueError,
+)
 
 
 class CallEvaluator(BaseEvaluator):
@@ -69,6 +75,18 @@ class CallEvaluator(BaseEvaluator):
         except TicError:
             # Re-raise user-facing errors directly without wrapping
             raise
+        except ValueError as e:
+            # Map ValueError to TicValueError so agents can catch it
+            raise TicValueError(str(e), node) from e
+        except TypeError as e:
+            # Map TypeError to TicTypeError so agents can catch it
+            raise TicTypeError(str(e), node) from e
+        except KeyError as e:
+            # Map KeyError to TicKeyError so agents can catch it
+            raise TicKeyError(str(e), node) from e
+        except IndexError as e:
+            # Map IndexError to TicIndexError so agents can catch it
+            raise TicIndexError(str(e), node) from e
         except Exception as e:
             if isinstance(e, _AgentExit):
                 raise e
