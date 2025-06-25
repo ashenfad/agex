@@ -38,7 +38,9 @@ class Scoped(State):
         self._local_store.set(key, value)
 
     def remove(self, key: str) -> bool:
-        raise NotImplementedError("Not supported for scoped state.")
+        # Only remove from local scope, don't delegate to parent
+        # This matches Python's scoping: del only affects current scope
+        return self._local_store.remove(key)
 
     def keys(self) -> Iterable[str]:
         raise NotImplementedError("Not supported for scoped state.")
