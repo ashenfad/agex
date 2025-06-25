@@ -66,13 +66,14 @@ def test_view_agent_full():
     )
 
     output = view(agent, full=True)
-    # Full view should render everything, including docstrings
+    # Full view should render everything, including docstrings for high/low vis
+    # and ... for medium vis.
     assert "high_vis_method" in output
     assert "medium_vis_method" in output
     assert "low_vis_method" in output
     assert "High visibility" in output
     assert "Low visibility" in output
-    assert "..." not in output
+    assert "..." in output
 
 
 def test_view_full():

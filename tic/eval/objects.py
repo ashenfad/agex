@@ -162,6 +162,13 @@ class TicModule:
         return f"<ticmodule '{self.__name__}'>"
 
 
+@dataclass
+class TicModuleStub:
+    """A serializable placeholder for a TicModule."""
+
+    name: str
+
+
 class PrintTuple(tuple):
     """A wrapper to distinguish tuples created by print() for special rendering."""
 

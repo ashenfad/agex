@@ -25,8 +25,8 @@ dir()
 def test_dir_with_module():
     """Tests that dir() on a module lists its members."""
     mod = ModuleType("my_mod")
-    mod.my_public_fn = lambda: 1
-    mod._my_private_fn = lambda: 2
+    mod.my_public_fn = lambda: 1  # type: ignore
+    mod._my_private_fn = lambda: 2  # type: ignore
 
     agent = Agent()
     agent.module(mod, name="my_mod")

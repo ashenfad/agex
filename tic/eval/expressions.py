@@ -5,7 +5,7 @@ from ..eval.utils import get_allowed_attributes_for_instance
 from .base import BaseEvaluator
 from .builtins import BUILTINS
 from .error import EvalError
-from .objects import TicInstance, TicModule, TicObject
+from .objects import TicInstance, TicModule, TicModuleStub, TicObject
 
 
 class ExpressionEvaluator(BaseEvaluator):
@@ -88,24 +88,38 @@ class ExpressionEvaluator(BaseEvaluator):
             return self.visit(node.orelse)
 
     def visit_Attribute(self, node: ast.Attribute) -> Any:
-        """Handles attribute access like `obj.x`."""
-        obj = self.visit(node.value)
+        """Handles attribute access like 'obj.attr'."""
+        value = self.visit(node.value)
+
+        if isinstance(value, TicModuleStub):
+            # Rehydrate the module on first access
+            try:
+                rebuilt_module = self._create_tic_module(value.name)
+            except EvalError as e:
+                e.node = node.value  # Pinpoint error to the module name
+                raise
+
+            if isinstance(node.value, ast.Name):
+                self.state.set(node.value.id, rebuilt_module)
+            value = rebuilt_module
+
+        attr_name = node.attr
 
         # Sandboxed TicObjects have their own logic
-        if isinstance(obj, (TicObject, TicInstance)):
-            return obj.getattr(node.attr)
+        if isinstance(value, (TicObject, TicInstance)):
+            return value.getattr(attr_name)
 
         # Allow access to module attributes
-        if isinstance(obj, TicModule):
-            return getattr(obj, node.attr)
+        if isinstance(value, TicModule):
+            return getattr(value, attr_name)
 
         # Check for registered host classes and whitelisted methods
-        allowed_attrs = get_allowed_attributes_for_instance(self.agent, obj)
-        if node.attr in allowed_attrs:
-            return getattr(obj, node.attr)
+        allowed_attrs = get_allowed_attributes_for_instance(self.agent, value)
+        if attr_name in allowed_attrs:
+            return getattr(value, attr_name)
 
         raise EvalError(
-            f"'{type(obj).__name__}' object has no attribute '{node.attr}'", node
+            f"'{type(value).__name__}' object has no attribute '{attr_name}'", node
         )
 
     def visit_Subscript(self, node: ast.Subscript) -> Any:

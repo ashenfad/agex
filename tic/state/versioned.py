@@ -1,9 +1,8 @@
-from __future__ import annotations
-
 import copy
 import secrets
 from typing import Any, Iterable
 
+from ..eval.objects import TicModule, TicModuleStub
 from . import kv
 from .closure import LiveClosureState
 from .core import State
@@ -107,6 +106,12 @@ class Versioned(State):
 
         # layer recent writes on top of existing keys
         for key, value in self.ephemeral.items():
+            if isinstance(value, TicModule):
+                versioned_key = self._versioned_key(key, new_hash)
+                diffs[versioned_key] = TicModuleStub(name=value.__name__)
+                new_commit_keys[key] = versioned_key
+                continue
+
             # This is the "freeze" logic for closures.
             if hasattr(value, "closure_state") and isinstance(
                 value.closure_state, LiveClosureState

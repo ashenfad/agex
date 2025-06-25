@@ -18,7 +18,7 @@ from tic.state.scoped import Scoped
 from .base import BaseEvaluator
 from .binop import OPERATOR_MAP
 from .error import EvalError
-from .objects import TicClass, TicDataClass, TicInstance, TicModule, TicObject
+from .objects import TicClass, TicDataClass, TicInstance, TicObject
 
 
 class AssignmentTarget(ABC):
@@ -316,22 +316,11 @@ class StatementEvaluator(BaseEvaluator):
         """Handles `import <module>` and `import <module> as <alias>`."""
         for alias in node.names:
             module_name_to_find = alias.name
-            reg_module = self.agent.importable_modules.get(module_name_to_find)
-
-            if not reg_module:
-                raise EvalError(
-                    f"Module '{module_name_to_find}' is not registered or whitelisted.",
-                    node,
-                )
-
-            # Create a sandboxed module object
-            tic_module = TicModule(name=module_name_to_find)
-            for fn_name in reg_module.fns.keys():
-                setattr(tic_module, fn_name, getattr(reg_module.module, fn_name))
-            for const_name in reg_module.consts.keys():
-                setattr(tic_module, const_name, getattr(reg_module.module, const_name))
-            for cls_name, reg_class in reg_module.classes.items():
-                setattr(tic_module, cls_name, reg_class.cls)
+            try:
+                tic_module = self._create_tic_module(module_name_to_find)
+            except EvalError as e:
+                e.node = node  # Add location info to the error
+                raise
 
             # The name used in the agent's code, e.g., `m` in `import math as m`
             import_name = alias.asname or module_name_to_find

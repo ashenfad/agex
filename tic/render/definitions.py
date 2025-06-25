@@ -1,5 +1,6 @@
 import dataclasses
 import inspect
+from typing import Any
 
 from ..agent import (
     Agent,
@@ -10,11 +11,35 @@ from ..agent import (
 )
 
 
+def _render_type_annotation(annotation: Any) -> str:
+    """Renders a type annotation to a string, handling complex types."""
+    if annotation is inspect.Parameter.empty or annotation is None:
+        return ""
+
+    # Get the string representation, which is usually good for complex types
+    s = str(annotation)
+
+    # Clean up common boilerplate for better readability
+    s = s.replace("typing.", "")
+    s = s.replace("<class '", "").replace("'>", "")
+
+    return s
+
+
 def render_definitions(agent: Agent, full: bool = False) -> str:
     """
     Renders the registered functions, classes, and modules of an agent
     into a Python-like string of signatures and docstrings.
-    If `full` is True, all members are rendered regardless of visibility.
+
+    The rendering is controlled by a visibility system:
+    - `high`: Renders the full function signature and its docstring. If no
+      docstring exists, the body will be `pass`.
+    - `medium`: Renders only the function signature. The body is always `...`
+      to indicate the implementation is hidden. The docstring is never shown.
+    - `low`: The item is not rendered at all.
+
+    If `full` is True, all members are rendered at their highest effective
+    visibility, ignoring these rules.
     """
     output = []
     # Render standalone functions
@@ -157,14 +182,32 @@ def _render_module(name: str, spec: RegisteredModule, full: bool = False) -> str
 
 
 def _render_function(
-    name: str,
+    fn_name: str,
     spec: RegisteredFn,
     indent: str = "",
-    is_method: bool = False,
+    is_method=False,
     full: bool = False,
 ) -> str:
     """Renders a single function or method signature."""
-    signature = inspect.signature(spec.fn)
+    prefix = indent
+    fn = spec.fn
+    try:
+        signature = inspect.signature(fn)
+    except ValueError:
+        signature = None  # Fallback for builtins with no signature
+
+    if inspect.iscoroutinefunction(fn) or inspect.iscoroutine(fn):
+        prefix += "async def "
+    else:
+        prefix += "def "
+
+    if signature is None:
+        # For builtins that fail inspection, provide a fallback
+        signature_line = f"{prefix}{fn_name}(...)"
+        if not full and spec.visibility == "medium":
+            return f"{signature_line}:"
+        return signature_line
+
     params = []
     for i, (p_name, p) in enumerate(signature.parameters.items()):
         if is_method and i == 0:
@@ -172,26 +215,29 @@ def _render_function(
             continue
 
         param_str = p_name
-        if p.annotation is not inspect.Parameter.empty:
-            param_str += f": {p.annotation.__name__}"
+        type_str = _render_type_annotation(p.annotation)
+        if type_str:
+            param_str += f": {type_str}"
+
         if p.default is not inspect.Parameter.empty:
             param_str += f" = {repr(p.default)}"
         params.append(param_str)
 
     return_str = ""
-    if signature.return_annotation is not inspect.Signature.empty:
-        return_str = f" -> {signature.return_annotation.__name__}"
+    ret_type_str = _render_type_annotation(signature.return_annotation)
+    if ret_type_str:
+        return_str = f" -> {ret_type_str}"
 
-    signature_line = f"{indent}def {name}({', '.join(params)}){return_str}:"
+    signature_line = f"{prefix}{fn_name}({', '.join(params)}){return_str}"
 
-    # For medium visibility, just show that there's a body but no details.
-    if not full and spec.visibility == "medium":
-        return f"{signature_line}\n{indent}    ..."
+    docstring = spec.docstring or inspect.getdoc(fn)
 
-    docstring = _render_docstring(spec.docstring, indent=indent + "    ", full=full)
-    if docstring:
-        return f"{signature_line}\n{docstring}"
-    return f"{signature_line}\n{indent}    pass"
+    # Functions with high visibility (or when `full=True`) show their docstring.
+    if (full or spec.visibility == "high") and docstring:
+        return f"{signature_line}:\n{_render_docstring(docstring, indent=indent + '    ', full=full)}"
+
+    # In all other cases, the body is elided.
+    return f"{signature_line}:\n{indent}    ..."
 
 
 def _render_class(
@@ -207,15 +253,20 @@ def _render_class(
     # Render __init__ from constructor if available
     if spec.constructable and spec.visibility in ("high", "medium"):
         init_fn = spec.cls.__init__
-        # Check if there's a specific override for __init__
         init_method_spec = spec.methods.get("__init__")
-        doc = (
-            init_method_spec.docstring
-            if init_method_spec and init_method_spec.docstring is not None
-            else init_fn.__doc__
-        )
 
-        init_fn_spec = RegisteredFn(fn=init_fn, docstring=doc, visibility="high")
+        doc = None
+        vis = spec.visibility  # Default to class visibility
+        if init_method_spec:
+            doc = init_method_spec.docstring
+            if init_method_spec.visibility:
+                vis = init_method_spec.visibility
+
+        # If there's no explicit doc override, use the function's own docstring.
+        if doc is None:
+            doc = init_fn.__doc__
+
+        init_fn_spec = RegisteredFn(fn=init_fn, docstring=doc, visibility=vis)
         init_str.append(
             _render_function(
                 "__init__",
@@ -234,7 +285,10 @@ def _render_class(
             if not full and attr_spec.visibility != "high":
                 continue
             type_hint = ""
-            if attr_name in spec.cls.__annotations__:
+            if (
+                hasattr(spec.cls, "__annotations__")
+                and attr_name in spec.cls.__annotations__
+            ):
                 type_hint = f": {spec.cls.__annotations__[attr_name].__name__}"
             attr_strs.append(f"{member_indent}{attr_name}{type_hint}")
 
@@ -247,6 +301,7 @@ def _render_class(
             ):
                 continue
             method = getattr(spec.cls, meth_name)
+            # Use the spec's docstring if provided, otherwise the method's own.
             doc = (
                 meth_spec.docstring
                 if meth_spec.docstring is not None

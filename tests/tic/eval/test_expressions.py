@@ -94,7 +94,7 @@ def test_registered_module_is_first_class():
         pass
 
     dummy_module = ModuleType("pd")
-    dummy_module.DataFrame = DummyDataFrame
+    dummy_module.DataFrame = DummyDataFrame  # type: ignore
 
     agent = Agent()
     agent.module(dummy_module, name="pd")
@@ -112,7 +112,7 @@ is_inst = isinstance(df, pd.DataFrame)
 def test_help_on_registered_module():
     """Tests that help() works on a registered module."""
     dummy_module = ModuleType("my_mod")
-    dummy_module.my_fn = lambda: 1
+    dummy_module.my_fn = lambda: 1  # type: ignore
     agent = Agent()
     agent.module(dummy_module, name="my_mod")
 

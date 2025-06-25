@@ -4,7 +4,7 @@ from typing import Any, Callable
 
 from tic.agent import Agent, ExitClarify, ExitFail, ExitSuccess
 from tic.eval.base import BaseEvaluator
-from tic.eval.functions import NativeFunction, UserFunction
+from tic.eval.functions import UserFunction
 from tic.eval.objects import (
     PrintTuple,
     TicClass,
@@ -20,7 +20,7 @@ from tic.eval.user_errors import (
     TicTypeError,
     TicValueError,
 )
-from tic.eval.utils import find_class_spec, get_allowed_attributes_for_instance
+from tic.eval.utils import get_allowed_attributes_for_instance
 from tic.state import State
 
 MAX_RANGE_SIZE = 10_000
@@ -264,16 +264,9 @@ def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
             parts.append("CONTENTS")
             parts.extend([f"    {item}" for item in contents])
         doc = "\n".join(parts)
-    elif isinstance(obj, (TicObject, NativeFunction)):
-        doc = inspect.getdoc(obj)
     else:
-        # It's a raw python object, see if we can find a docstring.
-        spec = find_class_spec(evaluator.agent, obj)
-        if spec:
-            doc = spec.cls.__doc__
-
-    if doc is None:
-        # Fallback for everything else
+        # For everything else (TicObject, NativeFunction, raw Python objects/functions),
+        # just try to get a docstring.
         doc = inspect.getdoc(obj)
 
     if doc is None:

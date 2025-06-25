@@ -15,6 +15,7 @@ dev = [
 ]
 test = [
     "pytest",
+    "numpy",
 ]
 
 [tool.ruff]
@@ -27,3 +28,5 @@ select = ["E4", "E7", "E9", "F", "I"]
 pythonpath = [
   "."
 ]
+
+[tool.setuptools]

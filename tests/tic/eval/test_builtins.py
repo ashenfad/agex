@@ -12,7 +12,7 @@ from .helpers import eval_and_get_state
 def test_hasattr():
     """Tests the hasattr() builtin on various object types."""
     mod = ModuleType("my_mod")
-    mod.my_fn = lambda: 1
+    mod.my_fn = lambda: 1  # type: ignore
 
     agent = Agent()
     agent.module(mod, name="my_mod")

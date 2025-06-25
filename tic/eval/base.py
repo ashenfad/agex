@@ -5,6 +5,7 @@ from tic.agent import Agent
 from tic.state.core import State
 
 from .error import EvalError
+from .objects import TicModule
 
 
 class BaseEvaluator(ast.NodeVisitor):
@@ -14,6 +15,26 @@ class BaseEvaluator(ast.NodeVisitor):
         self.agent = agent
         self.state = state
         self.source_code: str | None = None
+
+    def _create_tic_module(self, module_name: str) -> TicModule:
+        """Creates and populates a sandboxed TicModule from the agent's registry."""
+        reg_module = self.agent.importable_modules.get(module_name)
+
+        if not reg_module:
+            raise EvalError(
+                f"Module '{module_name}' is not registered or whitelisted.", node=None
+            )
+
+        # Create a sandboxed module object
+        tic_module = TicModule(name=module_name)
+        for fn_name in reg_module.fns.keys():
+            setattr(tic_module, fn_name, getattr(reg_module.module, fn_name))
+        for const_name in reg_module.consts.keys():
+            setattr(tic_module, const_name, getattr(reg_module.module, const_name))
+        for cls_name, reg_class in reg_module.classes.items():
+            setattr(tic_module, cls_name, reg_class.cls)
+
+        return tic_module
 
     def _handle_destructuring_assignment(self, target_node: ast.AST, value: Any):
         """
