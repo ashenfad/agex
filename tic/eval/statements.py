@@ -19,6 +19,7 @@ from .base import BaseEvaluator
 from .binop import OPERATOR_MAP
 from .error import EvalError
 from .objects import TicClass, TicDataClass, TicInstance, TicObject
+from .safe import check_assignment_safety
 
 
 class AssignmentTarget(ABC):
@@ -29,9 +30,14 @@ class AssignmentTarget(ABC):
         """Gets the current value of the target."""
         ...
 
-    @abstractmethod
     def set_value(self, value: Any):
-        """Sets a new value for the target."""
+        """Sets a new value for the target, checking pickle safety first."""
+        safe_value = check_assignment_safety(value)
+        self._do_set_value(safe_value)
+
+    @abstractmethod
+    def _do_set_value(self, value: Any):
+        """Subclasses implement the actual assignment logic."""
         ...
 
     @abstractmethod
@@ -52,7 +58,7 @@ class NameTarget(AssignmentTarget):
             raise TicNameError(f"name '{self._name}' is not defined")
         return self._evaluator.state.get(self._name)
 
-    def set_value(self, value: Any):
+    def _do_set_value(self, value: Any):
         self._evaluator.state.set(self._name, value)
 
     def del_value(self):
@@ -81,7 +87,7 @@ class AttributeTarget(AssignmentTarget):
             e.node = self._node  # Add location info to the error
             raise e
 
-    def set_value(self, value: Any):
+    def _do_set_value(self, value: Any):
         try:
             self._obj.setattr(self._attr_name, value)
         except TicAttributeError as e:
@@ -154,7 +160,7 @@ class SubscriptTarget(AssignmentTarget):
         except IndexError:
             raise TicIndexError("List index out of range.", self._node)
 
-    def set_value(self, value: Any):
+    def _do_set_value(self, value: Any):
         try:
             self._container[self._final_key] = value
             if self._root_name:

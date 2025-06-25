@@ -9,6 +9,38 @@ from tic.eval.user_errors import TicAttributeError
 from .helpers import eval_and_get_state
 
 
+class MySandboxClass:
+    def included_method(self):
+        return 1
+
+    def excluded_method(self):
+        return 2
+
+
+class UnregisteredContainer:
+    def __init__(self):
+        self.safe_attr = 1
+        self.unsafe_attr = 2
+
+    def safe_method(self):
+        return "safe"
+
+
+class RegisteredHost:
+    def __init__(self):
+        # It holds an instance of a class that the agent knows nothing about
+        self.native_list = [1, 2, 3]
+        self.unregistered_obj = UnregisteredContainer()
+
+
+class UnregisteredResult:
+    def __init__(self):
+        self.value = 42
+
+    def get_value(self):
+        return self.value
+
+
 def test_hasattr():
     """Tests the hasattr() builtin on various object types."""
     mod = ModuleType("my_mod")
@@ -42,13 +74,6 @@ def test_dir_and_hasattr_sandboxing():
     only exposing members that are explicitly included.
     """
     agent = Agent()
-
-    class MySandboxClass:
-        def included_method(self):
-            return 1
-
-        def excluded_method(self):
-            return 2
 
     # Register the class, but only include one of the methods
     agent.cls(MySandboxClass, include=["included_method"])
@@ -88,22 +113,6 @@ def test_dir_hasattr_on_unregistered_nested_object():
     of a registered class that are themselves instances of unregistered classes.
     """
     agent = Agent()
-
-    # This class is NOT registered with the agent
-    class UnregisteredContainer:
-        def __init__(self):
-            self.safe_attr = 1
-            self.unsafe_attr = 2
-
-        def safe_method(self):
-            return "safe"
-
-    # This class IS registered
-    class RegisteredHost:
-        def __init__(self):
-            # It holds an instance of a class that the agent knows nothing about
-            self.native_list = [1, 2, 3]
-            self.unregistered_obj = UnregisteredContainer()
 
     agent.cls(RegisteredHost, include=["native_list", "unregistered_obj"])
 
@@ -165,14 +174,6 @@ def test_interaction_with_returned_unregistered_object():
     class, the sandbox still prevents interaction with that object.
     """
     agent = Agent()
-
-    # This class is NOT registered with the agent
-    class UnregisteredResult:
-        def __init__(self):
-            self.value = 42
-
-        def get_value(self):
-            return self.value
 
     # This function IS registered, and it returns an unregistered object
     def get_unregistered_object():

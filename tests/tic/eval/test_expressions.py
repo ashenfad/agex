@@ -9,6 +9,23 @@ from tic.eval.user_errors import TicAttributeError
 from .helpers import eval_and_get_state
 
 
+class MyRegisteredCls:
+    def __init__(self, val: int):
+        self.val = val
+
+
+class MyHostClass:
+    def safe_method(self):
+        return "SAFE"
+
+    def unsafe_method(self):
+        return "UNSAFE"
+
+
+class DummyDataFrame:
+    pass
+
+
 def test_eval_list_literal():
     program = """
 x = 3
@@ -68,10 +85,6 @@ def test_registered_cls_is_first_class():
     """Tests that a registered class can be accessed directly by name."""
     agent = Agent()
 
-    class MyRegisteredCls:
-        def __init__(self, val: int):
-            self.val = val
-
     agent.cls(MyRegisteredCls)
 
     program = """
@@ -90,9 +103,6 @@ def test_registered_module_is_first_class():
     """Tests that a registered module and its members are accessible."""
 
     # Create a dummy module and class for testing
-    class DummyDataFrame:
-        pass
-
     dummy_module = ModuleType("pd")
     dummy_module.DataFrame = DummyDataFrame  # type: ignore
 
@@ -171,13 +181,6 @@ s = "hello %s" % name.upper()
 def test_f_string_sandbox():
     """Tests that f-string expressions cannot call un-whitelisted methods."""
     agent = Agent()
-
-    class MyHostClass:
-        def safe_method(self):
-            return "SAFE"
-
-        def unsafe_method(self):
-            return "UNSAFE"
 
     agent.cls(MyHostClass, include=["safe_method"])
 

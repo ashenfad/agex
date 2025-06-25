@@ -7,28 +7,36 @@ from tic.eval.user_errors import TicAttributeError
 from .helpers import eval_and_get_state
 
 
+class Parent:
+    def __init__(self):
+        self.parent_attr = "parent_val"
+        self.parent_unincluded_attr = "secret"
+
+    def parent_method(self):
+        return "parent_method_called"
+
+
+class Child(Parent):
+    def __init__(self):
+        super().__init__()
+        self.child_attr = "child_val"
+
+    def child_method(self):
+        return "child_method_called"
+
+
+class Container:
+    def __init__(self):
+        self.my_list = [1, 2]
+        self.my_dict = {"a": 1}
+
+
 def test_inheritance_sandboxing():
     """
     Tests that whitelisted attributes are correctly inherited
     and accessible in the sandbox.
     """
     agent = Agent()
-
-    class Parent:
-        def __init__(self):
-            self.parent_attr = "parent_val"
-            self.parent_unincluded_attr = "secret"
-
-        def parent_method(self):
-            return "parent_method_called"
-
-    class Child(Parent):
-        def __init__(self):
-            super().__init__()
-            self.child_attr = "child_val"
-
-        def child_method(self):
-            return "child_method_called"
 
     # Register parent and child, including some attributes/methods from each
     agent.cls(Parent, include=["parent_attr", "parent_method"])
@@ -80,11 +88,6 @@ def test_mutation_on_unregistered_datastructures():
     cannot be called.
     """
     agent = Agent()
-
-    class Container:
-        def __init__(self):
-            self.my_list = [1, 2]
-            self.my_dict = {"a": 1}
 
     # Expose the list and dict attributes themselves
     agent.cls(Container, include=["my_list", "my_dict"])

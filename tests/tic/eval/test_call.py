@@ -100,9 +100,9 @@ enumerated = list(enumerate(unsorted))
 
 def test_range_function():
     program = """
-r1 = range(5)
-r2 = range(2, 5)
-r3 = range(0, 10, 2)
+r1 = list(range(5))
+r2 = list(range(2, 5))
+r3 = list(range(0, 10, 2))
 """
     state = eval_and_get_state(program)
     assert state.get("r1") == [0, 1, 2, 3, 4]
@@ -110,11 +110,14 @@ r3 = range(0, 10, 2)
     assert state.get("r3") == [0, 2, 4, 6, 8]
 
 
-def test_range_function_error():
-    with pytest.raises(EvalError) as e:
-        eval_and_get_state("x = range(20000)")
-    err_msg = str(e.value)
-    assert "Error calling 'range'" in err_msg
+def test_range_assignment():
+    # Test that ranges can be assigned directly now (they're pickleable)
+    program = "x = range(20000)"
+    state = eval_and_get_state(program)
+    r = state.get("x")
+    assert isinstance(r, range)
+    assert len(r) == 20000
+    assert list(r)[:5] == [0, 1, 2, 3, 4]  # Check first few elements
 
 
 def test_method_calls():
@@ -125,7 +128,7 @@ my_list.sort()
 
 my_dict = {"a": 1}
 my_dict.update({"b": 2})
-keys = my_dict.keys()
+keys = list(my_dict.keys())
 
 my_str = "  Hello  "
 my_str = my_str.strip().upper()
@@ -228,13 +231,13 @@ def square(x):
     return x * x
 
 # Test map with a named function
-squared_numbers = map(square, numbers)
+squared_numbers = list(map(square, numbers))
 
 # Test filter with a lambda
-even_numbers = filter(lambda x: x % 2 == 0, numbers)
+even_numbers = list(filter(lambda x: x % 2 == 0, numbers))
 
 # Test map and filter together
-even_squares = map(square, filter(lambda x: x % 2 == 0, numbers))
+even_squares = list(map(square, filter(lambda x: x % 2 == 0, numbers)))
 """
     state = eval_and_get_state(program)
     assert state.get("squared_numbers") == [1, 4, 9, 16, 25]

@@ -23,8 +23,6 @@ from tic.eval.user_errors import (
 from tic.eval.utils import get_allowed_attributes_for_instance
 from tic.state import State
 
-MAX_RANGE_SIZE = 10_000
-
 
 # A simple placeholder object to act as the @dataclass decorator.
 # Its only purpose is to be recognized by the evaluator.
@@ -102,16 +100,6 @@ def _tic_type(obj: Any) -> _TicTypePlaceholder:
     containing the *name* of the type, rather than the type object itself.
     """
     return _TicTypePlaceholder(type(obj))
-
-
-def _constrained_range(*args, **kwargs):
-    """A wrapper around range() that enforces a maximum size."""
-    if kwargs:
-        raise TypeError("range() does not take keyword arguments.")
-    r = range(*args)
-    if len(r) > MAX_RANGE_SIZE:
-        raise ValueError(f"Range exceeds maximum size of {MAX_RANGE_SIZE}")
-    return list(r)
 
 
 def _dir(evaluator: BaseEvaluator, *args, **kwargs) -> list[str]:
@@ -320,12 +308,12 @@ BUILTINS = {
     "all": all,
     "any": any,
     "sorted": sorted,
-    "range": _constrained_range,
-    "reversed": lambda x: list(reversed(x)),
-    "zip": lambda *args: list(zip(*args)),
-    "enumerate": lambda x: list(enumerate(x)),
-    "map": lambda f, it: list(map(f, it)),
-    "filter": lambda f, it: list(filter(f, it)),
+    "range": range,
+    "reversed": reversed,
+    "zip": zip,
+    "enumerate": enumerate,
+    "map": map,
+    "filter": filter,
     # Type introspection
     "isinstance": _tic_isinstance,
     "type": _tic_type,
