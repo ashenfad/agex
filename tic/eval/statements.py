@@ -1,9 +1,18 @@
 import ast
+from abc import ABC, abstractmethod
 from typing import Any
 
 from tic.agent import _AgentExit
 from tic.eval.builtins import dataclass
 from tic.eval.functions import UserFunction, _ReturnException
+from tic.eval.user_errors import (
+    TicAttributeError,
+    TicError,
+    TicIndexError,
+    TicKeyError,
+    TicNameError,
+    TicTypeError,
+)
 from tic.state.scoped import Scoped
 
 from .base import BaseEvaluator
@@ -12,137 +21,193 @@ from .error import EvalError
 from .objects import TicClass, TicDataClass, TicInstance, TicModule, TicObject
 
 
-class StatementEvaluator(BaseEvaluator):
-    """A mixin for evaluating statement nodes."""
+class AssignmentTarget(ABC):
+    """An abstract base class representing a resolved target for mutation."""
 
-    def _resolve_subscript_for_mutation(
-        self, node: ast.Subscript
-    ) -> tuple[str | None, Any, Any, Any]:
-        """
-        Resolves a (potentially nested) subscript target for mutation.
+    @abstractmethod
+    def get_value(self) -> Any:
+        """Gets the current value of the target."""
+        ...
 
-        Returns a tuple of:
-        - root_name: The name of the variable in the state, if any.
-        - root_container: The top-level container from the state.
-        - container_to_modify: The direct container to be mutated.
-        - final_key: The key/index for the final assignment.
-        """
+    @abstractmethod
+    def set_value(self, value: Any):
+        """Sets a new value for the target."""
+        ...
+
+    @abstractmethod
+    def del_value(self):
+        """Deletes the target."""
+        ...
+
+
+class NameTarget(AssignmentTarget):
+    """Represents assignment to a variable name."""
+
+    def __init__(self, evaluator: "BaseEvaluator", name: str):
+        self._evaluator = evaluator
+        self._name = name
+
+    def get_value(self) -> Any:
+        if self._name not in self._evaluator.state:
+            raise TicNameError(f"name '{self._name}' is not defined")
+        return self._evaluator.state.get(self._name)
+
+    def set_value(self, value: Any):
+        self._evaluator.state.set(self._name, value)
+
+    def del_value(self):
+        if self._name not in self._evaluator.state:
+            raise TicNameError(f"name '{self._name}' is not defined")
+        self._evaluator.state.remove(self._name)
+
+
+class AttributeTarget(AssignmentTarget):
+    """Represents assignment to an object attribute."""
+
+    def __init__(self, obj: Any, attr_name: str, node: ast.AST):
+        if not isinstance(obj, (TicObject, TicInstance)):
+            raise TicTypeError(
+                "Attribute assignment is only supported for dataclass or class instances.",
+                node,
+            )
+        self._obj = obj
+        self._attr_name = attr_name
+        self._node = node
+
+    def get_value(self) -> Any:
+        try:
+            return self._obj.getattr(self._attr_name)
+        except TicAttributeError as e:
+            e.node = self._node  # Add location info to the error
+            raise e
+
+    def set_value(self, value: Any):
+        try:
+            self._obj.setattr(self._attr_name, value)
+        except TicAttributeError as e:
+            e.node = self._node  # Add location info to the error
+            raise e
+
+    def del_value(self):
+        try:
+            self._obj.delattr(self._attr_name)
+        except TicAttributeError as e:
+            e.node = self._node  # Add location info to the error
+            raise e
+
+
+class SubscriptTarget(AssignmentTarget):
+    """Represents assignment to a list index or dict key."""
+
+    def __init__(self, evaluator, node: ast.Subscript):
+        # This logic is complex and is largely migrated from the old
+        # `_resolve_subscript_for_mutation` helper.
+        self._evaluator = evaluator
+        self._node = node
+
         keys = []
         curr: ast.AST = node
         while isinstance(curr, ast.Subscript):
-            keys.append(curr.slice)
+            keys.append(evaluator.visit(curr.slice))
             curr = curr.value
 
         keys.reverse()
-        container_to_modify = self.visit(curr)
+        self._container = evaluator.visit(curr)
 
         # To update state correctly, we need to find the root variable.
-        root_name: str | None = None
-        root_container = None
+        self._root_name: str | None = None
+        self._root_container = None
         temp_curr = curr
         if isinstance(temp_curr, ast.Attribute):
             while isinstance(temp_curr, ast.Attribute):
                 temp_curr = temp_curr.value
             if isinstance(temp_curr, ast.Name):
-                root_name = temp_curr.id
-                root_container = self.state.get(root_name)
+                self._root_name = temp_curr.id
+                self._root_container = evaluator.state.get(self._root_name)
         elif isinstance(temp_curr, ast.Name):
-            root_name = temp_curr.id
-            root_container = self.state.get(root_name)
+            self._root_name = temp_curr.id
+            self._root_container = evaluator.state.get(self._root_name)
 
         # Traverse the keys to get to the final container
-        final_key_node = keys.pop()
-        for key_node in keys:
-            key = self.visit(key_node)
+        self._final_key = keys.pop()
+        for key in keys:
             try:
-                container_to_modify = container_to_modify[key]
+                self._container = self._container[key]
             except (KeyError, IndexError):
-                raise EvalError(
-                    f"Cannot resolve key {key} in nested structure.", key_node
+                raise TicKeyError(
+                    f"Cannot resolve key {key} in nested structure.", node
                 )
             except TypeError:
-                raise EvalError("This object is not subscriptable.", key_node)
+                raise TicTypeError("This object is not subscriptable.", node)
 
-        final_key = self.visit(final_key_node)
-
-        if not isinstance(container_to_modify, (dict, list)):
-            raise EvalError(
-                "Indexed assignment is currently only supported for dictionaries and lists.",
+        if not isinstance(self._container, (dict, list)):
+            raise TicTypeError(
+                "Indexed assignment is only supported for dictionaries and lists.",
                 node,
             )
 
-        return (root_name, root_container, container_to_modify, final_key)
+    def get_value(self) -> Any:
+        try:
+            return self._container[self._final_key]
+        except KeyError:
+            raise TicKeyError(f"Key '{self._final_key}' not found.", self._node)
+        except IndexError:
+            raise TicIndexError("List index out of range.", self._node)
+
+    def set_value(self, value: Any):
+        try:
+            self._container[self._final_key] = value
+            if self._root_name:
+                self._evaluator.state.set(self._root_name, self._root_container)
+        except IndexError:
+            raise TicIndexError("List assignment index out of range.", self._node)
+
+    def del_value(self):
+        try:
+            del self._container[self._final_key]
+            if self._root_name:
+                self._evaluator.state.set(self._root_name, self._root_container)
+        except KeyError:
+            raise TicKeyError(f"Key '{self._final_key}' not found.", self._node)
+        except IndexError:
+            raise TicIndexError("List index out of range.", self._node)
+
+
+class StatementEvaluator(BaseEvaluator):
+    """A mixin for evaluating statement nodes."""
+
+    def _resolve_target(self, node: ast.expr) -> AssignmentTarget:
+        """Resolves an expression node into a concrete AssignmentTarget."""
+        if isinstance(node, ast.Name):
+            return NameTarget(self, node.id)
+        if isinstance(node, ast.Attribute):
+            obj = self.visit(node.value)
+            return AttributeTarget(obj, node.attr, node)
+        if isinstance(node, ast.Subscript):
+            return SubscriptTarget(self, node)
+        raise EvalError("This type of assignment target is not supported.", node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         """Handles assignment statements."""
         value = self.visit(node.value)
 
-        for target in node.targets:
-            if isinstance(target, (ast.Name, ast.Tuple)):
-                if isinstance(target, ast.Tuple) and len(node.targets) > 1:
+        for target_node in node.targets:
+            if isinstance(target_node, ast.Tuple):
+                # Destructuring assignment, e.g., `a, b = 1, 2`
+                if len(node.targets) > 1:
                     raise EvalError(
                         "Destructuring cannot be part of a chained assignment.", node
                     )
-                self._handle_destructuring_assignment(target, value)
-            elif isinstance(target, ast.Subscript):
-                root_name, root_container, container, key = (
-                    self._resolve_subscript_for_mutation(target)
-                )
-                try:
-                    container[key] = value
-                except IndexError:
-                    raise EvalError("List assignment index out of range.", target)
-
-                if root_name:
-                    self.state.set(root_name, root_container)
-            elif isinstance(target, ast.Attribute):
-                obj = self.visit(target.value)
-                if not isinstance(obj, (TicObject, TicInstance)):
-                    raise EvalError(
-                        "Attribute assignment is only supported for dataclass or class instances.",
-                        target,
-                    )
-                obj.setattr(target.attr, value)
+                self._handle_destructuring_assignment(target_node, value)
             else:
-                raise EvalError(
-                    "This type of assignment target is not supported.", node
-                )
+                target = self._resolve_target(target_node)
+                target.set_value(value)
 
     def visit_Delete(self, node: ast.Delete) -> None:
         """Handles the 'del' statement."""
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                if target.id in self.state:
-                    self.state.remove(target.id)
-                else:
-                    raise NameError(f"name '{target.id}' is not defined")
-            elif isinstance(target, ast.Subscript):
-                (
-                    root_name,
-                    root_container,
-                    container,
-                    key,
-                ) = self._resolve_subscript_for_mutation(target)
-                try:
-                    del container[key]
-                except (KeyError, IndexError) as e:
-                    raise EvalError(f"Cannot delete item: {e}", target, cause=e)
-
-                if root_name:
-                    self.state.set(root_name, root_container)
-            elif isinstance(target, ast.Attribute):
-                obj = self.visit(target.value)
-                if not isinstance(obj, (TicObject, TicInstance)):
-                    raise EvalError(
-                        "del is only supported on attributes of custom class or dataclass instances.",
-                        target,
-                    )
-                obj.delattr(target.attr)
-            else:
-                raise EvalError(
-                    "del is currently only supported for variables, subscripts, and attributes.",
-                    target,
-                )
+        for target_node in node.targets:
+            target = self._resolve_target(target_node)
+            target.del_value()
 
     def visit_Pass(self, node: ast.Pass) -> None:
         """Handles the 'pass' statement."""
@@ -156,49 +221,17 @@ class StatementEvaluator(BaseEvaluator):
             raise EvalError(f"Operator {type(node.op).__name__} not supported.", node)
 
         rhs_value = self.visit(node.value)
+        target = self._resolve_target(node.target)
 
-        # Step 1: Define how to get the current value and how to set the new one,
-        # based on the target type (Name vs. Subscript).
-        if isinstance(node.target, ast.Name):
-            name = node.target.id
-            current_value = self.state.get(name)
-            if current_value is None and name not in self.state:
-                raise EvalError(f"Name '{name}' is not defined.", node)
-
-            def setter(value):
-                self.state.set(name, value)
-
-        elif isinstance(node.target, ast.Subscript):
-            (
-                root_name,
-                root_container,
-                container,
-                key,
-            ) = self._resolve_subscript_for_mutation(node.target)
-            try:
-                current_value = container[key]
-            except (KeyError, IndexError):
-                raise EvalError(
-                    "Key or index not found for augmented assignment.", node.target
-                )
-
-            def setter(value):
-                container[key] = value
-                if root_name:
-                    self.state.set(root_name, root_container)
-
-        else:
-            raise EvalError(
-                "Augmented assignment to this target type is not supported.",
-                node,
-            )
-
-        # Step 2: Perform the operation and call the setter. This part is now
-        # independent of the target type.
         try:
+            current_value = target.get_value()
             new_value = op_func(current_value, rhs_value)
-            setter(new_value)
+            target.set_value(new_value)
+        except TicError:
+            # Let user-facing errors from the getter/setter propagate.
+            raise
         except Exception as e:
+            # Wrap any other errors (e.g., from the op_func) in an EvalError.
             raise EvalError(f"Failed to execute operation: {e}", node, cause=e)
 
     def visit_Try(self, node: ast.Try) -> None:

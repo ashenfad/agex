@@ -52,3 +52,9 @@ class TicAttributeError(TicError):
     """Raised when an attribute reference or assignment fails."""
 
     pass
+
+
+class TicNameError(TicError):
+    """Raised when a local or global name is not found."""
+
+    pass

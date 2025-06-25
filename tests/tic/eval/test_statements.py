@@ -1,6 +1,7 @@
 import pytest
 
 from tic.eval.error import EvalError
+from tic.eval.user_errors import TicNameError, TicTypeError
 
 from .helpers import eval_and_get_state
 
@@ -68,9 +69,9 @@ z /= 4
 
 
 def test_aug_assign_undefined_error():
-    with pytest.raises(EvalError) as e:
+    with pytest.raises(TicNameError) as e:
         eval_and_get_state("a += 1")
-    assert "Name 'a' is not defined" in str(e.value)
+    assert "name 'a' is not defined" in str(e.value)
 
 
 def test_dict_indexed_assignment():
@@ -84,9 +85,9 @@ d['a'] = 100
 
 
 def test_dict_indexed_assignment_on_non_dict_error():
-    with pytest.raises(EvalError) as e:
+    with pytest.raises(TicTypeError) as e:
         eval_and_get_state("x = 1\nx[0] = 2")
-    assert "only supported for dictionaries and lists" in str(e.value)
+    assert "Indexed assignment is only supported" in str(e.value)
 
 
 def test_list_indexed_assignment():

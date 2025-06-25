@@ -13,25 +13,6 @@ from .loops import LoopEvaluator
 from .statements import StatementEvaluator
 
 
-class CoreEvaluator(
-    ExpressionEvaluator,
-    StatementEvaluator,
-    BinOpEvaluator,
-    CallEvaluator,
-    LoopEvaluator,
-    ComprehensionEvaluator,
-):
-    def __init__(
-        self,
-        agent: Agent,
-        state: State,
-        source_code: str | None = None,
-    ):
-        self.agent = agent
-        self.state = state
-        self.source_code = source_code
-
-
 class Evaluator(
     CallEvaluator,
     BinOpEvaluator,
