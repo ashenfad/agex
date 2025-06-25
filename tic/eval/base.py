@@ -74,4 +74,60 @@ class BaseEvaluator(ast.NodeVisitor):
         Called for nodes that don't have a specific `visit_` method.
         This override prevents visiting children of unhandled nodes.
         """
-        raise NotImplementedError(f"AST node not supported: {type(node).__name__}")
+        node_type = type(node).__name__
+
+        # Provide specific helpful error messages for common unsupported features
+        if isinstance(node, ast.Nonlocal):
+            var_names = ", ".join(node.names)
+            raise EvalError(
+                f"The 'nonlocal' statement is not supported. "
+                f"Consider using return values, object attributes, or mutable containers "
+                f"instead of modifying '{var_names}' in the enclosing scope.",
+                node,
+            )
+        elif isinstance(node, ast.Global):
+            var_names = ", ".join(node.names)
+            raise EvalError(
+                f"The 'global' statement is not supported. "
+                f"Variables '{var_names}' cannot be declared as global in the sandbox.",
+                node,
+            )
+        elif isinstance(node, ast.Yield):
+            raise EvalError(
+                "Generator functions with 'yield' are not supported. "
+                "Consider using regular functions that return lists or other data structures.",
+                node,
+            )
+        elif isinstance(node, ast.YieldFrom):
+            raise EvalError(
+                "Generator functions with 'yield from' are not supported. "
+                "Consider using regular functions that return lists or other data structures.",
+                node,
+            )
+        elif isinstance(node, ast.Await):
+            raise EvalError(
+                "Async/await syntax is not supported. "
+                "Consider using synchronous code patterns instead.",
+                node,
+            )
+        elif isinstance(node, ast.AsyncFunctionDef):
+            raise EvalError(
+                "Async function definitions are not supported. "
+                "Use regular 'def' function definitions instead.",
+                node,
+            )
+        elif isinstance(node, ast.AsyncWith):
+            raise EvalError(
+                "Async context managers ('async with') are not supported. "
+                "Use regular 'with' statements instead.",
+                node,
+            )
+        elif isinstance(node, ast.AsyncFor):
+            raise EvalError(
+                "Async for loops ('async for') are not supported. "
+                "Use regular 'for' loops instead.",
+                node,
+            )
+        else:
+            # Generic fallback for other unsupported nodes
+            raise EvalError(f"AST node type '{node_type}' is not supported.", node)

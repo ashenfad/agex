@@ -35,16 +35,35 @@ class LiveClosureState(State):
         return self._source.base_store
 
     def get(self, key: str, default: Any = None) -> Any:
-        if key not in self._keys:
-            # This should ideally not be hit if the analyzer is correct.
-            raise KeyError(f"'{key}' is not a valid variable in this closure.")
-
         # If we're in frozen state, use the frozen store
         if self._frozen_store is not None:
             return self._frozen_store.get(key, default)
 
         assert self._source is not None
-        return self._source.get(key, default)
+
+        # If the key is in our captured variables, get it from source
+        if key in self._keys:
+            return self._source.get(key, default)
+
+        # Allow access to system variables (starting with __) even if not captured
+        if key.startswith("__"):
+            return self._source.get(key, default)
+
+        # Allow access to builtins even if not captured
+        from ..eval.builtins import BUILTINS
+
+        if key in BUILTINS:
+            return BUILTINS[key]
+
+        # For other variables, check if they exist in source before restricting
+        # This allows access to global variables and prevents the "list index out of range" issue
+        if key in self._source:
+            return self._source.get(key, default)
+
+        # If the variable doesn't exist anywhere, raise an appropriate error
+        from ..eval.error import EvalError
+
+        raise EvalError(f"Name '{key}' is not defined.", None)
 
     def set(self, key: str, value: Any) -> None:
         raise TypeError("Closures are read-only.")
