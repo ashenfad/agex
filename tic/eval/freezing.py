@@ -6,7 +6,7 @@ This module handles the serialization-friendly transformation of eval objects
 """
 
 import copy
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional, Set
 
 from ..agent import Agent
 
@@ -24,6 +24,9 @@ class ObjectFreezer:
 
     _freeze_handlers: Dict[str, FreezeHandler] = {}
     _rehydrate_handlers: Dict[str, RehydrateHandler] = {}
+    _freezing_visited: Optional[Set[int]] = (
+        None  # Track visited objects during freezing
+    )
 
     @classmethod
     def register_handler(
@@ -43,22 +46,62 @@ class ObjectFreezer:
         if obj is None:
             return obj
 
-        type_name = obj.__class__.__name__
-        freeze_handler = cls._freeze_handlers.get(type_name)
+        # Initialize visited set if this is a top-level call
+        is_top_level = cls._freezing_visited is None
+        if is_top_level:
+            cls._freezing_visited = set()
 
-        if freeze_handler:
-            return freeze_handler(obj)
+        try:
+            return cls._freeze_recursive(obj)
+        finally:
+            # Clean up visited set after top-level call
+            if is_top_level:
+                cls._freezing_visited = None
 
-        # Handle common container types recursively
-        if isinstance(obj, list):
-            return [cls.freeze(item) for item in obj]
-        elif isinstance(obj, tuple):
-            return tuple(cls.freeze(item) for item in obj)
-        elif isinstance(obj, dict):
-            return {key: cls.freeze(value) for key, value in obj.items()}
+    @classmethod
+    def _freeze_recursive(cls, obj: Any) -> Any:
+        """Internal recursive freeze method with circular reference detection."""
+        if obj is None:
+            return obj
 
-        # No special handling needed - return as-is
-        return obj
+        # Check for circular references
+        obj_id = id(obj)
+        if cls._freezing_visited is not None and obj_id in cls._freezing_visited:
+            return {
+                "__circular_ref__": True,
+                "__obj_type__": obj.__class__.__name__,
+                "__obj_id__": obj_id,
+            }
+
+        # Add to visited set for complex objects
+        needs_tracking = (
+            isinstance(obj, (list, tuple, dict))
+            or obj.__class__.__name__ in cls._freeze_handlers
+        )
+        if needs_tracking and cls._freezing_visited is not None:
+            cls._freezing_visited.add(obj_id)
+
+        try:
+            type_name = obj.__class__.__name__
+            freeze_handler = cls._freeze_handlers.get(type_name)
+
+            if freeze_handler:
+                return freeze_handler(obj)
+
+            # Handle common container types recursively
+            if isinstance(obj, list):
+                return [cls._freeze_recursive(item) for item in obj]
+            elif isinstance(obj, tuple):
+                return tuple(cls._freeze_recursive(item) for item in obj)
+            elif isinstance(obj, dict):
+                return {key: cls._freeze_recursive(value) for key, value in obj.items()}
+
+            # No special handling needed - return as-is
+            return obj
+        finally:
+            # Remove from visited set when done processing this object
+            if needs_tracking and cls._freezing_visited is not None:
+                cls._freezing_visited.discard(obj_id)
 
     @classmethod
     def rehydrate(cls, obj: Any, agent: "Agent") -> Any:
@@ -69,6 +112,12 @@ class ObjectFreezer:
         """
         if obj is None:
             return obj
+
+        # Handle circular reference placeholders
+        if isinstance(obj, dict) and obj.get("__circular_ref__"):
+            # Return None as a safe fallback for circular references
+            # In a more sophisticated implementation, we could try to reconstruct the reference
+            return None
 
         type_name = obj.__class__.__name__
         rehydrate_handler = cls._rehydrate_handlers.get(type_name)
@@ -109,7 +158,7 @@ def _freeze_user_function(user_func: Any) -> Any:
         frozen_closure = Ephemeral()
         for k, v in frozen_func.closure_state.items():
             # Recursively freeze closure variables that might contain unpickleable objects
-            frozen_value = ObjectFreezer.freeze(v)
+            frozen_value = ObjectFreezer._freeze_recursive(v)
             frozen_closure.set(k, frozen_value)
         frozen_func.closure_state = frozen_closure
 
@@ -139,7 +188,7 @@ def _freeze_tic_class(tic_class: Any) -> Any:
 
     for method_name, method in frozen_class.methods.items():
         # Freeze each method
-        methods_copy[method_name] = ObjectFreezer.freeze(method)
+        methods_copy[method_name] = ObjectFreezer._freeze_recursive(method)
 
     frozen_class.methods = methods_copy
     return frozen_class
@@ -167,12 +216,12 @@ def _freeze_tic_instance(tic_instance: Any) -> Any:
     frozen_instance = copy.copy(tic_instance)
 
     # Freeze the class
-    frozen_instance.cls = ObjectFreezer.freeze(frozen_instance.cls)
+    frozen_instance.cls = ObjectFreezer._freeze_recursive(frozen_instance.cls)
 
     # Recursively freeze attributes that might contain unpickleable objects
     frozen_attributes = {}
     for attr_name, attr_value in frozen_instance.attributes.items():
-        frozen_attributes[attr_name] = ObjectFreezer.freeze(attr_value)
+        frozen_attributes[attr_name] = ObjectFreezer._freeze_recursive(attr_value)
 
     frozen_instance.attributes = frozen_attributes
 
@@ -241,7 +290,7 @@ def _freeze_tic_object(tic_object: Any) -> Any:
     # Recursively freeze attributes that might contain unpickleable objects
     frozen_attributes = {}
     for attr_name, attr_value in frozen_object.attributes.items():
-        frozen_attributes[attr_name] = ObjectFreezer.freeze(attr_value)
+        frozen_attributes[attr_name] = ObjectFreezer._freeze_recursive(attr_value)
 
     frozen_object.attributes = frozen_attributes
 
