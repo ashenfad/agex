@@ -117,12 +117,20 @@ class ExpressionEvaluator(BaseEvaluator):
                     f"module '{value.name}' has no attribute '{attr_name}'", node
                 )
 
-            # If the attribute is a module, return a new TicModule
+            # If the attribute is a module, check if the submodule is explicitly registered
             # Otherwise, return the actual value
             import types
 
             if isinstance(real_attr, types.ModuleType):
-                return TicModule(name=f"{value.name}.{attr_name}")
+                submodule_name = f"{value.name}.{attr_name}"
+                # Only allow access if the submodule is explicitly registered
+                if submodule_name not in self.agent.importable_modules:
+                    raise TicAttributeError(
+                        f"Submodule '{submodule_name}' is not registered. "
+                        f"Use agent.module(..., name='{submodule_name}') to register it.",
+                        node,
+                    )
+                return TicModule(name=submodule_name)
 
             return real_attr
 

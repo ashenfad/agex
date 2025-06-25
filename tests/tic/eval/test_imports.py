@@ -6,6 +6,7 @@ import pytest
 from tic.agent import Agent
 from tic.eval.core import evaluate_program
 from tic.eval.error import EvalError
+from tic.eval.user_errors import TicAttributeError
 from tic.state.ephemeral import Ephemeral
 
 
@@ -98,7 +99,7 @@ def test_import_submodule_patterns():
     """
     # 1. Setup a dummy module to act as our "submodule"
     child_mod = ModuleType("child")
-    child_mod.member_fn = lambda: "success"
+    child_mod.member_fn = lambda: "success"  # type: ignore
 
     agent = Agent()
     # 2. Register it with a dotted name to simulate a submodule structure
@@ -121,3 +122,40 @@ result2 = member_fn()
     state2 = Ephemeral()
     evaluate_program(program2, agent, state2)
     assert state2.get("result2") == "success"
+
+
+def test_submodule_access_control():
+    """Test that submodule access is properly controlled."""
+    import numpy
+
+    agent = Agent()
+    agent.module(numpy, name="numpy")  # Register only numpy, not submodules
+
+    state = Ephemeral()
+
+    # Test 1: Direct import of unregistered submodule should fail
+    with pytest.raises(EvalError, match="Module 'numpy.random' is not registered"):
+        evaluate_program("import numpy.random", agent, state)
+
+    # Test 2: Attribute access to unregistered submodule should fail
+    with pytest.raises(
+        TicAttributeError, match="Submodule 'numpy.random' is not registered"
+    ):
+        evaluate_program(
+            "import numpy as np; rng = np.random.RandomState()", agent, state
+        )
+
+    # Test 3: When submodule IS registered, both should work
+    import numpy.random
+
+    agent.module(numpy.random, name="numpy.random")
+
+    # Direct import should work
+    evaluate_program(
+        "import numpy.random as npr; rng1 = npr.RandomState()", agent, state
+    )
+    assert state.get("rng1") is not None
+
+    # Attribute access should work
+    evaluate_program("import numpy as np; rng2 = np.random.RandomState()", agent, state)
+    assert state.get("rng2") is not None
