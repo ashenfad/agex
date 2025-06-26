@@ -64,6 +64,91 @@ This enables agents to maintain relevant context while staying within token limi
 - Each agent sees its own isolated view while enabling controlled information sharing
 - Clean separation prevents cross-contamination while allowing collaboration
 
+## Runtime Interoperability
+
+### Seamless Python Integration
+
+A key differentiator of this framework is **runtime interoperability** - agents don't just execute code in isolation, they create objects that live and work directly in your Python runtime.
+
+**True Callable Generation:**
+```python
+@my_coder.task
+def make_a_function(prompt: str) -> Callable:
+    """Create a function based on the user's description."""
+    pass
+
+# Returns an actual Python callable you can use immediately
+prime_finder = make_a_function("Find the next prime larger than a given number")
+next_prime = prime_finder(100)  # Works with existing code
+my_list.sort(key=prime_finder)  # Integrates with standard library
+```
+
+### Beyond Tool Isolation
+
+Most agent frameworks force a choice between:
+- **Limited evaluation**: Simple string/JSON processing that can't handle complex Python objects
+- **Full isolation**: VM/Docker sandboxing that's secure but completely separate from your runtime
+
+This framework provides a third option: **runtime integration** where agents create real Python objects that participate in your existing codebase.
+
+**Data Processing Handoffs:**
+```python
+# Seamless data flow between your context and agent context
+messy_dataframe = pd.read_csv("complex_data.csv")
+
+@data_agent.task
+def clean_and_analyze(df: pd.DataFrame) -> dict:
+    """Clean this dataset and extract insights."""
+    pass
+
+insights = clean_and_analyze(messy_dataframe)
+# insights is a real dict in your session - no serialization needed
+```
+
+**Dynamic Code Extension:**
+```python
+# Agent extends your existing classes with new capabilities
+@my_coder.task  
+def add_method_to_class(cls: type, method_description: str) -> type:
+    """Add a new method to an existing class."""
+    pass
+
+EnhancedProcessor = add_method_to_class(MyDataProcessor, "add outlier detection")
+# Your class now has the new method, usable immediately
+```
+
+### Natural Agent Orchestration
+
+Because agents return real Python objects, complex multi-agent workflows become simple Python control flow:
+
+```python
+# Generator-critique loop using standard Python
+rpt = research_expert("please research ...")
+while not (judgement := judge(rpt)).approved:
+    rpt = research_revise(judgement.feedback)
+
+# Parallel processing with list comprehensions  
+analyses = [specialist_agent(data_chunk) for data_chunk in dataset]
+
+# Conditional branching based on agent outputs
+if classifier_agent(document).confidence > 0.8:
+    result = expert_agent(document)
+else:
+    result = human_review_agent(document)
+```
+
+No workflow graphs, YAML configurations, or orchestration DSLs needed - just Python.
+
+### Living Codebase Integration
+
+This enables workflows impossible with isolated execution:
+- **Collaborative development**: Agents become pair programming partners who directly contribute to shared codebases
+- **Dynamic library extension**: Agents add new capabilities to existing systems at runtime
+- **Live code evolution**: Functions and classes can be enhanced and optimized without breaking existing interfaces
+- **Natural orchestration**: Multi-agent workflows expressed as familiar Python control structures
+
+The result is agents that don't just help *with* your code - they become part of your development environment.
+
 ## Hierarchical Agent Architecture
 
 ### Agent-to-Agent Communication
@@ -191,6 +276,29 @@ The same tools work for both agents and humans:
 - `view(conversation)` - Full interaction history  
 - `view(hierarchy)` - Agent relationships and communication patterns
 
+### Native Python Introspection
+
+Agent-created functions integrate seamlessly with Python's built-in introspection:
+
+```python
+# Agent creates a function
+custom_fn = my_agent.create_analyzer("detect data anomalies")
+
+# Standard Python introspection just works
+help(custom_fn)
+# Output includes rich context:
+# - Original user prompt
+# - Agent's reasoning process
+# - Validation tests performed
+# - Dependencies and assumptions
+
+dir(custom_fn)               # Standard attributes
+inspect.signature(custom_fn) # Function signature
+custom_fn.__doc__            # Enhanced docstring with creation context
+```
+
+This makes agent-created code completely native to existing Python tooling - IDEs show rich docstrings on hover, documentation generators include agent context, and debugging tools work as expected.
+
 ### Natural Debugging Patterns
 
 Since agents work in familiar Python environments:
@@ -198,6 +306,7 @@ Since agents work in familiar Python environments:
 - Error messages and stack traces work as expected
 - State inspection uses familiar patterns
 - Logging and communication are explicit and traceable
+- Agent-created functions are debuggable with standard Python tools
 
 ### Collaborative Development
 
@@ -244,5 +353,7 @@ The combination of persistent memory, tool creation, refactoring capabilities, a
 ### Natural Adoption
 
 By building on familiar Python patterns and developer mental models, the framework should be uniquely adoptable - developers can apply existing intuitions about programming environments, debugging, and system architecture directly to agent design.
+
+The **runtime interoperability** eliminates the typical friction of agent integration. Instead of restructuring workflows around agent frameworks, agents seamlessly slot into existing codebases as enhanced development tools. Agent-created functions work with standard Python tooling, participate in existing type systems, and integrate with established debugging practices.
 
 The framework doesn't just make agents more capable; it makes them more **collaborative**, more **understandable**, and more **human-compatible** by leveraging the cognitive tools we've already developed for working with complex systems. 

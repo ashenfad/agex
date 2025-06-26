@@ -124,16 +124,16 @@ c.my_dict.popitem() # This should fail as popitem is not in WHITELISTED_METHODS
 
 def test_str_format_sandbox_escape_is_blocked():
     """
-    Tests that the str.format escape vector is neutralized by the sandboxed
-    type() built-in, which returns a placeholder instead of a raw type.
+    Tests that the str.format escape vector is completely blocked by preventing
+    any attribute access in format strings.
     """
-    # This program would have been able to read __subclasses__ if `int` referred
-    # to the real type object.
+    # This program would have been able to read __subclasses__ if format strings
+    # allowed attribute access, but now they are completely blocked.
     program = "subclasses_str = '{0.__subclasses__}'.format(int)"
 
-    # We expect this to fail because our sandboxed `int` is a placeholder,
-    # and the format mini-language will fail to find `__subclasses__` on it.
-    # The error comes from inside Python's format logic, hence the AttributeError,
-    # which is wrapped in our EvalError.
-    with pytest.raises(EvalError, match="object has no attribute '__subclasses__'"):
+    # We expect this to fail because our format string security prevents
+    # ALL attribute access, eliminating the vulnerability entirely.
+    with pytest.raises(
+        EvalError, match="Format string attribute access .* is not allowed"
+    ):
         eval_and_get_state(program)

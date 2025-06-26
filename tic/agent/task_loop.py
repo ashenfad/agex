@@ -16,12 +16,6 @@ from ..state.kv import Memory
 
 
 class TaskLoopMixin(BaseAgent):
-    """
-    Mixin that provides task loop functionality to Agent class.
-
-    Assumes the class has: primer, timeout_seconds attributes.
-    """
-
     def _run_task_loop(
         self,
         task_name: str,

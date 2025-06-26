@@ -49,10 +49,11 @@ __all__ = [
 
 class Agent(RegistrationMixin, TaskLoopMixin, BaseAgent):
     def __init__(self, primer: str | None = None, timeout_seconds: float = 5.0):
+        """
+        An agent that can be used to execute tasks.
+
+        Args:
+            primer: A string to guide the agent's behavior.
+            timeout_seconds: The maximum time in seconds to execute a task.
+        """
         super().__init__(primer, timeout_seconds)
-
-    def task(self, func):
-        """A decorator to mark a function as an agent task."""
-        from .datatypes import Task
-
-        return Task()

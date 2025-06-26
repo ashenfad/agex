@@ -19,8 +19,72 @@ from .user_errors import (
 class CallEvaluator(BaseEvaluator):
     """A mixin for evaluating function call nodes."""
 
+    def _handle_secure_format(
+        self,
+        format_str: str,
+        args_nodes: list[ast.expr],
+        kwargs_nodes: list[ast.keyword],
+    ) -> str:
+        """
+        Secure format string handling that prevents sandbox escapes.
+
+        This method evaluates format arguments through the sandbox (so attribute access
+        is properly validated), then uses a custom formatter to prevent bypass attacks.
+        """
+        from string import Formatter
+
+        # Evaluate all arguments through the sandbox first
+        args = [self.visit(arg) for arg in args_nodes]
+        kwargs = {kw.arg: self.visit(kw.value) for kw in kwargs_nodes if kw.arg}
+
+        class SandboxFormatter(Formatter):
+            def __init__(self, evaluator):
+                self.evaluator = evaluator
+                super().__init__()
+
+            def get_field(self, field_name, args, kwargs):
+                # Parse field like "obj.attr" or "0.attr"
+                parts = field_name.split(".")
+                if len(parts) == 1:
+                    # Simple field like {name} or {0} - allow these
+                    return super().get_field(field_name, args, kwargs)
+
+                # Complex field with attribute access - this is what we need to block
+                # Since the arguments were already evaluated through our sandbox,
+                # we know the base objects are safe. But we need to prevent
+                # the format string from accessing additional attributes.
+
+                # For now, we'll be conservative and block any dotted field access
+                # Users should use f-strings for complex expressions
+                raise TicError(
+                    f"Format string attribute access '{field_name}' is not allowed. Use f-strings instead."
+                )
+
+        formatter = SandboxFormatter(self)
+        try:
+            return formatter.format(format_str, *args, **kwargs)
+        except Exception as e:
+            # Re-raise with better context
+            raise EvalError(f"Format string error: {e}", None) from e
+
     def visit_Call(self, node: ast.Call) -> Any:
         """Handles function calls."""
+
+        # Special handling for string.format() calls to prevent sandbox escapes
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "format":
+            # Check if this is a string literal .format() call
+            if isinstance(node.func.value, ast.Constant) and isinstance(
+                node.func.value.value, str
+            ):
+                return self._handle_secure_format(
+                    node.func.value.value, node.args, node.keywords
+                )
+
+            # Check if this is a string variable .format() call
+            string_obj = self.visit(node.func.value)
+            if isinstance(string_obj, str):
+                return self._handle_secure_format(string_obj, node.args, node.keywords)
+
         args = [self.visit(arg) for arg in node.args]
         kwargs = {kw.arg: self.visit(kw.value) for kw in node.keywords if kw.arg}
 
