@@ -1,10 +1,11 @@
 from typing import Any, Optional
 
-from tic.agent import Agent, RegisteredClass
+from tic.agent.base import BaseAgent
+from tic.agent.datatypes import RegisteredClass
 from tic.eval.constants import WHITELISTED_METHODS
 
 
-def find_class_spec(agent: Agent, obj: Any) -> Optional[RegisteredClass]:
+def find_class_spec(agent: BaseAgent, obj: Any) -> Optional[RegisteredClass]:
     """Find the class spec for a given object instance."""
     # This helper should find the most specific spec in the MRO.
     for base in type(obj).__mro__:
@@ -13,7 +14,7 @@ def find_class_spec(agent: Agent, obj: Any) -> Optional[RegisteredClass]:
     return None
 
 
-def get_allowed_attributes_for_instance(agent: Agent, obj: Any) -> set[str]:
+def get_allowed_attributes_for_instance(agent: BaseAgent, obj: Any) -> set[str]:
     """
     Get all allowed attributes for an object, considering its inheritance
     hierarchy and whitelisted native methods.

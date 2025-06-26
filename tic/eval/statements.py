@@ -2,7 +2,7 @@ import ast
 from abc import ABC, abstractmethod
 from typing import Any
 
-from tic.agent import _AgentExit
+from tic.agent.datatypes import _AgentExit
 from tic.eval.builtins import dataclass
 from tic.eval.functions import UserFunction, _ReturnException
 from tic.eval.user_errors import (

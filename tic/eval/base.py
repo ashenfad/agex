@@ -2,7 +2,7 @@ import ast
 import time
 from typing import Any
 
-from tic.agent import Agent
+from tic.agent.base import BaseAgent
 from tic.state.core import State
 
 from .error import EvalError
@@ -12,7 +12,9 @@ from .objects import TicModule
 class BaseEvaluator(ast.NodeVisitor):
     """A base class for evaluators, holding shared state."""
 
-    def __init__(self, agent: "Agent", state: "State", timeout_seconds: float = 5.0):
+    def __init__(
+        self, agent: "BaseAgent", state: "State", timeout_seconds: float = 5.0
+    ):
         self.agent = agent
         self.state = state
         self.source_code: str | None = None

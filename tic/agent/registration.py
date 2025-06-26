@@ -1,9 +1,10 @@
 import fnmatch
 import inspect
 from types import ModuleType
-from typing import Callable, Dict
+from typing import Callable
 
-from .datatypes import (
+from tic.agent.base import BaseAgent
+from tic.agent.datatypes import (
     RESERVED_NAMES,
     MemberSpec,
     Pattern,
@@ -12,13 +13,9 @@ from .datatypes import (
     RegisteredModule,
     Visibility,
 )
-from .fingerprint import compute_agent_fingerprint
-
-# Global registry mapping fingerprints to agents
-_AGENT_REGISTRY: Dict[str, "Agent"] = {}
 
 
-def _create_predicate(pattern: Pattern | None) -> Callable[[str], bool]:
+def create_predicate(pattern: Pattern | None) -> Callable[[str], bool]:
     """Creates a predicate function from a pattern."""
     if pattern is None:
         return lambda _: False  # Select nothing
@@ -31,57 +28,7 @@ def _create_predicate(pattern: Pattern | None) -> Callable[[str], bool]:
     raise TypeError(f"Unsupported pattern type: {type(pattern)}")
 
 
-def register_agent(agent: "Agent") -> str:
-    """
-    Register an agent in the global registry.
-
-    Returns the agent's fingerprint.
-    """
-    fingerprint = compute_agent_fingerprint(
-        agent.primer, agent.fn_registry, agent.cls_registry, agent.importable_modules
-    )
-    _AGENT_REGISTRY[fingerprint] = agent
-    return fingerprint
-
-
-def resolve_agent(fingerprint: str) -> "Agent":
-    """
-    Resolve an agent by its fingerprint.
-
-    Raises RuntimeError if no matching agent is found.
-    """
-    agent = _AGENT_REGISTRY.get(fingerprint)
-    if not agent:
-        available = list(_AGENT_REGISTRY.keys())
-        raise RuntimeError(
-            f"No agent found with fingerprint '{fingerprint[:8]}...'. "
-            f"Available fingerprints: {[fp[:8] + '...' for fp in available]}"
-        )
-    return agent
-
-
-def clear_agent_registry() -> None:
-    """Clear the global registry. Primarily for testing."""
-    global _AGENT_REGISTRY
-    _AGENT_REGISTRY = {}
-
-
-class Agent:
-    def __init__(self, primer: str | None = None, timeout_seconds: float = 5.0):
-        self.primer = primer
-        self.timeout_seconds = timeout_seconds
-        self.fn_registry: dict[str, RegisteredFn] = {}
-        self.cls_registry: dict[str, RegisteredClass] = {}
-        self.cls_registry_by_type: dict[type, RegisteredClass] = {}
-        self.importable_modules: dict[str, RegisteredModule] = {}
-
-        # Auto-register this agent
-        self.fingerprint = register_agent(self)
-
-    def _update_fingerprint(self):
-        """Update the fingerprint after registration changes."""
-        self.fingerprint = register_agent(self)
-
+class RegistrationMixin(BaseAgent):
     def fn(
         self,
         _fn: Callable | None = None,
@@ -147,8 +94,8 @@ class Agent:
                 all_members.update(include)
 
             # 2. Filter members based on include/exclude patterns
-            include_pred = _create_predicate(include)
-            exclude_pred = _create_predicate(exclude)
+            include_pred = create_predicate(include)
+            exclude_pred = create_predicate(exclude)
             selected_names = {
                 name
                 for name in all_members
@@ -240,8 +187,8 @@ class Agent:
                         all_members.add(f"{member_name}.{class_member_name}")
 
         # 2. Filter members based on include/exclude patterns
-        include_pred = _create_predicate(include)
-        exclude_pred = _create_predicate(exclude)
+        include_pred = create_predicate(include)
+        exclude_pred = create_predicate(exclude)
         selected_names = {
             name
             for name in all_members
@@ -282,7 +229,7 @@ class Agent:
                 }
 
                 # Also apply the top-level exclude predicate to these members
-                exclude_pred = _create_predicate(exclude)
+                exclude_pred = create_predicate(exclude)
                 cls_selected_members = {
                     m
                     for m in cls_selected_members
@@ -339,9 +286,3 @@ class Agent:
             self.cls_registry_by_type[spec.cls] = spec
 
         self._update_fingerprint()
-
-    def task(self, func):
-        """A decorator to mark a function as an agent task."""
-        from .datatypes import Task
-
-        return Task()

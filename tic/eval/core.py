@@ -1,6 +1,6 @@
 import ast
 
-from tic.agent import Agent
+from tic.agent.base import BaseAgent
 from tic.state.core import State
 
 from .base import BaseEvaluator
@@ -29,7 +29,7 @@ class Evaluator(
 
     def __init__(
         self,
-        agent: Agent,
+        agent: BaseAgent,
         state: State,
         source_code: str | None = None,
         timeout_seconds: float | None = None,
@@ -54,7 +54,7 @@ class Evaluator(
 
 
 def evaluate_program(
-    program: str, agent: Agent, state: State, timeout_seconds: float | None = None
+    program: str, agent: BaseAgent, state: State, timeout_seconds: float | None = None
 ):
     """
     Updates state with the result of running the program. The agent provides

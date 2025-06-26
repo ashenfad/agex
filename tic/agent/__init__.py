@@ -1,5 +1,5 @@
 # Main agent functionality
-from .core import Agent, clear_agent_registry, register_agent, resolve_agent
+from .base import BaseAgent, clear_agent_registry, register_agent, resolve_agent
 
 # Data types and exceptions
 from .datatypes import (
@@ -16,26 +16,22 @@ from .datatypes import (
     RegisteredModule,
     Task,
     Visibility,
-    _AgentExit,
-    task,
 )
 
 # Fingerprinting (usually internal, but exported for testing)
-from .fingerprint import compute_agent_fingerprint
+from .registration import RegistrationMixin
+from .task_loop import TaskLoopMixin
 
 __all__ = [
     # Core functionality
-    "Agent",
     "register_agent",
     "resolve_agent",
     "clear_agent_registry",
     # Agent exit system
-    "_AgentExit",
     "ExitSuccess",
     "ExitFail",
     "ExitClarify",
     "Task",
-    "task",
     # Registration types
     "MemberSpec",
     "AttrDescriptor",
@@ -48,5 +44,15 @@ __all__ = [
     "Visibility",
     "RESERVED_NAMES",
     # Fingerprinting
-    "compute_agent_fingerprint",
 ]
+
+
+class Agent(RegistrationMixin, TaskLoopMixin, BaseAgent):
+    def __init__(self, primer: str | None = None, timeout_seconds: float = 5.0):
+        super().__init__(primer, timeout_seconds)
+
+    def task(self, func):
+        """A decorator to mark a function as an agent task."""
+        from .datatypes import Task
+
+        return Task()

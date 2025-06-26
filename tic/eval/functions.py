@@ -2,7 +2,7 @@ import ast
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from tic.agent import resolve_agent
+from tic.agent.base import resolve_agent
 
 from ..state import State
 from ..state.closure import LiveClosureState

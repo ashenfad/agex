@@ -1,7 +1,7 @@
 import ast
 from typing import Any
 
-from ..agent import _AgentExit
+from ..agent.datatypes import _AgentExit
 from .base import BaseEvaluator
 from .builtins import STATEFUL_BUILTINS, _print_stateful
 from .error import EvalError

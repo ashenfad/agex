@@ -2,7 +2,8 @@ import inspect
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from tic.agent import Agent, ExitClarify, ExitFail, ExitSuccess
+from tic.agent.base import BaseAgent
+from tic.agent.datatypes import ExitClarify, ExitFail, ExitSuccess
 from tic.eval.base import BaseEvaluator
 from tic.eval.functions import UserFunction
 from tic.eval.objects import (
@@ -195,7 +196,7 @@ def _hasattr(evaluator: BaseEvaluator, *args, **kwargs) -> bool:
     return name in allowed
 
 
-def _get_general_help_text(agent: "Agent") -> str:
+def _get_general_help_text(agent: "BaseAgent") -> str:
     """Returns a string with a summary of all registered items."""
     parts = []
 
