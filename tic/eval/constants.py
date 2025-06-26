@@ -31,7 +31,6 @@ WHITELISTED_METHODS = {
         "split",
         "replace",
         "startswith",
-        "format",
         "endswith",
         "join",
     },

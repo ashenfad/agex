@@ -139,6 +139,30 @@ result = "Value: %(attr)s" % {"attr": obj.public_attr}
     # (Note: % formatting is generally safer since it doesn't support attribute access)
 
 
+def test_format_method_security():
+    """Test that .format() method calls are secure via AST interception."""
+    agent = Agent()
+    agent.cls(SecurityTestObject, include=["public_attr"])
+
+    # Simple format calls without placeholders should work (no security risk)
+    program_simple = """
+s = "hello"
+result = s.format()
+"""
+    state = eval_and_get_state(program_simple, agent)
+    assert state.get("result") == "hello"
+
+    # Format calls with attribute access should be blocked
+    program_dangerous = """
+obj = SecurityTestObject()
+result = "{obj.public_attr}".format(obj=obj)
+"""
+    with pytest.raises(
+        EvalError, match="Format string attribute access .* is not allowed"
+    ):
+        eval_and_get_state(program_dangerous, agent)
+
+
 def test_template_string_security():
     """Test string.Template security if it's available."""
     # Test if string module can be accessed and if Template is vulnerable
