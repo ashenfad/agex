@@ -18,7 +18,7 @@ def test_multi_step_program_with_snapshots():
     agent = Agent()
     agent.module(np, name="np")
 
-    store = Memory(as_bytes=True)
+    store = Memory()
     state = Versioned(store)
 
     # 2. Define a sequence of programs that build on each other
@@ -79,7 +79,7 @@ def test_comprehensive_serialization_stress():
     agent = Agent(timeout_seconds=15.0)
     agent.module(np, name="np")
 
-    store = Memory(as_bytes=True)
+    store = Memory()
     state = Versioned(store)
 
     # Phase 1: Complex function definitions and closures

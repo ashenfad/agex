@@ -14,7 +14,7 @@ def test_class_serialization_with_closures():
     agent = Agent()
     agent.module(np, name="np")
 
-    store = Memory(as_bytes=True)
+    store = Memory()
     state = Versioned(store)
 
     program = """

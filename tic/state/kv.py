@@ -1,67 +1,70 @@
-import pickle
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, Mapping
+from typing import Iterable, Mapping
 
 
 class KVStore(ABC):
+    """
+    Key-Value store interface that operates on bytes only.
+
+    All values are stored and retrieved as bytes. Serialization/deserialization
+    is handled at higher layers (e.g., Versioned state).
+    """
+
     @abstractmethod
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: str, default: bytes | None = None) -> bytes | None:
+        """Get bytes value for key, or default if not found."""
         pass
 
     @abstractmethod
-    def set(self, key: str, value: Any) -> None:
+    def set(self, key: str, value: bytes) -> None:
+        """Set bytes value for key."""
         pass
 
     @abstractmethod
-    def get_many(self, *args: str) -> Mapping[str, Any]:
+    def get_many(self, *args: str) -> Mapping[str, bytes]:
+        """Get multiple keys, returning only keys that exist."""
         pass
 
     @abstractmethod
-    def set_many(self, **kwargs) -> None:
+    def set_many(self, **kwargs: bytes) -> None:
+        """Set multiple key-value pairs."""
         pass
 
     @abstractmethod
-    def items(self) -> Iterable[tuple[str, Any]]:
+    def items(self) -> Iterable[tuple[str, bytes]]:
+        """Iterate over all key-value pairs."""
         pass
 
     @abstractmethod
     def __contains__(self, key: str) -> bool:
+        """Check if key exists in store."""
         pass
 
 
 class Memory(KVStore):
-    def __init__(self, as_bytes: bool = True):
-        """
-        A memory-backed KV store. If `as_bytes` is True, values are stored as
-        bytes, effectively making the values immutable.
-        """
-        self.memory = {}
-        self.as_bytes = as_bytes
+    """A memory-backed KV store that stores values as bytes."""
 
-    def get(self, key: str, default: Any = None) -> Any:
-        value = self.memory.get(key)
-        if self.as_bytes and value is not None:
-            value = pickle.loads(value)
-        return value if value is not None else default
+    def __init__(self):
+        self.memory: dict[str, bytes] = {}
 
-    def set(self, key: str, value: Any) -> None:
-        self.memory[key] = pickle.dumps(value) if self.as_bytes else value
+    def get(self, key: str, default: bytes | None = None) -> bytes | None:
+        return self.memory.get(key, default)
 
-    def get_many(self, *args: str) -> Mapping[str, Any]:
-        return {
-            key: pickle.loads(val) if self.as_bytes else val
-            for key in args
-            if (val := self.memory.get(key)) is not None
-        }
+    def set(self, key: str, value: bytes) -> None:
+        if not isinstance(value, bytes):
+            raise TypeError(f"Expected bytes, got {type(value).__name__}")
+        self.memory[key] = value
 
-    def set_many(self, **kwargs) -> None:
-        if self.as_bytes:
-            coll = {key: pickle.dumps(value) for key, value in kwargs.items()}
-            self.memory.update(coll)
-        else:
-            self.memory.update(kwargs)
+    def get_many(self, *args: str) -> Mapping[str, bytes]:
+        return {key: val for key in args if (val := self.memory.get(key)) is not None}
 
-    def items(self) -> Iterable[tuple[str, Any]]:
+    def set_many(self, **kwargs: bytes) -> None:
+        for key, value in kwargs.items():
+            if not isinstance(value, bytes):
+                raise TypeError(f"Expected bytes for {key}, got {type(value).__name__}")
+        self.memory.update(kwargs)
+
+    def items(self) -> Iterable[tuple[str, bytes]]:
         return self.memory.items()
 
     def __contains__(self, key: str) -> bool:

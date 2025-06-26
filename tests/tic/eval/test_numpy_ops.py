@@ -39,7 +39,7 @@ arr2 = np.array([4, 5, 6])
 result_mul = (arr1 + arr2) * 10
 """
     # 3. Initialize a versioned state with an in-memory store
-    store = Memory(as_bytes=True)
+    store = Memory()
     state = Versioned(store)
 
     # 4. Execute the program and save the state
@@ -74,7 +74,7 @@ def test_numpy_state_continuity():
     # 1. Set up the agent and a versioned state
     agent = Agent()
     agent.module(np, name="np")
-    store = Memory(as_bytes=True)
+    store = Memory()
     state1 = Versioned(store)
 
     # 2. Run a program that just imports the module, and snapshot the state

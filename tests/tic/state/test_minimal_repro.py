@@ -13,7 +13,7 @@ def test_minimal_failure_repro():
     agent = Agent()
     agent.module(np, name="np")
 
-    store = Memory(as_bytes=True)
+    store = Memory()
     state = Versioned(store)
 
     # Phase A: Define a class and create an instance.

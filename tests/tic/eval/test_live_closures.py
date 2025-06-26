@@ -38,7 +38,7 @@ x = 100
 def get_x():
     return x
 """
-    kv_store = Memory(as_bytes=False)
+    kv_store = Memory()
     state = Versioned(kv_store)
     eval_and_get_state(program1, state=state)
 

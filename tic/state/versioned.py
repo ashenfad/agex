@@ -1,5 +1,8 @@
+import pickle
 import secrets
 from typing import Any, Iterable
+
+import xxhash
 
 from . import kv
 from .core import State
@@ -13,6 +16,11 @@ def _get_commit_hash() -> str:
     return secrets.token_hex(8)
 
 
+def _fast_hash(data: bytes) -> str:
+    """Compute fast hash of bytes data."""
+    return xxhash.xxh64(data).hexdigest()
+
+
 class Versioned(State):
     def __init__(self, store: kv.KVStore, commit_hash: str | None = None):
         self.ephemeral = Ephemeral()
@@ -20,11 +28,19 @@ class Versioned(State):
         self.long_term = store
         self.current_commit = commit_hash
 
+        # Track accessed objects for mutation detection
+        # key -> (original_hash, object_reference)
+        self.accessed_objects: dict[str, tuple[str, Any]] = {}
+
         self.commit_keys: dict[str, str]
         if self.current_commit is not None:
-            self.commit_keys = self.long_term.get(
-                COMMIT_KEYSET % self.current_commit, {}
+            commit_keyset_bytes = self.long_term.get(
+                COMMIT_KEYSET % self.current_commit
             )
+            if commit_keyset_bytes is not None:
+                self.commit_keys = pickle.loads(commit_keyset_bytes)
+            else:
+                self.commit_keys = {}
         else:
             self.commit_keys = {}
 
@@ -36,20 +52,41 @@ class Versioned(State):
         return f"{commit_hash or self.current_commit}:{key}"
 
     def get(self, key: str, default: Any = None) -> Any:
+        # First check ephemeral (in-memory changes)
         if (value := self.ephemeral.get(key)) is not None:
             return value
+
+        # Then check committed state
         if (
             key not in self.removed
             and (versioned_key := self.commit_keys.get(key)) is not None
         ):
-            return self.long_term.get(versioned_key, default)
+            # Get serialized bytes from KV store
+            serialized_bytes = self.long_term.get(versioned_key)
+            if serialized_bytes is not None:
+                # Hash the serialized bytes before deserializing
+                original_hash = _fast_hash(serialized_bytes)
+
+                # Deserialize the object
+                value = pickle.loads(serialized_bytes)
+
+                # Track ALL accessed objects for mutation detection
+                self.accessed_objects[key] = (original_hash, value)
+
+                return value
+
         return default
 
     def set(self, key: str, value: Any) -> None:
         self.ephemeral.set(key, value)
         self.removed.discard(key)
+        # Remove from mutation tracking since we're explicitly setting
+        self.accessed_objects.pop(key, None)
 
     def remove(self, key: str) -> bool:
+        # Remove from mutation tracking
+        self.accessed_objects.pop(key, None)
+
         if not self.ephemeral.remove(key) and key in self.commit_keys:
             self.removed.add(key)
             return True
@@ -79,13 +116,44 @@ class Versioned(State):
         """
         current_hash = commit_hash or self.current_commit
         while current_hash is not None:
-            yield current_hash
-            current_hash = self.long_term.get(PARENT_COMMIT % current_hash)
+            yield current_hash  # Yield current commit first
+            parent_bytes = self.long_term.get(PARENT_COMMIT % current_hash)
+            if parent_bytes is not None:
+                current_hash = pickle.loads(parent_bytes)
+            else:
+                current_hash = None
+
+    def _detect_mutations(self) -> dict[str, bytes]:
+        """Detect mutations in accessed objects and auto-save them.
+
+        Returns:
+            Dict mapping keys to their serialized bytes for mutated objects.
+        """
+        mutations = {}
+
+        for key, (original_hash, obj_ref) in list(self.accessed_objects.items()):
+            # Check ALL accessed objects for mutations, not just unset ones
+            # Serialize the object reference we stored
+            current_bytes = pickle.dumps(obj_ref, protocol=pickle.HIGHEST_PROTOCOL)
+            current_hash = _fast_hash(current_bytes)
+
+            if current_hash != original_hash:
+                # Mutation detected! Auto-save it (if not already explicitly set)
+                if key not in self.ephemeral:
+                    self.ephemeral.set(key, obj_ref)
+                # Cache the serialized bytes to avoid re-serializing in snapshot()
+                mutations[key] = current_bytes
+
+        return mutations
 
     def snapshot(self) -> str | None:
+        # First, detect any mutations in accessed objects
+        mutations = self._detect_mutations()
+
         if not self.ephemeral:
             # If nothing happened, don't create an empty commit.
             # Just return the current commit hash.
+            self.accessed_objects.clear()  # Clear tracking
             return self.current_commit
 
         new_hash = _get_commit_hash()
@@ -105,17 +173,29 @@ class Versioned(State):
         # layer recent writes on top of existing keys
         for key, value in self.ephemeral.items():
             versioned_key = self._versioned_key(key, new_hash)
-            diffs[versioned_key] = value
+            # Check if we already have serialized bytes from mutation detection
+            if key in mutations:
+                serialized_value = mutations[key]
+            else:
+                # Serialize the value to bytes before storing
+                serialized_value = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+            diffs[versioned_key] = serialized_value
             new_commit_keys[key] = versioned_key
 
-        diffs[COMMIT_KEYSET % new_hash] = new_commit_keys
-        diffs[PARENT_COMMIT % new_hash] = self.current_commit
+        # Serialize commit metadata
+        diffs[COMMIT_KEYSET % new_hash] = pickle.dumps(
+            new_commit_keys, protocol=pickle.HIGHEST_PROTOCOL
+        )
+        diffs[PARENT_COMMIT % new_hash] = pickle.dumps(
+            self.current_commit, protocol=pickle.HIGHEST_PROTOCOL
+        )
 
         self.long_term.set_many(**diffs)
         self.commit_keys = new_commit_keys
         self.current_commit = new_hash
         self.removed = set()
         self.ephemeral = Ephemeral()
+        self.accessed_objects.clear()  # Clear mutation tracking
 
         return new_hash
 
