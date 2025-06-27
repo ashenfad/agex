@@ -2,7 +2,7 @@ import logging
 import math
 from typing import Callable
 
-from agex import Agent
+from agex import Agent, Versioned
 
 # It's helpful to see the agent's thinking process.
 logging.basicConfig(level=logging.INFO)
@@ -47,7 +47,18 @@ def fn_builder(prompt: str) -> Callable:  # type: ignore
 
 # 4. Run the agent.
 if __name__ == "__main__":
-    fn = fn_builder("Make a fn that finds a prime larger than a given number.")
+    state = Versioned()
+
+    fn = fn_builder(
+        "Make a fn that finds a prime larger than a given number.",
+        state=state,  # type: ignore
+    )
+
+    print(fn(50000))
+    print(fn(100000))
+    print(fn(500000))
+
+    fn = fn_builder("Okay, now make it the next lower prime.", state=state)  # type: ignore
 
     print(fn(50000))
     print(fn(100000))

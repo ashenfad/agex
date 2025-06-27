@@ -22,7 +22,9 @@ def _fast_hash(data: bytes) -> str:
 
 
 class Versioned(State):
-    def __init__(self, store: kv.KVStore, commit_hash: str | None = None):
+    def __init__(self, store: kv.KVStore | None = None, commit_hash: str | None = None):
+        if store is None:
+            store = kv.Memory()
         self.ephemeral = Ephemeral()
         self.removed = set()
         self.long_term = store

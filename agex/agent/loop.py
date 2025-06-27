@@ -82,12 +82,11 @@ class TaskLoopMixin(BaseAgent):
         # Build system message (always static, never stored in state)
         system_message = self._build_system_message()
 
-        # Add initial task message to conversation log (first iteration only)
-        if not exec_state.get("__msg_log__"):
-            initial_task_message = self._build_task_message(
-                docstring, inputs_dataclass, inputs_instance, return_type
-            )
-            add_message(exec_state, Message(role="user", content=initial_task_message))
+        # Add task message to conversation log for this invocation
+        initial_task_message = self._build_task_message(
+            docstring, inputs_dataclass, inputs_instance, return_type
+        )
+        add_message(exec_state, Message(role="user", content=initial_task_message))
 
         # Main task loop
         for iteration in range(self.max_iterations):
