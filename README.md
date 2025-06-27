@@ -1,21 +1,21 @@
-# tic
+# agex
 
-`tic` provides a Python emulation environment, enabling agents to 'think in code'.
+`agex` provides a Python emulation environment, enabling agents to 'think in code'.
 
 ## Building an Agent
 
-Since a `tic` agent thinks in code, the agent definition is a micro-Python DSL. We'll
+Since a `agex` agent thinks in code, the agent definition is a micro-Python DSL. We'll
 create an instance of an agent and it will have decorators available to mark functions
 and classes we want the agent to access, along with with tasks the agent will do.
 
-For `tic` agents, a tool is simply a `fn` it can use. And an agent `task` is a function
+For `agex` agents, a tool is simply a `fn` it can use. And an agent `task` is a function
 where the agent decides how to implement it.
 
 ```python
 import math
-import tic
+import agex
 
-math_agent = tic.Agent(primer="You are a helpful math assistant.")
+math_agent = agex.Agent(primer="You are a helpful math assistant.")
 
 @math_agent.fn  # expose a fn to an agent via decorator
 def sqrt(num: float) -> float:
@@ -39,8 +39,8 @@ to include documentation directly in the decorators rather than the fn docstring
 function signature encapsulates the contract between the agents.
 
 ```python
-math_agent = tic.Agent(primer="...")
-orchestrator = tic.Agent(primer="...")
+math_agent = agex.Agent(primer="...")
+orchestrator = agex.Agent(primer="...")
 
 @orchestrator.fn("A math-oriented assistant")
 @math_agent.task("Assist the user with their math questions")
