@@ -272,7 +272,7 @@ def test_agent_module_with_configure():
         name="sample",
         visibility="low",  # default for selected items
         include=["*"],
-        exclude=["_*"],
+        exclude=["_*", "*._*"],  # Exclude both top-level and class privates
         configure={
             "PI": MemberSpec(visibility="high"),
             "PublicClass": MemberSpec(constructable=False),

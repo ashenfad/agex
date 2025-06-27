@@ -159,7 +159,7 @@ class RegistrationMixin(BaseAgent):
         name: str | None = None,
         visibility: Visibility = "high",
         include: Pattern | None = "*",
-        exclude: Pattern | None = "_*",
+        exclude: Pattern | None = ["_*", "*._*"],
         configure: dict[str, MemberSpec] | None = None,
     ):
         """
@@ -181,7 +181,7 @@ class RegistrationMixin(BaseAgent):
             if inspect.isclass(member):
                 for class_member_name, _ in inspect.getmembers(member):
                     if (
-                        not class_member_name.startswith("_")
+                        not class_member_name.startswith("__")
                         or class_member_name == "__init__"
                     ):
                         all_members.add(f"{member_name}.{class_member_name}")
