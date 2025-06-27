@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "tiktoken",
     "xxhash",
+    "diskcache",
 ]
 
 [project.optional-dependencies]
