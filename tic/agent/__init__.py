@@ -17,10 +17,11 @@ from .datatypes import (
     Task,
     Visibility,
 )
+from .loop import TaskLoopMixin
 
 # Fingerprinting (usually internal, but exported for testing)
 from .registration import RegistrationMixin
-from .task_loop import TaskLoopMixin
+from .task import TaskMixin
 
 __all__ = [
     # Core functionality
@@ -47,7 +48,7 @@ __all__ = [
 ]
 
 
-class Agent(RegistrationMixin, TaskLoopMixin, BaseAgent):
+class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
     def __init__(
         self,
         primer: str | None = None,
