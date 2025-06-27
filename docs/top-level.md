@@ -24,7 +24,7 @@ The primary goal is to make defining an agent task feel as natural as defining a
 
 The agent registration API is built on a core principle that makes its syntax consistent and predictable:
 
-*   **Definable** methods are for registering new functions (`def`) and classes (`class`) as they are being defined. These methods (`.fn`, `.cls`) support the decorator pattern (`@agent.fn`) and therefore use a "decorator factory" syntax: `agent.fn(...)(my_func)`. This separates configuration from application.
+*   **Definable** methods are for registering new functions (`def`) and classes (`class`) as they are being defined. These methods (`.fn`, `.cls`) support the decorator pattern (`@agent.fn`) and therefore use a "decorator factory" syntax: `agent.fn(my_func)`. This separates configuration from application.
 
 *   **Configurable** methods are for exposing parts of *already existing* objects, like imported modules. These methods (`.module`, and in the future, `.method` and `.attr`) are direct function calls: `agent.module(math, ...)`.
 
@@ -67,29 +67,20 @@ agent.fn(visibility="low")(math.sqrt)
 
 The `.cls()` method registers a class, giving the agent access to its attributes and methods. This is where fine-grained control becomes essential.
 
-#### Selector Logic
+#### Pattern Logic
 
-The `attrs` and `methods` parameters accept a flexible selector to specify what members to expose:
+The `include` and `exclude` parameters use flexible patterns to specify what members to expose:
 
 1.  **String (Glob Pattern):** A single string is treated as a glob pattern (e.g., `"get_*"`). `"*"` selects all members.
 2.  **List/Set of Strings:** A collection of glob patterns. A member is included if it matches any pattern in the list.
 3.  **Callable Predicate:** A function that takes the member name and returns `True` or `False`. This allows for arbitrary custom logic.
 
-#### Helper Predicates
-
-To make common patterns easy, the library can provide helper predicates.
-
-```python
-class Select:
-    @staticmethod
-    def non_private(name: str) -> bool:
-        return not name.startswith('_')
-```
+Members are included if they match the `include` pattern AND do not match the `exclude` pattern.
 
 #### Example Usage
 
 ```python
-from tic.agent import Agent, Select
+from tic.agent import Agent
 
 agent = Agent()
 
@@ -99,45 +90,65 @@ class UserProfile:
     _internal_key: str
     name: str
 
-# Register the class, exposing all non-private attributes
+    def get_info(self):
+        pass
+    
+    def _validate_internal(self):
+        pass
+
+# Register the class, exposing all non-private members
 # with medium visibility to save context.
-agent.cls(UserProfile, attrs=Select.non_private, visibility="medium")
+agent.cls(UserProfile, include="*", exclude="_*", visibility="medium")
 
 # This is equivalent to:
-# agent.cls(UserProfile, attrs=lambda n: not n.startswith('_'), ...)
-# agent.cls(UserProfile, attrs=["user_id", "name"], ...)
+# agent.cls(UserProfile, include=["user_id", "name", "get_info"], ...)
+
+# Or use a custom predicate:
+# agent.cls(UserProfile, include=lambda n: not n.startswith('_'), ...)
 ```
 
 ### Registering Modules (`.module`)
 
-For exposing entire libraries, `agent.module()` is the preferred "power tool." It offers three modes for namespacing, controlled by the `as_name` parameter:
+For exposing entire libraries, `agent.module()` is the preferred "power tool." It allows you to register functions, classes, and constants from a module using include/exclude patterns.
 
-1.  **Default Namespace (Recommended):** If `as_name` is omitted, the module's canonical `__name__` is used.
-    `agent.module(math)` -> Agent sees `math`.
-2.  **Aliased Namespace:** If `as_name` is a string, the agent will use that string as an alias.
-    `agent.module(pandas, as_name="pd")` -> Agent sees `pd`.
-3.  **Flattened Namespace:** If `as_name=None` is passed explicitly, the module's members are registered in the agent's global scope, without any namespace. This is useful for utility libraries but should be used with caution to avoid name collisions.
-
-By default, all selectors (`fns`, `consts`, `classes`, etc.) are set to `Select.non_private`, making it safe and easy to expose the public API of a trusted library.
+By default, `include="*"` and `exclude=["_*", "*._*"]`, which safely exposes the public API while excluding private members at both the top level and within classes.
 
 ```python
-# Default: Agent sees `math.sqrt`, `math.pi`, etc.
-agent.module(math)
+import math
+import pandas as pd
 
-# Aliased: Agent sees `pd.DataFrame`, etc.
-agent.module(pandas, as_name="pd")
+# Default: Exposes public members, excludes privates
+agent.module(math, name="math")
 
-# Flattened: Agent sees `my_util_func()` directly.
-agent.module(my_utils, as_name=None)
+# Custom patterns: Only expose specific functions
+agent.module(math, name="math", include=["sqrt", "sin", "cos", "pi"])
+
+# Include everything (even privates) except specific patterns
+agent.module(pandas, name="pd", include="*", exclude=["_*", "*.test_*"])
+
+# Exclude class private methods but allow top-level privates
+agent.module(my_module, include="*", exclude="*._*")
 ```
 
-If you need more fine-grained control over individual members (e.g., making one class non-constructable), you should use the more specific "scalpel" methods like `.cls()` and `.fn()` after the initial bulk registration.
+#### Class Method Patterns
+
+For modules containing classes, you can use dotted notation to target specific class members:
+
+```python
+# Include only specific class methods
+agent.module(requests, include=["Session", "Session.get", "Session.post"])
+
+# Include all public methods but exclude specific ones
+agent.module(my_lib, include="*", exclude=["_*", "MyClass.dangerous_method"])
+```
+
+If you need more fine-grained control over individual members (e.g., making one class non-constructable), you should use the more specific methods like `.cls()` and `.fn()` after the initial bulk registration.
 
 ### Overriding
 
 A key principle is that **more specific registrations override more general ones**. This allows for powerful workflows where you can bulk-register a class or module with low visibility, and then "promote" specific, important members to high visibility using a more specific registration method.
 
-For example, `agent.module(..., visibility="low")` can be partially overridden by a future direct call like `agent.method(module.some_func, visibility="high")`.
+For example, `agent.module(..., visibility="low")` can be partially overridden by a future direct call like `agent.fn(module.some_func, visibility="high")`.
 
 ## Developer Experience Example
 
