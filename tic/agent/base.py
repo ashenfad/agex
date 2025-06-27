@@ -1,5 +1,7 @@
 from typing import Dict
 
+from ..llm import get_llm_client
+from ..llm.config import get_llm_config
 from .datatypes import (
     RegisteredClass,
     RegisteredFn,
@@ -47,13 +49,36 @@ def clear_agent_registry() -> None:
 
 
 class BaseAgent:
-    def __init__(self, primer: str | None = None, timeout_seconds: float = 5.0):
+    def __init__(
+        self,
+        primer: str | None,
+        timeout_seconds: float,
+        max_iterations: int,
+        max_tokens: int,
+        # LLM configuration (optional, uses smart defaults)
+        llm_provider: str | None = None,
+        llm_model: str | None = None,
+        **llm_kwargs,
+    ):
         self.primer = primer
         self.timeout_seconds = timeout_seconds
+        self.max_iterations = max_iterations
+        self.max_tokens = max_tokens
+
+        # Get smart LLM configuration with fallback chain
+        self.llm_config = get_llm_config(
+            provider=llm_provider, model=llm_model, **llm_kwargs
+        )
+
+        # Create LLM client using the resolved configuration
+        self.llm_client = get_llm_client(**self.llm_config)
+
+        # Agent registries
         self.fn_registry: dict[str, RegisteredFn] = {}
         self.cls_registry: dict[str, RegisteredClass] = {}
         self.cls_registry_by_type: dict[type, RegisteredClass] = {}
         self.importable_modules: dict[str, RegisteredModule] = {}
+
         # Auto-register this agent
         self.fingerprint = register_agent(self)
 

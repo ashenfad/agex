@@ -48,12 +48,35 @@ __all__ = [
 
 
 class Agent(RegistrationMixin, TaskLoopMixin, BaseAgent):
-    def __init__(self, primer: str | None = None, timeout_seconds: float = 5.0):
+    def __init__(
+        self,
+        primer: str | None = None,
+        timeout_seconds: float = 5.0,
+        max_iterations: int = 10,
+        max_tokens: int = 2**16,
+        # LLM configuration (optional, uses smart defaults)
+        llm_provider: str | None = None,
+        llm_model: str | None = None,
+        **llm_kwargs,
+    ):
         """
         An agent that can be used to execute tasks.
 
         Args:
             primer: A string to guide the agent's behavior.
             timeout_seconds: The maximum time in seconds to execute a task.
+            max_iterations: The maximum number of think-act cycles for a task.
+            max_tokens: The maximum number of tokens to use for context rendering.
+            llm_provider: LLM provider override (falls back to global/env config).
+            llm_model: LLM model override (falls back to global/env config).
+            **llm_kwargs: Additional LLM parameters (temperature, etc.).
         """
-        super().__init__(primer, timeout_seconds)
+        super().__init__(
+            primer,
+            timeout_seconds,
+            max_iterations,
+            max_tokens,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            **llm_kwargs,
+        )

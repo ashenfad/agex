@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 # 1. Define a dataclass for raw data
 @dataclass
-class Config:
+class WidgetConfig:
     name: str
     value: int
 
@@ -34,7 +34,7 @@ class Widget:
 
 # 3. A factory function that uses both classes
 def create_widget(name, val):
-    conf = Config(name=name, value=val)
+    conf = WidgetConfig(name=name, value=val)
     return Widget(conf)
 
 # 4. Main script logic

@@ -1,5 +1,6 @@
 import ast
 import inspect
+import textwrap
 from typing import Callable
 
 
@@ -11,7 +12,22 @@ def is_function_body_empty(func: Callable) -> bool:
     """
     try:
         source = inspect.getsource(func)
-        tree = ast.parse(source)
+
+        # Handle indentation issues by dedenting the source
+        source = textwrap.dedent(source)
+
+        # If source starts with @, find the function definition
+        lines = source.strip().split("\n")
+        func_start = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith("def ") and func.__name__ in line:
+                func_start = i
+                break
+
+        # Extract just the function definition (not decorators)
+        func_source = "\n".join(lines[func_start:])
+
+        tree = ast.parse(func_source)
 
         # Find the function definition
         func_def = None
@@ -35,7 +51,7 @@ def is_function_body_empty(func: Callable) -> bool:
                 return False
 
         return True
-    except (OSError, TypeError):
-        # Can't get source (built-in, dynamically created, etc.)
+    except (OSError, TypeError, SyntaxError, IndentationError):
+        # Can't get source (built-in, dynamically created, etc.) or parse issues
         # Be conservative and assume it's not empty
         return False
