@@ -14,7 +14,6 @@ from .datatypes import (
     RegisteredFn,
     RegisteredItem,
     RegisteredModule,
-    Task,
     Visibility,
 )
 from .loop import TaskLoopMixin

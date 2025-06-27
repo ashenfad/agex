@@ -35,20 +35,6 @@ class ExitClarify(_AgentExit):
 
 
 @dataclass
-class Task:
-    """A placeholder for a task definition."""
-
-    # For now, we don't need any fields.
-    # This will be fleshed out later.
-    pass
-
-
-def task(func):
-    """A decorator to mark a function as an agent task."""
-    return Task()
-
-
-@dataclass
 class MemberSpec:
     visibility: Visibility | None = None
     docstring: str | None = None
