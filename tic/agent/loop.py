@@ -8,6 +8,7 @@ for agent tasks, including LLM communication and code evaluation.
 from typing import Any, Dict
 
 from tic.agent.base import BaseAgent
+from tic.agent.primer_text import BUILTIN_PRIMER
 from tic.llm.core import Message
 
 from ..eval.core import evaluate_program
@@ -45,8 +46,8 @@ class TaskLoopMixin(BaseAgent):
         # Create state if none provided (memory-backed versioned store)
         exec_state = state if state is not None else Versioned(Memory())
 
-        # TODO: Get model name for ContextRenderer - for now use placeholder
-        context_renderer = ContextRenderer("gpt-4")  # TODO: Make configurable
+        # Use the agent's configured model for context rendering
+        context_renderer = ContextRenderer(self.llm_config["model"])
 
         # Build initial system message
         system_message = self._build_system_message(docstring, inputs)
@@ -101,9 +102,8 @@ class TaskLoopMixin(BaseAgent):
         if hasattr(self, "primer") and self.primer:
             parts.append(self.primer)
 
-        # Add builtin primer
-        builtin_primer = "You are in a Python REPL environment. Use exit_success(result) when complete."
-        parts.append(builtin_primer)
+        # Add builtin primer from string constant
+        parts.append(BUILTIN_PRIMER)
 
         # Add task description
         if docstring:
