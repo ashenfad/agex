@@ -81,7 +81,7 @@ def _should_render_member(
         return True
     if member_vis == "high":
         return True
-    if member_vis == "medium" and container_vis == "high":
+    if member_vis == "medium":
         return True
     return False
 
@@ -278,12 +278,13 @@ def _render_class(
             )
         )
 
-    # For high- or medium-visibility classes, render all high-visibility members.
-    # A medium-visibility class still needs to show its high-visibility children.
+    # For high- or medium-visibility classes, render members based on their visibility.
     if spec.visibility in ("high", "medium") or full:
         # Render attributes
         for attr_name, attr_spec in spec.attrs.items():
-            if not full and attr_spec.visibility != "high":
+            if not _should_render_member(
+                attr_spec.visibility or spec.visibility, spec.visibility, full
+            ):
                 continue
             type_hint = ""
             if (

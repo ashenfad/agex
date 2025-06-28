@@ -1,43 +1,18 @@
-import logging
 import math
 from typing import Callable
 
 from agex import Agent, Versioned
 
-# It's helpful to see the agent's thinking process.
-logging.basicConfig(level=logging.INFO)
-
-
-# 1. Instantiate the agent.,
-# We can optionally configure the LLM. If not provided, it uses smart
-# defaults from environment variables or a config file.
-# For this example, we'll let it use the defaults.
-calculator_agent = Agent(
-    primer="You are an expert at using a calculator. You are given a math problem and your goal is to return just the numeric answer.",
+funcy_agent = Agent(
+    primer="You are great a building functions. You are given a task and your goal is to build a function that will solve the task.",
     max_iterations=5,
 )
 
 
-# 2. Give the agent capabilities.
-# We'll register the entire `math` module, giving the agent access to
-# functions like `sqrt`, `sin`, `cos`, constants like `pi`, etc.
-# We'll give it the name "math" so the agent can `import math`.
-calculator_agent.module(math, visibility="medium")
+funcy_agent.module(math, visibility="low")
 
 
-# 3. Define the task.
-# The docstring is the prompt for the agent.
-# The function signature tells the agent what inputs it will receive
-# and what type of output it must produce.
-@calculator_agent.task
-def run_calculation(problem: str) -> float:  # type: ignore
-    """
-    Solve the user's math problem and return a number.
-    """
-    pass
-
-
-@calculator_agent.task
+@funcy_agent.task
 def fn_builder(prompt: str) -> Callable:  # type: ignore
     """
     Make a fn for the user. Return this fn with `exit_success(my_fn)`.

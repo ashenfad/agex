@@ -85,13 +85,15 @@ def test_render_medium_visibility_class():
         def __init__(self, val: int):
             pass
 
-        def should_not_be_rendered(self):
+        def should_be_rendered(self):
             pass
 
     output = render_definitions(agent)
     expected = """
 class MediumVis:
     def __init__(self, val: int):
+        ...
+    def should_be_rendered(self):
         ...
 """.strip()
     assert output.strip() == expected
