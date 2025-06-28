@@ -51,9 +51,19 @@ exit_success(final_result)
     agent.llm_client = DummyLLMClient(responses=responses)
 
     # Define task
-    @agent.task
-    def solve_math_problem(problem: str, x: float, y: float) -> float:  # type: ignore
-        """Solve a math problem involving two numbers."""
+    @agent.task("Solve a math problem involving two numbers.")
+    def solve_math_problem(problem: str, x: float, y: float) -> float:  # type: ignore[return-value]
+        """
+        Solve a mathematical problem using the provided numbers.
+
+        Args:
+            problem: Description of the math operation to perform
+            x: First number for the calculation
+            y: Second number for the calculation
+
+        Returns:
+            The numerical result of the mathematical operation
+        """
         pass
 
     # Execute task and verify result
@@ -91,9 +101,14 @@ exit_success(result)
 
     agent.llm_client = DummyLLMClient(responses=responses)
 
-    @agent.task
-    def get_the_answer() -> int:  # type: ignore
-        """Get the answer to the ultimate question."""
+    @agent.task("Get the answer to the ultimate question.")
+    def get_the_answer() -> int:  # type: ignore[return-value]
+        """
+        Get the answer to the ultimate question of life, the universe, and everything.
+
+        Returns:
+            The ultimate answer as an integer
+        """
         pass
 
     # Should succeed despite first response being malformed
@@ -126,9 +141,14 @@ exit_success(result)
 
     agent.llm_client = DummyLLMClient(responses=responses)
 
-    @agent.task
-    def compute_simple() -> int:  # type: ignore
-        """Compute a simple result."""
+    @agent.task("Compute a simple result.")
+    def compute_simple() -> int:  # type: ignore[return-value]
+        """
+        Perform a simple computation and return the result.
+
+        Returns:
+            The computed integer result
+        """
         pass
 
     result = compute_simple()
@@ -153,9 +173,18 @@ exit_success(result)
 
     agent.llm_client = DummyLLMClient(responses=responses)
 
-    @agent.task
-    def process_text(text: str, repeat_count: int) -> str:  # type: ignore
-        """Process text input by transforming and repeating it."""
+    @agent.task("Process text input by transforming and repeating it.")
+    def process_text(text: str, repeat_count: int) -> str:  # type: ignore[return-value]
+        """
+        Transform and repeat input text.
+
+        Args:
+            text: The text to transform and repeat
+            repeat_count: Number of times to repeat the transformed text
+
+        Returns:
+            The processed text result
+        """
         pass
 
     result = process_text(text="hello", repeat_count=3)
@@ -179,9 +208,14 @@ print(f"Current value: {x}")
 
     agent.llm_client = DummyLLMClient(responses=responses)
 
-    @agent.task
-    def never_ending_task() -> int:  # type: ignore
-        """A task that never completes."""
+    @agent.task("A task that never completes.")
+    def never_ending_task() -> int:  # type: ignore[return-value]
+        """
+        Execute a task that is designed to timeout (for testing purposes).
+
+        Returns:
+            This function should never return normally, but would return an int if it did
+        """
         pass
 
     # Should timeout after max_iterations
@@ -204,9 +238,17 @@ exit_fail("Task is impossible to complete")
 
     agent.llm_client = DummyLLMClient(responses=responses)
 
-    @agent.task
-    def impossible_task() -> str:  # type: ignore
-        """A task that always fails."""
+    @agent.task("A task that always fails.")
+    def impossible_task() -> str:  # type: ignore[return-value]
+        """
+        Execute a task that is designed to always fail (for testing error handling).
+
+        Returns:
+            This function should never return normally, but would return a string if it did
+
+        Raises:
+            ExitFail: Always raised to indicate task failure
+        """
         pass
 
     # Should raise ExitFail
@@ -232,9 +274,14 @@ exit_success(result)
 
     agent.llm_client = DummyLLMClient(responses=responses)
 
-    @agent.task
-    def hello_world() -> str:  # type: ignore
-        """Return a greeting."""
+    @agent.task("Return a greeting.")
+    def hello_world() -> str:  # type: ignore[return-value]
+        """
+        Generate a simple greeting message.
+
+        Returns:
+            A greeting string
+        """
         pass
 
     result = hello_world()
@@ -257,9 +304,18 @@ exit_success(result)
 
     agent.llm_client = DummyLLMClient(responses=responses)
 
-    @agent.task
-    def create_profile(name: str, age: int) -> dict:  # type: ignore
-        """Create a profile dictionary."""
+    @agent.task("Create a profile dictionary.")
+    def create_profile(name: str, age: int) -> dict:  # type: ignore[return-value]
+        """
+        Create a user profile as a dictionary.
+
+        Args:
+            name: The user's name
+            age: The user's age
+
+        Returns:
+            A dictionary containing the profile information
+        """
         pass
 
     result = create_profile(name="Alice", age=25)
@@ -292,9 +348,17 @@ exit_success(result)
 
     agent.llm_client = DummyLLMClient(responses=responses)
 
-    @agent.task
-    def compute_factorial(number: int) -> int:  # type: ignore
-        """Compute factorial using registered function."""
+    @agent.task("Compute factorial using registered function.")
+    def compute_factorial(number: int) -> int:  # type: ignore[return-value]
+        """
+        Calculate the factorial of a given number.
+
+        Args:
+            number: The number to calculate factorial for
+
+        Returns:
+            The factorial result as an integer
+        """
         pass
 
     result = compute_factorial(number=5)

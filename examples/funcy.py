@@ -15,10 +15,18 @@ funcy_agent.module(math, visibility="low")
 
 
 # 3. Define a task that builds and returns functions
-@funcy_agent.task
-def fn_builder(prompt: str) -> Callable:  # type: ignore
+@funcy_agent.task(
+    "Make a function for the user. Return this function with `exit_success(my_fn)`."
+)
+def fn_builder(prompt: str) -> Callable:  # type: ignore[return-value]
     """
-    Make a fn for the user. Return this fn with `exit_success(my_fn)`.
+    Build a callable function from a text prompt.
+
+    Args:
+        prompt: Text description of the desired function
+
+    Returns:
+        A callable function that matches the prompt description
     """
     pass
 
@@ -39,7 +47,7 @@ if __name__ == "__main__":
     print(fn(500000))
 
     # Second request: agent remembers context and builds related function
-    fn = fn_builder("Okay, now make it the next lower prime.", state=state)  # type: ignore
+    fn = fn_builder("Okay, now make it the next lower prime.", state=state)  # type: ignore[call-arg]
 
     print(fn(50000))
     print(fn(100000))

@@ -16,53 +16,37 @@ from agex.agent.utils import is_function_body_empty
 
 
 class TaskMixin(TaskLoopMixin, BaseAgent):
-    def task(self, func_or_docstring_override=None):
+    def task(self, primer: str, /) -> Callable:
         """
-        Decorator to mark a function as an agent task.
+        Decorator to mark a function as an agent task with required primer.
 
         The decorated function must have an empty body (only pass, docstrings, comments).
         The decorator replaces the function with one that triggers the agent's task loop.
 
         Usage:
-            @agent.task
-            def my_function():
-                pass
-
-            @agent.task("Custom prompt override")
+            @agent.task("Build a function from the given prompt")
             def my_function():
                 pass
 
         Args:
-            func_or_docstring_override: Either a function (when used as @agent.task)
-                                       or a string override (when used as @agent.task("..."))
+            primer: Instructions for the agent on how to implement this task
 
         Returns:
-            A decorator function or the decorated function
+            A decorator function
         """
-        # Handle @agent.task (without parentheses)
-        if callable(func_or_docstring_override):
-            func = func_or_docstring_override
-            docstring_override = None
-            return self._create_task_wrapper(func, docstring_override)
 
-        # Handle @agent.task("override") (with parentheses)
-        else:
-            docstring_override = func_or_docstring_override
+        def decorator(func: Callable) -> Callable:
+            return self._create_task_wrapper(func, primer)
 
-            def decorator(func: Callable) -> Callable:
-                return self._create_task_wrapper(func, docstring_override)
+        return decorator
 
-            return decorator
-
-    def _create_task_wrapper(
-        self, func: Callable, docstring_override: str | None
-    ) -> Callable:
+    def _create_task_wrapper(self, func: Callable, primer: str) -> Callable:
         """
         Creates the actual task wrapper function.
 
         Args:
             func: The original function to wrap
-            docstring_override: Optional docstring override
+            primer: Agent instructions for implementing the task
 
         Returns:
             The wrapped function
@@ -79,8 +63,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         return_type = original_sig.return_annotation
         task_name = func.__name__
 
-        # Use docstring override or original docstring
-        effective_docstring = docstring_override or func.__doc__
+        # Use primer for agent instructions
+        effective_docstring = primer
 
         # Create dynamic dataclass for inputs
         inputs_dataclass = self._create_inputs_dataclass(task_name, original_sig)
