@@ -53,6 +53,19 @@ class RegistrationMixin(BaseAgent):
                 fn=f, visibility=visibility, docstring=final_doc
             )
             self._update_fingerprint()
+
+            # Mark as fn-decorated for dual-decorator validation (allow multiple fn decorators)
+            # Only set attributes if the function allows it (built-ins don't)
+            try:
+                if not hasattr(f, "__agent_fn_owners__"):
+                    f.__agent_fn_owners__ = []
+                f.__agent_fn_owners__.append(self)
+                f.__is_agent_fn__ = True  # Keep this for task decorator to detect
+            except (AttributeError, TypeError):
+                # Built-in functions and some other types don't allow setting attributes
+                # This is fine - they can't be task-decorated anyway, so no validation needed
+                pass
+
             return f
 
         return decorator(_fn) if _fn else decorator

@@ -346,3 +346,138 @@ def test_agent_cls_with_name_alias():
 
     reg = agent.cls_registry["AliasClass"]
     assert reg.cls == OriginalClassName
+
+
+# =============================================================================
+# Decorator Validation Tests
+# =============================================================================
+
+
+def test_task_decorator_single():
+    """Test that a single task decorator works correctly."""
+    agent = Agent()
+
+    @agent.task("Implement a simple function")
+    def simple_task():
+        """A simple task function."""
+        pass
+
+    # Check that task metadata is set correctly
+    assert hasattr(simple_task, "__is_agent_task__")
+    assert simple_task.__is_agent_task__ is True
+    assert hasattr(simple_task, "__agent_task_owner__")
+    assert simple_task.__agent_task_owner__ is agent
+
+
+def test_fn_decorator_multiple():
+    """Test that multiple fn decorators on the same function are allowed."""
+    agent1 = Agent()
+    agent2 = Agent()
+
+    @agent1.fn(docstring="First agent function")
+    @agent2.fn(docstring="Second agent function")
+    def shared_function():
+        """A function shared across agents."""
+        return "shared"
+
+    # Check that fn metadata is set correctly
+    assert hasattr(shared_function, "__is_agent_fn__")
+    assert shared_function.__is_agent_fn__ is True
+    assert hasattr(shared_function, "__agent_fn_owners__")
+    assert len(shared_function.__agent_fn_owners__) == 2
+    assert agent1 in shared_function.__agent_fn_owners__
+    assert agent2 in shared_function.__agent_fn_owners__
+
+
+def test_task_decorator_multiple_not_allowed():
+    """Test that multiple task decorators on the same function are not allowed."""
+    agent1 = Agent()
+    agent2 = Agent()
+
+    # First task decorator should work
+    @agent1.task("First task implementation")
+    def multi_task_attempt():
+        pass
+
+    # Second task decorator should fail
+    with pytest.raises(ValueError, match="already has a task decorator"):
+        agent2.task("Second task implementation")(multi_task_attempt)
+
+
+def test_decorator_order_wrong_not_allowed():
+    """Test that wrong decorator order (task before fn) is not allowed."""
+    agent1 = Agent()
+    agent2 = Agent()
+
+    with pytest.raises(ValueError, match="Invalid decorator order"):
+
+        @agent1.task("This should fail")  # Task applied first (inner)
+        @agent2.fn(
+            docstring="This comes after"
+        )  # Fn applied second (outer) - WRONG ORDER
+        def wrong_order_example():
+            pass
+
+
+def test_decorator_order_correct_allowed():
+    """Test that correct decorator order (fn before task) is allowed."""
+    agent1 = Agent()
+    agent2 = Agent()
+
+    @agent1.fn(docstring="Outer fn decorator")  # Fn applied first (outer) - CORRECT
+    @agent2.task("Inner task decorator")  # Task applied second (inner) - CORRECT
+    def correct_order_example():
+        """Function with correct dual decorator order."""
+        pass
+
+    # Check that both decorators were applied
+    assert hasattr(correct_order_example, "__is_agent_task__")
+    assert correct_order_example.__is_agent_task__ is True
+    assert hasattr(correct_order_example, "__agent_task_owner__")
+    assert correct_order_example.__agent_task_owner__ is agent2
+
+
+def test_fn_decorator_builtin_functions():
+    """Test that fn decorator works with built-in functions without errors."""
+    agent = Agent()
+
+    # This should not raise any AttributeError about setting __agent_fn_owners__
+    registered_sqrt = agent.fn(docstring="Built-in square root")(math.sqrt)
+
+    # Should be the same function object
+    assert registered_sqrt is math.sqrt
+
+    # Should be registered in the agent
+    assert "sqrt" in agent.fn_registry
+    assert agent.fn_registry["sqrt"].fn is math.sqrt
+
+
+def test_task_decorator_validation_error_messages():
+    """Test that validation error messages are clear and helpful."""
+    agent1 = Agent()
+    agent2 = Agent()
+
+    @agent1.task("First task")
+    def test_function():
+        pass
+
+    # Test multiple task decorator error message
+    with pytest.raises(ValueError) as exc_info:
+        agent2.task("Second task")(test_function)
+
+    error_msg = str(exc_info.value)
+    assert "already has a task decorator" in error_msg
+    assert "Multi-agent tasks are not supported" in error_msg
+
+    # Test wrong order error message
+    with pytest.raises(ValueError) as exc_info:
+
+        @agent1.task("Should fail")
+        @agent2.fn(docstring="Wrong order")
+        def wrong_order():
+            pass
+
+    error_msg = str(exc_info.value)
+    assert "Invalid decorator order" in error_msg
+    assert "@agent.fn() must be applied AFTER @agent.task()" in error_msg
+    assert "Correct order:" in error_msg

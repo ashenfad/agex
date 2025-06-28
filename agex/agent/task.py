@@ -36,9 +36,32 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         """
 
         def decorator(func: Callable) -> Callable:
+            # Validate decorator patterns first
+            self._validate_task_decorator(func)
             return self._create_task_wrapper(func, primer)
 
         return decorator
+
+    def _validate_task_decorator(self, func: Callable) -> None:
+        """Validate that task decorator is being used correctly."""
+        # 1. Prevent multiple task decorators (no multi-agent tasks)
+        if hasattr(func, "__is_agent_task__"):
+            existing_owner = getattr(func, "__agent_task_owner__", "unknown")
+            raise ValueError(
+                f"Function '{func.__name__}' already has a task decorator from {existing_owner}. "
+                f"Multi-agent tasks are not supported."
+            )
+
+        # 2. Prevent wrong decorator order (fn must be outer)
+        if hasattr(func, "__is_agent_fn__"):
+            raise ValueError(
+                f"Invalid decorator order on '{func.__name__}'. "
+                f"@agent.fn() must be applied AFTER @agent.task(), not before.\n"
+                f"Correct order:\n"
+                f"@agent.fn()\n"
+                f"@agent.task('...')\n"
+                f"def {func.__name__}(): ..."
+            )
 
     def _create_task_wrapper(self, func: Callable, primer: str) -> Callable:
         """
@@ -120,6 +143,10 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         task_wrapper.__annotations__ = func.__annotations__.copy()
         task_wrapper.__annotations__["state"] = "Versioned | None"
         task_wrapper.__signature__ = new_sig
+
+        # Mark as task-decorated for dual-decorator validation
+        task_wrapper.__is_agent_task__ = True
+        task_wrapper.__agent_task_owner__ = self
 
         return task_wrapper
 
