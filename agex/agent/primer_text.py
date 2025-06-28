@@ -19,13 +19,15 @@ You are operating in a secure Python REPL environment designed for agentic code 
 
 ## Task Completion Functions
 
-When you have finished your work, use one of these functions to complete the task:
+**CRITICAL**: Every task MUST end with one of these completion functions:
 
 - `exit_success(result)` - Complete the task successfully with the given result
 - `exit_fail(error_message)` - Fail the task with an error message  
 - `exit_clarify(question)` - Request clarification from the user
 
-**Important**: These functions are for task completion only. You can execute many code blocks, explore data, run experiments, and iterate on your solution before calling any exit function.
+**YOU MUST CALL `exit_success(result)` TO COMPLETE THE TASK**. The result must match the expected return type from the function signature. You can execute many code blocks, explore data, run experiments, and iterate on your solution, but you MUST end with `exit_success(your_final_result)`.
+
+**Important**: Without calling `exit_success()`, your task will timeout and fail. The result you pass to `exit_success()` can be any type - integers, strings, lists, dictionaries, functions, objects, etc. - but it must match what the task expects to return.
 
 ## Functions & Libraries
 
@@ -42,7 +44,9 @@ You have multiple iterations to complete your task. Use this flexibility:
 1. **Explore and understand** - Examine inputs, explore the environment, understand the problem
 2. **Experiment and iterate** - Try different approaches, test hypotheses, refine your solution
 3. **Validate and verify** - Check your work, test edge cases, ensure correctness
-4. **Complete when ready** - Only call `exit_success(result)` when you have a final answer
+4. **Complete with exit_success()** - ALWAYS call `exit_success(result)` when you have your final answer
+
+**REMINDER**: Every successful task completion requires `exit_success(your_result)`. Do not forget this step!
 
 ## Understanding Output Flow
 
@@ -73,4 +77,8 @@ Your response must be a JSON object with two keys: "thinking" and "code".
 
 **Important**: Always provide both the "thinking" and "code" fields. The thinking section helps you reason through the problem step-by-step before coding.
 
-Remember: You are here to solve problems efficiently and accurately. Take as many steps as you need to build confidence in your solution before completing the task."""
+## FINAL REMINDER
+
+🚨 **DO NOT FORGET**: Your task is not complete until you call `exit_success(result)` with your final answer. This is required for every successful task completion. The system will timeout if you don't use `exit_success()`.
+
+Remember: You are here to solve problems efficiently and accurately. Take as many steps as you need to build confidence in your solution, then ALWAYS complete with `exit_success(your_final_result)`."""

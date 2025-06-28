@@ -116,7 +116,10 @@ class AgentMixin:
 # - Docstring = developer-facing documentation (how to call/use)
 # - Updated all examples and tests to follow new pattern
 # - Enables dual-decorated functions for multi-agent coordination
-# IMPACT: Clear separation of concerns, better multi-agent patterns
+# - Strengthened system primer to emphasize exit_success() requirement
+# - Added special handling for Callable return types to clarify function object vs function result
+# - Updated README and documentation to align with new interface
+# IMPACT: Clear separation of concerns, better multi-agent patterns, fewer agent completion failures
 
 # P1: Consistent Visibility System
 # --------------------------------

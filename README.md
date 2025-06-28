@@ -24,9 +24,17 @@ def sqrt(num: float) -> float:
 
 math_agent.fn(math.sin)  # expose a fn via functional registration
 
-@math_agent.task  # mark a fn def as an agent task, implementation is the agent's job
+@math_agent.task("Assist the user with their math questions")  # agent primer
 def assist(prompt: str) -> str:
-    """Assist the user with their math questions"""
+    """
+    Get assistance with mathematical questions and problems.
+    
+    Args:
+        prompt: The math question or problem to solve
+        
+    Returns:
+        A helpful response addressing the math question
+    """
     pass
 ```
 
@@ -34,17 +42,25 @@ Use `cls` decorator to give an agent access to classes. You may expose fns, clas
 whether to let the agent know about them or thier documentation within the agent context.
 
 Finally, multi-agent coordination may be done by dual-decoration. The fn signature provides the `task` entry point for one agent while the `fn` decorator makes that agent
-callable for the other. Since each agent has different perspectives, you'll likely want
-to include documentation directly in the decorators rather than the fn docstring. The
-function signature encapsulates the contract between the agents.
+callable for the other. The task primer provides agent-specific implementation instructions,
+while the function docstring provides developer-facing documentation for callers.
 
 ```python
 math_agent = agex.Agent(primer="...")
 orchestrator = agex.Agent(primer="...")
 
 @orchestrator.fn("A math-oriented assistant")
-@math_agent.task("Assist the user with their math questions")
+@math_agent.task("Assist the user with their math questions")  # agent implementation instructions
 def math_expert(prompt: str) -> str:
+    """
+    Get expert mathematical assistance (developer-facing docs).
+    
+    Args:
+        prompt: The math question or problem to solve
+        
+    Returns:
+        Expert mathematical guidance and solutions
+    """
     pass
 ```
 

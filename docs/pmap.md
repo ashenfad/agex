@@ -28,12 +28,19 @@ When this is called from within the Tic environment, the `func` would be one of 
 An agent could use `pmap` to run a tool on multiple inputs at once:
 
 ```python
-@agent.task
+@agent.task("Research each topic in the list and return summaries, using parallel processing.")
 def research_topics(topics: list[str]) -> list[str]:
     """
-    Given a list of topics, research each one and return a summary.
-
-    This uses pmap to run the research in parallel.
+    Research multiple topics concurrently and return summaries.
+    
+    Args:
+        topics: List of topic strings to research
+        
+    Returns:
+        List of research summaries, one for each topic
+        
+    Note:
+        Uses pmap to run the research in parallel for efficiency.
     """
     summaries = pmap(self.research_tool, topics)
     return summaries

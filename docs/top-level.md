@@ -4,17 +4,18 @@ This document outlines the design for the high-level `@agent.task` decorator, wh
 
 ## Core Concepts
 
-The primary goal is to make defining an agent task feel as natural as defining a Python function. The developer should only need to provide a function signature and a docstring, and the agent should handle the implementation.
+The primary goal is to make defining an agent task feel as natural as defining a Python function. The developer provides a function signature, a primer for agent implementation instructions, and a docstring for caller documentation. The agent handles the implementation.
 
 ### Decorator Behavior
 
 1.  **Function Replacement:** The `@agent.task` decorator does not merely wrap the decorated function; it completely **replaces** it.
 2.  **Implementation Constraint:** The body of a function decorated with `@agent.task` must be empty (i.e., contain only `pass`). The decorator will raise an exception if it finds any other statements. The agent, not the developer, is responsible for the implementation.
-3.  **Signature and Docstring:** The decorator's main purpose is to capture the original function's definition:
+3.  **Signature, Primer, and Docstring:** The decorator captures the function definition:
     *   Its name.
     *   Its argument signature (parameter names, types, defaults).
     *   Its return type annotation.
-    *   Its docstring, which will serve as the prompt or goal for the agent.
+    *   The primer parameter, which provides implementation instructions for the agent.
+    *   Its docstring, which provides developer-facing documentation for function callers.
 4.  **Agent Loop Trigger:** The new function that replaces the original one will be responsible for triggering the agent's internal "think-act" loop to produce a result that matches the requested return type.
 5.  **State Management:** The replacement function will have a new, optional parameter added to its signature, typically `state: State | None = None`.
     *   If a `State` object is provided, the agent will use it for long-term memory across multiple calls.
@@ -160,11 +161,18 @@ from tic import Agent
 # 1. Instantiate the agent
 my_agent = Agent()
 
-# 2. Define a task with a clear signature and docstring
-@my_agent.task
+# 2. Define a task with signature, primer, and docstring
+@my_agent.task("Generate a random integer between the given values, inclusive.")
 def generate_random_number(min_val: int, max_val: int) -> int:
     """
-    Generates a random integer between min_val and max_val, inclusive.
+    Generate a random integer within a specified range.
+    
+    Args:
+        min_val: The minimum value (inclusive)
+        max_val: The maximum value (inclusive)
+        
+    Returns:
+        A random integer between min_val and max_val
     """
     pass
 

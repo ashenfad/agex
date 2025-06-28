@@ -72,9 +72,17 @@ A key differentiator of this framework is **runtime interoperability** - agents 
 
 **True Callable Generation:**
 ```python
-@my_coder.task
+@my_coder.task("Create a function based on the user's description.")
 def make_a_function(prompt: str) -> Callable:
-    """Create a function based on the user's description."""
+    """
+    Generate a Python function from a text description.
+    
+    Args:
+        prompt: Description of what the function should do
+        
+    Returns:
+        A callable function implementing the described behavior
+    """
     pass
 
 # Returns an actual Python callable you can use immediately
@@ -96,9 +104,17 @@ This framework provides a third option: **runtime integration** where agents cre
 # Seamless data flow between your context and agent context
 messy_dataframe = pd.read_csv("complex_data.csv")
 
-@data_agent.task
+@data_agent.task("Clean this dataset and extract insights.")
 def clean_and_analyze(df: pd.DataFrame) -> dict:
-    """Clean this dataset and extract insights."""
+    """
+    Clean a pandas DataFrame and extract analytical insights.
+    
+    Args:
+        df: The raw DataFrame to clean and analyze
+        
+    Returns:
+        A dictionary containing cleaned data insights and statistics
+    """
     pass
 
 insights = clean_and_analyze(messy_dataframe)
@@ -108,9 +124,18 @@ insights = clean_and_analyze(messy_dataframe)
 **Dynamic Code Extension:**
 ```python
 # Agent extends your existing classes with new capabilities
-@my_coder.task  
+@my_coder.task("Add a new method to an existing class.")  
 def add_method_to_class(cls: type, method_description: str) -> type:
-    """Add a new method to an existing class."""
+    """
+    Dynamically add a new method to an existing class.
+    
+    Args:
+        cls: The class to modify
+        method_description: Description of what the new method should do
+        
+    Returns:
+        The enhanced class with the new method added
+    """
     pass
 
 EnhancedProcessor = add_method_to_class(MyDataProcessor, "add outlier detection")
@@ -195,14 +220,19 @@ Agents naturally create helper functions while solving tasks. Over time, they ac
 Agents can be given explicit refactoring tasks:
 
 ```python
-@agent.task
+@agent.task("Review and refactor your helper functions for better organization.")
 def refactor_my_toolkit() -> None:
     """
-    Review your helper functions. Look for:
+    Review and refactor the agent's accumulated helper functions.
+    
+    Looks for:
     - Repeated patterns that could be abstracted
     - Functions that could be combined or split  
     - Better naming or documentation
     - Opportunities for reusable utilities
+    
+    Returns:
+        None (performs refactoring in place)
     """
     pass
 ```
@@ -236,9 +266,17 @@ The most speculative possibility: agents creating their own specialist sub-agent
 
 ```python
 # Agent realizes it needs specialized help
-@self.create_subagent("statistics_expert").task
+@self.create_subagent("statistics_expert").task("Perform deep statistical analysis with hypothesis testing.")
 def run_advanced_analysis(dataset: DataFrame) -> StatisticalReport:
-    """Deep statistical analysis with hypothesis testing"""
+    """
+    Run advanced statistical analysis on the dataset.
+    
+    Args:
+        dataset: The DataFrame to analyze
+        
+    Returns:
+        A comprehensive statistical report with hypothesis test results
+    """
     pass
 
 # Immediately equip the sub-agent

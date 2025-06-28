@@ -209,11 +209,18 @@ class TaskLoopMixin(BaseAgent):
             )
             parts.append(f"```\n{rendered_inputs}\n```")
 
-        # Add expected output format
+        # Add expected output format with clarification for function types
         return_type_name = getattr(return_type, "__name__", str(return_type))
-        parts.append(
-            f"When complete, call `exit_success(result: {return_type_name})` with your result."
-        )
+
+        if return_type_name == "Callable" or "Callable" in str(return_type):
+            parts.append(
+                f"When complete, call `exit_success(your_function)` where your_function is the {return_type_name} you created. "
+                "Pass the function object itself, not the result of calling the function."
+            )
+        else:
+            parts.append(
+                f"When complete, call `exit_success(result: {return_type_name})` with your result."
+            )
 
         return "\n\n".join(parts)
 

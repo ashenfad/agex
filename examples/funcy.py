@@ -16,7 +16,7 @@ funcy_agent.module(math, visibility="low")
 
 # 3. Define a task that builds and returns functions
 @funcy_agent.task(
-    "Make a function for the user. Return this function with `exit_success(my_fn)`."
+    "Build a function that solves the task described in the user's prompt."
 )
 def fn_builder(prompt: str) -> Callable:  # type: ignore[return-value]
     """

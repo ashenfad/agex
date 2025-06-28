@@ -14,7 +14,7 @@ mathy_agent.module(math, visibility="medium")
 
 
 # 3. Define a task that the agent will solve
-@mathy_agent.task("Solve the user's math problem and return just the numeric answer.")
+@mathy_agent.task("Solve the mathematical problem and return the numeric result.")
 def run_calculation(problem: str) -> float:  # type: ignore[return-value]
     """
     Calculate the numerical result of a mathematical problem.
