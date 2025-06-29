@@ -608,6 +608,70 @@ def test_task_input_dataclass_pickling():
     assert unpickled_inputs.value == 42
 
     # Test state snapshotting (which internally pickles all state data)
-    snapshot_hash = state.snapshot()
+    snapshot_hash = state.snapshot().commit_hash
     assert snapshot_hash is not None
     assert len(snapshot_hash) > 0
+
+
+def test_unserializable_object_in_state_is_handled_gracefully():
+    """
+    Test that if an unserializable object (like a lambda) is added to state
+    via mutation, the snapshot process handles it gracefully by recording an
+    error in stdout instead of crashing.
+    """
+    from agex.agent.base import clear_agent_registry
+    from agex.llm import DummyLLMClient
+    from agex.llm.core import LLMResponse
+    from agex.state import Versioned
+    from agex.state.kv import Memory
+
+    clear_agent_registry()
+
+    agent = Agent(name="test_agent")
+
+    # This fn mutates a dictionary to include a real Python lambda,
+    # making the dictionary unserializable.
+    @agent.fn()
+    def make_object_unserializable(obj):
+        obj["bad_field"] = lambda: "I cannot be pickled"
+
+    agent.llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="Mutating an object to make it unserializable.",
+                code="make_object_unserializable(my_object)",
+            ),
+            LLMResponse(
+                thinking="Now I will finish.",
+                code="exit_success('done')",
+            ),
+        ]
+    )
+
+    @agent.task("A task that creates bad state via mutation.")
+    def task_with_unserializable_state() -> str:  # type: ignore
+        """This task will create unserializable state by mutation."""
+        pass
+
+    # Use a Versioned state so that snapshotting is triggered
+    state = Versioned(Memory())
+
+    # Pre-populate the state with a serializable object.
+    # We must snapshot it once so it's in the long-term store and tracked
+    # for mutations.
+    state.set("my_object", {"a": 1})
+    state.snapshot()
+
+    # Run the task. This will mutate my_object and then try to snapshot.
+    # It should NOT raise a PicklingError.
+    result = task_with_unserializable_state(state=state)  # type: ignore
+    assert result == "done"
+
+    # Check the agent's stdout for the warning message.
+    # The warning should be about 'my_object', which was mutated.
+    stdout = state.get("__stdout__")
+    assert stdout is not None
+    assert len(stdout) > 0
+    warning_message = stdout[-1]
+    assert "⚠️ Could not save the following variables" in warning_message
+    assert "my_object" in warning_message

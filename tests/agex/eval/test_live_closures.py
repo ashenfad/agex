@@ -48,7 +48,7 @@ def get_x():
 
     # 3. Update the closed-over variable and take a snapshot
     eval_and_get_state("x = 200", state=state)
-    commit_hash = state.snapshot()
+    commit_hash = state.snapshot().commit_hash
 
     # 4. Verify that the live function sees the update
     result2 = eval_and_get_state("res = get_x()", state=state).get("res")

@@ -79,7 +79,7 @@ def test_numpy_state_continuity():
 
     # 2. Run a program that just imports the module, and snapshot the state
     evaluate_program("import np", agent, state1)
-    commit_hash = state1.snapshot()
+    commit_hash = state1.snapshot().commit_hash
     assert commit_hash is not None
 
     # 3. Create a new state from the snapshot and run code that uses the module

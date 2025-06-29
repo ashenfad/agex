@@ -1,5 +1,6 @@
 import pickle
 import secrets
+from dataclasses import dataclass
 from typing import Any, Iterable
 
 import xxhash
@@ -10,6 +11,12 @@ from .ephemeral import Ephemeral
 
 PARENT_COMMIT = "__parent_commit__%s"
 COMMIT_KEYSET = "__commit_keyset__%s"
+
+
+@dataclass
+class SnapshotResult:
+    commit_hash: str | None
+    unsaved_keys: list[str]
 
 
 def _get_commit_hash() -> str:
@@ -136,8 +143,17 @@ class Versioned(State):
         for key, (original_hash, obj_ref) in list(self.accessed_objects.items()):
             # Check ALL accessed objects for mutations, not just unset ones
             # Serialize the object reference we stored
-            current_bytes = pickle.dumps(obj_ref, protocol=pickle.HIGHEST_PROTOCOL)
-            current_hash = _fast_hash(current_bytes)
+            try:
+                current_bytes = pickle.dumps(obj_ref, protocol=pickle.HIGHEST_PROTOCOL)
+                current_hash = _fast_hash(current_bytes)
+            except Exception:
+                # This object was mutated into an unserializable state.
+                # We can't get its bytes or hash, but we know it changed.
+                # We force it into ephemeral so snapshot() can deal with it.
+                if key not in self.ephemeral:
+                    self.ephemeral.set(key, obj_ref)
+                # It won't be in `mutations`, so snapshot() will try to serialize it.
+                continue
 
             if current_hash != original_hash:
                 # Mutation detected! Auto-save it (if not already explicitly set)
@@ -148,15 +164,16 @@ class Versioned(State):
 
         return mutations
 
-    def snapshot(self) -> str | None:
+    def snapshot(self) -> SnapshotResult:
         # First, detect any mutations in accessed objects
         mutations = self._detect_mutations()
+        unsaved_keys = []
 
         if not self.ephemeral:
             # If nothing happened, don't create an empty commit.
             # Just return the current commit hash.
             self.accessed_objects.clear()  # Clear tracking
-            return self.current_commit
+            return SnapshotResult(self.current_commit, unsaved_keys)
 
         new_hash = _get_commit_hash()
         diffs = {}
@@ -176,13 +193,22 @@ class Versioned(State):
         for key, value in self.ephemeral.items():
             versioned_key = self._versioned_key(key, new_hash)
             # Check if we already have serialized bytes from mutation detection
+            serialized_value = None
             if key in mutations:
                 serialized_value = mutations[key]
             else:
                 # Serialize the value to bytes before storing
-                serialized_value = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
-            diffs[versioned_key] = serialized_value
-            new_commit_keys[key] = versioned_key
+                try:
+                    serialized_value = pickle.dumps(
+                        value, protocol=pickle.HIGHEST_PROTOCOL
+                    )
+                except Exception:
+                    unsaved_keys.append(key)
+                    continue
+
+            if serialized_value is not None:
+                diffs[versioned_key] = serialized_value
+                new_commit_keys[key] = versioned_key
 
         # Serialize commit metadata
         diffs[COMMIT_KEYSET % new_hash] = pickle.dumps(
@@ -199,7 +225,7 @@ class Versioned(State):
         self.ephemeral = Ephemeral()
         self.accessed_objects.clear()  # Clear mutation tracking
 
-        return new_hash
+        return SnapshotResult(new_hash, unsaved_keys)
 
     def checkout(self, commit_hash: str) -> "Versioned | None":
         """

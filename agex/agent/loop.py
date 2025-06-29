@@ -145,7 +145,15 @@ class TaskLoopMixin(BaseAgent):
             finally:
                 # Always snapshot after each evaluation iteration (if we own the state)
                 if should_snapshot and isinstance(exec_state, Versioned):
-                    exec_state.snapshot()
+                    result = exec_state.snapshot()
+                    if result.unsaved_keys:
+                        # Add a message to stdout about the unsaved keys
+                        current_stdout = exec_state.get("__stdout__", [])
+                        current_stdout.append(
+                            f"⚠️ Could not save the following variables because they "
+                            f"are not serializable: {', '.join(result.unsaved_keys)}"
+                        )
+                        exec_state.set("__stdout__", current_stdout)
 
         # If we get here, we hit max iterations
         raise TimeoutError(

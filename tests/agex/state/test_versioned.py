@@ -19,14 +19,14 @@ def test_versioned_snapshot():
     state = Versioned(store)
 
     state.set("a", 1)
-    h1 = state.snapshot()
+    h1 = state.snapshot().commit_hash
     # KV store now returns bytes, so we need to deserialize
     serialized_value = state.long_term.get(f"{h1}:a")
     assert serialized_value is not None
     assert pickle.loads(serialized_value) == 1
 
     state.set("a", 2)
-    h2 = state.snapshot()
+    h2 = state.snapshot().commit_hash
     serialized_value2 = state.long_term.get(f"{h2}:a")
     assert serialized_value2 is not None
     assert pickle.loads(serialized_value2) == 2
@@ -42,9 +42,9 @@ def test_versioned_history():
     state = Versioned(store)
 
     state.set("a", 1)
-    h1 = state.snapshot()
+    h1 = state.snapshot().commit_hash
     state.set("b", 2)
-    h2 = state.snapshot()
+    h2 = state.snapshot().commit_hash
 
     history = list(state.history())
     assert history == [h2, h1]
@@ -55,7 +55,7 @@ def test_snapshot_creates_diff_keys():
     store.set("x", 1)
     store.set("y", 2)
     store.set("__internal__", "should be ignored")
-    commit_hash = store.snapshot()
+    commit_hash = store.snapshot().commit_hash
 
     commit_state = store.checkout(commit_hash)  # type: ignore
     diff_keys = commit_state.get("__diff_keys__")  # type: ignore
@@ -71,13 +71,13 @@ def test_diffs():
     store.set("x", 1)
     store.set("y", 2)
     store.set("__stdout__", ["hello"])
-    commit1 = store.snapshot()
+    commit1 = store.snapshot().commit_hash
 
     # Second set of changes
     store.set("y", 3)
     store.set("z", 4)
     store.set("__stdout__", ["world"])
-    commit2 = store.snapshot()
+    commit2 = store.snapshot().commit_hash
 
     # Check changes for commit 1
     state_changes = store.diffs(commit1)
@@ -96,14 +96,14 @@ def test_diffs():
 
 def test_snapshot_on_empty_ephemeral_does_not_create_commit():
     store = Versioned(kv.Memory())
-    commit1 = store.snapshot()
+    commit1 = store.snapshot().commit_hash
     assert commit1 is None
 
     store.set("a", 1)
-    commit2 = store.snapshot()
+    commit2 = store.snapshot().commit_hash
     assert commit2 is not None
 
-    commit3 = store.snapshot()
+    commit3 = store.snapshot().commit_hash
     assert commit2 == commit3
 
 
@@ -115,14 +115,14 @@ def test_mutation_detection_prevents_data_loss():
     # Set up initial state with a mutable object
     original_list = [1, 2, 3]
     state.set("my_list", original_list)
-    commit1 = state.snapshot()
+    commit1 = state.snapshot().commit_hash
 
     # Retrieve the object and mutate it in-place (the sneaky bug!)
     retrieved_list = state.get("my_list")
     retrieved_list.append(4)  # This is a side-effect mutation
 
     # The mutation should be detected during snapshot
-    commit2 = state.snapshot()
+    commit2 = state.snapshot().commit_hash
 
     # Verify the mutation was preserved
     assert state.get("my_list") == [1, 2, 3, 4]
@@ -147,7 +147,7 @@ def test_mutation_detection_with_nested_objects():
     # Set up nested mutable structure
     data = {"users": [{"name": "Alice", "scores": [10, 20]}], "config": {"debug": True}}
     state.set("app_data", data)
-    commit1 = state.snapshot()
+    commit1 = state.snapshot().commit_hash
 
     # Make nested mutations
     retrieved_data = state.get("app_data")
