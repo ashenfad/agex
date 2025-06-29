@@ -161,9 +161,17 @@ from tic import Agent
 # 1. Instantiate the agent
 my_agent = Agent()
 
-# 2. Define a task with signature, primer, and docstring
-@my_agent.task("Generate a random integer between the given values, inclusive.")
+# 2. Define a task - multiple patterns supported:
+
+# Option A: Naked decorator (docstring serves both agent and caller)
+@my_agent.task
 def generate_random_number(min_val: int, max_val: int) -> int:
+    """Generate a random integer between the given values, inclusive."""
+    pass
+
+# Option B: Separate primer and docstring (when they need to differ)
+@my_agent.task("Use Python's random module with proper seeding for reproducibility")
+def advanced_random(min_val: int, max_val: int) -> int:
     """
     Generate a random integer within a specified range.
     

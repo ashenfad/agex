@@ -15,9 +15,7 @@ funcy_agent.module(math, visibility="low")
 
 
 # 3. Define a task that builds and returns functions
-@funcy_agent.task(
-    "Build a function that solves the task described in the user's prompt."
-)
+@funcy_agent.task
 def fn_builder(prompt: str) -> Callable:  # type: ignore[return-value]
     """
     Build a callable function from a text prompt.

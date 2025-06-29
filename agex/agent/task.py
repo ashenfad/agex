@@ -30,29 +30,50 @@ def clear_dynamic_dataclass_registry() -> None:
 
 
 class TaskMixin(TaskLoopMixin, BaseAgent):
-    def task(self, primer: str, /) -> Callable:
+    def task(self, primer_or_func=None, /, *, primer: str | None = None) -> Callable:
         """
-        Decorator to mark a function as an agent task with required primer.
+        Decorator to mark a function as an agent task.
 
         The decorated function must have an empty body (only pass, docstrings, comments).
         The decorator replaces the function with one that triggers the agent's task loop.
 
         Usage:
-            @agent.task("Build a function from the given prompt")
+            # Naked decorator - uses docstring for agent instructions
+            @agent.task
             def my_function():
+                '''Clear instructions for both agent and caller.'''
+                pass
+
+            # Parameterized with no args - same as naked
+            @agent.task()
+            def my_function():
+                '''Clear instructions for both agent and caller.'''
+                pass
+
+            # Parameterized with primer - primer for agent, docstring for caller
+            @agent.task("Detailed agent implementation instructions")
+            def my_function():
+                '''Public API documentation for callers.'''
                 pass
 
         Args:
-            primer: Instructions for the agent on how to implement this task
+            primer_or_func: Either the primer string or the function being decorated
+            primer: Keyword-only primer argument (alternative to positional)
 
         Returns:
-            A decorator function
+            Either the decorated function (naked) or a decorator function (parameterized)
         """
-
-        def decorator(func: Callable) -> Callable:
-            # Validate decorator patterns first
+        # Naked decorator: @agent.task
+        if callable(primer_or_func):
+            func = primer_or_func
             self._validate_task_decorator(func)
-            return self._create_task_wrapper(func, primer)
+            return self._create_task_wrapper(func, primer=None)
+
+        # Parameterized decorator: @agent.task() or @agent.task("primer")
+        def decorator(func: Callable) -> Callable:
+            self._validate_task_decorator(func)
+            effective_primer = primer_or_func or primer
+            return self._create_task_wrapper(func, primer=effective_primer)
 
         return decorator
 
@@ -77,13 +98,13 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 f"def {func.__name__}(): ..."
             )
 
-    def _create_task_wrapper(self, func: Callable, primer: str) -> Callable:
+    def _create_task_wrapper(self, func: Callable, primer: str | None) -> Callable:
         """
         Creates the actual task wrapper function.
 
         Args:
             func: The original function to wrap
-            primer: Agent instructions for implementing the task
+            primer: Agent instructions for implementing the task (None to use docstring)
 
         Returns:
             The wrapped function
@@ -100,8 +121,18 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         return_type = original_sig.return_annotation
         task_name = func.__name__
 
-        # Use primer for agent instructions
-        effective_docstring = primer
+        # Determine effective agent instructions
+        if primer is not None:
+            # Use provided primer for agent instructions
+            effective_docstring = primer
+        else:
+            # Fall back to function docstring
+            if func.__doc__ is None or func.__doc__.strip() == "":
+                raise ValueError(
+                    f"Function '{func.__name__}' decorated with @task must have either "
+                    "a primer argument or a non-empty docstring to provide agent instructions."
+                )
+            effective_docstring = func.__doc__.strip()
 
         # Create dynamic dataclass for inputs
         inputs_dataclass = self._create_inputs_dataclass(task_name, original_sig)
