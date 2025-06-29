@@ -1,4 +1,4 @@
-from ..state import Versioned
+from ..state import State, Versioned
 from .stream import StreamRenderer
 
 
@@ -11,15 +11,19 @@ class ContextRenderer:
     def __init__(self, model_name: str):
         self._stream_renderer = StreamRenderer(model_name)
 
-    def render(self, state: Versioned, budget: int) -> str:
+    def render(self, state: State, budget: int) -> str:
         """
         Orchestrates the rendering of the current context.
 
         It prioritizes the most recent changes and gracefully degrades
         the level of detail to fit within the token budget.
         """
-        # 1. Get the changes from the most recent commit.
-        state_changes = state.diffs()
+        # 1. Get the changes from the most recent commit (if available).
+        state_changes = {}
+        if isinstance(state, Versioned):
+            state_changes = state.diffs()
+        # For Namespaced state, there are no diffs since we don't snapshot during sub-agent execution
+
         stdout_content = state.get("__stdout__", [])
 
         # 2. Allocate independent budgets.

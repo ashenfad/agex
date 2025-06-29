@@ -1,8 +1,15 @@
 # Main tic functionality
-from .agent import Agent
+from .agent import Agent, clear_agent_registry
 from .eval.core import evaluate_program as evaluate
 from .llm.config import configure_llm
 from .render.view import view
 from .state.versioned import Versioned
 
-__all__ = ["Agent", "configure_llm", "evaluate", "Versioned", "view"]
+__all__ = [
+    "Agent",
+    "clear_agent_registry",
+    "configure_llm",
+    "evaluate",
+    "Versioned",
+    "view",
+]

@@ -2,6 +2,7 @@ import ast
 from typing import Any
 
 from ..agent.datatypes import _AgentExit
+from ..state import Namespaced
 from .base import BaseEvaluator
 from .builtins import STATEFUL_BUILTINS, _print_stateful
 from .error import EvalError
@@ -128,6 +129,13 @@ class CallEvaluator(BaseEvaluator):
                     node.func, "attr", getattr(node.func, "id", "object")
                 )
                 raise AgexError(f"'{fn_name_for_error}' is not callable.", node)
+
+            # Check if this is a dual-decorated function needing state injection
+            if hasattr(fn, "__agex_task_namespace__"):
+                # Create namespaced state for sub-agent
+                namespace = fn.__agex_task_namespace__
+                namespaced_state = Namespaced(self.state, namespace)
+                kwargs["state"] = namespaced_state
 
             result = fn(*args, **kwargs)
 

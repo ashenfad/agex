@@ -11,6 +11,8 @@ from .fingerprint import compute_agent_fingerprint
 
 # Global registry mapping fingerprints to agents
 _AGENT_REGISTRY: Dict[str, "BaseAgent"] = {}
+# Global registry mapping agent names to agents
+_AGENT_REGISTRY_BY_NAME: Dict[str, "BaseAgent"] = {}
 
 
 def register_agent(agent: "BaseAgent") -> str:
@@ -19,6 +21,14 @@ def register_agent(agent: "BaseAgent") -> str:
 
     Returns the agent's fingerprint.
     """
+    # Enforce unique agent names if provided
+    if hasattr(agent, "name") and agent.name is not None:
+        if agent.name in _AGENT_REGISTRY_BY_NAME:
+            existing_agent = _AGENT_REGISTRY_BY_NAME[agent.name]
+            if existing_agent is not agent:  # Allow re-registration of same agent
+                raise ValueError(f"Agent name '{agent.name}' already exists")
+        _AGENT_REGISTRY_BY_NAME[agent.name] = agent
+
     fingerprint = compute_agent_fingerprint(
         agent.primer, agent.fn_registry, agent.cls_registry, agent.importable_modules
     )
@@ -44,8 +54,9 @@ def resolve_agent(fingerprint: str) -> "BaseAgent":
 
 def clear_agent_registry() -> None:
     """Clear the global registry. Primarily for testing."""
-    global _AGENT_REGISTRY
+    global _AGENT_REGISTRY, _AGENT_REGISTRY_BY_NAME
     _AGENT_REGISTRY = {}
+    _AGENT_REGISTRY_BY_NAME = {}
 
 
 class BaseAgent:
@@ -55,11 +66,14 @@ class BaseAgent:
         timeout_seconds: float,
         max_iterations: int,
         max_tokens: int,
+        # Agent identification
+        name: str | None = None,
         # LLM configuration (optional, uses smart defaults)
         llm_provider: str | None = None,
         llm_model: str | None = None,
         **llm_kwargs,
     ):
+        self.name = name
         self.primer = primer
         self.timeout_seconds = timeout_seconds
         self.max_iterations = max_iterations

@@ -9,10 +9,10 @@ reconstructed from any state snapshot.
 from typing import List
 
 from agex.llm.core import Message
-from agex.state import Versioned
+from agex.state import State
 
 
-def add_message(state: Versioned, message: Message) -> None:
+def add_message(state: State, message: Message) -> None:
     """Add a message to the conversation log in state.
 
     Args:
@@ -34,11 +34,11 @@ def add_message(state: Versioned, message: Message) -> None:
     state.set("__msg_log__", msg_log)
 
 
-def conversation_log(state: Versioned, system_message: str) -> List[Message]:
+def conversation_log(state: State, system_message: str) -> List[Message]:
     """Reconstruct the full conversation from state.
 
     Args:
-        state: The versioned state containing the conversation log
+        state: The state containing the conversation log
         system_message: The system message to prepend to the conversation
 
     Returns:
@@ -52,21 +52,21 @@ def conversation_log(state: Versioned, system_message: str) -> List[Message]:
     return [Message(role="system", content=system_message)] + conversation_messages
 
 
-def initialize_conversation_log(state: Versioned) -> None:
+def initialize_conversation_log(state: State) -> None:
     """Initialize conversation log if not exists.
 
     Args:
-        state: The versioned state to initialize
+        state: The state to initialize
     """
     if "__msg_log__" not in state:
         state.set("__msg_log__", [])
 
 
-def get_conversation_length(state: Versioned) -> int:
+def get_conversation_length(state: State) -> int:
     """Get the number of messages in the conversation log.
 
     Args:
-        state: The versioned state containing the conversation log
+        state: The state containing the conversation log
 
     Returns:
         Number of messages in the conversation
@@ -74,11 +74,11 @@ def get_conversation_length(state: Versioned) -> int:
     return len(state.get("__msg_log__", []))
 
 
-def clear_conversation_log(state: Versioned) -> None:
+def clear_conversation_log(state: State) -> None:
     """Clear the conversation log from state.
 
     Args:
-        state: The versioned state to clear
+        state: The state to clear
     """
     # Remove all message entries
     msg_log = state.get("__msg_log__", [])

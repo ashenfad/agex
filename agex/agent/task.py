@@ -14,6 +14,20 @@ from agex.agent.base import BaseAgent
 from agex.agent.loop import TaskLoopMixin
 from agex.agent.utils import is_function_body_empty
 
+# Global registry for dynamically created input dataclasses
+# This allows pickle to find them by module.classname lookup
+_DYNAMIC_DATACLASS_REGISTRY: dict[str, type] = {}
+
+
+def clear_dynamic_dataclass_registry() -> None:
+    """Clear the dynamic dataclass registry. Useful for testing or memory management."""
+    global _DYNAMIC_DATACLASS_REGISTRY
+    # Remove from module globals
+    for class_name in list(_DYNAMIC_DATACLASS_REGISTRY.keys()):
+        globals().pop(class_name, None)
+    # Clear the registry
+    _DYNAMIC_DATACLASS_REGISTRY.clear()
+
 
 class TaskMixin(TaskLoopMixin, BaseAgent):
     def task(self, primer: str, /) -> Callable:
@@ -45,10 +59,10 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
     def _validate_task_decorator(self, func: Callable) -> None:
         """Validate that task decorator is being used correctly."""
         # 1. Prevent multiple task decorators (no multi-agent tasks)
-        if hasattr(func, "__is_agent_task__"):
-            existing_owner = getattr(func, "__agent_task_owner__", "unknown")
+        if hasattr(func, "__agex_task_namespace__"):
+            existing_namespace = func.__agex_task_namespace__
             raise ValueError(
-                f"Function '{func.__name__}' already has a task decorator from {existing_owner}. "
+                f"Function '{func.__name__}' already has a task decorator (namespace: '{existing_namespace}'). "
                 f"Multi-agent tasks are not supported."
             )
 
@@ -144,9 +158,9 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         task_wrapper.__annotations__["state"] = "Versioned | None"
         task_wrapper.__signature__ = new_sig
 
-        # Mark as task-decorated for dual-decorator validation
-        task_wrapper.__is_agent_task__ = True
-        task_wrapper.__agent_task_owner__ = self
+        # Set namespace for dual-decorator pattern (also serves as task-decorated marker)
+        namespace = self.name if self.name is not None else self.__class__.__name__
+        task_wrapper.__agex_task_namespace__ = namespace
 
         return task_wrapper
 
@@ -184,6 +198,12 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         # Create the dataclass
         dataclass_name = f"{task_name.title()}Inputs"
         inputs_dataclass = make_dataclass(dataclass_name, fields)
+
+        # Make the dataclass pickleable by registering it in module globals
+        # This allows pickle to find it via module.classname lookup
+        inputs_dataclass.__module__ = __name__  # Set to this module
+        _DYNAMIC_DATACLASS_REGISTRY[dataclass_name] = inputs_dataclass
+        globals()[dataclass_name] = inputs_dataclass  # Make it findable by pickle
 
         # Register the dataclass with the agent for sandbox access
         if hasattr(self, "cls"):

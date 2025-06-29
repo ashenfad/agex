@@ -22,7 +22,7 @@ from agex.render.stream import StreamRenderer
 
 from ..eval.core import evaluate_program
 from ..render.context import ContextRenderer
-from ..state import Versioned
+from ..state import Namespaced, Versioned
 from ..state.kv import Memory
 
 # Format guidance message for when agents produce malformed responses
@@ -46,7 +46,7 @@ class TaskLoopMixin(BaseAgent):
         inputs_dataclass: type,
         inputs_instance: Any,
         return_type: type,
-        state: Versioned | None,
+        state: Versioned | Namespaced | None,
     ):
         """
         Execute the agent task loop.
@@ -66,8 +66,19 @@ class TaskLoopMixin(BaseAgent):
             TaskFailedException: If agent calls exit_fail()
             ClarificationRequested: If agent calls exit_clarify()
         """
-        # Create state if none provided (memory-backed versioned store)
-        exec_state = state if state is not None else Versioned(Memory())
+        # Determine state and versioning responsibility
+        if isinstance(state, Namespaced):
+            # Namespaced = someone else owns versioning, we just work within namespace
+            exec_state = state
+            should_snapshot = False
+        elif isinstance(state, Versioned):
+            # Versioned = we're responsible for versioning this state
+            exec_state = state
+            should_snapshot = True
+        else:
+            # None = we create and own new versioned state
+            exec_state = Versioned(Memory())
+            should_snapshot = True
 
         # Add inputs to state for agent access
         if inputs_instance is not None:
@@ -156,6 +167,10 @@ class TaskLoopMixin(BaseAgent):
                 current_stdout = exec_state.get("__stdout__", [])
                 current_stdout.append(f"💥 Evaluation error: {e}")
                 exec_state.set("__stdout__", current_stdout)
+            finally:
+                # Always snapshot after each evaluation iteration (if we own the state)
+                if should_snapshot and isinstance(exec_state, Versioned):
+                    exec_state.snapshot()
 
         # If we get here, we hit max iterations
         raise TimeoutError(

@@ -363,10 +363,8 @@ def test_task_decorator_single():
         pass
 
     # Check that task metadata is set correctly
-    assert hasattr(simple_task, "__is_agent_task__")
-    assert simple_task.__is_agent_task__ is True
-    assert hasattr(simple_task, "__agent_task_owner__")
-    assert simple_task.__agent_task_owner__ is agent
+    assert hasattr(simple_task, "__agex_task_namespace__")
+    assert simple_task.__agex_task_namespace__ == "Agent"  # Default class name
 
 
 def test_fn_decorator_multiple():
@@ -431,10 +429,10 @@ def test_decorator_order_correct_allowed():
         pass
 
     # Check that both decorators were applied
-    assert hasattr(correct_order_example, "__is_agent_task__")
-    assert correct_order_example.__is_agent_task__ is True
-    assert hasattr(correct_order_example, "__agent_task_owner__")
-    assert correct_order_example.__agent_task_owner__ is agent2
+    assert hasattr(correct_order_example, "__agex_task_namespace__")
+    assert (
+        correct_order_example.__agex_task_namespace__ == "Agent"
+    )  # agent2's class name
 
 
 def test_fn_decorator_builtin_functions():
@@ -481,3 +479,130 @@ def test_task_decorator_validation_error_messages():
     assert "Invalid decorator order" in error_msg
     assert "@agent.fn() must be applied AFTER @agent.task()" in error_msg
     assert "Correct order:" in error_msg
+
+
+def test_agent_names_and_uniqueness():
+    """Test agent name assignment and uniqueness enforcement."""
+    from agex.agent.base import clear_agent_registry
+
+    # Clear registry for clean test
+    clear_agent_registry()
+
+    # Test agent creation with names
+    agent1 = Agent(name="test_agent")
+    agent2 = Agent(name="other_agent")
+
+    assert agent1.name == "test_agent"
+    assert agent2.name == "other_agent"
+
+    # Test duplicate name prevention
+    with pytest.raises(ValueError, match="Agent name 'test_agent' already exists"):
+        Agent(name="test_agent")
+
+
+def test_dual_decorator_namespace_setting():
+    """Test that dual-decorated functions get proper namespace metadata."""
+    from agex.agent.base import clear_agent_registry
+
+    clear_agent_registry()
+
+    # Create agents with names
+    orchestrator = Agent(name="orchestrator")
+    specialist = Agent(name="specialist")
+
+    # Create dual-decorated function
+    @orchestrator.fn(docstring="Specialist utility")
+    @specialist.task("Perform specialized task")
+    def dual_function():
+        """A dual-decorated function."""
+        pass
+
+    # Verify namespace is set correctly
+    assert hasattr(dual_function, "__agex_task_namespace__")
+    assert dual_function.__agex_task_namespace__ == "specialist"
+
+    # Verify it's registered in the fn decorator's agent
+    assert "dual_function" in orchestrator.fn_registry
+
+    # Verify dual-decorator metadata (namespace is sufficient)
+    # The __agex_task_namespace__ attribute serves as both the task marker and namespace
+
+
+def test_namespaced_state_isolation():
+    """Test that Namespaced state provides proper isolation."""
+    from agex.state import Namespaced, Versioned
+    from agex.state.kv import Memory
+
+    # Create shared state
+    main_state = Versioned(Memory())
+
+    # Create namespaced views
+    namespace_a = Namespaced(main_state, "agent_a")
+    namespace_b = Namespaced(main_state, "agent_b")
+
+    # Set namespace-specific data
+    namespace_a.set("local_data", "value from A")
+    namespace_b.set("local_data", "value from B")
+
+    # Verify isolation - each namespace only sees its own data
+    assert namespace_a.get("local_data") == "value from A"
+    assert namespace_b.get("local_data") == "value from B"
+    assert namespace_a.get("local_data") != namespace_b.get("local_data")
+
+    # Verify namespaces don't see each other's data
+    assert namespace_a.get("nonexistent") is None
+    assert namespace_b.get("nonexistent") is None
+
+    # Verify the underlying state has the namespaced keys
+    assert "agent_a/local_data" in main_state
+    assert "agent_b/local_data" in main_state
+    assert main_state.get("agent_a/local_data") == "value from A"
+    assert main_state.get("agent_b/local_data") == "value from B"
+
+
+def test_task_input_dataclass_pickling():
+    """Test that task input dataclasses can be pickled and snapshotted."""
+    import pickle
+
+    from agex.agent.base import clear_agent_registry
+    from agex.state import Versioned
+    from agex.state.kv import Memory
+
+    clear_agent_registry()
+
+    # Create agent and task
+    agent = Agent(name="test_agent")
+
+    @agent.task("Test task with inputs")
+    def test_task(message: str, value: int) -> str:  # type: ignore
+        """A test task with parameters."""
+        pass
+
+    # Create a versioned state and call the task to put inputs in state
+    state = Versioned(Memory())
+
+    try:
+        # This will trigger creation and storage of the input dataclass
+        test_task(message="hello", value=42, state=state)  # type: ignore
+    except Exception:
+        # Expected - no LLM configured, but inputs should be in state
+        pass
+
+    # Verify inputs were stored and are pickleable
+    inputs = state.get("inputs")
+    assert inputs is not None
+    assert inputs.message == "hello"
+    assert inputs.value == 42
+
+    # Test direct pickling of the inputs instance
+    pickled_inputs = pickle.dumps(inputs)
+    unpickled_inputs = pickle.loads(pickled_inputs)
+    assert unpickled_inputs.message == "hello"
+    assert unpickled_inputs.value == 42
+
+    print("ADAM --- snapshot!")
+    # Test state snapshotting (which internally pickles all state data)
+    snapshot_hash = state.snapshot()
+    assert snapshot_hash is not None
+    assert len(snapshot_hash) > 0
+    print("ADAM --- done!!")

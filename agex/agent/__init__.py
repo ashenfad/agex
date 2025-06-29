@@ -20,13 +20,14 @@ from .loop import TaskLoopMixin
 
 # Fingerprinting (usually internal, but exported for testing)
 from .registration import RegistrationMixin
-from .task import TaskMixin
+from .task import TaskMixin, clear_dynamic_dataclass_registry
 
 __all__ = [
     # Core functionality
     "register_agent",
     "resolve_agent",
     "clear_agent_registry",
+    "clear_dynamic_dataclass_registry",
     # Agent exit system
     "ExitSuccess",
     "ExitFail",
@@ -53,6 +54,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         timeout_seconds: float = 5.0,
         max_iterations: int = 10,
         max_tokens: int = 2**16,
+        # Agent identification
+        name: str | None = None,
         # LLM configuration (optional, uses smart defaults)
         llm_provider: str | None = None,
         llm_model: str | None = None,
@@ -66,6 +69,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             timeout_seconds: The maximum time in seconds to execute a task.
             max_iterations: The maximum number of think-act cycles for a task.
             max_tokens: The maximum number of tokens to use for context rendering.
+            name: Unique identifier for this agent (for sub-agent namespacing).
             llm_provider: LLM provider override (falls back to global/env config).
             llm_model: LLM model override (falls back to global/env config).
             **llm_kwargs: Additional LLM parameters (temperature, etc.).
@@ -75,6 +79,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             timeout_seconds,
             max_iterations,
             max_tokens,
+            name=name,
             llm_provider=llm_provider,
             llm_model=llm_model,
             **llm_kwargs,
