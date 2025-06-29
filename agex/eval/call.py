@@ -1,7 +1,7 @@
 import ast
 from typing import Any
 
-from ..agent.datatypes import _AgentExit
+from ..agent.datatypes import ExitSuccess, _AgentExit
 from ..state import Namespaced
 from .base import BaseEvaluator
 from .builtins import STATEFUL_BUILTINS, _print_stateful
@@ -15,6 +15,7 @@ from .user_errors import (
     AgexTypeError,
     AgexValueError,
 )
+from .validation import validate_with_sampling
 
 
 class CallEvaluator(BaseEvaluator):
@@ -140,8 +141,22 @@ class CallEvaluator(BaseEvaluator):
             result = fn(*args, **kwargs)
 
             # Special handling for agent exit signals
-            if isinstance(fn, type) and issubclass(fn, _AgentExit):
-                raise result  # type: ignore
+            if isinstance(result, _AgentExit):
+                # If this is an ExitSuccess signal, validate the result first
+                if isinstance(result, ExitSuccess):
+                    return_type = self.state.get("__expected_return_type__")
+                    if return_type:
+                        try:
+                            # The 'result' here is the ExitSuccess instance.
+                            # We need to validate the value it's carrying.
+                            validate_with_sampling(result.result, return_type)
+                        except Exception as e:
+                            # Re-raise as a AgexError to be caught by the loop
+                            raise AgexError(
+                                f"Output validation failed. The returned value did not match the expected type '{return_type}'.\nDetails: {e}",
+                                node,
+                            ) from e
+                raise result
 
             return result
         except AgexError:

@@ -68,9 +68,10 @@ class TaskLoopMixin(BaseAgent):
             exec_state = Versioned(Memory())
             should_snapshot = True
 
-        # Add inputs to state for agent access
+        # Add inputs and expected return type to state for agent access
         if inputs_instance is not None:
             exec_state.set("inputs", inputs_instance)
+        exec_state.set("__expected_return_type__", return_type)
 
         # Initialize conversation log
         initialize_conversation_log(exec_state)

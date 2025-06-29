@@ -1,10 +1,16 @@
 import math
+import pickle
 from dataclasses import dataclass
 from types import ModuleType
 
 import pytest
 
 from agex.agent import Agent, MemberSpec, RegisteredClass
+from agex.agent.base import clear_agent_registry
+from agex.llm import DummyLLMClient
+from agex.llm.core import LLMResponse
+from agex.state import Namespaced, Versioned
+from agex.state.kv import Memory
 from tests.agex import test_module
 
 
@@ -483,8 +489,6 @@ def test_task_decorator_validation_error_messages():
 
 def test_agent_names_and_uniqueness():
     """Test agent name assignment and uniqueness enforcement."""
-    from agex.agent.base import clear_agent_registry
-
     # Clear registry for clean test
     clear_agent_registry()
 
@@ -502,8 +506,6 @@ def test_agent_names_and_uniqueness():
 
 def test_dual_decorator_namespace_setting():
     """Test that dual-decorated functions get proper namespace metadata."""
-    from agex.agent.base import clear_agent_registry
-
     clear_agent_registry()
 
     # Create agents with names
@@ -530,9 +532,6 @@ def test_dual_decorator_namespace_setting():
 
 def test_namespaced_state_isolation():
     """Test that Namespaced state provides proper isolation."""
-    from agex.state import Namespaced, Versioned
-    from agex.state.kv import Memory
-
     # Create shared state
     main_state = Versioned(Memory())
 
@@ -562,14 +561,6 @@ def test_namespaced_state_isolation():
 
 def test_task_input_dataclass_pickling():
     """Test that task input dataclasses can be pickled and snapshotted."""
-    import pickle
-
-    from agex.agent.base import clear_agent_registry
-    from agex.llm import DummyLLMClient
-    from agex.llm.core import LLMResponse
-    from agex.state import Versioned
-    from agex.state.kv import Memory
-
     clear_agent_registry()
 
     # Create agent with dummy LLM client to avoid real API calls
@@ -619,11 +610,6 @@ def test_unserializable_object_in_state_is_handled_gracefully():
     via mutation, the snapshot process handles it gracefully by recording an
     error in stdout instead of crashing.
     """
-    from agex.agent.base import clear_agent_registry
-    from agex.llm import DummyLLMClient
-    from agex.llm.core import LLMResponse
-    from agex.state import Versioned
-    from agex.state.kv import Memory
 
     clear_agent_registry()
 
@@ -675,3 +661,86 @@ def test_unserializable_object_in_state_is_handled_gracefully():
     warning_message = stdout[-1]
     assert "⚠️ Could not save the following variables" in warning_message
     assert "my_object" in warning_message
+
+
+def test_shallow_validation_on_large_input_list():
+    """
+    Tests that the shallow validator catches bad data in a large input list.
+    """
+
+    clear_agent_registry()
+    agent = Agent(name="test_agent")
+    # The non-failing path of this test will enter the task loop.
+    # We provide a single dummy response for it to consume.
+    agent.llm_client = DummyLLMClient(
+        responses=[LLMResponse(thinking="Looks good.", code="exit_success(1)")]
+    )
+
+    @agent.task("A task that accepts a large list.")
+    def process_large_list(items: list[int]) -> int:  # type: ignore
+        pass
+
+    good_list = list(range(2000))
+    bad_list = list(range(2000))
+    bad_list[-5] = "not a number"  # type: ignore
+
+    # This should pass. The state kwarg is added by the decorator.
+    process_large_list(items=good_list)  # type: ignore
+
+    # This should fail validation
+    with pytest.raises(ValueError) as exc_info:
+        process_large_list(items=bad_list)  # type: ignore
+
+    error_msg = str(exc_info.value)
+    assert "Validation failed for argument 'items'" in error_msg
+    assert "Input should be a valid integer" in error_msg
+
+
+def test_shallow_validation_on_agent_output():
+    """
+    Tests that the agent gets feedback if its output doesn't match the
+    return type annotation, especially for large collections.
+    """
+
+    clear_agent_registry()
+    agent = Agent(name="test_agent")
+
+    # Large, valid dictionary
+    large_valid_dict = {f"key_{i}": i for i in range(150)}
+    # Large, invalid dictionary (error in the tail)
+    large_invalid_dict = large_valid_dict.copy()
+    large_invalid_dict["key_145"] = "not an int"  # type: ignore
+
+    agent.llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="I will try to return an invalid dictionary.",
+                code="exit_success(invalid_dict)",
+            ),
+            LLMResponse(
+                thinking="That failed. I will return a valid dictionary now.",
+                code="exit_success(valid_dict)",
+            ),
+        ]
+    )
+
+    @agent.task("A task that returns a large dictionary.")
+    def produce_large_dict() -> dict[str, int]:  # type: ignore
+        pass
+
+    state = Versioned(Memory())
+    # Pre-populate state to avoid parsing large literals in the agent's code
+    state.set("invalid_dict", large_invalid_dict)
+    state.set("valid_dict", large_valid_dict)
+
+    result = produce_large_dict(state=state)  # type: ignore
+
+    # Check that the final result is the valid one
+    assert result == large_valid_dict
+
+    # Check that the agent was notified of the validation error
+    stdout = state.get("__stdout__")
+    assert stdout is not None
+    assert any("💥 Evaluation error" in msg for msg in stdout)
+    assert any("Output validation failed" in msg for msg in stdout)
+    assert any("not an int" in msg for msg in stdout)

@@ -6,13 +6,13 @@ which wraps functions to become agent tasks.
 """
 
 import inspect
-import pickle
 from dataclasses import make_dataclass
 from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
 from agex.agent.loop import TaskLoopMixin
 from agex.agent.utils import is_function_body_empty
+from agex.eval.validation import validate_with_sampling
 
 # Global registry for dynamically created input dataclasses
 # This allows pickle to find them by module.classname lookup
@@ -162,15 +162,19 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             # Create inputs dataclass instance with pass-by-value semantics
             inputs_instance = None
             if bound_args.arguments:
-                # Force pass-by-value using pickle/unpickle to ensure complete isolation
-                try:
-                    isolated_args = pickle.loads(pickle.dumps(bound_args.arguments))
-                    inputs_instance = inputs_dataclass(**isolated_args)
-                except (pickle.PicklingError, TypeError) as e:
-                    raise ValueError(
-                        f"Task arguments must be serializable for security isolation. "
-                        f"Failed to serialize argument: {e}"
-                    )
+                validated_args = {}
+                for name, value in bound_args.arguments.items():
+                    annotation = original_sig.parameters[name].annotation
+                    if annotation == inspect.Parameter.empty:
+                        annotation = Any  # Default to Any if no type hint
+                    try:
+                        validated_value = validate_with_sampling(value, annotation)
+                        validated_args[name] = validated_value
+                    except Exception as e:
+                        raise ValueError(
+                            f"Validation failed for argument '{name}':\n{e}"
+                        ) from e
+                inputs_instance = inputs_dataclass(**validated_args)
 
             # Call the task loop
             return self._run_task_loop(
