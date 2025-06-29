@@ -565,13 +565,23 @@ def test_task_input_dataclass_pickling():
     import pickle
 
     from agex.agent.base import clear_agent_registry
+    from agex.llm import DummyLLMClient
+    from agex.llm.core import LLMResponse
     from agex.state import Versioned
     from agex.state.kv import Memory
 
     clear_agent_registry()
 
-    # Create agent and task
+    # Create agent with dummy LLM client to avoid real API calls
     agent = Agent(name="test_agent")
+    agent.llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="I will return the expected result",
+                code="exit_success('test result')",
+            )
+        ]
+    )
 
     @agent.task("Test task with inputs")
     def test_task(message: str, value: int) -> str:  # type: ignore
@@ -581,12 +591,9 @@ def test_task_input_dataclass_pickling():
     # Create a versioned state and call the task to put inputs in state
     state = Versioned(Memory())
 
-    try:
-        # This will trigger creation and storage of the input dataclass
-        test_task(message="hello", value=42, state=state)  # type: ignore
-    except Exception:
-        # Expected - no LLM configured, but inputs should be in state
-        pass
+    # This will trigger creation and storage of the input dataclass
+    result = test_task(message="hello", value=42, state=state)  # type: ignore
+    assert result == "test result"  # Verify the dummy LLM response was used
 
     # Verify inputs were stored and are pickleable
     inputs = state.get("inputs")
@@ -600,9 +607,7 @@ def test_task_input_dataclass_pickling():
     assert unpickled_inputs.message == "hello"
     assert unpickled_inputs.value == 42
 
-    print("ADAM --- snapshot!")
     # Test state snapshotting (which internally pickles all state data)
     snapshot_hash = state.snapshot()
     assert snapshot_hash is not None
     assert len(snapshot_hash) > 0
-    print("ADAM --- done!!")

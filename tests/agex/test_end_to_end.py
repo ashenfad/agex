@@ -14,6 +14,7 @@ import pytest
 
 from agex.agent import Agent, ExitFail
 from agex.llm import DummyLLMClient
+from agex.llm.core import LLMResponse
 
 
 def test_successful_task_completion():
@@ -37,14 +38,10 @@ def test_successful_task_completion():
 
     # Define response that completes the task successfully
     responses = [
-        """# Thinking
-I need to solve this math problem by adding the numbers and multiplying by 2.
-
-```python
-sum_result = add(inputs.x, inputs.y)
-final_result = multiply(sum_result, 2)
-exit_success(final_result)
-```"""
+        LLMResponse(
+            thinking="I need to solve this math problem by adding the numbers and multiplying by 2.",
+            code="sum_result = add(inputs.x, inputs.y)\nfinal_result = multiply(sum_result, 2)\nexit_success(final_result)",
+        )
     ]
 
     # Use dummy client for predictable responses
@@ -86,17 +83,14 @@ def test_task_with_parse_error_recovery():
     # First response is malformed (missing thinking section)
     # Second response is correct
     responses = [
-        """```python
-# This response has no thinking section - should trigger parse error
-result = get_answer()
-```""",
-        """# Thinking
-I'll call the function to get the answer.
-
-```python
-result = get_answer()
-exit_success(result)
-```""",
+        LLMResponse(
+            thinking="",
+            code="# This response has no thinking section - should trigger parse error\nresult = get_answer()",
+        ),
+        LLMResponse(
+            thinking="I'll call the function to get the answer.",
+            code="result = get_answer()\nexit_success(result)",
+        ),
     ]
 
     agent.llm_client = DummyLLMClient(responses=responses)
@@ -123,20 +117,14 @@ def test_task_with_evaluation_error_recovery():
     # First response has a syntax error
     # Second response is correct
     responses = [
-        """# Thinking
-I'll try to compute something.
-
-```python
-# This will cause a syntax error
-result = 1 + 
-```""",
-        """# Thinking
-Let me fix that syntax error.
-
-```python
-result = 1 + 1
-exit_success(result)
-```""",
+        LLMResponse(
+            thinking="I'll try to compute something.",
+            code="# This will cause a syntax error\nresult = 1 + ",
+        ),
+        LLMResponse(
+            thinking="Let me fix that syntax error.",
+            code="result = 1 + 1\nexit_success(result)",
+        ),
     ]
 
     agent.llm_client = DummyLLMClient(responses=responses)
@@ -160,15 +148,10 @@ def test_task_with_inputs_access():
     agent = Agent(max_iterations=2)
 
     responses = [
-        """# Thinking
-I need to process the input data.
-
-```python
-message = inputs.text.upper()
-count = inputs.repeat_count
-result = message * count
-exit_success(result)
-```"""
+        LLMResponse(
+            thinking="I need to process the input data.",
+            code="message = inputs.text.upper()\ncount = inputs.repeat_count\nresult = message * count\nexit_success(result)",
+        )
     ]
 
     agent.llm_client = DummyLLMClient(responses=responses)
@@ -197,13 +180,10 @@ def test_task_timeout_after_max_iterations():
 
     # Response that never calls exit_success
     responses = [
-        """# Thinking
-I'll do some work but not finish.
-
-```python
-x = 1 + 1
-print(f"Current value: {x}")
-```"""
+        LLMResponse(
+            thinking="I'll do some work but not finish.",
+            code='x = 1 + 1\nprint(f"Current value: {x}")',
+        )
     ]
 
     agent.llm_client = DummyLLMClient(responses=responses)
@@ -228,12 +208,10 @@ def test_task_with_exit_fail():
     agent = Agent(max_iterations=2)
 
     responses = [
-        """# Thinking
-I cannot complete this task.
-
-```python
-exit_fail("Task is impossible to complete")
-```"""
+        LLMResponse(
+            thinking="I cannot complete this task.",
+            code='exit_fail("Task is impossible to complete")',
+        )
     ]
 
     agent.llm_client = DummyLLMClient(responses=responses)
@@ -263,13 +241,10 @@ def test_task_with_no_inputs():
     agent = Agent(max_iterations=2)
 
     responses = [
-        """# Thinking
-This is a simple task with no inputs.
-
-```python
-result = "Hello, World!"
-exit_success(result)
-```"""
+        LLMResponse(
+            thinking="This is a simple task with no inputs.",
+            code='result = "Hello, World!"\nexit_success(result)',
+        )
     ]
 
     agent.llm_client = DummyLLMClient(responses=responses)
@@ -293,13 +268,10 @@ def test_task_with_complex_return_type():
     agent = Agent(max_iterations=2)
 
     responses = [
-        """# Thinking
-I'll create a dictionary with the requested data.
-
-```python
-result = {"name": inputs.name, "age": inputs.age, "status": "processed"}
-exit_success(result)
-```"""
+        LLMResponse(
+            thinking="I'll create a dictionary with the requested data.",
+            code='result = {"name": inputs.name, "age": inputs.age, "status": "processed"}\nexit_success(result)',
+        )
     ]
 
     agent.llm_client = DummyLLMClient(responses=responses)
@@ -337,13 +309,10 @@ def test_agent_function_visibility_in_task():
         return n * calculate_factorial(n - 1)
 
     responses = [
-        """# Thinking
-I'll use the factorial function to compute the result.
-
-```python
-result = calculate_factorial(inputs.number)
-exit_success(result)
-```"""
+        LLMResponse(
+            thinking="I'll use the factorial function to compute the result.",
+            code="result = calculate_factorial(inputs.number)\nexit_success(result)",
+        )
     ]
 
     agent.llm_client = DummyLLMClient(responses=responses)

@@ -8,6 +8,7 @@ This module tests the complete dual-decorator workflow:
 """
 
 from agex import Agent, clear_agent_registry
+from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import DummyLLMClient
 from agex.state import Versioned
 from agex.state.kv import Memory
@@ -43,62 +44,24 @@ def test_dual_decorator_math_workflow():
 
     # Set up dummy LLM responses
     calculator_responses = [
-        """# Thinking
-I need to evaluate the expression "15 + 25 * 2". Following order of operations, multiplication comes first.
-25 * 2 = 50
-15 + 50 = 65
-
-```python
-result = 25 * 2  # 50
-result = 15 + result  # 65
-exit_success(65.0)
-```"""
+        LLMResponse(
+            thinking='I need to evaluate the expression "15 + 25 * 2". Following order of operations, multiplication comes first.\n25 * 2 = 50\n15 + 50 = 65',
+            code="result = 25 * 2  # 50\nresult = 15 + result  # 65\nexit_success(65.0)",
+        )
     ]
 
     validator_responses = [
-        """# Thinking
-I need to check if 65.0 is a reasonable result for "15 + 25 * 2".
-Let me verify: 25 * 2 = 50, then 15 + 50 = 65. Yes, this is correct.
-
-```python
-# Check the calculation step by step
-expected = 15 + (25 * 2)  # Order of operations: multiply first
-print(f"Expected result: {expected}")
-print(f"Actual result: {inputs.result}")
-
-# The result is correct
-is_valid = (inputs.result == expected)
-exit_success(is_valid)
-```"""
+        LLMResponse(
+            thinking='I need to check if 65.0 is a reasonable result for "15 + 25 * 2".\nLet me verify: 25 * 2 = 50, then 15 + 50 = 65. Yes, this is correct.',
+            code='# Check the calculation step by step\nexpected = 15 + (25 * 2)  # Order of operations: multiply first\nprint(f"Expected result: {expected}")\nprint(f"Actual result: {inputs.result}")\n\n# The result is correct\nis_valid = (inputs.result == expected)\nexit_success(is_valid)',
+        )
     ]
 
     orchestrator_responses = [
-        """# Thinking
-I need to solve this math problem step by step:
-1. First calculate the expression using the calculator
-2. Then validate the result with the validator
-3. Return a summary
-
-```python
-# Step 1: Calculate the expression
-expression = "15 + 25 * 2"
-calc_result = calculate(expression)
-print(f"Calculator returned: {calc_result}")
-
-# Step 2: Validate the result
-is_valid = validate_result(expression, calc_result)
-print(f"Validator returned: {is_valid}")
-
-# Step 3: Return summary
-summary = {
-    "expression": expression,
-    "result": calc_result,
-    "validated": is_valid,
-    "status": "success" if is_valid else "error"
-}
-
-exit_success(summary)
-```"""
+        LLMResponse(
+            thinking="I need to solve this math problem step by step:\n1. First calculate the expression using the calculator\n2. Then validate the result with the validator\n3. Return a summary",
+            code='# Step 1: Calculate the expression\nexpression = "15 + 25 * 2"\ncalc_result = calculate(expression)\nprint(f"Calculator returned: {calc_result}")\n\n# Step 2: Validate the result\nis_valid = validate_result(expression, calc_result)\nprint(f"Validator returned: {is_valid}")\n\n# Step 3: Return summary\nsummary = {\n    "expression": expression,\n    "result": calc_result,\n    "validated": is_valid,\n    "status": "success" if is_valid else "error"\n}\n\nexit_success(summary)',
+        )
     ]
 
     # Configure dummy LLMs for each agent
@@ -148,70 +111,24 @@ def test_dual_decorator_state_sharing():
 
     # Set up responses
     processor_responses = [
-        """# Thinking
-I need to clean the raw data by removing invalid entries and normalizing values.
-
-```python
-# Clean the data
-cleaned_data = []
-for item in inputs.raw_data:
-    if isinstance(item, (int, float)) and item > 0:
-        cleaned_data.append(float(item))
-
-# Store intermediate result in my namespace
-exit_success(cleaned_data)
-```"""
+        LLMResponse(
+            thinking="I need to clean the raw data by removing invalid entries and normalizing values.",
+            code="# Clean the data\ncleaned_data = []\nfor item in inputs.raw_data:\n    if isinstance(item, (int, float)) and item > 0:\n        cleaned_data.append(float(item))\n\n# Store intermediate result in my namespace\nexit_success(cleaned_data)",
+        )
     ]
 
     analyzer_responses = [
-        """# Thinking
-I need to analyze the processed data and generate insights.
-
-```python
-# Analyze the data
-data = inputs.processed_data
-if data:
-    mean_value = sum(data) / len(data)
-    max_value = max(data)
-    min_value = min(data)
-    
-    insights = {
-        "count": len(data),
-        "mean": mean_value,
-        "max": max_value,
-        "min": min_value,
-        "range": max_value - min_value
-    }
-else:
-    insights = {"error": "No valid data to analyze"}
-
-exit_success(insights)
-```"""
+        LLMResponse(
+            thinking="I need to analyze the processed data and generate insights.",
+            code='# Analyze the data\ndata = inputs.processed_data\nif data:\n    mean_value = sum(data) / len(data)\n    max_value = max(data)\n    min_value = min(data)\n    \n    insights = {\n        "count": len(data),\n        "mean": mean_value,\n        "max": max_value,\n        "min": min_value,\n        "range": max_value - min_value\n    }\nelse:\n    insights = {"error": "No valid data to analyze"}\n\nexit_success(insights)',
+        )
     ]
 
     coordinator_responses = [
-        """# Thinking
-I need to coordinate the data pipeline by calling the specialist functions in sequence.
-
-```python
-# Step 1: Process the raw data
-processed = process_data(inputs.raw_data)
-print(f"Data processor returned: {processed}")
-
-# Step 2: Analyze the processed data
-analysis = analyze_data(processed)
-print(f"Analyzer returned: {analysis}")
-
-# Step 3: Combine results
-final_result = {
-    "raw_count": len(inputs.raw_data),
-    "processed_count": len(processed),
-    "analysis": analysis,
-    "pipeline_status": "completed"
-}
-
-exit_success(final_result)
-```"""
+        LLMResponse(
+            thinking="I need to coordinate the data pipeline by calling the specialist functions in sequence.",
+            code='# Step 1: Process the raw data\nprocessed = process_data(inputs.raw_data)\nprint(f"Data processor returned: {processed}")\n\n# Step 2: Analyze the processed data\nanalysis = analyze_data(processed)\nprint(f"Analyzer returned: {analysis}")\n\n# Step 3: Combine results\nfinal_result = {\n    "raw_count": len(inputs.raw_data),\n    "processed_count": len(processed),\n    "analysis": analysis,\n    "pipeline_status": "completed"\n}\n\nexit_success(final_result)',
+        )
     ]
 
     # Configure LLMs
@@ -259,46 +176,20 @@ def test_dual_decorator_error_handling():
         """Coordinate risky operations with error handling."""
         pass
 
-    # Responses for the risky worker (success case)
+    # Set up responses
     risky_success_responses = [
-        """# Thinking
-The input says should_fail is False, so I should succeed.
-
-```python
-if inputs.should_fail:
-    exit_fail("Operation failed as requested")
-else:
-    exit_success("Operation completed successfully")
-```"""
+        LLMResponse(
+            thinking="The input says should_fail is False, so I should succeed.",
+            code='if inputs.should_fail:\n    exit_fail("Operation failed as requested")\nelse:\n    exit_success("Operation completed successfully")',
+        )
     ]
 
     # Orchestrator response
     orchestrator_responses = [
-        """# Thinking
-I need to test the risky operation and handle any failures gracefully.
-
-```python
-try:
-    # First test - should succeed
-    result1 = risky_operation(should_fail=False)
-    print(f"Success case: {result1}")
-    
-    # Compile results
-    results = {
-        "success_case": result1,
-        "test_completed": True
-    }
-    
-    exit_success(results)
-    
-except Exception as e:
-    # Handle any errors gracefully
-    error_result = {
-        "error": str(e),
-        "test_completed": False
-    }
-    exit_success(error_result)
-```"""
+        LLMResponse(
+            thinking="I need to test the risky operation and handle any failures gracefully.",
+            code='try:\n    # First test - should succeed\n    result1 = risky_operation(should_fail=False)\n    print(f"Success case: {result1}")\n    \n    # Compile results\n    results = {\n        "success_case": result1,\n        "test_completed": True\n    }\n    \n    exit_success(results)\n    \nexcept Exception as e:\n    # Handle any errors gracefully\n    error_result = {\n        "error": str(e),\n        "test_completed": False\n    }\n    exit_success(error_result)',
+        )
     ]
 
     # Configure LLMs
@@ -318,7 +209,7 @@ def test_dual_decorator_namespace_isolation():
     """Test that different specialist agents have isolated namespaces."""
     clear_agent_registry()
 
-    # Create agents
+    # Create agents with separate namespaces
     agent_a = Agent(name="agent_a")
     agent_b = Agent(name="agent_b")
     coordinator = Agent(name="coordinator")
@@ -326,58 +217,40 @@ def test_dual_decorator_namespace_isolation():
     @coordinator.fn(docstring="Function A")
     @agent_a.task("Store data in agent A namespace")
     def store_in_a(data: str) -> str:  # type: ignore
+        """Store data in agent A namespace."""
         pass
 
     @coordinator.fn(docstring="Function B")
     @agent_b.task("Store data in agent B namespace")
     def store_in_b(data: str) -> str:  # type: ignore
+        """Store data in agent B namespace."""
         pass
 
     @coordinator.task("Test namespace isolation")
     def test_isolation(test_data: str) -> dict:  # type: ignore
+        """Test namespace isolation."""
         pass
 
-    # Agent responses that store data in their respective namespaces
+    # Set up responses
     agent_a_responses = [
-        """# Thinking
-I'll store the data in my namespace and return a confirmation.
-
-```python
-# Store in my namespace (this will be namespaced automatically)
-stored_data = f"A: {inputs.data}"
-exit_success(stored_data)
-```"""
+        LLMResponse(
+            thinking="I'll store the data with a prefix for agent A.",
+            code='result = f"A:{inputs.data}"\nexit_success(result)',
+        )
     ]
 
     agent_b_responses = [
-        """# Thinking
-I'll store the data in my namespace and return a confirmation.
-
-```python
-# Store in my namespace (this will be namespaced automatically)
-stored_data = f"B: {inputs.data}"
-exit_success(stored_data)
-```"""
+        LLMResponse(
+            thinking="I'll store the data with a prefix for agent B.",
+            code='result = f"B:{inputs.data}"\nexit_success(result)',
+        )
     ]
 
     coordinator_responses = [
-        """# Thinking
-I'll call both agents to store data and verify they work independently.
-
-```python
-# Store data via both agents
-result_a = store_in_a(inputs.test_data)
-result_b = store_in_b(inputs.test_data)
-
-# Verify both worked
-results = {
-    "agent_a_result": result_a,
-    "agent_b_result": result_b,
-    "isolation_verified": result_a != result_b
-}
-
-exit_success(results)
-```"""
+        LLMResponse(
+            thinking="I'll test namespace isolation by calling both functions with the same data.",
+            code='# Call both functions with the same data\nresult_a = store_in_a(inputs.test_data)\nresult_b = store_in_b(inputs.test_data)\n\n# Combine results\nfinal_result = {\n    "agent_a_result": result_a,\n    "agent_b_result": result_b,\n    "are_different": result_a != result_b\n}\n\nexit_success(final_result)',
+        )
     ]
 
     # Configure LLMs
@@ -385,14 +258,11 @@ exit_success(results)
     agent_b.llm_client = DummyLLMClient(responses=agent_b_responses)
     coordinator.llm_client = DummyLLMClient(responses=coordinator_responses)
 
-    # Test with shared state
-    shared_state = Versioned(Memory())
+    # Test the workflow
+    result = test_isolation(test_data="shared_data")
 
-    # Execute the test
-    result = test_isolation(test_data="shared_data", state=shared_state)  # type: ignore
-
-    # Verify namespace isolation worked
+    # Verify namespace isolation
     assert isinstance(result, dict)
-    assert result["agent_a_result"] == "A: shared_data"
-    assert result["agent_b_result"] == "B: shared_data"
-    assert result["isolation_verified"] is True
+    assert result["agent_a_result"] == "A:shared_data"
+    assert result["agent_b_result"] == "B:shared_data"
+    assert result["are_different"] is True

@@ -16,7 +16,7 @@ from agex.agent.conversation import (
 from agex.agent.datatypes import ExitSuccess, _AgentExit
 from agex.agent.formatting import format_context_as_markdown
 from agex.agent.primer_text import BUILTIN_PRIMER
-from agex.llm.core import Message, ResponseParseError
+from agex.llm.core import Message
 from agex.render.definitions import render_definitions
 from agex.render.stream import StreamRenderer
 
@@ -24,18 +24,6 @@ from ..eval.core import evaluate_program
 from ..render.context import ContextRenderer
 from ..state import Namespaced, Versioned
 from ..state.kv import Memory
-
-# Format guidance message for when agents produce malformed responses
-FORMAT_GUIDANCE_TEMPLATE = """⚠️  Response format error: {error}
-
-Please structure your response as:
-
-# Thinking
-[your reasoning here]
-
-```python
-[your code here]
-```"""
 
 
 class TaskLoopMixin(BaseAgent):
@@ -105,23 +93,10 @@ class TaskLoopMixin(BaseAgent):
             messages = conversation_log(exec_state, system_message)
 
             # Get LLM response and determine what code to evaluate
-            code_to_evaluate = None
-            llm_response = None
 
-            try:
-                # Try to get structured response first
-                llm_response = self._get_llm_response(messages)
-                code_to_evaluate = llm_response.code
-
-            except ResponseParseError as e:
-                # This can happen if the LLM fails to produce a valid structured response.
-                # In this case, we don't have a structured object, so we'll log the error
-                # for the agent to see and proceed. The code to evaluate will be empty.
-                code_to_evaluate = ""
-                # Add gentle scolding message to stdout for agent to see
-                current_stdout = exec_state.get("__stdout__", [])
-                current_stdout.append(FORMAT_GUIDANCE_TEMPLATE.format(error=e))
-                exec_state.set("__stdout__", current_stdout)
+            # Try to get structured response first
+            llm_response = self._get_llm_response(messages)
+            code_to_evaluate = llm_response.code
 
             # Store assistant response in conversation log
             if llm_response:
