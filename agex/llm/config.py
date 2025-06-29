@@ -24,7 +24,7 @@ def get_llm_config(**overrides) -> Dict[str, Any]:
     # Start with hard-coded defaults
     config = {
         "provider": "openai",
-        "model": "gpt-4",
+        "model": "gpt-4.1-nano",
         "temperature": 0.7,
     }
 

@@ -8,7 +8,6 @@ dependencies = [
     "xxhash",
     "diskcache",
     "openai",
-    "instructor",
     "pydantic",
 ]
 
@@ -40,7 +39,6 @@ pythonpath = [
 python = "^3.11"
 litellm = "^1.39.2"
 tiktoken = "^0.6.0"
-instructor = "^1.2.1"
 pydantic = "^2.7.1"
 
 [tool.poetry.group.dev.dependencies]
