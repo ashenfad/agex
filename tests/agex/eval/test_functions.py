@@ -111,3 +111,19 @@ mutator()
     state = eval_and_get_state(program)
     assert state.get("l") == [99, 2, 3]
     assert state.get("d")["key"] == "mutated"
+
+
+def test_function_with_default_arguments():
+    program = """
+def my_func(a, b=10):
+    return a + b
+
+# Call with default
+x = my_func(5)
+
+# Call overriding default
+y = my_func(5, 5)
+"""
+    state = eval_and_get_state(program)
+    assert state.get("x") == 15
+    assert state.get("y") == 10

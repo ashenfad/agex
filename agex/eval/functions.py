@@ -72,10 +72,6 @@ class UserFunction:
 
         exec_state = Scoped(self.closure_state)
 
-        bound_args = bind_arguments(self.name, self.args, args, kwargs)
-        for name, value in bound_args.items():
-            exec_state.set(name, value)
-
         if not self.agent_fingerprint:
             raise RuntimeError("Cannot execute function without an agent context.")
 
@@ -88,6 +84,12 @@ class UserFunction:
             source_code=source_code,
             # Functions inherit the agent's timeout
         )
+        bound_args = bind_arguments(
+            self.name, self.args, args, kwargs, eval_fn=evaluator.visit
+        )
+        for name, value in bound_args.items():
+            exec_state.set(name, value)
+
         try:
             for node in self.body:
                 evaluator.visit(node)
