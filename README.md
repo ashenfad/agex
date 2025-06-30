@@ -42,7 +42,7 @@ This distinction is key to enabling agents that don't just *use* tools, but trul
 An `agex` agent is defined through a micro-Python DSL. You create an `Agent` instance and use its methods to expose capabilities (`fn`, `cls`, `module`) or define high-level goals (`task`).
 
 *   A **`fn`** is a tool the agent can use.
-*   A **`task`** is a function that the agent must implement using its available tools.
+*   A **`task`** is a high-level goal. You define the function signature (the "what"), and the agent provides the implementation (the "how"). This is why the function body must be empty (`pass`).
 
 ```python
 import math
