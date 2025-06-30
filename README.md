@@ -1,6 +1,6 @@
 # agex
 
-`agex` is a Python-native agentic framework that enables AI agents to think, act, and create using real Python code. It provides a secure, sandboxed execution environment that allows for deep interoperability with your existing codebase, moving beyond simple tool-calling to true runtime integration.
+`agex` (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to think, act, and create using real Python code. It provides a secure, sandboxed execution environment that allows for deep interoperability with your existing codebase, moving beyond simple tool-calling to true runtime integration.
 
 The core philosophy of `agex` is that **code is the most powerful language for formal reasoning**. Instead of inventing new paradigms, `agex` provides agents with a familiar, REPL-like environment equipped with tools developers have used for decades: state inspection, introspection (`dir()`, `help()`), and modular design.
 
