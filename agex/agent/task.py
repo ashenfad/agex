@@ -63,18 +63,27 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         Returns:
             Either the decorated function (naked) or a decorator function (parameterized)
         """
-        # Naked decorator: @agent.task
-        if callable(primer_or_func):
-            func = primer_or_func
-            self._validate_task_decorator(func)
-            return self._create_task_wrapper(func, primer=None)
 
-        # Parameterized decorator: @agent.task() or @agent.task("primer")
         def decorator(func: Callable) -> Callable:
             self._validate_task_decorator(func)
-            effective_primer = primer_or_func or primer
+
+            # Determine the effective primer. The keyword 'primer' takes highest precedence.
+            # If not provided, check if a positional primer was passed (in which case
+            # primer_or_func will be a string, not the function being decorated).
+            effective_primer = primer
+            if effective_primer is None and not callable(primer_or_func):
+                effective_primer = primer_or_func
+
             return self._create_task_wrapper(func, primer=effective_primer)
 
+        # If the decorator is used without parentheses (@agent.task), the function
+        # is passed directly as primer_or_func. In this case, we call the decorator
+        # immediately with the function.
+        if callable(primer_or_func):
+            return decorator(primer_or_func)
+
+        # If the decorator is used with parentheses (@agent.task(...)), we return
+        # the decorator itself. Python will then call it with the decorated function.
         return decorator
 
     def _validate_task_decorator(self, func: Callable) -> None:
