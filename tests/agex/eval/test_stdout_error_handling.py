@@ -239,12 +239,14 @@ def test_validation_error_shows_full_type():
 
     # Check that the validation error message was present in the agent's context
     # for the second iteration.
-    log = state.get("test_agent/conversation_log")
+    log_keys = state.get("test_agent/__msg_log__")
     # The message before the last one should be the system context with the error
-    system_context_message = log[-2]["content"]
+    system_context_message_key = log_keys[-2]
+    system_context_message = state.get(f"test_agent/{system_context_message_key}")
+    system_context_content = system_context_message.content
 
     expected_error_string = (
         "Output validation failed. The returned value did not "
         "match the expected type 'list[int]'."
     )
-    assert expected_error_string in system_context_message
+    assert expected_error_string in system_context_content

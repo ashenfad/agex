@@ -4,25 +4,14 @@ Shallow, sampling-based validation for large data structures.
 
 from typing import Any, get_args, get_origin
 
-import numpy as np
 from pydantic import ConfigDict, TypeAdapter, ValidationError
 
 DEFAULT_SAMPLING_THRESHOLD = 100
 DEFAULT_SAMPLE_SIZE = 10
 
 
-# Custom JSON encoder for numpy arrays
-def numpy_to_list(obj: Any) -> Any:
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
-
-
 # Pydantic configuration for handling arbitrary types like numpy arrays
-NUMPY_AWARE_CONFIG = ConfigDict(
-    arbitrary_types_allowed=True,
-    json_encoders={np.ndarray: numpy_to_list},
-)
+NUMPY_AWARE_CONFIG = ConfigDict(arbitrary_types_allowed=True)
 
 
 def validate_with_sampling(value: Any, annotation: Any) -> Any:

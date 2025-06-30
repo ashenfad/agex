@@ -1,6 +1,6 @@
 import numpy as np
 
-from agex.agent import Agent
+from agex.agent import Agent, clear_agent_registry
 from agex.eval.core import evaluate_program
 from agex.render.view import view
 from agex.state.ephemeral import Ephemeral
@@ -89,3 +89,36 @@ def test_numpy_state_continuity():
 
     # 4. Assert that the code ran successfully, using the rehydrated module
     assert np.array_equal(state2.get("result"), np.array([11, 12, 13]))
+
+
+def test_task_returning_list_of_numpy_arrays():
+    """
+    Tests that a task can successfully return a list of numpy arrays
+    without causing a validation error (e.g., truthiness error).
+    """
+    from agex.llm.dummy_client import DummyLLMClient, LLMResponse
+
+    clear_agent_registry()
+    agent = Agent(name="test_agent", max_iterations=2)
+    agent.module(np, name="np")
+
+    # Simulate the agent creating and returning a list of numpy arrays
+    agent.llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="I will create and return a list of two numpy arrays.",
+                code="import np\nexit_success([np.array([1, 2]), np.array([3, 4])])",
+            ),
+        ]
+    )
+
+    @agent.task("A task that must return a list of numpy arrays.")
+    def list_of_arrays_task() -> list[np.ndarray]:  # type: ignore[return-value]
+        pass
+
+    result = list_of_arrays_task()
+
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert np.array_equal(result[0], np.array([1, 2]))
+    assert np.array_equal(result[1], np.array([3, 4]))

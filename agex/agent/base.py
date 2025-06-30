@@ -55,9 +55,12 @@ def resolve_agent(fingerprint: str) -> "BaseAgent":
 
 def clear_agent_registry() -> None:
     """Clear the global registry. Primarily for testing."""
+    from .task import clear_dynamic_dataclass_registry
+
     global _AGENT_REGISTRY, _AGENT_REGISTRY_BY_NAME
     _AGENT_REGISTRY = {}
     _AGENT_REGISTRY_BY_NAME = {}
+    clear_dynamic_dataclass_registry()
 
 
 def _random_name() -> str:

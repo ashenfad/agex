@@ -30,8 +30,8 @@ class ContextRenderer:
         state_budget = 0
         stdout_budget = 0
         if state_changes and stdout_content:
-            state_budget = int(budget * 0.6)
-            stdout_budget = int(budget * 0.4)
+            state_budget = int(budget * 0.5)
+            stdout_budget = int(budget * 0.5)
         elif state_changes:
             state_budget = budget
         elif stdout_content:

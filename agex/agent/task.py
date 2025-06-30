@@ -159,14 +159,12 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
         # Create the replacement function
         def task_wrapper(*args, **kwargs):
-            # Bind the arguments to the original signature (excluding state)
-            bound_args = original_sig.bind(
-                *args, **{k: v for k, v in kwargs.items() if k != "state"}
-            )
+            # Bind to the new signature that includes the 'state' parameter
+            bound_args = new_sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
 
-            # Extract state from kwargs
-            state = kwargs.get("state", None)
+            # Pop the state argument, it's handled separately
+            state = bound_args.arguments.pop("state", None)
 
             # Create inputs dataclass instance with pass-by-value semantics
             inputs_instance = None
