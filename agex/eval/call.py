@@ -165,7 +165,7 @@ class CallEvaluator(BaseEvaluator):
                         except Exception as e:
                             # Re-raise as a AgexError to be caught by the loop
                             raise AgexError(
-                                f"Output validation failed. The returned value did not match the expected type '{return_type}'.\nDetails: {e}",
+                                f"Output validation failed. The returned value did not match the expected type '{str(return_type)}'.\nDetails: {e}",
                                 node,
                             ) from e
                 raise result

@@ -202,3 +202,49 @@ def test_mixed_prints_and_errors_cleared():
     # Should not see the old print or error
     assert "before error" not in stdout_strings
     assert "undefined_var" not in stdout_strings
+
+
+def test_validation_error_shows_full_type():
+    """
+    Test that a validation error message in stdout includes the full,
+    un-truncated type hint for complex types.
+    """
+    clear_agent_registry()
+    agent = Agent(name="test_agent", max_iterations=3)
+
+    # First response: Return the wrong type (list of strings instead of list of ints)
+    # Second response: "See" the error and return the correct type.
+    agent.llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="I will try to return a list of strings.",
+                code="exit_success(['a', 'b'])",
+            ),
+            LLMResponse(
+                thinking="I see the validation error. I'll return a list of ints now.",
+                code="exit_success([1, 2])",
+            ),
+        ]
+    )
+
+    @agent.task("A task that requires returning a list of integers.")
+    def list_of_ints_task() -> list[int]:  # type: ignore[return-value]
+        """A task that must return a list of integers."""
+        pass
+
+    state = Versioned(Memory())
+    result = list_of_ints_task(state=state)  # type: ignore
+
+    assert result == [1, 2]
+
+    # Check that the validation error message was present in the agent's context
+    # for the second iteration.
+    log = state.get("test_agent/conversation_log")
+    # The message before the last one should be the system context with the error
+    system_context_message = log[-2]["content"]
+
+    expected_error_string = (
+        "Output validation failed. The returned value did not "
+        "match the expected type 'list[int]'."
+    )
+    assert expected_error_string in system_context_message
