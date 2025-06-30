@@ -1,12 +1,22 @@
 from typing import Any, Iterable
 
 from .core import State
+from .versioned import Versioned
 
 
 class Namespaced(State):
-    def __init__(self, state: State, namespace: str):
+    def __init__(self, state: "Versioned | Namespaced", namespace: str):
         if "/" in namespace:
             raise ValueError("Namespace names cannot contain '/'")
+
+        # Only allow wrapping persistent states (Versioned or Namespaced)
+        # Reject transient evaluation states (Scoped, LiveClosureState, etc.)
+        if not isinstance(state, (Versioned, Namespaced)):
+            raise TypeError(
+                f"Namespaced can only wrap Versioned or Namespaced states, "
+                f"not {type(state).__name__}. Use state.base_store to get the underlying persistent state."
+            )
+
         self.state = state
         self.namespace = namespace
 

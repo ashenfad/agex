@@ -69,9 +69,13 @@ def test_dual_decorator_math_workflow():
     validator.llm_client = DummyLLMClient(responses=validator_responses)
     orchestrator.llm_client = DummyLLMClient(responses=orchestrator_responses)
 
+    # Use a shared state object to inspect sub-agent stdout
+    shared_state = Versioned(Memory())
+
     # Execute the workflow
     result = solve_math_problem(
-        problem_description="Calculate 15 + 25 * 2 and verify the result"
+        problem_description="Calculate 15 + 25 * 2 and verify the result",
+        state=shared_state,  # type: ignore
     )
 
     # Verify the complete workflow worked
@@ -80,6 +84,13 @@ def test_dual_decorator_math_workflow():
     assert result["result"] == 65.0
     assert result["validated"] is True
     assert result["status"] == "success"
+
+    print("ADAM ----------------------  state ----------------------")
+    print(list(shared_state.items()))
+
+    # Verify that the sub-agent's print statements went to its own stdout
+    validator_stdout = shared_state.get("orchestrator/validator/__stdout__")
+    assert validator_stdout is not None
 
 
 def test_dual_decorator_state_sharing():
@@ -156,6 +167,78 @@ def test_dual_decorator_state_sharing():
     assert analysis["count"] == 5  # Valid numbers after processing: [1, 2, 3.5, 4, 5]
     assert analysis["mean"] == 3.1  # (1 + 2 + 3.5 + 4 + 5) / 5 = 15.5 / 5 = 3.1
 
+    # Verify that the orchestrator's print statements are in its own stdout
+    coordinator_stdout = shared_state.get("coordinator/__stdout__")
+    assert coordinator_stdout is not None
+    assert len(coordinator_stdout) == 2
+    assert "Data processor returned" in str(coordinator_stdout[0])
+    assert "Analyzer returned" in str(coordinator_stdout[1])
+
+    # Verify that sub-agents have no stdout in the orchestrator's namespace
+    # (because they write to their own, e.g., "analyzer/__stdout__")
+    assert "mean_value" not in str(coordinator_stdout)
+    assert "cleaned_data" not in str(coordinator_stdout)
+
+
+def test_hierarchical_namespace_state_is_correct():
+    """
+    This test verifies that state from a sub-agent is correctly saved under
+    a hierarchical namespace (e.g., 'orchestrator/worker/key').
+    """
+    clear_agent_registry()
+
+    # Create two agents
+    worker = Agent(name="worker")
+    orchestrator = Agent(name="orchestrator")
+
+    # A task for the worker, which the orchestrator can call
+    @orchestrator.fn()
+    @worker.task("Set a variable in state")
+    def do_work() -> bool:  # type: ignore
+        """Sets success = True"""
+        pass
+
+    # The orchestrator's task that executes the worker's task
+    @orchestrator.task("Run the worker")
+    def run_worker() -> bool:  # type: ignore
+        """Calls do_work()"""
+        pass
+
+    # Configure LLM responses
+    worker.llm_client = DummyLLMClient(
+        [
+            LLMResponse(
+                thinking="I will set the success flag and exit.",
+                code="success = True\nexit_success(True)",
+            )
+        ]
+    )
+    orchestrator.llm_client = DummyLLMClient(
+        [
+            LLMResponse(
+                thinking="I will call the do_work function.",
+                code="result = do_work()\nexit_success(result)",
+            )
+        ]
+    )
+
+    # Execute the workflow with a shared state object
+    shared_state = Versioned(Memory())
+    result = run_worker(state=shared_state)  # type: ignore
+
+    # --- Assertions ---
+    # 1. The task should complete successfully
+    assert result is True
+
+    # 2. The worker's state should be under "orchestrator/worker/".
+    worker_success_key = "orchestrator/worker/success"
+    assert (
+        shared_state.get(worker_success_key) is True
+    ), f"Key '{worker_success_key}' not found in state or has wrong value."
+
+    # 3. Verify the state was NOT written to the flat namespace.
+    assert shared_state.get("worker/success") is None
+
 
 def test_dual_decorator_error_handling():
     """Test error handling in dual-decorator workflows."""
@@ -227,8 +310,8 @@ def test_dual_decorator_namespace_isolation():
         pass
 
     @coordinator.task("Test namespace isolation")
-    def test_isolation(test_data: str) -> dict:  # type: ignore
-        """Test namespace isolation."""
+    def run_namespace_test(test_data: str) -> dict:  # type: ignore
+        """Test namespace isolation and state sharing."""
         pass
 
     # Set up responses
@@ -259,7 +342,10 @@ def test_dual_decorator_namespace_isolation():
     coordinator.llm_client = DummyLLMClient(responses=coordinator_responses)
 
     # Test the workflow
-    result = test_isolation(test_data="shared_data")
+    shared_state = Versioned(Memory())
+
+    # Execute the test
+    result = run_namespace_test(test_data="shared_data", state=shared_state)  # type: ignore
 
     # Verify namespace isolation
     assert isinstance(result, dict)

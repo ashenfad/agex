@@ -370,7 +370,7 @@ def test_task_decorator_single():
 
     # Check that task metadata is set correctly
     assert hasattr(simple_task, "__agex_task_namespace__")
-    assert simple_task.__agex_task_namespace__ == "Agent"  # Default class name
+    assert simple_task.__agex_task_namespace__ == agent.name
 
 
 def test_fn_decorator_multiple():
@@ -437,7 +437,7 @@ def test_decorator_order_correct_allowed():
     # Check that both decorators were applied
     assert hasattr(correct_order_example, "__agex_task_namespace__")
     assert (
-        correct_order_example.__agex_task_namespace__ == "Agent"
+        correct_order_example.__agex_task_namespace__ == agent2.name
     )  # agent2's class name
 
 
@@ -587,7 +587,7 @@ def test_task_input_dataclass_pickling():
     assert result == "test result"  # Verify the dummy LLM response was used
 
     # Verify inputs were stored and are pickleable
-    inputs = state.get("inputs")
+    inputs = state.get("test_agent/inputs")
     assert inputs is not None
     assert inputs.message == "hello"
     assert inputs.value == 42
@@ -645,7 +645,7 @@ def test_unserializable_object_in_state_is_handled_gracefully():
     # Pre-populate the state with a serializable object.
     # We must snapshot it once so it's in the long-term store and tracked
     # for mutations.
-    state.set("my_object", {"a": 1})
+    state.set("test_agent/my_object", {"a": 1})
     state.snapshot()
 
     # Run the task. This will mutate my_object and then try to snapshot.
@@ -655,7 +655,7 @@ def test_unserializable_object_in_state_is_handled_gracefully():
 
     # Check the agent's stdout for the warning message.
     # The warning should be about 'my_object', which was mutated.
-    stdout = state.get("__stdout__")
+    stdout = state.get("test_agent/__stdout__")
     assert stdout is not None
     assert len(stdout) > 0
     warning_message = stdout[-1]
@@ -730,8 +730,8 @@ def test_shallow_validation_on_agent_output():
 
     state = Versioned(Memory())
     # Pre-populate state to avoid parsing large literals in the agent's code
-    state.set("invalid_dict", large_invalid_dict)
-    state.set("valid_dict", large_valid_dict)
+    state.set("test_agent/invalid_dict", large_invalid_dict)
+    state.set("test_agent/valid_dict", large_valid_dict)
 
     result = produce_large_dict(state=state)  # type: ignore
 
@@ -739,7 +739,7 @@ def test_shallow_validation_on_agent_output():
     assert result == large_valid_dict
 
     # Check that the agent was notified of the validation error
-    stdout = state.get("__stdout__")
+    stdout = state.get("test_agent/__stdout__")
     assert stdout is not None
     assert any("💥 Evaluation error" in msg for msg in stdout)
     assert any("Output validation failed" in msg for msg in stdout)

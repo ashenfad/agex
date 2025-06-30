@@ -2,7 +2,6 @@ import ast
 from typing import Any
 
 from ..agent.datatypes import ExitSuccess, _AgentExit
-from ..state import Namespaced
 from .base import BaseEvaluator
 from .builtins import STATEFUL_BUILTINS, _print_stateful
 from .error import EvalError
@@ -133,9 +132,22 @@ class CallEvaluator(BaseEvaluator):
 
             # Check if this is a dual-decorated function needing state injection
             if hasattr(fn, "__agex_task_namespace__"):
-                # Create namespaced state for sub-agent
+                # Create hierarchical namespaced state for sub-agent
+                # Only wrap persistent states to avoid transient evaluation contexts
                 namespace = fn.__agex_task_namespace__
-                namespaced_state = Namespaced(self.state, namespace)
+
+                # If current state is persistent (Versioned or Namespaced), use it directly
+                # If current state is transient (Scoped, LiveClosureState), find underlying persistent state
+                from ..state import Namespaced as NamespacedState
+                from ..state import Versioned
+
+                if isinstance(self.state, (Versioned, NamespacedState)):
+                    parent_state = self.state
+                else:
+                    # Use base_store to find underlying persistent state
+                    parent_state = self.state.base_store
+
+                namespaced_state = NamespacedState(parent_state, namespace)  # type: ignore
                 kwargs["state"] = namespaced_state
 
             result = fn(*args, **kwargs)

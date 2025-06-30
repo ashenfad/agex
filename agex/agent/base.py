@@ -1,3 +1,4 @@
+import uuid
 from typing import Dict
 
 from ..llm import get_llm_client
@@ -59,6 +60,10 @@ def clear_agent_registry() -> None:
     _AGENT_REGISTRY_BY_NAME = {}
 
 
+def _random_name() -> str:
+    return f"agent_{uuid.uuid4().hex[:8]}"
+
+
 class BaseAgent:
     def __init__(
         self,
@@ -73,7 +78,7 @@ class BaseAgent:
         llm_model: str | None = None,
         **llm_kwargs,
     ):
-        self.name = name
+        self.name = name or _random_name()
         self.primer = primer
         self.timeout_seconds = timeout_seconds
         self.max_iterations = max_iterations

@@ -55,18 +55,19 @@ class TaskLoopMixin(BaseAgent):
             ClarificationRequested: If agent calls exit_clarify()
         """
         # Determine state and versioning responsibility
+        versioned_state: Versioned | None = None
         if isinstance(state, Namespaced):
             # Namespaced = someone else owns versioning, we just work within namespace
             exec_state = state
-            should_snapshot = False
+            versioned_state = None
         elif isinstance(state, Versioned):
             # Versioned = we're responsible for versioning this state
-            exec_state = state
-            should_snapshot = True
+            versioned_state = state
+            exec_state = Namespaced(versioned_state, namespace=self.name)
         else:
             # None = we create and own new versioned state
-            exec_state = Versioned(Memory())
-            should_snapshot = True
+            versioned_state = Versioned(Memory())
+            exec_state = Namespaced(versioned_state, namespace=self.name)
 
         # Add inputs and expected return type to state for agent access
         if inputs_instance is not None:
@@ -145,8 +146,8 @@ class TaskLoopMixin(BaseAgent):
                 exec_state.set("__stdout__", current_stdout)
             finally:
                 # Always snapshot after each evaluation iteration (if we own the state)
-                if should_snapshot and isinstance(exec_state, Versioned):
-                    result = exec_state.snapshot()
+                if versioned_state is not None:
+                    result = versioned_state.snapshot()
                     if result.unsaved_keys:
                         # Add a message to stdout about the unsaved keys
                         current_stdout = exec_state.get("__stdout__", [])

@@ -29,6 +29,16 @@ class NativeFunction:
         # Directly call the wrapped native function.
         return self.fn(*args, **kwargs)
 
+    def __getattr__(self, name: str) -> Any:
+        # Preserve important attributes from the wrapped function
+        # This is especially important for dual-decorated functions
+        # that have __agex_task_namespace__ attributes
+        if hasattr(self.fn, name):
+            return getattr(self.fn, name)
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{name}'"
+        )
+
     @property
     def __doc__(self):
         return self.fn.__doc__
