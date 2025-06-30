@@ -29,8 +29,10 @@ def fn_builder(prompt: str) -> Callable:  # type: ignore[return-value]
     pass
 
 
-# 4. Run the agent with persistent state across calls
-if __name__ == "__main__":
+def example():
+    """
+    We build functions and then use them to find primes.
+    """
     # Use versioned state to maintain context between agent calls
     state = Versioned()
 
@@ -40,6 +42,7 @@ if __name__ == "__main__":
         state=state,  # type: ignore
     )
 
+    # the function is callable in native python
     print(fn(50000))
     print(fn(100000))
     print(fn(500000))

@@ -4,6 +4,7 @@ import plotly.express
 from plotly.graph_objects import Figure
 
 from agex import Agent
+from examples.data import gen_data_request, make_data
 
 viz = Agent(
     name="viz",
@@ -12,6 +13,7 @@ viz = Agent(
 )
 
 viz.module(np, visibility="low")
+viz.module(np.random, visibility="low")
 viz.module(plotly.express, visibility="low")
 viz.module(plotly.graph_objs, visibility="low")
 viz.module(pandas, visibility="low")
@@ -29,8 +31,17 @@ as a scatter plot, the x-axis is time and every point in the array corresponds t
 The y-axis is the signal.
 """
 
-# reuse our data agent to get signals
-# data = make_data(gen_data_request)
 
-# plot = plot_data(viz_request, data)
-# plot.show()
+def example():
+    """
+    We gather bulk data from an agent and hand it to another for plotting.
+    """
+
+    # reuse our data agent to get signals
+    data = make_data(gen_data_request)
+
+    # share that bulk data with another agent to create a plot
+    plot = plot_data(viz_request, data)
+
+    # there's a cool plot with some abberations... really!
+    plot.show()

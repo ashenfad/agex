@@ -26,8 +26,11 @@ def transform_or_aggregate(prompt: str, numbers: list[float]) -> list[float] | f
     pass
 
 
-# 4. Run the agent with a specific problem
-if __name__ == "__main__":
+def example():
+    """
+    We run a calculation and then transform a list of numbers.
+    """
+
     result = run_calculation(
         "What is the square root of 256, multiplied by pi?",
     )
