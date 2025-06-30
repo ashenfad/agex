@@ -146,9 +146,9 @@ class SubscriptTarget(AssignmentTarget):
             except TypeError:
                 raise AgexTypeError("This object is not subscriptable.", node)
 
-        if not isinstance(self._container, (dict, list)):
+        if not hasattr(self._container, "__setitem__"):
             raise AgexTypeError(
-                "Indexed assignment is only supported for dictionaries and lists.",
+                f"Object of type '{type(self._container).__name__}' does not support item assignment.",
                 node,
             )
 

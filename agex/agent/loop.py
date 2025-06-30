@@ -18,7 +18,7 @@ from agex.agent.formatting import format_context_as_markdown
 from agex.agent.primer_text import BUILTIN_PRIMER
 from agex.llm.core import Message
 from agex.render.definitions import render_definitions
-from agex.render.stream import StreamRenderer
+from agex.render.value import ValueRenderer
 
 from ..eval.core import evaluate_program
 from ..render.context import ContextRenderer
@@ -99,6 +99,12 @@ class TaskLoopMixin(BaseAgent):
             # Try to get structured response first
             llm_response = self._get_llm_response(messages)
             code_to_evaluate = llm_response.code
+
+            print("ADAM ----------------- think:")
+            print(llm_response.thinking)
+            print("ADAM ----------------- code:")
+            print(llm_response.code)
+            print("----------------------------")
 
             # Store assistant response in conversation log
             if llm_response:
@@ -199,10 +205,12 @@ class TaskLoopMixin(BaseAgent):
 
         # Add note about inputs if they exist
         if inputs_instance is not None:
-            renderer = StreamRenderer(model_name=self.llm_config["model"])
-            rendered_inputs = renderer.render_state_stream(
-                items={"inputs": inputs_instance}, budget=4000
-            )
+            # Use a ValueRenderer with a much longer limit for the initial display.
+            # This renderer is only used for this initial task message.
+            task_input_renderer = ValueRenderer(max_len=2048, max_depth=4)
+            rendered_inputs_value = task_input_renderer.render(inputs_instance)
+            rendered_inputs = f"inputs = {rendered_inputs_value}"
+
             parts.append(
                 "Details for your task are available in the `inputs` variable. "
                 "Here is its structure and content:"

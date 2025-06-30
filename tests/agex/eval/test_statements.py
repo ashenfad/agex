@@ -87,7 +87,7 @@ d['a'] = 100
 def test_dict_indexed_assignment_on_non_dict_error():
     with pytest.raises(AgexTypeError) as e:
         eval_and_get_state("x = 1\nx[0] = 2")
-    assert "Indexed assignment is only supported" in str(e.value)
+    assert "does not support item assignment" in str(e.value)
 
 
 def test_list_indexed_assignment():
@@ -181,3 +181,13 @@ del inst.a
     assert "a" not in inst.attributes
     assert "b" in inst.attributes
     assert inst.attributes["b"] == 2
+
+
+def test_numpy_augmented_assignment_in_list():
+    program = """
+import numpy as np
+signals = [np.zeros(10)]
+signals[0][5] += 1.0
+"""
+    state = eval_and_get_state(program, include_numpy=True)
+    assert state.get("signals")[0][5] == 1.0

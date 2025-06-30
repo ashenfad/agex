@@ -240,7 +240,10 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 fields.append((param_name, param_type))
 
         # Create the dataclass
-        dataclass_name = f"{task_name.title()}Inputs"
+        to_camel_case = lambda snake_str: "".join(
+            x.capitalize() for x in snake_str.lower().split("_")
+        )
+        dataclass_name = f"{to_camel_case(task_name)}Inputs"
         inputs_dataclass = make_dataclass(dataclass_name, fields)
 
         # Make the dataclass pickleable by registering it in module globals
