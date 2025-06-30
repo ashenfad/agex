@@ -61,16 +61,10 @@ def sqrt(num: float) -> float:
 math_agent.module(math)
 
 # 3. Give it a task to accomplish
-@math_agent.task("Assist the user with their math questions")
+@math_agent.task
 def assist(prompt: str) -> str:
     """
-    Get assistance with mathematical questions and problems.
-    
-    Args:
-        prompt: The math question or problem to solve
-        
-    Returns:
-        A helpful response addressing the math question.
+    Assistance for mathematical questions and problems.
     """
     pass
 
