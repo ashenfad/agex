@@ -74,7 +74,17 @@ class RegistrationMixin(BaseAgent):
         return decorator(_fn) if _fn else decorator
 
     @overload
-    def cls(self, _cls: T) -> T: ...
+    def cls(
+        self,
+        _cls: T,
+        *,
+        name: str | None = None,
+        visibility: Visibility = "high",
+        constructable: bool = True,
+        include: Pattern | None = "*",
+        exclude: Pattern | None = "_*",
+        configure: dict[str, MemberSpec] | None = None,
+    ) -> T: ...
 
     @overload
     def cls(
