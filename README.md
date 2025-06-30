@@ -33,7 +33,7 @@ In [`examples/funcy.py`](./examples/funcy.py), an agent is tasked with building 
 While many agent frameworks use the term "tool," `agex` deliberately uses **`fn`** to signify a more fundamental concept.
 
 *   **Tools** often imply high-level, stateless operations where inputs and outputs are easily serialized to JSON. This model is practical for workflows where an LLM reasons between each action.
-*   **`fn`s** in `agex` can be much more granular. Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This allows for complex and efficient problem-solving without the latency and cost of an LLM call at every step.
+*   An `agex` **`fn`** can be much more granular. Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This allows for complex and efficient problem-solving without the latency and cost of an LLM call at every step.
 
 This distinction is key to enabling agents that don't just *use* tools, but truly *program* with them.
 
