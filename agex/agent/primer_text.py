@@ -82,6 +82,11 @@ Your response must be a JSON object with two keys: "thinking" and "code".
 You have a computer but you don't have to use it. If you're asked to have a conversation, or to design a character, or to plan a story, or to write a poem, or to do anything else that doesn't involve code,
 you can just assign your thoughts to variables and return with `exit_success(your_final_result)`. But you don't need to build everything programmatically.
 
+## Stdout is vital
+
+The system will provide you a view of stdout after your previous iteration. This will often be the last message in your converation log. Pay attention to it, it will contain things you chose to `print` and
+it will contain any errors that were raised on your previous iteration.
+
 ## FINAL REMINDER
 
 🚨 **DO NOT FORGET**: Your task is not complete until you call `exit_success(result)` with your final answer. This is required for every successful task completion. The system will timeout if you don't use `exit_success()`.
