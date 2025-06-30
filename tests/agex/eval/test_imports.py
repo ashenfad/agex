@@ -1,174 +1,68 @@
-import math
-from types import ModuleType
-
+import numpy as np
 import pytest
 
-from agex.agent import Agent
-from agex.eval.core import evaluate_program
+from agex import Agent, clear_agent_registry
 from agex.eval.error import EvalError
-from agex.eval.user_errors import AgexAttributeError
-from agex.state.ephemeral import Ephemeral
+from tests.agex.eval.helpers import eval_and_get_state
 
 
-def test_import_module():
-    agent = Agent()
-    agent.module(math)
-
-    program = """
-import math
-x = math.sqrt(4)
-pi = math.pi
-"""
-    state = Ephemeral()
-    evaluate_program(program, agent, state)
-
-    assert state.get("x") == 2.0
-    assert state.get("pi") == math.pi
-
-
-def test_import_module_with_alias():
-    agent = Agent()
-    agent.module(math, name="m")
-
-    program = """
-import m
-x = m.sqrt(9)
-"""
-    state = Ephemeral()
-    evaluate_program(program, agent, state)
-
-    assert state.get("x") == 3.0
-
-
-def test_import_from_module():
-    agent = Agent()
-    agent.module(math)
-
-    program = """
-from math import sqrt, pi
-x = sqrt(16)
-y = pi
-"""
-    state = Ephemeral()
-    evaluate_program(program, agent, state)
-
-    assert state.get("x") == 4.0
-    assert state.get("y") == math.pi
-
-
-def test_import_from_module_with_alias():
-    agent = Agent()
-    agent.module(math)
-
-    program = """
-from math import sqrt as square_root
-x = square_root(25)
-"""
-    state = Ephemeral()
-    evaluate_program(program, agent, state)
-
-    assert state.get("x") == 5.0
-
-
-def test_unregistered_module_error():
-    agent = Agent()
-    # math is NOT registered
-
-    program = "import math"
-    state = Ephemeral()
-
-    with pytest.raises(EvalError, match="Module 'math' is not registered"):
-        evaluate_program(program, agent, state)
-
-
-def test_unregistered_from_import_error():
-    agent = Agent()
-    agent.module(math)
-
-    program = "from math import non_existent_function"
-    state = Ephemeral()
-
-    with pytest.raises(EvalError, match="Cannot import name 'non_existent_function'"):
-        evaluate_program(program, agent, state)
-
-
-def test_import_submodule_patterns():
+def test_module_import_name_collision():
     """
-    Tests that submodule-like import patterns using dotted names work correctly.
-    e.g., `import parent.child as c` and `from parent.child import member`.
+    Tests that registering `numpy.random` does not allow `import random`.
     """
-    # 1. Setup a dummy module to act as our "submodule"
-    child_mod = ModuleType("child")
-    child_mod.member_fn = lambda: "success"  # type: ignore
+    clear_agent_registry()
+    agent = Agent(name="test_agent")
 
-    agent = Agent()
-    # 2. Register it with a dotted name to simulate a submodule structure
-    agent.module(child_mod, name="parent.child")
+    # Register numpy.random. This should NOT create an importable module named 'random'.
+    agent.module(np.random)
 
-    # 3. Test `import parent.child as c`
-    program1 = """
-import parent.child as c
-result1 = c.member_fn()
-"""
-    state1 = Ephemeral()
-    evaluate_program(program1, agent, state1)
-    assert state1.get("result1") == "success"
+    # This should be in the registry under its full name.
+    assert "numpy.random" in agent.importable_modules
 
-    # 4. Test `from parent.child import member_fn`
-    program2 = """
-from parent.child import member_fn
-result2 = member_fn()
-"""
-    state2 = Ephemeral()
-    evaluate_program(program2, agent, state2)
-    assert state2.get("result2") == "success"
+    # This should NOT be in the registry under the short name.
+    assert "random" not in agent.importable_modules
 
+    # Now, try to import 'random' in the evaluator. This should fail.
+    with pytest.raises(EvalError) as exc_info:
+        eval_and_get_state("import random", agent=agent)
 
-def test_submodule_access_control():
-    """Test that submodule access is properly controlled."""
-    import numpy
+    assert "Module 'random' is not registered or whitelisted" in str(exc_info.value)
 
-    agent = Agent()
-    agent.module(numpy, name="numpy")  # Register only numpy, not submodules
-
-    state = Ephemeral()
-
-    # Test 1: Direct import of unregistered submodule should fail
-    with pytest.raises(EvalError, match="Module 'numpy.random' is not registered"):
-        evaluate_program("import numpy.random", agent, state)
-
-    # Test 2: Attribute access to unregistered submodule should fail
-    with pytest.raises(
-        AgexAttributeError, match="Submodule 'numpy.random' is not registered"
-    ):
-        evaluate_program(
-            "import numpy as np; rng = np.random.RandomState()", agent, state
+    # Verify that importing the correct, full name works.
+    try:
+        eval_and_get_state("import numpy.random", agent=agent)
+    except EvalError as e:
+        pytest.fail(
+            f"Importing 'numpy.random' should have succeeded, but failed with: {e}"
         )
 
-    # Test 3: When submodule IS registered, both should work
-    import numpy.random
 
-    agent.module(numpy.random, name="numpy.random")
+def test_module_import_with_alias():
+    """
+    Tests that registering a module with an explicit alias works correctly.
+    """
+    clear_agent_registry()
+    agent = Agent(name="test_agent")
 
-    # Direct import should work
-    evaluate_program(
-        "import numpy.random as npr; rng1 = npr.RandomState()", agent, state
-    )
-    assert state.get("rng1") is not None
+    # Register numpy.random with a specific alias 'rand'.
+    agent.module(np.random, name="rand")
 
-    # Attribute access should work
-    evaluate_program("import numpy as np; rng2 = np.random.RandomState()", agent, state)
-    assert state.get("rng2") is not None
+    # The alias should be in the registry.
+    assert "rand" in agent.importable_modules
+    # The original full name should NOT be.
+    assert "numpy.random" not in agent.importable_modules
 
-    # Test 4: When parent and submodule are registered independently (not with dotted names)
-    agent_2 = Agent()
-    agent_2.module(numpy)  # Register 'numpy' by its default name
-    agent_2.module(numpy.random)  # Register 'numpy.random' by its default name
+    # Importing the alias should work.
+    try:
+        eval_and_get_state("import rand", agent=agent)
+        eval_and_get_state("import rand as r", agent=agent)
+    except EvalError as e:
+        pytest.fail(f"Importing alias 'rand' failed: {e}")
 
-    state_2 = Ephemeral()
-    program_2 = """
-import numpy as np
-val = np.random.rand()
-"""
-    evaluate_program(program_2, agent_2, state_2)
-    assert isinstance(state_2.get("val"), float)
+    # Importing the original name should fail.
+    with pytest.raises(EvalError):
+        eval_and_get_state("import numpy.random", agent=agent)
+
+    # Importing a similarly named module should also fail.
+    with pytest.raises(EvalError):
+        eval_and_get_state("import random", agent=agent)

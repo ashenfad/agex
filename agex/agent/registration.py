@@ -198,7 +198,7 @@ class RegistrationMixin(BaseAgent):
         """
         Registers a module and its members with the agent.
         """
-        final_name = name or mod.__name__.split(".")[-1]
+        final_name = name or mod.__name__
         if final_name in RESERVED_NAMES:
             raise ValueError(
                 f"The name '{final_name}' is reserved and cannot be registered."
