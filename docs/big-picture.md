@@ -1,6 +1,6 @@
 # The Big Picture: An Agentic Framework Built on Developer Principles
 
-This document captures the overarching vision for the agentic framework - from practical implementation decisions to the more speculative possibilities that emerge from the foundational design.
+This document captures the overarching vision for the `agex` framework—from the foundational design principles guiding its current implementation to the more speculative possibilities that emerge from them. It serves as both an explanation of the "why" behind the existing architecture and a "north star" for its future evolution.
 
 ## Core Philosophy: Code as Formalized Language
 
