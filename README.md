@@ -37,6 +37,12 @@ While many agent frameworks use the term "tool," `agex` deliberately uses **`fn`
 
 This distinction is key to enabling agents that don't just *use* tools, but truly *program* with them.
 
+## Project Status
+
+`agex` is a new framework in active development. While the core concepts are stabilizing, the API should be considered experimental and is subject to change.
+
+For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project. `agex` explores a different architectural path centered on a secure-by-design execution environment and deep runtime interoperability.
+
 ## Quick Start: Building an Agent
 
 An `agex` agent is defined through a micro-Python DSL. You create an `Agent` instance and use its methods to expose capabilities (`fn`, `cls`, `module`) or define high-level goals (`task`).
