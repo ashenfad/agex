@@ -91,8 +91,14 @@ class TaskLoopMixin(BaseAgent):
 
         # Main task loop
         for iteration in range(self.max_iterations):
+            # Clear ALL stdout at the beginning of each iteration so only recent output is shown
+            exec_state.set("__stdout__", [])
+
             # Reconstruct conversation from state
             messages = conversation_log(exec_state, system_message)
+
+            print("ADAM ------- tail of log....")
+            print(messages[-1])
 
             # Get LLM response and determine what code to evaluate
 
@@ -140,16 +146,17 @@ class TaskLoopMixin(BaseAgent):
                 # Let other agent exit signals pass through (ExitFail, ExitClarify)
                 raise
             except Exception as e:
+                # Catch evaluation errors and put them on stdout for agent feedback FIRST
+                current_stdout = exec_state.get("__stdout__", [])
+                current_stdout.append(f"💥 Evaluation error: {e}")
+                exec_state.set("__stdout__", current_stdout)
+
+                # THEN render context (which will now include the error)
                 current_context = context_renderer.render(exec_state, self.max_tokens)
                 markdown_context = format_context_as_markdown(current_context)
                 add_message(
                     exec_state, Message(role="system", content=markdown_context)
                 )
-
-                # Catch evaluation errors and put them on stdout for agent feedback
-                current_stdout = exec_state.get("__stdout__", [])
-                current_stdout.append(f"💥 Evaluation error: {e}")
-                exec_state.set("__stdout__", current_stdout)
             finally:
                 # Always snapshot after each evaluation iteration (if we own the state)
                 if versioned_state is not None:
