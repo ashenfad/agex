@@ -123,14 +123,20 @@ class ExpressionEvaluator(BaseEvaluator):
 
             if isinstance(real_attr, types.ModuleType):
                 submodule_name = f"{value.name}.{attr_name}"
-                # Only allow access if the submodule is explicitly registered
-                if submodule_name not in self.agent.importable_modules:
+                # Check if the resolved submodule object is in the agent's registry.
+                found_spec = None
+                for spec in self.agent.importable_modules.values():
+                    if spec.module is real_attr:
+                        found_spec = spec
+                        break
+
+                if not found_spec:
                     raise AgexAttributeError(
                         f"Submodule '{submodule_name}' is not registered. "
-                        f"Use agent.module(..., name='{submodule_name}') to register it.",
+                        f"Use agent.module({attr_name}) to register it.",
                         node,
                     )
-                return AgexModule(name=submodule_name)
+                return AgexModule(name=found_spec.name)
 
             return real_attr
 

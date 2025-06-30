@@ -4,10 +4,25 @@ Shallow, sampling-based validation for large data structures.
 
 from typing import Any, get_args, get_origin
 
-from pydantic import TypeAdapter, ValidationError
+import numpy as np
+from pydantic import ConfigDict, TypeAdapter, ValidationError
 
 DEFAULT_SAMPLING_THRESHOLD = 100
 DEFAULT_SAMPLE_SIZE = 10
+
+
+# Custom JSON encoder for numpy arrays
+def numpy_to_list(obj: Any) -> Any:
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+# Pydantic configuration for handling arbitrary types like numpy arrays
+NUMPY_AWARE_CONFIG = ConfigDict(
+    arbitrary_types_allowed=True,
+    json_encoders={np.ndarray: numpy_to_list},
+)
 
 
 def validate_with_sampling(value: Any, annotation: Any) -> Any:
@@ -44,7 +59,7 @@ def validate_with_sampling(value: Any, annotation: Any) -> Any:
 
     # For all other types, or collections below the threshold, validate normally.
     try:
-        adapter = TypeAdapter(annotation)
+        adapter = TypeAdapter(annotation, config=NUMPY_AWARE_CONFIG)
         return adapter.validate_python(value)
     except ValidationError as e:
         # Re-raise with more context about what was being validated.
@@ -59,7 +74,7 @@ def _validate_sequence_sample(sequence: list | tuple, annotation: Any) -> list |
     elements.
     """
     item_type = get_args(annotation)[0] if get_args(annotation) else Any
-    adapter = TypeAdapter(list[item_type])
+    adapter = TypeAdapter(list[item_type], config=NUMPY_AWARE_CONFIG)
 
     head = sequence[:DEFAULT_SAMPLE_SIZE]
     tail = sequence[-DEFAULT_SAMPLE_SIZE:]
@@ -86,7 +101,7 @@ def _validate_set_sample(value: set, annotation: Any) -> set:
     after converting the set to a list.
     """
     item_type = get_args(annotation)[0] if get_args(annotation) else Any
-    adapter = TypeAdapter(list[item_type])
+    adapter = TypeAdapter(list[item_type], config=NUMPY_AWARE_CONFIG)
 
     # Convert set to list to get a sample
     value_list = list(value)
@@ -106,7 +121,7 @@ def _validate_dict_sample(value: dict, annotation: Any) -> dict:
     key_type, value_type = (
         get_args(annotation) if len(get_args(annotation)) == 2 else (Any, Any)
     )
-    adapter = TypeAdapter(list[tuple[key_type, value_type]])
+    adapter = TypeAdapter(list[tuple[key_type, value_type]], config=NUMPY_AWARE_CONFIG)
 
     item_list = list(value.items())
     head = item_list[:DEFAULT_SAMPLE_SIZE]

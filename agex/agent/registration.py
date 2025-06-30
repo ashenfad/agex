@@ -1,7 +1,7 @@
 import fnmatch
 import inspect
 from types import ModuleType
-from typing import Callable
+from typing import Callable, TypeVar, overload
 
 from agex.agent.base import BaseAgent
 from agex.agent.datatypes import (
@@ -26,6 +26,9 @@ def create_predicate(pattern: Pattern | None) -> Callable[[str], bool]:
     if isinstance(pattern, (list, set)):
         return lambda name: any(fnmatch.fnmatch(name, p) for p in pattern)
     raise TypeError(f"Unsupported pattern type: {type(pattern)}")
+
+
+T = TypeVar("T", bound=type)
 
 
 class RegistrationMixin(BaseAgent):
@@ -70,9 +73,12 @@ class RegistrationMixin(BaseAgent):
 
         return decorator(_fn) if _fn else decorator
 
+    @overload
+    def cls(self, _cls: T) -> T: ...
+
+    @overload
     def cls(
         self,
-        _cls: type | None = None,
         *,
         name: str | None = None,
         visibility: Visibility = "high",
@@ -80,14 +86,26 @@ class RegistrationMixin(BaseAgent):
         include: Pattern | None = "*",
         exclude: Pattern | None = "_*",
         configure: dict[str, MemberSpec] | None = None,
-    ):
+    ) -> Callable[[T], T]: ...
+
+    def cls(
+        self,
+        _cls: T | None = None,
+        *,
+        name: str | None = None,
+        visibility: Visibility = "high",
+        constructable: bool = True,
+        include: Pattern | None = "*",
+        exclude: Pattern | None = "_*",
+        configure: dict[str, MemberSpec] | None = None,
+    ) -> T | Callable[[T], T]:
         """
         Registers a class with the agent.
         Can be used as a decorator (`@agent.cls`) or a direct call (`agent.cls(MyClass)`).
         """
         final_configure = configure or {}
 
-        def decorator(c: type) -> type:
+        def decorator(c: T) -> T:
             final_name = name or c.__name__
             if final_name in RESERVED_NAMES:
                 raise ValueError(
@@ -163,7 +181,9 @@ class RegistrationMixin(BaseAgent):
             self._update_fingerprint()
             return c
 
-        return decorator(_cls) if _cls else decorator
+        if _cls is None:
+            return decorator
+        return decorator(_cls)
 
     def module(
         self,

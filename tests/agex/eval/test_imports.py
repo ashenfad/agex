@@ -159,3 +159,16 @@ def test_submodule_access_control():
     # Attribute access should work
     evaluate_program("import numpy as np; rng2 = np.random.RandomState()", agent, state)
     assert state.get("rng2") is not None
+
+    # Test 4: When parent and submodule are registered independently (not with dotted names)
+    agent_2 = Agent()
+    agent_2.module(numpy)  # Register 'numpy' by its default name
+    agent_2.module(numpy.random)  # Register 'numpy.random' by its default name
+
+    state_2 = Ephemeral()
+    program_2 = """
+import numpy as np
+val = np.random.rand()
+"""
+    evaluate_program(program_2, agent_2, state_2)
+    assert isinstance(state_2.get("val"), float)
