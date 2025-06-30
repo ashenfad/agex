@@ -79,8 +79,10 @@ class Versioned(State):
                 # Deserialize the object
                 value = pickle.loads(serialized_bytes)
 
-                # Track ALL accessed objects for mutation detection
-                self.accessed_objects[key] = (original_hash, value)
+                # Track objects for mutation detection only if not already tracked
+                # This preserves the original object reference that may have been mutated
+                if key not in self.accessed_objects:
+                    self.accessed_objects[key] = (original_hash, value)
 
                 return value
 
