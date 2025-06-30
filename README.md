@@ -28,6 +28,15 @@ In [`examples/funcy.py`](./examples/funcy.py), an agent is tasked with building 
 
 [`examples/multi.py`](./examples/multi.py) demonstrates this with an `orchestrator` agent that solves a high-level "idea" by delegating data generation and plotting tasks to two different specialist sub-agents. All orchestration is done with simple Python control flow—no YAML or complex DSLs required.
 
+### 4. Beyond Tools: Granular Function Execution
+
+While many agent frameworks use the term "tool," `agex` deliberately uses **`fn`** to signify a more fundamental concept.
+
+*   **Tools** often imply high-level, stateless operations where inputs and outputs are easily serialized to JSON. This model is practical for workflows where an LLM reasons between each action.
+*   **`fn`s** in `agex` can be much more granular. Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This allows for complex and efficient problem-solving without the latency and cost of an LLM call at every step.
+
+This distinction is key to enabling agents that don't just *use* tools, but truly *program* with them.
+
 ## Quick Start: Building an Agent
 
 An `agex` agent is defined through a micro-Python DSL. You create an `Agent` instance and use its methods to expose capabilities (`fn`, `cls`, `module`) or define high-level goals (`task`).
