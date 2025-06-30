@@ -45,17 +45,18 @@ class LiveClosureState(State):
         if key.startswith("__"):
             return self._source.get(key, default)
 
-        # Check builtins to handle name collisions (e.g. user variable named 'hasattr')
+        # If the key is in our captured variables, get it from source first
+        # This allows user-defined variables to shadow built-ins, matching Python's behavior.
+        if key in self._keys:
+            return self._source.get(key, default)
+
+        # If not a captured variable, check builtins
         from ..eval.builtins import BUILTINS, STATEFUL_BUILTINS
 
         if key in BUILTINS:
             return BUILTINS[key]
         if key in STATEFUL_BUILTINS:
             return STATEFUL_BUILTINS[key]
-
-        # If the key is in our captured variables, get it from source
-        if key in self._keys:
-            return self._source.get(key, default)
 
         # If the variable doesn't exist in captured vars or builtins, it's undefined
         from ..eval.error import EvalError
