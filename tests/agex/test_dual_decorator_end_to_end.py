@@ -85,9 +85,6 @@ def test_dual_decorator_math_workflow():
     assert result["validated"] is True
     assert result["status"] == "success"
 
-    print("ADAM ----------------------  state ----------------------")
-    print(list(shared_state.items()))
-
     # Verify that the sub-agent's print statements went to its own stdout
     validator_stdout = shared_state.get("orchestrator/validator/__stdout__")
     assert validator_stdout is not None

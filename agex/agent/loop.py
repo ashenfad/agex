@@ -97,20 +97,10 @@ class TaskLoopMixin(BaseAgent):
             # Reconstruct conversation from state
             messages = conversation_log(exec_state, system_message)
 
-            print("ADAM ------- tail of log....")
-            print(messages[-1])
-
             # Get LLM response and determine what code to evaluate
-
             # Try to get structured response first
             llm_response = self._get_llm_response(messages)
             code_to_evaluate = llm_response.code
-
-            print("ADAM ----------------- think:")
-            print(llm_response.thinking)
-            print("ADAM ----------------- code:")
-            print(llm_response.code)
-            print("----------------------------")
 
             # Store assistant response in conversation log
             if llm_response:
