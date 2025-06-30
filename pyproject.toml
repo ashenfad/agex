@@ -21,6 +21,12 @@ test = [
     "pytest",
     "numpy",
 ]
+examples = [
+    "plotly[express]",
+    "numpy",
+    "nbformat",
+    "pandas",
+]
 
 [tool.ruff]
 line-length = 88

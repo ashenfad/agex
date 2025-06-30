@@ -1,8 +1,10 @@
-import numpy as np
 import random
-from agex import Agent, view
 
-data_maker = Agent(primer="You excel at generating data via numpy.")
+import numpy as np
+
+from agex import Agent
+
+data_maker = Agent(name="data_maker", primer="You excel at generating data via numpy.")
 
 data_maker.module(np, visibility="low")
 data_maker.module(np.random, visibility="low")
