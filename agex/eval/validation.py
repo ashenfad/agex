@@ -3,15 +3,36 @@ Shallow, sampling-based validation for large data structures.
 """
 
 from typing import Any, get_args, get_origin
-
 from pydantic import ConfigDict, TypeAdapter, ValidationError
 
 DEFAULT_SAMPLING_THRESHOLD = 100
 DEFAULT_SAMPLE_SIZE = 10
 
 
-# Pydantic configuration for handling arbitrary types like numpy arrays
-NUMPY_AWARE_CONFIG = ConfigDict(arbitrary_types_allowed=True)
+# Pydantic configuration for handling arbitrary types. This is used when we
+# expect Pydantic to be able to handle the type directly.
+REGULAR_CONFIG = ConfigDict(arbitrary_types_allowed=True)
+
+
+def _numpy_peek_serializer(obj: Any) -> list:
+    """
+    A Pydantic serializer fallback that converts the head of a numpy array
+    into a list for 'peek' validation.
+    """
+    try:
+        import numpy as np
+
+        if isinstance(obj, np.ndarray):
+            # We just return the head, no need for "..." string which would fail validation
+            return obj[:DEFAULT_SAMPLE_SIZE].tolist()
+    except ImportError:
+        # If numpy is not present, we can't handle it.
+        pass
+
+    # If it's not a numpy array, or numpy is not installed, we can't handle it.
+    # Raising TypeError is the signal to the Pydantic serializer
+    # that this fallback did not handle the object.
+    raise TypeError
 
 
 def validate_with_sampling(value: Any, annotation: Any) -> Any:
@@ -29,6 +50,24 @@ def validate_with_sampling(value: Any, annotation: Any) -> Any:
     Raises:
         ValidationError: If validation fails for the object or its samples.
     """
+    # Peek validation for numpy arrays
+    try:
+        import numpy as np
+
+        if isinstance(value, np.ndarray):
+            # For a numpy array, we don't validate the whole array for performance.
+            # Instead, we 'peek' at the first few items to validate their type.
+            item_type = (
+                annotation.item_type if hasattr(annotation, "item_type") else Any
+            )
+            adapter = TypeAdapter(list[item_type])
+            sample = value[:DEFAULT_SAMPLE_SIZE]
+            adapter.validate_python(sample)
+            return value  # Return the original, un-truncated array
+    except ImportError:
+        # If numpy is not installed, we just skip this special handling.
+        pass
+
     origin_type = get_origin(annotation)
 
     # For lists and tuples, apply sampling if they exceed the threshold
@@ -48,7 +87,7 @@ def validate_with_sampling(value: Any, annotation: Any) -> Any:
 
     # For all other types, or collections below the threshold, validate normally.
     try:
-        adapter = TypeAdapter(annotation, config=NUMPY_AWARE_CONFIG)
+        adapter = TypeAdapter(annotation, config=REGULAR_CONFIG)
         return adapter.validate_python(value)
     except ValidationError as e:
         # Re-raise with more context about what was being validated.
@@ -63,7 +102,7 @@ def _validate_sequence_sample(sequence: list | tuple, annotation: Any) -> list |
     elements.
     """
     item_type = get_args(annotation)[0] if get_args(annotation) else Any
-    adapter = TypeAdapter(list[item_type], config=NUMPY_AWARE_CONFIG)
+    adapter = TypeAdapter(list[item_type], config=REGULAR_CONFIG)
 
     head = sequence[:DEFAULT_SAMPLE_SIZE]
     tail = sequence[-DEFAULT_SAMPLE_SIZE:]
@@ -90,7 +129,7 @@ def _validate_set_sample(value: set, annotation: Any) -> set:
     after converting the set to a list.
     """
     item_type = get_args(annotation)[0] if get_args(annotation) else Any
-    adapter = TypeAdapter(list[item_type], config=NUMPY_AWARE_CONFIG)
+    adapter = TypeAdapter(list[item_type], config=REGULAR_CONFIG)
 
     # Convert set to list to get a sample
     value_list = list(value)
@@ -110,7 +149,7 @@ def _validate_dict_sample(value: dict, annotation: Any) -> dict:
     key_type, value_type = (
         get_args(annotation) if len(get_args(annotation)) == 2 else (Any, Any)
     )
-    adapter = TypeAdapter(list[tuple[key_type, value_type]], config=NUMPY_AWARE_CONFIG)
+    adapter = TypeAdapter(list[tuple[key_type, value_type]], config=REGULAR_CONFIG)
 
     item_list = list(value.items())
     head = item_list[:DEFAULT_SAMPLE_SIZE]
