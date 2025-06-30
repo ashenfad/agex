@@ -19,20 +19,11 @@ funcy_agent.module(math, visibility="low")
 def fn_builder(prompt: str) -> Callable:  # type: ignore[return-value]
     """
     Build a callable function from a text prompt.
-
-    Args:
-        prompt: Text description of the desired function
-
-    Returns:
-        A callable function that matches the prompt description
     """
     pass
 
 
 def example():
-    """
-    We build functions and then use them to find primes.
-    """
     # Use versioned state to maintain context between agent calls
     state = Versioned()
 

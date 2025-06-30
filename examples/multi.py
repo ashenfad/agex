@@ -24,11 +24,7 @@ def idea_to_plot(idea: str) -> Figure:  # type: ignore[return-value]
 
 
 def example():
-    """
-    Ask the orchestrator to create a plot from an idea. It will delegate to sub-agents
-    to create artifical data and then plot it.
-    """
-
+    # ask the orchestrator to create a plot from an idea, it will delegate to sub-agents
     idea = """
     I'd like a plot that shows seasonal change over the years for umbrellas sold. The data
     should be artificial but realistic and span 10 years.

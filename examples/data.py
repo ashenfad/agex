@@ -25,4 +25,7 @@ Please make 50 of the signals have abberations.
 """
 
 
-# data = make_data(gen_data_request)
+def example():
+    data = make_data(gen_data_request)
+    print(len(data))
+    print(data[0][:10])
