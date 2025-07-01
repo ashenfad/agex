@@ -7,6 +7,7 @@ from .ephemeral import Ephemeral
 from .kv import KVStore
 from .namespaced import Namespaced
 from .scoped import Scoped
+from .transient import TransientScope
 from .versioned import Versioned
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "KVStore",
     "Namespaced",
     "Scoped",
+    "TransientScope",
     "Versioned",
 ]

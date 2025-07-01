@@ -8,6 +8,7 @@ from ..agent.datatypes import (
     RegisteredClass,
     RegisteredFn,
     RegisteredModule,
+    RegisteredObject,
     Visibility,
 )
 
@@ -69,6 +70,12 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
         rendered_module = _render_module(name, spec, full=full)
         if rendered_module:
             output.append(rendered_module)
+
+    # Render registered objects (live objects)
+    for name, spec in agent.object_registry.items():
+        rendered_object = _render_object(name, spec, full=full)
+        if rendered_object:
+            output.append(rendered_object)
 
     return "\n\n".join(output)
 
@@ -173,6 +180,74 @@ def _render_module(name: str, spec: RegisteredModule, full: bool = False) -> str
     rendered_classes.sort()
     rendered_fns.sort()
     rendered_members = rendered_classes + rendered_fns
+
+    if not rendered_members:
+        output.append(f"{indent}...")
+    else:
+        output.extend(rendered_members)
+
+    return "\n".join(output)
+
+
+def _is_object_promoted(spec: RegisteredObject) -> bool:
+    """An object is promoted if it contains any high-visibility methods or properties."""
+    return any(m.visibility == "high" for m in spec.methods.values()) or any(
+        p.visibility == "high" for p in spec.properties.values()
+    )
+
+
+def _render_object(name: str, spec: RegisteredObject, full: bool = False) -> str:
+    """Renders a single registered object definition based on its visibility and its members' visibilities."""
+    # Determine the object's effective visibility. A low-vis object can be
+    # "promoted" to medium-vis if it contains a high-vis member.
+    is_promoted = _is_object_promoted(spec)
+    effective_visibility = spec.visibility
+    if spec.visibility == "low" and is_promoted:
+        effective_visibility = "medium"
+
+    # If an object is low-vis and not promoted, just show that it exists.
+    if not full and effective_visibility == "low":
+        return f"object {name}:\n    ..."
+
+    output = [f"object {name}:"]
+    indent = "    "
+    rendered_methods = []
+    rendered_properties = []
+
+    # Render methods
+    for method_name, method_spec in spec.methods.items():
+        if _should_render_member(
+            method_spec.visibility or spec.visibility,
+            effective_visibility,
+            full=full,
+        ):
+            # Create a fake RegisteredFn for rendering consistency
+            fake_fn_spec = RegisteredFn(
+                fn=lambda: None,  # Placeholder function
+                docstring=method_spec.docstring,
+                visibility=method_spec.visibility or spec.visibility,
+            )
+            rendered_methods.append(
+                _render_function(
+                    method_name, fake_fn_spec, indent=indent, is_method=True, full=full
+                )
+            )
+
+    # Render properties
+    for prop_name, prop_spec in spec.properties.items():
+        if _should_render_member(
+            prop_spec.visibility or spec.visibility,
+            effective_visibility,
+            full=full,
+        ):
+            prop_line = f"{indent}{prop_name}: ..."
+            if (full or prop_spec.visibility == "high") and prop_spec.docstring:
+                prop_line += f"\n{_render_docstring(prop_spec.docstring, indent=indent + '    ', full=full)}"
+            rendered_properties.append(prop_line)
+
+    rendered_methods.sort()
+    rendered_properties.sort()
+    rendered_members = rendered_methods + rendered_properties
 
     if not rendered_members:
         output.append(f"{indent}...")

@@ -1,3 +1,10 @@
+"""
+Hierarchical Agent Orchestration
+
+An orchestrator agent delegates to specialist sub-agents for data generation
+and visualization. Bulk data flows between agents without any special handling.
+"""
+
 from plotly.graph_objects import Figure
 
 from agex import Agent

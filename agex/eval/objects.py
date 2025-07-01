@@ -157,6 +157,75 @@ class AgexMethod:
 
 
 @dataclass
+class BoundInstanceObject:
+    """A proxy for a live host object, exposing its methods and properties."""
+
+    reg_object: Any  # RegisteredObject
+    host_registry: dict[str, Any]
+
+    def __repr__(self) -> str:
+        return f"<live_object '{self.reg_object.name}'>"
+
+    def getattr(self, name: str) -> Any:
+        """Get a method or property from the live host object."""
+        if name in self.reg_object.methods:
+            return BoundInstanceMethod(
+                reg_object=self.reg_object,
+                host_registry=self.host_registry,
+                method_name=name,
+            )
+        if name in self.reg_object.properties:
+            live_instance = self.host_registry[self.reg_object.name]
+            return getattr(live_instance, name)
+
+        raise AgexAttributeError(
+            f"'{self.reg_object.name}' object has no attribute '{name}'"
+        )
+
+    def __enter__(self):
+        """Context manager entry - delegate to the live object if it supports it."""
+        live_instance = self.host_registry[self.reg_object.name]
+        if hasattr(live_instance, "__enter__"):
+            # Call the live object's __enter__ method
+            enter_result = live_instance.__enter__()
+            # If the live object returns itself (common pattern), return our proxy instead
+            # so that method access continues to go through our controlled interface
+            if enter_result is live_instance:
+                return self
+            else:
+                # If the live object returns something else (like a value), return that
+                return enter_result
+        else:
+            # If the live object doesn't support context manager protocol,
+            # we can still provide basic support by returning the proxy object
+            return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - delegate to the live object if it supports it."""
+        live_instance = self.host_registry[self.reg_object.name]
+        if hasattr(live_instance, "__exit__"):
+            return live_instance.__exit__(exc_type, exc_val, exc_tb)
+        else:
+            # If the live object doesn't have __exit__, we don't suppress exceptions
+            return False
+
+
+@dataclass
+class BoundInstanceMethod:
+    """A callable proxy for a method on a live host object."""
+
+    reg_object: Any  # RegisteredObject
+    host_registry: dict[str, Any]
+    method_name: str
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Look up the live object and call the real method."""
+        live_instance = self.host_registry[self.reg_object.name]
+        method = getattr(live_instance, self.method_name)
+        return method(*args, **kwargs)
+
+
+@dataclass
 class AgexModule:
     """A sandboxed, serializable module object for use within the Agex evaluator."""
 

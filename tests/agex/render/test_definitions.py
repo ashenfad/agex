@@ -370,3 +370,217 @@ module my_mod:
             """
 '''.strip()
     assert output.strip() == expected
+
+
+class MockDatabaseConnection:
+    """A mock database connection for testing object rendering."""
+
+    def __init__(self, db_name: str):
+        self.db_name = db_name
+        self.connection_id = "conn_123"
+
+    def query(self, table: str, record_id: int) -> str:
+        """Runs a query on the mock database."""
+        return f"Result from {table}[{record_id}]"
+
+    def connect(self):
+        """Establishes a connection."""
+        return True
+
+    def _internal_method(self):
+        """An internal method that should be excluded by default."""
+        return "internal"
+
+
+def test_render_object_basic():
+    """Test basic object rendering with default visibility."""
+    agent = Agent(primer="Test agent.")
+    db = MockDatabaseConnection("test_db")
+
+    agent.module(db, name="db")
+
+    rendered = render_definitions(agent)
+
+    # Should contain the object definition
+    assert "object db:" in rendered
+    # Should contain public methods
+    assert "def query(" in rendered
+    assert "def connect(" in rendered
+    # Should contain properties
+    assert "connection_id: ..." in rendered
+    assert "db_name: ..." in rendered
+    # Should not contain private methods (excluded by default)
+    assert "_internal_method" not in rendered
+
+
+def test_render_object_with_high_visibility():
+    """Test object rendering with high visibility shows docstrings."""
+    agent = Agent(primer="Test agent.")
+    db = MockDatabaseConnection("test_db")
+
+    agent.module(
+        db,
+        name="db",
+        configure={
+            "query": MemberSpec(visibility="high", docstring="Custom query docstring"),
+            "connection_id": MemberSpec(
+                visibility="high", docstring="The connection identifier"
+            ),
+        },
+    )
+
+    rendered = render_definitions(agent)
+
+    # Should show docstrings for high-visibility members
+    assert "Custom query docstring" in rendered
+    assert "The connection identifier" in rendered
+    # Should still have the method signatures
+    assert "def query(" in rendered
+    assert "connection_id: ..." in rendered
+
+
+def test_render_object_with_medium_visibility():
+    """Test object rendering with medium visibility hides docstrings."""
+    agent = Agent(primer="Test agent.")
+    db = MockDatabaseConnection("test_db")
+
+    agent.module(
+        db,
+        name="db",
+        configure={
+            "query": MemberSpec(visibility="medium", docstring="This should be hidden"),
+            "connect": MemberSpec(visibility="medium"),
+        },
+    )
+
+    rendered = render_definitions(agent)
+
+    # Should show method signatures but not docstrings
+    assert "def query(" in rendered
+    assert "def connect(" in rendered
+    assert "This should be hidden" not in rendered
+
+
+def test_render_object_with_low_visibility():
+    """Test object rendering with low visibility."""
+    agent = Agent(primer="Test agent.")
+    db = MockDatabaseConnection("test_db")
+
+    agent.module(db, name="db", visibility="low")
+
+    rendered = render_definitions(agent)
+
+    # Low visibility objects should be rendered with ellipsis (showing they exist but hiding contents)
+    assert "object db:" in rendered
+    assert "    ..." in rendered
+    # Should not show any methods or properties
+    assert "def query(" not in rendered
+    assert "connection_id: ..." not in rendered
+
+
+def test_render_object_promotion():
+    """Test that low-visibility objects get promoted when they have high-visibility members."""
+    agent = Agent(primer="Test agent.")
+    db = MockDatabaseConnection("test_db")
+
+    agent.module(
+        db,
+        name="db",
+        visibility="low",  # Object is low visibility
+        configure={
+            "query": MemberSpec(visibility="high", docstring="Important query method"),
+        },
+    )
+
+    rendered = render_definitions(agent)
+
+    # Should be promoted and rendered because it has a high-visibility member
+    assert "object db:" in rendered
+    assert "def query(" in rendered
+    assert "Important query method" in rendered
+
+
+def test_render_object_full_mode():
+    """Test object rendering in full mode shows everything."""
+    agent = Agent(primer="Test agent.")
+    db = MockDatabaseConnection("test_db")
+
+    agent.module(
+        db,
+        name="db",
+        visibility="low",
+        configure={
+            "query": MemberSpec(visibility="low", docstring="Low visibility method"),
+        },
+    )
+
+    rendered = render_definitions(agent, full=True)
+
+    # Full mode should show everything regardless of visibility
+    assert "object db:" in rendered
+    assert "def query(" in rendered
+    assert "Low visibility method" in rendered
+
+
+def test_render_object_with_exclude():
+    """Test that excluded methods are not rendered."""
+    agent = Agent(primer="Test agent.")
+    db = MockDatabaseConnection("test_db")
+
+    agent.module(db, name="db", exclude=["query"])
+
+    rendered = render_definitions(agent)
+
+    # Should contain the object but not the excluded method
+    assert "object db:" in rendered
+    assert "def connect(" in rendered
+    assert "def query(" not in rendered
+
+
+def test_render_mixed_registrations():
+    """Test rendering when agent has functions, classes, modules, and objects."""
+    import math
+
+    agent = Agent(primer="Test agent.")
+    db = MockDatabaseConnection("test_db")
+
+    # Register a function
+    @agent.fn
+    def my_function():
+        """A test function."""
+        pass
+
+    # Register a class
+    @agent.cls
+    class MyClass:
+        def method(self):
+            pass
+
+    # Register a module
+    agent.module(math, include=["sin", "cos"])
+
+    # Register an object
+    agent.module(db, name="db")
+
+    rendered = render_definitions(agent)
+
+    # Should contain all types
+    assert "def my_function(" in rendered
+    assert "class MyClass:" in rendered
+    assert "module math:" in rendered
+    assert "object db:" in rendered
+
+
+def test_render_object_empty():
+    """Test rendering an object with no exposed methods or properties."""
+    agent = Agent(primer="Test agent.")
+    db = MockDatabaseConnection("test_db")
+
+    # Exclude everything
+    agent.module(db, name="db", exclude=["*"])
+
+    rendered = render_definitions(agent)
+
+    # Should show the object but with ellipsis
+    assert "object db:" in rendered
+    assert "    ..." in rendered

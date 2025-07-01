@@ -1,4 +1,5 @@
 import ast
+import inspect
 from typing import Any
 
 from ..agent.datatypes import ExitSuccess, _AgentExit
@@ -157,7 +158,8 @@ class CallEvaluator(BaseEvaluator):
                 # If this is an ExitSuccess signal, validate the result first
                 if isinstance(result, ExitSuccess):
                     return_type = self.state.get("__expected_return_type__")
-                    if return_type:
+                    # Only validate if there's a return type and it's not inspect._empty
+                    if return_type and return_type is not inspect.Parameter.empty:
                         try:
                             # The 'result' here is the ExitSuccess instance.
                             # We need to validate the value it's carrying.
@@ -187,6 +189,15 @@ class CallEvaluator(BaseEvaluator):
             # Map IndexError to AgexIndexError so agents can catch it
             raise AgexIndexError(str(e), node) from e
         except Exception as e:
+            # Check for registered exception mappings from live objects
+            from .objects import BoundInstanceMethod
+
+            if isinstance(fn, BoundInstanceMethod):
+                # Check the registered object's exception mappings
+                for exc_type, agex_exc_type in fn.reg_object.exception_mappings.items():
+                    if isinstance(e, exc_type):
+                        raise agex_exc_type(str(e), node) from e
+
             if isinstance(e, _AgentExit):
                 raise e
             fn_name_for_error = getattr(

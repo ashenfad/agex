@@ -5,6 +5,7 @@ This module provides the TaskLoopMixin that handles the core think→act loop
 for agent tasks, including LLM communication and code evaluation.
 """
 
+import inspect
 from typing import Any
 
 from agex.agent.base import BaseAgent
@@ -97,10 +98,20 @@ class TaskLoopMixin(BaseAgent):
             # Reconstruct conversation from state
             messages = conversation_log(exec_state, system_message)
 
+            print("============== LAST MESSAGE ===============")
+            print(messages[-1:])
+            print("===========================================")
+
             # Get LLM response and determine what code to evaluate
             # Try to get structured response first
             llm_response = self._get_llm_response(messages)
             code_to_evaluate = llm_response.code
+
+            print("=============== LLM THOUGHT ===============")
+            print(llm_response.thinking)
+            print("================ LLM CODE =================")
+            print(llm_response.code)
+            print("===========================================")
 
             # Store assistant response in conversation log
             if llm_response:
@@ -215,14 +226,19 @@ class TaskLoopMixin(BaseAgent):
             parts.append(f"```\n{rendered_inputs}\n```")
 
         # Add expected output format with clarification for function types
-        return_type_name = str(return_type)
-
-        if "Callable" in return_type_name:
+        if return_type is inspect.Parameter.empty:
+            # No return type annotation - just call exit_success() with no arguments
+            parts.append("When complete, call `exit_success()` to indicate completion.")
+        elif "Callable" in str(return_type):
+            # Function return type - special instructions
+            return_type_name = str(return_type)
             parts.append(
                 f"When complete, call `exit_success(your_function)` where your_function is the {return_type_name} you created. "
                 "Pass the function object itself, not the result of calling the function."
             )
         else:
+            # Regular return type - show the type annotation
+            return_type_name = str(return_type)
             parts.append(
                 f"When complete, call `exit_success(result: {return_type_name})` with your result."
             )

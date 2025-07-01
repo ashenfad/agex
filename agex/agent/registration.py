@@ -1,7 +1,7 @@
 import fnmatch
 import inspect
 from types import ModuleType
-from typing import Callable, TypeVar, overload
+from typing import Any, Callable, TypeVar, overload
 
 from agex.agent.base import BaseAgent
 from agex.agent.datatypes import (
@@ -11,6 +11,7 @@ from agex.agent.datatypes import (
     RegisteredClass,
     RegisteredFn,
     RegisteredModule,
+    RegisteredObject,
     Visibility,
 )
 
@@ -197,6 +198,41 @@ class RegistrationMixin(BaseAgent):
 
     def module(
         self,
+        obj: Any,
+        *,
+        name: str | None = None,
+        visibility: Visibility = "high",
+        include: Pattern | None = "*",
+        exclude: Pattern | None = ["_*", "*._*"],
+        configure: dict[str, MemberSpec] | None = None,
+        exception_mappings: dict[type, type] | None = None,
+    ):
+        """
+        Registers a module or instance object and its members with the agent.
+        """
+        # Check if we're dealing with a module or an instance
+        if isinstance(obj, ModuleType):
+            return self._register_module(
+                obj,
+                name=name,
+                visibility=visibility,
+                include=include,
+                exclude=exclude,
+                configure=configure,
+            )
+        else:
+            return self._register_instance(
+                obj,
+                name=name,
+                visibility=visibility,
+                include=include,
+                exclude=exclude,
+                configure=configure,
+                exception_mappings=exception_mappings,
+            )
+
+    def _register_module(
+        self,
         mod: ModuleType,
         *,
         name: str | None = None,
@@ -328,4 +364,78 @@ class RegistrationMixin(BaseAgent):
         for spec in mod_classes.values():
             self.cls_registry_by_type[spec.cls] = spec
 
+        self._update_fingerprint()
+
+    def _register_instance(
+        self,
+        obj: Any,
+        *,
+        name: str | None = None,
+        visibility: Visibility = "high",
+        include: Pattern | None = "*",
+        exclude: Pattern | None = ["_*", "*._*"],
+        configure: dict[str, MemberSpec] | None = None,
+        exception_mappings: dict[type, type] | None = None,
+    ):
+        """
+        Registers an instance object and its members with the agent.
+        """
+        if name is None:
+            raise TypeError(
+                "The 'name' parameter is required when registering an instance object."
+            )
+
+        final_name = name
+        if final_name in RESERVED_NAMES:
+            raise ValueError(
+                f"The name '{final_name}' is reserved and cannot be registered."
+            )
+        final_configure = configure or {}
+
+        # Store the live instance in the host registry
+        self._host_object_registry[final_name] = obj
+
+        # 1. Generate all possible members
+        all_members = set()
+        for member_name, member in inspect.getmembers(obj):
+            if not member_name.startswith("@"):
+                all_members.add(member_name)
+
+        # 2. Filter members based on include/exclude patterns
+        include_pred = create_predicate(include)
+        exclude_pred = create_predicate(exclude)
+        selected_names = {
+            name
+            for name in all_members
+            if include_pred(name) and not exclude_pred(name)
+        }
+
+        # 3. Process selected members and apply configurations
+        final_methods: dict[str, MemberSpec] = {}
+        final_properties: dict[str, MemberSpec] = {}
+
+        for member_name in selected_names:
+            member = getattr(obj, member_name)
+            config = final_configure.get(member_name, MemberSpec())
+            vis = config.visibility or visibility
+            doc = config.docstring
+
+            if callable(member):
+                final_methods[member_name] = MemberSpec(visibility=vis, docstring=doc)
+            else:
+                final_properties[member_name] = MemberSpec(
+                    visibility=vis, docstring=doc
+                )
+
+        # Create the serializable RegisteredObject configuration
+        reg_object = RegisteredObject(
+            name=final_name,
+            visibility=visibility,
+            methods=final_methods,
+            properties=final_properties,
+            exception_mappings=exception_mappings or {},
+        )
+
+        # Add it to the object registry
+        self.object_registry[final_name] = reg_object
         self._update_fingerprint()

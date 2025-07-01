@@ -332,3 +332,30 @@ def test_agent_function_visibility_in_task():
 
     result = compute_factorial(number=5)
     assert result == 120  # 5! = 120
+
+
+def test_task_with_no_return_type():
+    """Test that tasks with no return type annotation show proper exit_success() instruction."""
+    agent = Agent(max_iterations=2)
+
+    responses = [
+        LLMResponse(
+            thinking="This task has no return type, so I'll just call exit_success() with no arguments.",
+            code="print('Task completed successfully')\nexit_success()",
+        )
+    ]
+
+    agent.llm_client = DummyLLMClient(responses=responses)
+
+    @agent.task("Perform a task that doesn't return anything.")
+    def no_return_task():  # No return type annotation
+        """
+        Execute a task that performs some action but doesn't return a value.
+        This tests that the task message shows exit_success() instead of
+        exit_success(result: <class 'inspect._empty'>).
+        """
+        pass
+
+    # The task should complete successfully and return None
+    result = no_return_task()
+    assert result is None

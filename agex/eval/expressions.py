@@ -23,6 +23,16 @@ class ExpressionEvaluator(BaseEvaluator):
         if value is not None or name in self.state:
             return value
 
+        # NEW: Check for registered live objects
+        if name in self.agent.object_registry:
+            from .objects import BoundInstanceObject
+
+            reg_object = self.agent.object_registry[name]
+            return BoundInstanceObject(
+                reg_object=reg_object,
+                host_registry=self.agent._host_object_registry,
+            )
+
         # 3. Check agent function registry
         if name in self.agent.fn_registry:
             from .functions import NativeFunction
@@ -96,8 +106,14 @@ class ExpressionEvaluator(BaseEvaluator):
 
         attr_name = node.attr
 
-        # Sandboxed AgexObjects have their own logic
+        # Sandboxed AgexObjects and live objects have their own logic
         if isinstance(value, (AgexObject, AgexInstance)):
+            return value.getattr(attr_name)
+
+        # Handle live objects
+        from .objects import BoundInstanceObject
+
+        if isinstance(value, BoundInstanceObject):
             return value.getattr(attr_name)
 
         # Handle AgexModule attribute access with JIT resolution

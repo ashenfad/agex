@@ -1,12 +1,14 @@
 import uuid
-from typing import Dict
+from typing import Any, Callable, Dict, Literal
 
 from ..llm import get_llm_client
 from ..llm.config import get_llm_config
 from .datatypes import (
+    MemberSpec,
     RegisteredClass,
     RegisteredFn,
     RegisteredModule,
+    RegisteredObject,
 )
 from .fingerprint import compute_agent_fingerprint
 
@@ -100,6 +102,10 @@ class BaseAgent:
         self.cls_registry: dict[str, RegisteredClass] = {}
         self.cls_registry_by_type: dict[type, RegisteredClass] = {}
         self.importable_modules: dict[str, RegisteredModule] = {}
+        self.object_registry: dict[str, RegisteredObject] = {}
+
+        # private, host-side registry for live, unpickleable objects
+        self._host_object_registry: dict[str, Any] = {}
 
         # Auto-register this agent
         self.fingerprint = register_agent(self)
@@ -107,3 +113,25 @@ class BaseAgent:
     def _update_fingerprint(self):
         """Update the fingerprint after registration changes."""
         self.fingerprint = register_agent(self)
+
+    def module(
+        self,
+        obj: Any,
+        *,
+        name: str | None = None,
+        visibility: Literal["high", "medium", "low"] = "medium",
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
+        configure: dict[str, MemberSpec | RegisteredClass] | None = None,
+    ) -> None:
+        """
+        Stub implementation of module registration.
+        The full implementation with include/exclude support is in RegistrationMixin.
+        This method should not be called directly - use Agent class instead.
+        """
+        raise NotImplementedError(
+            "This is a stub implementation. Use the Agent class which inherits from "
+            "RegistrationMixin for full include/exclude support."
+        )
+
+    def task(self, prompt: str | Callable) -> Callable[..., Any]: ...

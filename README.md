@@ -28,7 +28,13 @@ In [`examples/funcy.py`](./examples/funcy.py), an agent is tasked with building 
 
 [`examples/multi.py`](./examples/multi.py) demonstrates this with an `orchestrator` agent that solves a high-level "idea" by delegating data generation and plotting tasks to two different specialist sub-agents. All orchestration is done with simple Python control flow—no YAML or complex DSLs required.
 
-### 4. Beyond Tools: Granular Function Execution
+### 4. Live Object Integration
+
+Agents can work directly with complex, stateful APIs without requiring wrapper classes or simplified interfaces. `agex` safely exposes live Python objects—including unpickleable ones like database connections—while maintaining state serialization safety.
+
+[`examples/db.py`](./examples/db.py) showcases this with raw SQLite integration: agents work directly with `sqlite3.Connection` and `Cursor` objects, handling complex method chaining (`db.execute().fetchall()`) and transaction management. No `DatabaseManager` wrapper needed—agents adapt to the existing API.
+
+### 5. Beyond Tools: Granular Function Execution
 
 While many agent frameworks use the term "tool," `agex` deliberately uses **`fn`** to signify a more fundamental concept.
 

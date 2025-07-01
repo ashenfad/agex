@@ -27,6 +27,15 @@ from agex.eval.utils import get_allowed_attributes_for_instance
 from agex.state import State
 
 
+def _is_bound_instance_object(obj: Any) -> bool:
+    """Check if an object is a BoundInstanceObject (registered live object)."""
+    return (
+        hasattr(obj, "reg_object")
+        and hasattr(obj.reg_object, "methods")
+        and hasattr(obj.reg_object, "properties")
+    )
+
+
 # A simple placeholder object to act as the @dataclass decorator.
 # Its only purpose is to be recognized by the evaluator.
 class _DataclassDecorator:
@@ -151,6 +160,17 @@ def _dir(evaluator: BaseEvaluator, *args, **kwargs) -> list[str]:
             attrs = sorted([a for a in dir(reg_module.module) if not a.startswith("_")])
         else:
             attrs = []
+    elif _is_bound_instance_object(obj):
+        # This is a BoundInstanceObject (registered live object)
+        from ..eval.objects import BoundInstanceObject
+
+        if isinstance(obj, BoundInstanceObject):
+            # Show methods and properties from the registered object
+            methods = list(obj.reg_object.methods.keys())
+            properties = list(obj.reg_object.properties.keys())
+            attrs = sorted(methods + properties)
+        else:
+            attrs = []
     else:
         # For all other objects, respect the agent's sandbox rules.
         allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
@@ -191,6 +211,13 @@ def _hasattr(evaluator: BaseEvaluator, *args, **kwargs) -> bool:
             return False
         return hasattr(reg_module.module, name) and not name.startswith("_")
 
+    # Check for BoundInstanceObject (registered live objects)
+    if _is_bound_instance_object(obj):
+        from ..eval.objects import BoundInstanceObject
+
+        if isinstance(obj, BoundInstanceObject):
+            return name in obj.reg_object.methods or name in obj.reg_object.properties
+
     # Check registered classes and native types
     allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
     return name in allowed
@@ -223,8 +250,18 @@ def _get_general_help_text(agent: "BaseAgent") -> str:
         for name in sorted(agent.importable_modules.keys()):
             parts.append(f"  - {name}")
 
+    # Objects (live objects)
+    if agent.object_registry:
+        if parts:
+            parts.append("")  # Add a blank line for separation
+        parts.append("Objects:")
+        for name in sorted(agent.object_registry.keys()):
+            parts.append(f"  - {name}")
+
     if not parts:
-        return "No functions, classes, or modules are registered with the agent."
+        return (
+            "No functions, classes, modules, or objects are registered with the agent."
+        )
 
     return "Available items:\n" + "\n".join(parts)
 
@@ -279,6 +316,42 @@ def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
                 parts.append("CONTENTS")
                 parts.extend([f"    {item}" for item in contents])
         doc = "\n".join(parts)
+    elif _is_bound_instance_object(obj):
+        # Handle BoundInstanceObject (registered live objects)
+        from ..eval.objects import BoundInstanceObject
+
+        if isinstance(obj, BoundInstanceObject):
+            parts = [f"Help on object {obj.reg_object.name}:\n"]
+
+            # Show methods
+            methods = sorted(obj.reg_object.methods.keys())
+            if methods:
+                parts.append("METHODS")
+                for method_name in methods:
+                    method_spec = obj.reg_object.methods[method_name]
+                    docstring = method_spec.docstring
+                    if docstring:
+                        parts.append(f"    {method_name} - {docstring}")
+                    else:
+                        parts.append(f"    {method_name}")
+
+            # Show properties
+            properties = sorted(obj.reg_object.properties.keys())
+            if properties:
+                if methods:  # Add spacing if we already showed methods
+                    parts.append("")
+                parts.append("PROPERTIES")
+                for prop_name in properties:
+                    prop_spec = obj.reg_object.properties[prop_name]
+                    docstring = prop_spec.docstring
+                    if docstring:
+                        parts.append(f"    {prop_name} - {docstring}")
+                    else:
+                        parts.append(f"    {prop_name}")
+
+            doc = "\n".join(parts)
+        else:
+            doc = "No help available."
     else:
         # For everything else (AgexObject, NativeFunction, raw Python objects/functions),
         # just try to get a docstring.

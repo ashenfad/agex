@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from types import ModuleType
-from typing import Any, Callable, Iterable, Literal, Union
+from typing import Any, Callable, Iterable, Literal, Mapping, Union
 
 Pattern = Union[str, Iterable[str], Callable[[str], bool]]
 Visibility = Literal["high", "medium", "low"]
@@ -17,7 +17,7 @@ class _AgentExit(Exception):
 class ExitSuccess(_AgentExit):
     """Signal that the agent has completed its task successfully."""
 
-    result: Any
+    result: Any = None
 
 
 @dataclass
@@ -79,3 +79,28 @@ class RegisteredModule(RegisteredItem):
     fns: dict[str, MemberSpec] = field(default_factory=dict)
     consts: dict[str, MemberSpec] = field(default_factory=dict)
     classes: dict[str, RegisteredClass] = field(default_factory=dict)
+
+
+@dataclass
+class RegisteredObject(RegisteredItem):
+    """Represents a live Python object registered with the agent."""
+
+    # The mandatory, agent-facing namespace (e.g., 'db').
+    # This is also used as the key in the host-side registry.
+    name: str
+
+    # A dictionary of exposed methods, reusing MemberSpec for consistency.
+    methods: dict[str, MemberSpec] = field(default_factory=dict)
+
+    # A dictionary for exposed read-only attributes/properties.
+    properties: dict[str, MemberSpec] = field(default_factory=dict)
+
+    # Exception mappings: external exception type -> agex exception type
+    # This allows live objects to map their library-specific exceptions
+    # to user-catchable agex exceptions
+    exception_mappings: dict[type, type] = field(default_factory=dict)
+
+
+@dataclass
+class StateType(Mapping):
+    """Represents the agent's state at a particular moment in time."""

@@ -1,3 +1,10 @@
+"""
+Function Generation
+
+Agents generate executable Python functions that can be called directly in your
+program. Demonstrates runtime interoperability beyond JSON serialization.
+"""
+
 import math
 from typing import Callable
 

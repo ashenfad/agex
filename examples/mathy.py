@@ -1,3 +1,10 @@
+"""
+Mathematical Computing
+
+Agents perform calculations using Python's math module and work with numerical
+data. Demonstrates basic agent-module integration for computational tasks.
+"""
+
 import math
 
 from agex import Agent
@@ -13,7 +20,7 @@ mathy_agent = Agent(
 mathy_agent.module(math, visibility="medium")
 
 
-# 3. Define a task
+# 3. Define agent tasks
 @mathy_agent.task
 def run_calculation(problem: str) -> float:  # type: ignore[return-value]
     """Solve the mathematical problem and return the numeric result."""
@@ -31,9 +38,7 @@ def example():
     We run a calculation and then transform a list of numbers.
     """
 
-    result = run_calculation(
-        "What is the square root of 256, multiplied by pi?",
-    )
+    result = run_calculation("What is the square root of 256, multiplied by pi?")
     print(result)
 
     nums = list(range(360))

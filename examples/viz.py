@@ -1,3 +1,10 @@
+"""
+Data Visualization
+
+Agents work with complex NumPy arrays and generate Plotly visualizations.
+Bulk data flows seamlessly between agents without special handling.
+"""
+
 import numpy as np
 import pandas
 import plotly.express
