@@ -2,17 +2,41 @@
 
 `agex` (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to think, act, and create using real Python code. It provides a secure, sandboxed execution environment that allows for deep interoperability with your existing codebase, moving beyond simple tool-calling to true runtime integration.
 
-The core philosophy of `agex` is that **code is the most powerful language for formal reasoning**. Instead of inventing new paradigms, `agex` provides agents with a familiar, REPL-like environment equipped with tools developers have used for decades: state inspection, introspection (`dir()`, `help()`), and modular design.
+## 30-Second Example
+
+```python
+import math
+from typing import Callable
+from agex import Agent
+
+agent = Agent()
+agent.module(math)  # Give the agent math tools
+
+@agent.task
+def make_function(description: str) -> Callable:  # type: ignore[return-value]
+    """Generate a Python function from a text description."""
+    pass  # Empty body - the agent implements this function
+
+# Agent returns an actual Python callable you can use immediately
+prime_finder = make_function("find the next prime larger than a given number")
+
+print(prime_finder(100))  # 101
+my_data.sort(key=prime_finder)  # Works with existing Python code
+```
+
+**This works because** `agex` provides true runtime interoperability - agents don't just return JSON, they create real Python objects that live directly in your runtime environment.
+
+**Which enables** seamless data flow between agents (numpy arrays, pandas DataFrames), hierarchical agent orchestration through normal Python control flow, and dynamic code generation that integrates immediately with existing systems.
 
 [Learn more about the core philosophy in The Big Picture](./docs/big-picture.md).
 
-## Key Features
+## What Makes This Different
 
-`agex` enables workflows that are difficult or impossible in frameworks that rely on JSON or isolated execution environments.
+`agex` enables workflows that are difficult or impossible in frameworks that rely on JSON or isolated execution environments. Here's how the core capabilities work:
 
 ### 1. Seamless Runtime Interoperability
 
-`agex` transparently handles the passing of complex Python objects between your code and an agent's sandboxed environment. By leveraging a robust serialization strategy (based on `pickle`), `agex` can work with rich objects like `numpy` arrays, `pandas` DataFrames, and custom classes—types that would be difficult or impossible to handle in frameworks limited to JSON. This pass-by-value approach ensures data integrity and prevents unintended side effects.
+`agex` transparently handles the passing of complex Python objects between your code and an agent's sandboxed environment. You can work with rich objects like `numpy` arrays, `pandas` DataFrames, and custom classes without extra work—types that would be difficult or impossible to handle in frameworks limited to JSON.
 
 For example, in [`examples/viz.py`](./examples/viz.py), one agent generates bulk `numpy.ndarray` objects, which are then passed directly to another agent that uses `plotly` to create a `Figure` for visualization.
 
@@ -49,40 +73,40 @@ This distinction is key to enabling agents that don't just *use* tools, but trul
 
 For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project. `agex` explores a different architectural path centered on a secure-by-design execution environment and deep runtime interoperability.
 
-## Quick Start: Building an Agent
+## Building More Complex Agents
 
-An `agex` agent is defined through a micro-Python DSL. You create an `Agent` instance and use its methods to expose capabilities (`fn`, `cls`, `module`) or define high-level goals (`task`).
-
-*   A **`fn`** is a tool the agent can use.
-*   A **`task`** is a high-level goal. You define the function signature (the "what"), and the agent provides the implementation (the "how"). This is why the function body must be empty (`pass`).
+Beyond the basic example above, `agex` agents can be equipped with tools and capabilities:
 
 ```python
 import math
 import agex
 
-# 1. Create an agent with a purpose
+# Create an agent with specialized knowledge
 math_agent = agex.Agent(primer="You are a helpful math assistant.")
 
-# 2. Give it tools
+# Give it custom tools
 @math_agent.fn
 def sqrt(num: float) -> float:
     """Calculate the square root of a number."""
     return num ** 0.5
 
-# Expose an entire module's functionality
+# Expose entire modules
 math_agent.module(math)
 
-# 3. Give it a task to accomplish
+# Define what the agent should accomplish  
 @math_agent.task
-def assist(prompt: str) -> str:
-    """
-    Assistance for mathematical questions and problems.
-    """
+def assist(prompt: str) -> str:  # type: ignore[return-value]
+    """Provide assistance for mathematical questions and problems."""
     pass
 
-# 4. Run the task
-# result = assist("What is the sin of pi/2?")
+# The agent uses all available tools to complete the task
+result = assist("What is the sin of pi/2?")
 ```
+
+**Key concepts:**
+- **`@agent.fn`**: Register custom functions as tools
+- **`agent.module()`**: Expose existing Python modules  
+- **`@agent.task`**: Define what you want accomplished (empty body - agent implements it)
 
 ## API Documentation
 
