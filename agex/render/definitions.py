@@ -51,6 +51,7 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
         output.append(_render_function(name, spec, full=full))
 
     # Render classes
+    classes_to_render = []
     for name, spec in agent.cls_registry.items():
         # The top-level rendering logic for a class is now more complex,
         # because a low-visibility class might be "promoted" if it has a
@@ -63,7 +64,12 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
         if full or effective_visibility != "low":
             # We create a new spec with the effective visibility to pass down.
             spec_to_render = dataclasses.replace(spec, visibility=effective_visibility)
-            output.append(_render_class(name, spec_to_render, full=full))
+            classes_to_render.append(_render_class(name, spec_to_render, full=full))
+
+    # Add helpful header if classes are present
+    if classes_to_render:
+        output.append("# Available classes (use directly, no import needed):")
+        output.extend(classes_to_render)
 
     # Render modules
     for name, spec in agent.importable_modules.items():

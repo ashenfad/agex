@@ -65,6 +65,8 @@ def test_render_high_visibility_class():
 
     output = render_definitions(agent)
     expected = """
+# Available classes (use directly, no import needed):
+
 class MyTestClass:
     def __init__(self, val: int):
         ...
@@ -90,6 +92,8 @@ def test_render_medium_visibility_class():
 
     output = render_definitions(agent)
     expected = """
+# Available classes (use directly, no import needed):
+
 class MediumVis:
     def __init__(self, val: int):
         ...
@@ -121,6 +125,8 @@ def test_render_medium_vis_class_with_init_override():
 
     output = render_definitions(agent)
     expected = """
+# Available classes (use directly, no import needed):
+
 class MyClass:
     def __init__(self, val: int):
         ...

@@ -2,8 +2,10 @@
 Shallow, sampling-based validation for large data structures.
 """
 
+import dataclasses
 from typing import Any, get_args, get_origin
-from pydantic import ConfigDict, TypeAdapter, ValidationError
+
+from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
 DEFAULT_SAMPLING_THRESHOLD = 100
 DEFAULT_SAMPLE_SIZE = 10
@@ -87,7 +89,22 @@ def validate_with_sampling(value: Any, annotation: Any) -> Any:
 
     # For all other types, or collections below the threshold, validate normally.
     try:
-        adapter = TypeAdapter(annotation, config=REGULAR_CONFIG)
+        # Check if the annotation is a dataclass, BaseModel, or TypedDict
+        # These types don't accept config parameters in TypeAdapter
+        is_special_type = (
+            dataclasses.is_dataclass(annotation)
+            or (isinstance(annotation, type) and issubclass(annotation, BaseModel))
+            or (
+                hasattr(annotation, "__annotations__")
+                and hasattr(annotation, "__total__")
+            )  # TypedDict
+        )
+
+        if is_special_type:
+            adapter = TypeAdapter(annotation)
+        else:
+            adapter = TypeAdapter(annotation, config=REGULAR_CONFIG)
+
         return adapter.validate_python(value)
     except ValidationError as e:
         # Re-raise with more context about what was being validated.
