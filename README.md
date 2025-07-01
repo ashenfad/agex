@@ -32,7 +32,7 @@ my_data.sort(key=prime_finder)  # Works with existing Python code
 
 ## What Makes This Different
 
-`agex` enables workflows that are difficult or impossible in frameworks that rely on JSON or isolated execution environments. Here's how the core capabilities work:
+`agex` enables workflows that require significantly more complexity and boilerplate in frameworks that rely on JSON or isolated execution environments. Here's how the core capabilities work:
 
 ### 1. Seamless Runtime Interoperability
 
