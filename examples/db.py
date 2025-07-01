@@ -1,7 +1,7 @@
 """
 Raw SQLite API Integration
 
-Agents work directly with sqlite3.Connection and Cursor objects - no wrapper
+Agent works directly with sqlite3.Connection and Cursor objects - no wrapper
 classes needed. Demonstrates complex method chaining (db.execute().fetchall())
 and stateful object management with live database connections.
 """
@@ -14,15 +14,15 @@ from examples.db_primer import PRIMER
 
 db = Agent(name="db_agent", primer=PRIMER)
 
-# Create an in-memory database and register the connection with the agent
+# create an in-memory database and register the connection with the agent
 conn = sqlite3.connect(":memory:")
 db.module(
-    conn,  # we register instance methods just like module fns
+    conn,  # we register instance methods just like we do for module fns
     name="db",  # name is required when registering instance methods
     include=["execute", "execute_many", "commit"],
 )
 
-# Also register the Cursor class for gathering results
+# also register the Cursor class for gathering results
 db.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 
 

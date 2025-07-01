@@ -1,8 +1,9 @@
 """
 Data Generation
 
-Agents generate complex NumPy arrays representing synthetic datasets.
-Creates bulk data (1000+ arrays) that flows to other agents without special handling.
+Agent generates complex NumPy arrays representing synthetic datasets.
+Creates bulk data (1000 arrays) that flows to user or other agents
+without special handling.
 """
 
 import random

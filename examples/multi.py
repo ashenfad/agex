@@ -2,7 +2,7 @@
 Hierarchical Agent Orchestration
 
 An orchestrator agent delegates to specialist sub-agents for data generation
-and visualization. Bulk data flows between agents without any special handling.
+and visualization. Bulk data flows between sub-agents without special handling.
 """
 
 from plotly.graph_objects import Figure
@@ -17,7 +17,7 @@ orchestrator = Agent(
     timeout_seconds=20,
 )
 
-# add sub-agents as functions (aka tools)
+# add sub-agents as functions for orchestrator
 orchestrator.fn(make_data)
 orchestrator.fn(plot_data)
 

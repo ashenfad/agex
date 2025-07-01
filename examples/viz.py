@@ -1,8 +1,8 @@
 """
 Data Visualization
 
-Agents work with complex NumPy arrays and generate Plotly visualizations.
-Bulk data flows seamlessly between agents without special handling.
+Agent works with complex NumPy arrays and generates Plotly visualizations.
+Bulk data flows between agents without special handling.
 """
 
 import numpy as np

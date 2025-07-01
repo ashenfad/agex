@@ -1,7 +1,7 @@
 """
 Mathematical Computing
 
-Agents perform calculations using Python's math module and work with numerical
+Agent performs calculations using Python's math module and works with numerical
 data. Demonstrates basic agent-module integration for computational tasks.
 """
 
@@ -9,18 +9,15 @@ import math
 
 from agex import Agent
 
-# 1. Create an agent with a clear role and iteration limit
 mathy_agent = Agent(
     primer="You are an expert at using a calculator. You are given a math problem and your goal is to return just the numeric answer.",
     max_iterations=5,
 )
 
-# 2. Register the math module with medium visibility
-# (shows function signatures but not docstrings to save context)
+# medium viz shows function sigs but not docs to save context
 mathy_agent.module(math, visibility="medium")
 
 
-# 3. Define agent tasks
 @mathy_agent.task
 def run_calculation(problem: str) -> float:  # type: ignore[return-value]
     """Solve the mathematical problem and return the numeric result."""
