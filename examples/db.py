@@ -17,7 +17,7 @@ db = Agent(name="db_agent", primer=PRIMER)
 # Create an in-memory database and register the connection with the agent
 conn = sqlite3.connect(":memory:")
 db.module(
-    conn,  # instance methods are akin to module fns
+    conn,  # we register instance methods just like module fns
     name="db",  # name is required when registering instance methods
     include=["execute", "execute_many", "commit"],
 )
