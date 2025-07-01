@@ -41,7 +41,7 @@ def hone_joke(review: Review) -> str:  # type: ignore[return-value]
 
 @evaluator.task
 def review_joke(joke: str) -> Review:  # type: ignore[return-value]
-    """Judge a joke and suggest improvements by returning a Reivew"""
+    """Judge a joke and suggest improvements by returning a Review"""
     pass
 
 
