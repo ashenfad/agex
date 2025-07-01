@@ -40,7 +40,7 @@ This enables agents to maintain relevant context while staying within token limi
 ### Validation & Error Handling
 
 **Validation Strategy:**
-- Two levels: simple `isinstance` type checks or depth-limited Pydantic validation
+- Pydantic validation with depth-limited sampling for performance
 - Performance-conscious: validate heads of large lists rather than entire structures
 - Immediate feedback: validation failures appear in agent's stdout for the next iteration
 
