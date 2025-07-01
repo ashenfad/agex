@@ -84,7 +84,22 @@ def assist(prompt: str) -> str:
 # result = assist("What is the sin of pi/2?")
 ```
 
-For a detailed guide to the API, including class and module registration, visibility controls, and multi-agent patterns, please see the [Top-Level API Design](./docs/top-level.md). All agent code is executed within a secure, whitelisted environment. You can learn more about the [Security Model here](./docs/security.md).
+## API Documentation
+
+Complete API reference documentation is available:
+
+**📖 [API Reference](./docs/api/overview.md)** - Complete documentation for all agex APIs
+
+Key sections:
+- **[Agent](./docs/api/agent.md)** - Creating and configuring agents
+- **[Registration](./docs/api/registration.md)** - Exposing functions, classes, and modules to agents  
+- **[Task](./docs/api/task.md)** - Defining agent tasks with `@agent.task`
+- **[State](./docs/api/state.md)** - Persistent memory and state management
+- **[View](./docs/api/view.md)** - Inspecting agents and execution state *(experimental)*
+
+For design concepts and higher-level documentation, see:
+- **[Top-Level API Design](./docs/top-level.md)** - Design patterns and multi-agent workflows
+- **[Security Model](./docs/security.md)** - Execution environment and safety guarantees
 
 ## Setup
 
