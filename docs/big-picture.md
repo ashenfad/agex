@@ -18,49 +18,19 @@ Instead of inventing new agent interaction patterns, `agex` adapts the proven to
 
 ### REPL-Like Agent Environment
 
-Each agent operates in a persistent, REPL-like environment where they can:
-- See recently updated state in their context
-- View recent stdout (including errors from previous evaluations)
-- Access introspection tools (`help`, `dir`, `print`)
-- Build and test solutions iteratively
+Each agent operates in a familiar, persistent environment where they can introspect (`help`, `dir`), see recent state changes, view their own output, and build solutions iteratively. This cognitive scaffolding mirrors how human developers work and makes agent behavior more predictable.
 
-This environment feels familiar to developers and provides agents with the cognitive scaffolding they need for complex reasoning.
+### Smart Context Management
 
-### Dynamic Context Management & Token Budgeting
+The framework automatically manages token budgets and context windows - recent information gets priority, older context gets compressed, and agents maintain continuity without manual intervention. This eliminates the typical context management burden while keeping agents focused on relevant information.
 
-Context window management uses a sophisticated budgeting system:
+### Natural Error Handling
 
-- **Token-aware rendering**: The `render` package provides smart `repr` that estimates token costs
-- **Dynamic forgetfulness**: Exponentially decaying budget allocation - recent state/stdout gets high fidelity, older information gets compressed
-- **Budget allocation**: Configurable token budgets across recent state, stdout, conversation history, and available capabilities
-- **Graceful degradation**: When context limits are reached, older information is summarized rather than truncated
+Validation errors and exceptions appear in the agent's stdout just like in a real Python environment. Agents can see what went wrong and retry within bounded limits, creating a natural debugging loop that feels familiar to developers.
 
-This enables agents to maintain relevant context while staying within token limits, without requiring manual context management.
+### Flexible State Management
 
-### Validation & Error Handling
-
-**Validation Strategy:**
-- Pydantic validation with depth-limited sampling for performance
-- Performance-conscious: validate heads of large lists rather than entire structures
-- Immediate feedback: validation failures appear in agent's stdout for the next iteration
-
-**Error Recovery:**
-- Validation errors bounce back to the agent with specific failure details
-- Agents can see the error and retry within the task loop
-- Bounded iteration limits prevent infinite retry loops
-- All errors appear in the agent's familiar stdout context
-
-### State Management & Persistence
-
-**Per-Task Behavior:**
-- Without `state` parameter: ephemeral environment for single-shot execution
-- With `state` parameter: persistent memory across multiple calls
-- Recent stdout and state changes appear in agent context for continuity
-
-**Concurrent Agent Isolation:**
-- Agents can share the same underlying state through namespacing (`state/namespaced.py`)
-- Each agent sees its own isolated view while enabling controlled information sharing
-- Clean separation prevents cross-contamination while allowing collaboration
+Tasks can run in ephemeral mode (no memory) or with persistent state across calls. Multiple agents can collaborate through isolated but shareable state, enabling both simple single-shot tasks and complex multi-agent workflows.
 
 ## Runtime Interoperability
 
@@ -70,8 +40,13 @@ A key differentiator of this framework is **runtime interoperability** - agents 
 
 **True Callable Generation:**
 ```python
+from agex import Agent
+from typing import Callable
+
+my_coder = Agent(name="coder")
+
 @my_coder.task
-def make_a_function(prompt: str) -> Callable:
+def make_a_function(prompt: str) -> Callable:  # type: ignore[return-value]
     """Generate a Python function from a text description."""
     pass
 
@@ -83,19 +58,20 @@ my_list.sort(key=prime_finder)  # Integrates with standard library
 
 ### Beyond Tool Isolation
 
-Most agent frameworks force a choice between:
-- **Limited evaluation**: Simple string/JSON processing that can't handle complex Python objects
-- **Full isolation**: VM/Docker sandboxing that's secure but completely separate from your runtime
-
-This framework provides a third option: **runtime integration** where agents create real Python objects that participate in your existing codebase.
+Most agent frameworks force a choice between limited string/JSON processing or complete VM isolation. This framework provides a third option: **runtime integration** where agents create real Python objects that participate directly in your existing codebase.
 
 **Data Processing Handoffs:**
 ```python
+import pandas as pd
+from agex import Agent
+
 # Seamless data flow between your context and agent context
 messy_dataframe = pd.read_csv("complex_data.csv")
 
+data_agent = Agent(name="data_processor")
+
 @data_agent.task
-def clean_and_analyze(df: pd.DataFrame) -> dict:
+def clean_and_analyze(df: pd.DataFrame) -> dict:  # type: ignore[return-value]
     """Clean a pandas DataFrame and extract analytical insights."""
     pass
 
@@ -107,7 +83,7 @@ insights = clean_and_analyze(messy_dataframe)
 ```python
 # Agent extends your existing classes with new capabilities
 @my_coder.task
-def add_method_to_class(cls: type, method_description: str) -> type:
+def add_method_to_class(cls: type, method_description: str) -> type:  # type: ignore[return-value]
     """Dynamically add a new method to an existing class."""
     pass
 
@@ -121,6 +97,7 @@ Because agents return real Python objects, complex multi-agent workflows become 
 
 ```python
 # Generator-critique loop using standard Python
+# (assuming agent tasks are already defined with @agent.task)
 rpt = research_expert("please research ...")
 while not (judgement := judge(rpt)).approved:
     rpt = research_revise(judgement.feedback)
@@ -135,17 +112,11 @@ else:
     result = human_review_agent(document)
 ```
 
-No workflow graphs, YAML configurations, or orchestration DSLs needed - just Python.
+No workflow DSLs or configuration files needed - just Python.
 
 ### Living Codebase Integration
 
-This enables workflows impossible with isolated execution:
-- **Collaborative development**: Agents become pair programming partners who directly contribute to shared codebases
-- **Dynamic library extension**: Agents add new capabilities to existing systems at runtime
-- **Live code evolution**: Functions and classes can be enhanced and optimized without breaking existing interfaces
-- **Natural orchestration**: Multi-agent workflows expressed as familiar Python control structures
-
-The result is agents that don't just help *with* your code - they become part of your development environment.
+This enables workflows impossible with isolated execution: agents become collaborative development partners who extend existing systems at runtime, evolve code without breaking interfaces, and orchestrate through natural Python control flow. The result is agents that don't just help *with* your code - they become part of your development environment.
 
 ## Hierarchical Agent Architecture
 
@@ -154,9 +125,14 @@ The result is agents that don't just help *with* your code - they become part of
 Functions can be decorated as both capabilities and tasks:
 
 ```python
-@orchestrator.fn
-@research_expert.task
-def deep_research(topic: str) -> ResearchReport:
+from agex import Agent
+
+orchestrator = Agent(name="orchestrator")
+research_expert = Agent(name="research_expert")
+
+@orchestrator.fn(docstring="Conduct comprehensive research on the given topic")
+@research_expert.task("Perform deep research with academic rigor")
+def deep_research(topic: str) -> ResearchReport:  # type: ignore[return-value]
     """Conduct comprehensive research on the given topic."""
     pass
 ```
@@ -165,15 +141,16 @@ This enables natural hierarchies where specialist agents serve as capabilities f
 
 ### Side-Channel Communication
 
-Agents can communicate through a `log()` builtin:
+**(Future Feature)** Agents could communicate through a `log()` builtin:
 
 ```python
+# Speculative future feature
 log("Found 12 relevant papers, starting analysis", to="parent_agent")
 log("Need human guidance on conflicting sources", to="system")
 log("Focusing on theory, suggest you handle applications", to="analysis_agent")
 ```
 
-Messages appear in the target agent's stdout, fitting naturally into the REPL environment. Role-based targeting provides security boundaries and clear communication channels.
+Messages would appear in the target agent's stdout, fitting naturally into the REPL environment. Role-based targeting would provide security boundaries and clear communication channels.
 
 ### Shared but Namespaced State
 
@@ -183,150 +160,32 @@ Multiple agents can collaborate while maintaining isolation:
 - Clean separation prevents accidental interference
 - Enables complex multi-agent workflows with clear boundaries
 
-## Agent Evolution & Self-Improvement
 
-### On-the-Job Tool Creation
 
-Agents naturally create helper functions while solving tasks. Over time, they accumulate personal toolkits tailored to their common challenges.
+## Long-Term Agent Evolution (Future Roadmap)
 
-### Refactoring & Code Organization
+### Adaptive Memory Management
 
-Agents can be given explicit refactoring tasks:
+As agents accumulate extensive interaction histories, the framework could implement **exponentially decaying memory** - recent conversations get full fidelity, older interactions get progressively compressed, and ancient history becomes high-level summaries. This would allow agents to maintain both detailed recent context and long-term learning without overwhelming token budgets.
+
+### Self-Refactoring Agents
+
+Long-running agents could be given explicit tasks to **review and refactor their own accumulated code**:
 
 ```python
 @agent.task("Review and refactor your helper functions for better organization.")
-def refactor_my_toolkit() -> None:
-    """
-    Review and refactor the agent's accumulated helper functions.
-    
-    Looks for:
-    - Repeated patterns that could be abstracted
-    - Functions that could be combined or split  
-    - Better naming or documentation
-    - Opportunities for reusable utilities
-    
-    Returns:
-        None (performs refactoring in place)
-    """
+def refactor_my_toolkit() -> None:  # type: ignore[return-value]
+    """Reorganize accumulated tools, abstract patterns, improve naming."""
     pass
 ```
 
-This mirrors how human developers evolve their codebases, allowing agents to develop their own programming practices and preferences.
+Over time, agents would develop personal coding styles and specialized toolkits, becoming more effective not just at tasks but at self-improvement.
 
-### Module Creation & Interface Design
+### Agent-Designed Agent Architecture
 
-Agents can formalize their ad-hoc tools into proper modules:
-- Choose which functions to make public vs. private
-- Create clean interfaces that hide implementation details
-- Save context by forgetting internals while remembering signatures/docs
-- Share modules with other agents or contribute to global registries
+The most speculative possibility: agents creating their own specialist sub-agents on demand, analyzing their task patterns to architect cognitive division of labor, and designing hierarchical specialist networks. This could transform agents from "users of tools" into "architects of intelligence" - responsible for both solving problems and designing the cognitive structures to solve them effectively.
 
-This enables **hierarchical abstraction** - agents build up from primitives to complex tools, then compress implementation details into clean interfaces.
 
-### Emergent Specialization
-
-Different agents develop different approaches:
-- Research agents build sophisticated data analysis toolkits
-- Writing agents develop tone analysis and structure optimization tools
-- Debugging agents create specialized introspection utilities
-
-Agents become more effective over time not just at specific tasks, but at getting better - true **meta-learning**.
-
-## Recursive Agent Architecture (Speculative)
-
-### Dynamic Sub-Agent Creation
-
-The most speculative possibility: agents creating their own specialist sub-agents on demand.
-
-```python
-# Agent realizes it needs specialized help
-@self.create_subagent("statistics_expert").task("Perform deep statistical analysis with hypothesis testing.")
-def run_advanced_analysis(dataset: DataFrame) -> StatisticalReport:
-    """
-    Run advanced statistical analysis on the dataset.
-    
-    Args:
-        dataset: The DataFrame to analyze
-        
-    Returns:
-        A comprehensive statistical report with hypothesis test results
-    """
-    pass
-
-# Immediately equip the sub-agent
-@statistics_expert.module(scipy.stats, visibility="high")
-
-# Delegate the work
-results = run_advanced_analysis(my_data)
-```
-
-### Self-Designing Cognitive Architecture
-
-Agents could analyze their own task patterns and architect their cognitive division of labor:
-- Micromanager agents creating highly specialized sub-agents
-- Architect agents building a few powerful generalist sub-agents
-- Collaborative agents creating peer networks
-- Hierarchical agents building deep specialization trees
-
-### Recursive Improvement
-
-Sub-agents could create their own sub-agents, leading to:
-- Emergent organizational patterns as successful architectures spread
-- Agent-driven framework evolution
-- Recursive optimization of both code and cognitive structure
-- Collaborative architecture design across agent communities
-
-This transforms agents from "users of tools" into "architects of intelligence" - responsible not just for solving problems, but for designing the cognitive structures to solve them effectively.
-
-## Developer Experience & Debugging
-
-### Unified Introspection
-
-The same tools work for both agents and humans:
-- `view(agent)` - See available functions/classes/modules
-- `view(state)` - Current state and stdout
-- `view(conversation)` - Full interaction history  
-- `view(hierarchy)` - Agent relationships and communication patterns
-
-### Native Python Introspection
-
-Agent-created functions integrate seamlessly with Python's built-in introspection:
-
-```python
-# Agent creates a function
-custom_fn = my_agent.create_analyzer("detect data anomalies")
-
-# Standard Python introspection just works
-help(custom_fn)
-# Output includes rich context:
-# - Original user prompt
-# - Agent's reasoning process
-# - Validation tests performed
-# - Dependencies and assumptions
-
-dir(custom_fn)               # Standard attributes
-inspect.signature(custom_fn) # Function signature
-custom_fn.__doc__            # Enhanced docstring with creation context
-```
-
-This makes agent-created code completely native to existing Python tooling - IDEs show rich docstrings on hover, documentation generators include agent context, and debugging tools work as expected.
-
-### Natural Debugging Patterns
-
-Since agents work in familiar Python environments:
-- Standard debugging approaches apply
-- Error messages and stack traces work as expected
-- State inspection uses familiar patterns
-- Logging and communication are explicit and traceable
-- Agent-created functions are debuggable with standard Python tools
-
-### Collaborative Development
-
-Agents become true programming partners rather than sophisticated tools:
-- They participate in the software development process
-- Create, refactor, and optimize their own code
-- Develop preferences and practices over time
-- Share knowledge and tools with other agents and humans
 
 ## Security & Boundaries
 
@@ -342,30 +201,4 @@ The registration system provides clean security boundaries:
 
 Agents can only call explicitly registered functions, creating clear trust boundaries. The visibility system provides additional control over what capabilities are exposed to which agents.
 
-## Implications & Future Directions
-
-This framework has the potential to transform how we think about agent systems:
-
-### From Tools to Partners
-
-Agents evolve from "smart function callers" to collaborative programmers who:
-- Develop their own tools and practices
-- Make architectural decisions about their own capabilities
-- Share knowledge and techniques with other agents
-- Participate in the software development lifecycle
-
-### Emergent Intelligence
-
-The combination of persistent memory, tool creation, refactoring capabilities, and potential recursive architecture could lead to:
-- Exponential rather than linear capability growth
-- Self-improving agent ecosystems  
-- Collaborative agent communities
-- Novel organizational patterns and problem-solving approaches
-
-### Natural Adoption
-
-By building on familiar Python patterns and developer mental models, the framework should be uniquely adoptable - developers can apply existing intuitions about programming environments, debugging, and system architecture directly to agent design.
-
-The **runtime interoperability** eliminates the typical friction of agent integration. Instead of restructuring workflows around agent frameworks, agents seamlessly slot into existing codebases as enhanced development tools. Agent-created functions work with standard Python tooling, participate in existing type systems, and integrate with established debugging practices.
-
-The framework doesn't just make agents more capable; it makes them more **collaborative**, more **understandable**, and more **human-compatible** by leveraging the cognitive tools we've already developed for working with complex systems. 
+ 
