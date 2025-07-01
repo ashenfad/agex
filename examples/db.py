@@ -13,27 +13,27 @@ from agex import Agent
 from agex.state.versioned import Versioned
 from examples.db_primer import PRIMER
 
-agent = Agent(name="db_agent", primer=PRIMER)
+db = Agent(name="db_agent", primer=PRIMER)
 
 # Create an in-memory database and register the connection with the agent
 conn = sqlite3.connect(":memory:")
-agent.module(
+db.module(
     conn,  # instance methods are akin to module fns
     name="db",  # name is required when registering instance methods
     include=["execute", "execute_many", "commit"],
 )
 
 # Also register the Cursor class for gathering results
-agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
+db.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 
 
-@agent.task
+@db.task
 def update_db(prompt: str):  # type: ignore[return-value]
     """Update the database based on a natural language description."""
     pass
 
 
-@agent.task
+@db.task
 def query_db(prompt: str) -> Any:  # type: ignore[return-value]
     """Query the database based on a natural language description and return results."""
     pass
