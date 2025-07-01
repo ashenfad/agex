@@ -46,11 +46,16 @@ Agents can generate and return executable Python functions and classes at runtim
 
 In [`examples/funcy.py`](./examples/funcy.py), an agent is tasked with building a `Callable` function from a text prompt. The returned function is a real Python object that can be immediately integrated into existing logic (e.g., `my_list.sort(key=agent_generated_function)`).
 
-### 3. Hierarchical Agent Orchestration
+### 3. Agent Orchestration
 
 `agex` is designed for building complex systems out of specialized agents. One agent's core `task` can be exposed as a simple `fn` (tool) for another agent, enabling natural and powerful composition.
 
-[`examples/multi.py`](./examples/multi.py) demonstrates this with an `orchestrator` agent that solves a high-level "idea" by delegating data generation and plotting tasks to two different specialist sub-agents. All orchestration is done with simple Python control flow—no YAML or complex DSLs required.
+Examples of multi-agent patterns:
+
+- **[`examples/multi.py`](./examples/multi.py)**: An `orchestrator` agent delegates data generation and plotting tasks to specialist sub-agents to solve high-level visualization ideas
+- **[`examples/evaluator_optimizer.py`](./examples/evaluator_optimizer.py)**: Iterative improvement through agent collaboration, where one agent creates content and another critiques it until quality criteria are met—all orchestrated with a simple Python `while` loop
+
+All orchestration is done with simple Python control flow—no YAML or complex DSLs required.
 
 ### 4. Live Object Integration
 
