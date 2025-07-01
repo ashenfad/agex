@@ -84,6 +84,7 @@ Agents can call other agents as simple functions, enabling natural orchestration
 
 ```python
 import numpy as np
+import plotly.express
 from plotly.graph_objects import Figure
 from agex import Agent
 
@@ -91,6 +92,11 @@ from agex import Agent
 data_generator = Agent(name="data_generator")
 visualizer = Agent(name="visualizer") 
 orchestrator = Agent(name="orchestrator")
+
+# Give agents access to their required modules
+data_generator.module(np, visibility="low")
+visualizer.module(plotly.express, visibility="low")
+visualizer.module(np, visibility="low")
 
 # Dual-decorator pattern: orchestrator can call specialist tasks
 @orchestrator.fn
