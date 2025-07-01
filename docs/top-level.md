@@ -4,22 +4,51 @@ This document outlines the design for the high-level `@agent.task` decorator, wh
 
 ## Core Concepts
 
-The primary goal is to make defining an agent task feel as natural as defining a Python function. The developer provides a function signature, a primer for agent implementation instructions, and a docstring for caller documentation. The agent handles the implementation.
+The primary goal is to make defining an agent task feel as natural as defining a Python function. The developer provides a function signature, docstring for documentation, and optionally a primer for agent implementation instructions. The agent handles the implementation.
 
 ### Decorator Behavior
 
 1.  **Function Replacement:** The `@agent.task` decorator does not merely wrap the decorated function; it completely **replaces** it.
 2.  **Implementation Constraint:** The body of a function decorated with `@agent.task` must be empty (i.e., contain only `pass`). The decorator will raise an exception if it finds any other statements. The agent, not the developer, is responsible for the implementation.
-3.  **Signature, Primer, and Docstring:** The decorator captures the function definition:
-    *   Its name.
-    *   Its argument signature (parameter names, types, defaults).
-    *   Its return type annotation.
-    *   The primer parameter, which provides implementation instructions for the agent.
-    *   Its docstring, which provides developer-facing documentation for function callers.
+3.  **Signature and Documentation:** The decorator captures the function definition:
+    *   Its name and argument signature (parameter names, types, defaults)
+    *   Its return type annotation
+    *   Its docstring for caller documentation
+    *   An optional primer parameter for agent-specific implementation instructions
 4.  **Agent Loop Trigger:** The new function that replaces the original one will be responsible for triggering the agent's internal "think-act" loop to produce a result that matches the requested return type.
-5.  **State Management:** The replacement function will have a new, optional parameter added to its signature, typically `state: State | None = None`.
-    *   If a `State` object is provided, the agent will use it for long-term memory across multiple calls.
-    *   If no `State` object is provided (the default), the agent will operate in a single-shot, ephemeral mode for that call.
+5.  **State Management:** The replacement function will have a new, optional parameter added to its signature: `state: Versioned | None = None`.
+    *   If a `Versioned` object is provided, the agent will use it for long-term memory across multiple calls.
+    *   If no state object is provided (the default), the agent will operate in a single-shot, ephemeral mode for that call.
+
+### Two Decorator Patterns
+
+The `@agent.task` decorator supports two usage patterns:
+
+#### **Naked Decorator (Docstring as Instructions)**
+```python
+@agent.task
+def generate_data(prompt: str) -> list[np.ndarray]:
+    """Generate numpy arrays based on the prompt description."""
+    pass
+```
+The function's docstring serves both as agent instructions and caller documentation.
+
+#### **Parameterized Decorator (Separate Primer and Docstring)**
+```python
+@agent.task("Use numpy and random modules to create realistic synthetic data")
+def generate_data(prompt: str) -> list[np.ndarray]:
+    """
+    Generate synthetic numpy arrays from a text description.
+    
+    Args:
+        prompt: Description of the data to generate
+        
+    Returns:
+        List of numpy arrays representing the generated data
+    """
+    pass
+```
+The primer provides agent-specific implementation guidance, while the docstring remains caller-focused.
 
 ## API Design Philosophy: Definable vs. Configurable
 
@@ -156,10 +185,10 @@ For example, `agent.module(..., visibility="low")` can be partially overridden b
 From the developer's perspective, defining and using an agent task should be as simple as:
 
 ```python
-from tic import Agent
+from agex import Agent, Versioned
 
 # 1. Instantiate the agent
-my_agent = Agent()
+my_agent = Agent(primer="You are a helpful assistant.")
 
 # 2. Define a task - multiple patterns supported:
 
@@ -190,8 +219,7 @@ random_num = generate_random_number(1, 100)
 print(f"The agent generated: {random_num}")
 
 # Or, use it with persistent state
-from tic.state import Ephemeral
-agent_state = Ephemeral()
+agent_state = Versioned()
 another_num = generate_random_number(1, 100, state=agent_state)
 
 ```

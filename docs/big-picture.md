@@ -1,20 +1,18 @@
-# The Big Picture: An Agentic Framework Built on Developer Principles
+# The Big Picture: Agents That Think in Code
 
-This document captures the overarching vision for the `agex` framework—from the foundational design principles guiding its current implementation to the more speculative possibilities that emerge from them. It serves as both an explanation of the "why" behind the existing architecture and a "north star" for its future evolution.
+This document explains the vision and architectural principles behind `agex`. Unlike frameworks that constrain agents to JSON tool calls, `agex` gives agents a familiar Python environment where they can think, explore, and build solutions using real code.
 
-## Core Philosophy: Code as Formalized Language
+## Core Philosophy: Code as the Language of Reasoning
 
-The fundamental insight driving this framework is that **code is language made formal enough to get stuff done**. The same cognitive tools humans use for managing memory, observing program state, and handling complexity are natural fits for LLM agents.
+The key insight is that **code is language made formal enough to get stuff done**. The same tools that help human developers manage complexity work naturally for AI agents:
 
-Rather than inventing new interaction paradigms, we adapt the ergonomic patterns developers have refined over decades:
-- REPLs for interactive exploration and limited working memory
-- Logging for understanding system behavior  
-- `dir()` and `help()` for capability discovery
-- State inspection for debugging
-- Modular imports for managing complexity
-- Namespaces for isolation
+- **REPLs** for interactive exploration and step-by-step reasoning
+- **`dir()` and `help()`** for discovering capabilities  
+- **State inspection** for understanding what's available
+- **Modular imports** for accessing functionality
+- **Function definitions** for building reusable tools
 
-This approach leverages accumulated wisdom about how to make complex programming environments usable, rather than starting from scratch.
+Instead of inventing new agent interaction patterns, `agex` adapts the proven tools developers have used for decades. This makes agents more effective and their behavior more predictable.
 
 ## Implementation Foundation
 
@@ -72,17 +70,9 @@ A key differentiator of this framework is **runtime interoperability** - agents 
 
 **True Callable Generation:**
 ```python
-@my_coder.task("Create a function based on the user's description.")
+@my_coder.task
 def make_a_function(prompt: str) -> Callable:
-    """
-    Generate a Python function from a text description.
-    
-    Args:
-        prompt: Description of what the function should do
-        
-    Returns:
-        A callable function implementing the described behavior
-    """
+    """Generate a Python function from a text description."""
     pass
 
 # Returns an actual Python callable you can use immediately
@@ -104,17 +94,9 @@ This framework provides a third option: **runtime integration** where agents cre
 # Seamless data flow between your context and agent context
 messy_dataframe = pd.read_csv("complex_data.csv")
 
-@data_agent.task("Clean this dataset and extract insights.")
+@data_agent.task
 def clean_and_analyze(df: pd.DataFrame) -> dict:
-    """
-    Clean a pandas DataFrame and extract analytical insights.
-    
-    Args:
-        df: The raw DataFrame to clean and analyze
-        
-    Returns:
-        A dictionary containing cleaned data insights and statistics
-    """
+    """Clean a pandas DataFrame and extract analytical insights."""
     pass
 
 insights = clean_and_analyze(messy_dataframe)
@@ -124,18 +106,9 @@ insights = clean_and_analyze(messy_dataframe)
 **Dynamic Code Extension:**
 ```python
 # Agent extends your existing classes with new capabilities
-@my_coder.task("Add a new method to an existing class.")  
+@my_coder.task
 def add_method_to_class(cls: type, method_description: str) -> type:
-    """
-    Dynamically add a new method to an existing class.
-    
-    Args:
-        cls: The class to modify
-        method_description: Description of what the new method should do
-        
-    Returns:
-        The enhanced class with the new method added
-    """
+    """Dynamically add a new method to an existing class."""
     pass
 
 EnhancedProcessor = add_method_to_class(MyDataProcessor, "add outlier detection")
@@ -181,9 +154,10 @@ The result is agents that don't just help *with* your code - they become part of
 Functions can be decorated as both capabilities and tasks:
 
 ```python
-@orchestrator.fn("Research a topic thoroughly")
-@research_expert.task("Conduct comprehensive research on the given topic.")
+@orchestrator.fn
+@research_expert.task
 def deep_research(topic: str) -> ResearchReport:
+    """Conduct comprehensive research on the given topic."""
     pass
 ```
 

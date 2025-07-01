@@ -2,7 +2,7 @@
 
 ## Motivation
 
-In many agentic workflows, we need to perform multiple I/O-bound operations concurrently. For example, an agent might need to fetch data from several different APIs, or run multiple sub-agents that perform independent tasks. While our current execution model is single-threaded, we can introduce a `pmap` (parallel map) built-in to support these use cases without the complexity of full `async/await` support.
+Many agent workflows need to perform multiple I/O-bound operations concurrently—like fetching data from several APIs or running multiple sub-agents in parallel. The `pmap` (parallel map) built-in provides this capability without requiring full `async/await` support.
 
 ## Proposed Implementation
 
@@ -28,24 +28,13 @@ When this is called from within the Tic environment, the `func` would be one of 
 An agent could use `pmap` to run a tool on multiple inputs at once:
 
 ```python
-@agent.task("Research each topic in the list and return summaries, using parallel processing.")
+@agent.task
 def research_topics(topics: list[str]) -> list[str]:
-    """
-    Research multiple topics concurrently and return summaries.
-    
-    Args:
-        topics: List of topic strings to research
-        
-    Returns:
-        List of research summaries, one for each topic
-        
-    Note:
-        Uses pmap to run the research in parallel for efficiency.
-    """
+    """Research multiple topics concurrently and return summaries."""
     summaries = pmap(self.research_tool, topics)
     return summaries
 
-@agent.tool
+@agent.fn()
 def research_tool(topic: str) -> str:
     """A (simulated) tool that does some I/O bound work."""
     # ... implementation of the tool ...

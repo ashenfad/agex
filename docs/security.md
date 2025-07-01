@@ -2,11 +2,11 @@
 
 ## Overview
 
-The **tic** framework provides a sandboxed Python execution environment for AI agents. This document outlines the security measures and current security posture of the system.
+`agex` provides a secure Python execution environment for AI agents. This document outlines the security measures built into the framework.
 
 ## Security Model
 
-The tic sandbox operates on a **whitelist-based security model**:
+The `agex` sandbox uses a **whitelist-based security model**:
 
 - **AST-level validation**: All Python code is parsed and validated before execution
 - **Attribute access control**: Only explicitly whitelisted attributes/methods are accessible
@@ -132,8 +132,8 @@ Limited information exposure through introspection functions:
 
 The framework includes comprehensive security tests:
 
-- **String format security tests**: `tests/tic/eval/test_string_format_security.py`
-- **Sandbox escape tests**: `tests/tic/eval/test_sandbox_scenarios.py`
+- **String format security tests**: `tests/agex/eval/test_string_format_security.py`
+- **Sandbox escape tests**: `tests/agex/eval/test_sandbox_scenarios.py`
 - **Type system security**: Verified through integration tests
 
 ### Manual Security Review Checklist
@@ -160,9 +160,3 @@ If you discover a security vulnerability:
 2. Contact the maintainers directly
 3. Provide minimal reproduction case
 4. Include impact assessment
-
----
-
-**Last Updated**: December 2024  
-**Security Review**: Current  
-**Next Review**: When adding new features or on security reports 

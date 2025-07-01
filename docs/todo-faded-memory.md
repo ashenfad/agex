@@ -1,15 +1,15 @@
-# Faded Memory: A Dynamic Approach to Conversation History
+# Faded Memory: Dynamic Context Management
 
-## The Problem with Traditional Agent Memory
+## The Problem with Agent Memory
 
-Most agentic frameworks manage their long-term conversation history in one of two ways:
+Most agent frameworks handle conversation history in one of two problematic ways:
 
-1.  **Full History:** The entire log of user messages, agent thoughts, and tool outputs is appended to the context window until it overflows. This is simple but naive, eventually losing all historical context.
-2.  **LLM-based Summarization:** Periodically, the agent pauses and uses an LLM to summarize the oldest parts of the conversation. This can preserve information but is expensive, slow, and can introduce factual errors or misinterpretations during the summarization process.
+1.  **Full History** - Keep everything until context overflows, then lose it all
+2.  **LLM Summarization** - Expensive, slow, and can introduce errors
 
-## A New Approach: Dynamically Re-rendered Observations
+## The `agex` Solution: Dynamic Re-rendering
 
-We propose a third strategy that treats the conversation log not as static text, but as a living object that can be dynamically re-rendered on demand. This approach is built on our budgeted `ContextRenderer`.
+`agex` treats conversation history as a living object that can be re-rendered with different levels of detail. Instead of keeping static text or using LLM summarization, we dynamically adjust the detail level of older information.
 
 The core idea is that each observation in the agent's history is tied to a specific version of the agent's state. As the conversation grows, we don't just keep the old text around. Instead, we re-render the observations from older turns with a **progressively smaller token budget**.
 
@@ -40,4 +40,4 @@ This is wonderfully analogous to a human developer's workflow. We can't keep an 
 -   **High Fidelity:** Avoids LLM summarization errors by always rendering from the ground-truth state.
 -   **Performant & Cheap:** Relies on fast, deterministic, local rendering, avoiding expensive and high-latency LLM calls for memory management.
 -   **Graceful Degradation:** Keeps recent history sharp while compressing older history, balancing context length with detail.
--   **Active Memory:** Empowers the agent to intentionally "zoom in" on details it deems important, creating a more dynamic and powerful reasoning loop. 
+-   **Active Memory:** Empowers the agent to intentionally "zoom in" on details it deems important, creating a more dynamic and powerful reasoning loop.
