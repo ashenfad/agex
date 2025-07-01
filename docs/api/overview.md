@@ -53,6 +53,58 @@ from agex import Memory, Disk, Cache  # Storage backends
 from agex import configure_llm, clear_agent_registry  # Utilities
 ```
 
+## API Design Philosophy
+
+### Definable vs. Configurable
+
+The agex API is built on a core principle that makes its syntax consistent and predictable:
+
+- **Definable** methods are for registering new functions (`def`) and classes (`class`) as they are being defined. These methods (`.fn`, `.cls`) support the decorator pattern (`@agent.fn`) and use a "decorator factory" syntax.
+
+- **Configurable** methods are for exposing parts of *already existing* objects, like imported modules. These methods (`.module`) are direct function calls: `agent.module(math, ...)`.
+
+This distinction means **the syntax itself tells you what kind of operation you're performing**:
+
+```python
+# Definable - decorator pattern for new code
+@agent.fn
+def my_new_function():
+    pass
+
+@agent.cls
+class MyNewClass:
+    pass
+
+# Configurable - direct calls for existing code  
+agent.module(math, include=["sin", "cos"])
+agent.module(pandas, visibility="low")
+```
+
+### Registration Override Principle
+
+**More specific registrations override more general ones.** This enables powerful workflows where you can bulk-register with low visibility, then "promote" specific important members:
+
+```python
+# Bulk register with low visibility
+agent.module(numpy, visibility="low")
+
+# Promote specific functions to high visibility
+agent.fn(numpy.array, visibility="high")
+agent.fn(numpy.mean, visibility="high")
+```
+
+This layered approach gives you both broad capability exposure and fine-grained control over what agents see prominently.
+
+### Visibility and Context Management
+
+The three-tier visibility system (`high`/`medium`/`low`) addresses the core challenge of LLM context management:
+
+- **`high`**: Shows full signatures and documentation - for core capabilities
+- **`medium`**: Shows signatures only - for supporting functions  
+- **`low`**: Available but hidden - for broad library access without clutter
+
+This allows agents to have access to extensive capabilities while keeping their context focused on the most relevant tools.
+
 ## Framework Status
 
 agex is pre-0.0.1 and under active development. APIs may change as the framework evolves toward its first release.

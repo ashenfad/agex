@@ -98,7 +98,7 @@ Key sections:
 - **[View](./docs/api/view.md)** - Inspecting agents and execution state *(experimental)*
 
 For design concepts and higher-level documentation, see:
-- **[Top-Level API Design](./docs/top-level.md)** - Design patterns and multi-agent workflows
+- **[The Big Picture](./docs/big-picture.md)** - Framework philosophy, architecture, and multi-agent patterns
 - **[Security Model](./docs/security.md)** - Execution environment and safety guarantees
 
 ## Setup
