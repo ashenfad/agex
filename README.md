@@ -73,34 +73,41 @@ This distinction is key to enabling agents that don't just *use* tools, but trul
 
 For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project. `agex` explores a different architectural path centered on a secure-by-design execution environment and deep runtime interoperability.
 
-## Building More Complex Agents
+## Building Multi-Agent Workflows
 
-Beyond the basic example above, `agex` agents can be equipped with tools and capabilities:
+Agents can call other agents as simple functions, enabling natural orchestration:
 
 ```python
-import math
-import agex
+import numpy as np
+from plotly.graph_objects import Figure
+from agex import Agent
 
-# Create an agent with specialized knowledge
-math_agent = agex.Agent(primer="You are a helpful math assistant.")
+# Create specialized agents
+data_generator = Agent(name="data_generator")
+visualizer = Agent(name="visualizer") 
+orchestrator = Agent(name="orchestrator")
 
-# Give it custom tools
-@math_agent.fn
-def sqrt(num: float) -> float:
-    """Calculate the square root of a number."""
-    return num ** 0.5
-
-# Expose entire modules
-math_agent.module(math)
-
-# Define what the agent should accomplish  
-@math_agent.task
-def assist(prompt: str) -> str:  # type: ignore[return-value]
-    """Provide assistance for mathematical questions and problems."""
+# Dual-decorator pattern: orchestrator can call specialist tasks
+@orchestrator.fn
+@data_generator.task
+def generate_data(description: str) -> list[np.ndarray]:  # type: ignore[return-value]
+    """Generate synthetic datasets matching the description."""
     pass
 
-# The agent uses all available tools to complete the task
-result = assist("What is the sin of pi/2?")
+@orchestrator.fn
+@visualizer.task
+def create_plot(data: list[np.ndarray]) -> Figure:  # type: ignore[return-value]
+    """Turn numpy arrays into an interactive plot."""
+    pass
+
+@orchestrator.task
+def idea_to_visualization(idea: str) -> Figure:  # type: ignore[return-value]
+    """Turn a visualization idea into a complete data plot."""
+    pass
+
+# The orchestrator delegates to specialists automatically
+plot = idea_to_visualization("Show seasonal trends in sales data over 3 years")
+plot.show()
 ```
 
 **Key concepts:**
