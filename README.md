@@ -82,7 +82,7 @@ architect.cls(Agent)  # Let the architect use agex!
 
 @architect.task  
 def create_specialist(prompt: str) -> Callable:
-    """Create a brand new specialist agent from a natural language prompt."""
+    """Make a new specialist agent given the prompt & return the task fn."""
     pass
 
 # Agent creates another agent that creates working code
