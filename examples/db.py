@@ -9,8 +9,9 @@ and stateful object management with live database connections.
 import sqlite3
 from typing import Any
 
+from db_primer import PRIMER
+
 from agex import Agent, Versioned
-from examples.db_primer import PRIMER
 
 db = Agent(name="db_agent", primer=PRIMER)
 
