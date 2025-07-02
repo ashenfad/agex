@@ -2,6 +2,8 @@
 
 Welcome to the agex API documentation. agex is a Python agentic framework that enables LLM agents to work with real Python objects through runtime interoperability.
 
+**New to agex?** Start with the **[Quick Start Guide](../quick-start.md)** for hands-on examples and step-by-step learning. This API reference provides complete technical documentation for all agex components.
+
 ## Core APIs
 
 ### [Agent](agent.md)
@@ -21,35 +23,6 @@ Understand agent exit functions (`exit_success`, `exit_fail`, `exit_clarify`) an
 
 ### [View](view.md) ⚠️ *Experimental*
 Inspect agents and their execution state for debugging. API subject to frequent changes.
-
-## Quick Start
-
-```python
-from agex import Agent, Versioned, ExitFail, ExitClarify
-
-# Create an agent
-agent = Agent()
-
-# Register a function
-@agent.fn
-def calculate_sum(a: int, b: int) -> int:
-    return a + b
-
-# Define a task
-@agent.task("Add two numbers and explain the result")
-def math_explainer(x: int, y: int, state: Versioned) -> str:
-    pass  # type: ignore[return-value]
-
-# Execute with error handling
-state = Versioned()
-try:
-    result = math_explainer(5, 3, state=state)
-    print(result)
-except ExitFail as e:
-    print(f"Task failed: {e.reason}")
-except ExitClarify as e:
-    print(f"Agent needs clarification: {e.question}")
-```
 
 ## Import Patterns
 

@@ -28,25 +28,23 @@ my_data.sort(key=prime_finder)  # Works with existing Python code
 
 **Which enables** seamless data flow between agents (numpy arrays, pandas DataFrames), hierarchical agent orchestration through normal Python control flow, and dynamic code generation that integrates immediately with existing systems.
 
+**📚 [Get Started with the Quick Start Guide](./docs/quick-start.md)** - Learn agex step-by-step with hands-on examples
+
 [Learn more about the core philosophy in The Big Picture](./docs/big-picture.md).
 
 ## What Makes This Different
 
-`agex` enables workflows that require significantly more complexity and boilerplate in frameworks that rely on JSON or isolated execution environments. Here's how the core capabilities work:
+`agex` enables workflows that require significantly more complexity in frameworks that rely on JSON or isolated execution environments. The key difference is **runtime interoperability** - `agex` transparently handles the passing of complex Python objects between your code and an agent's sandboxed environment, working with rich objects like `numpy` arrays, `pandas` DataFrames, and custom classes without extra work.
 
-### 1. Seamless Runtime Interoperability
+This runtime interoperability enables several capabilities that are difficult elsewhere:
 
-`agex` transparently handles the passing of complex Python objects between your code and an agent's sandboxed environment. You can work with rich objects like `numpy` arrays, `pandas` DataFrames, and custom classes without extra work—types that would be difficult or impossible to handle in frameworks limited to JSON.
-
-For example, in [`examples/viz.py`](./examples/viz.py), one agent generates bulk `numpy.ndarray` objects, which are then passed directly to another agent that uses `plotly` to create a `Figure` for visualization.
-
-### 2. Dynamic Code Generation & Extension
+### **Dynamic Code Generation & Extension**
 
 Agents can generate and return executable Python functions and classes at runtime. This allows them to not just use tools, but to create them.
 
-In [`examples/funcy.py`](./examples/funcy.py), an agent is tasked with building a `Callable` function from a text prompt. The returned function is a real Python object that can be immediately integrated into existing logic (e.g., `my_list.sort(key=agent_generated_function)`).
+In [`examples/funcy.py`](./examples/funcy.py), an agent is tasked with building a `Callable` function from a text prompt. The returned function is a real Python fn that can be immediately integrated into existing logic (e.g., `my_list.sort(key=agent_made_func)`).
 
-### 3. Agent Orchestration
+### **Agent Orchestration**
 
 `agex` is designed for building complex systems out of specialized agents. One agent's core `task` can be exposed as a simple `fn` (tool) for another agent, enabling natural and powerful composition.
 
@@ -57,13 +55,13 @@ Examples of multi-agent patterns:
 
 All orchestration is done with simple Python control flow—no YAML or complex DSLs required.
 
-### 4. Live Object Integration
+### **Live Object Integration**
 
-Agents can work directly with complex, stateful APIs without requiring wrapper classes or simplified interfaces. `agex` safely exposes live Python objects—including unpickleable ones like database connections—while maintaining state serialization safety.
+Agents can work directly with complex, stateful APIs without requiring wrapper classes or simplified interfaces. `agex` exposes live Python objects—including unpickleable ones like database connections—while maintaining state serialization safety.
 
 [`examples/db.py`](./examples/db.py) showcases this with raw SQLite integration: agents work directly with `sqlite3.Connection` and `Cursor` objects, handling complex method chaining (`db.execute().fetchall()`) and transaction management. No `DatabaseManager` wrapper needed—agents adapt to the existing API.
 
-### 5. Beyond Tools: Granular Function Execution
+### **Granular Function Execution**
 
 While many agent frameworks use the term "tool", `agex` deliberately uses **`fn`** to signify a more fundamental concept.
 
@@ -72,9 +70,9 @@ While many agent frameworks use the term "tool", `agex` deliberately uses **`fn`
 
 This distinction is key to enabling agents that don't just *use* tools, but truly *program* with them.
 
-### 6. Recursive Agent Creation
+### **Recursive Agent Creation**
 
-The most advanced form of dynamic code generation: agents that can create other agents at runtime. This enables truly recursive AI systems where specialist agents can be born on-demand.
+Agents that can create other agents at runtime. This enables truly recursive AI systems where specialist agents can be born on-demand.
 
 ```python
 architect = Agent(name="architect", primer=PRIMER)
@@ -100,53 +98,7 @@ See [`examples/dogfood.py`](./examples/dogfood.py) for the complete implementati
 
 For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project. `agex` explores a different architectural path centered on a secure-by-design execution environment and deep runtime interoperability.
 
-## Building Multi-Agent Workflows
 
-Agents can call other agents as simple functions, enabling natural orchestration:
-
-```python
-import numpy as np
-import plotly.express
-from plotly.graph_objects import Figure
-from agex import Agent
-
-# Create specialized agents
-data_generator = Agent(name="data_generator")
-visualizer = Agent(name="visualizer") 
-orchestrator = Agent(name="orchestrator")
-
-# Give agents access to their required modules
-data_generator.module(np, visibility="low")
-visualizer.module(plotly.express, visibility="low")
-visualizer.module(np, visibility="low")
-
-# Dual-decorator pattern: orchestrator can call specialist tasks
-@orchestrator.fn
-@data_generator.task
-def generate_data(description: str) -> list[np.ndarray]:  # type: ignore[return-value]
-    """Generate synthetic datasets matching the description."""
-    pass
-
-@orchestrator.fn
-@visualizer.task
-def create_plot(data: list[np.ndarray]) -> Figure:  # type: ignore[return-value]
-    """Turn numpy arrays into an interactive plot."""
-    pass
-
-@orchestrator.task
-def idea_to_visualization(idea: str) -> Figure:  # type: ignore[return-value]
-    """Turn a visualization idea into a complete data plot."""
-    pass
-
-# The orchestrator delegates to specialists automatically
-plot = idea_to_visualization("Show seasonal trends in sales data over 3 years")
-plot.show()
-```
-
-**Key concepts:**
-- **`@agent.fn`**: Register custom functions as tools
-- **`agent.module()`**: Expose existing Python modules  
-- **`@agent.task`**: Define what you want accomplished (empty body - agent implements it)
 
 ## API Documentation
 
