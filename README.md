@@ -72,6 +72,28 @@ While many agent frameworks use the term "tool," `agex` deliberately uses **`fn`
 
 This distinction is key to enabling agents that don't just *use* tools, but truly *program* with them.
 
+### 6. Recursive Agent Creation
+
+The most advanced form of dynamic code generation: agents that can create other agents at runtime. This enables truly recursive AI systems where specialist agents can be born on-demand.
+
+```python
+architect = Agent(name="architect", primer=PRIMER)
+architect.cls(Agent)  # Let the Architect use agex!
+
+@architect.task  
+def create_specialist(prompt: str) -> Callable:
+    """Create a brand new specialist agent from a natural language prompt."""
+    pass
+
+# Agent creates another agent that creates working code
+math_solver = create_specialist("solve mathematical equations step by step")
+result = math_solver("4x + 5 = 13")  # "Therefore, x = 2.0"
+```
+
+**Why this matters:** Most frameworks can have agents *use* tools - `agex` agents can *architect* intelligence, creating new agents with their own capabilities and reasoning patterns. The utility of this is very much unproven but it is intriguing.
+
+See [`examples/dogfood.py`](./examples/dogfood.py) for the complete implementation of agents creating agents.
+
 ## Project Status
 
 `agex` is a new framework in active development. While the core concepts are stabilizing, the API should be considered experimental and is subject to change.

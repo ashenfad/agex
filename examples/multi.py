@@ -3,6 +3,9 @@ Hierarchical Agent Orchestration
 
 An orchestrator agent delegates to specialist sub-agents for data generation
 and visualization. Bulk data flows between sub-agents without special handling.
+
+Note: This example was tested with gpt-4.1-nano to demonstrate that
+even smaller LLMs can effectively use the agex framework.
 """
 
 from plotly.graph_objects import Figure

@@ -7,6 +7,9 @@ For more details:
 - https://langchain-ai.github.io/langgraph/tutorials/workflows/#evaluator-optimizer
 - https://github.com/lastmile-ai/mcp-agent?tab=readme-ov-file#evaluator-optimizer
 - https://www.anthropic.com/engineering/building-effective-agents
+
+Note: This example was tested with gpt-4.1-nano to demonstrate that
+even smaller LLMs can effectively use the agex framework.
 """
 
 from dataclasses import dataclass

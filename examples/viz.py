@@ -3,6 +3,9 @@ Data Visualization
 
 Agent works with complex NumPy arrays and generates Plotly visualizations.
 Bulk data flows between agents without special handling.
+
+Note: This example was tested with gpt-4.1-nano to demonstrate that
+even smaller LLMs can effectively use the agex framework.
 """
 
 import numpy as np

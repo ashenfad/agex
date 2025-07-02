@@ -4,6 +4,9 @@ Raw SQLite API Integration
 Agent works directly with sqlite3.Connection and Cursor objects - no wrapper
 classes needed. Demonstrates complex method chaining (db.execute().fetchall())
 and stateful object management with live database connections.
+
+Note: This example was tested with gpt-4.1-nano to demonstrate that
+even smaller LLMs can effectively use the agex framework.
 """
 
 import sqlite3

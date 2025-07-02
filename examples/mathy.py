@@ -3,6 +3,9 @@ Mathematical Computing
 
 Agent performs calculations using Python's math module and works with numerical
 data. Demonstrates basic agent-module integration for computational tasks.
+
+Note: This example was tested with gpt-4.1-nano to demonstrate that
+even smaller LLMs can effectively use the agex framework.
 """
 
 import math
