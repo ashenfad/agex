@@ -16,13 +16,16 @@ Define agent tasks using the `@agent.task` decorator. Support for standalone tas
 ### [State](state.md)
 Manage persistent state across agent executions with automatic checkpointing and rollback capabilities.
 
+### [Error Handling](errors.md)
+Understand agent exit functions (`exit_success`, `exit_fail`, `exit_clarify`) and exception handling (`ExitFail`, `ExitClarify`, `TimeoutError`).
+
 ### [View](view.md) ⚠️ *Experimental*
 Inspect agents and their execution state for debugging. API subject to frequent changes.
 
 ## Quick Start
 
 ```python
-from agex import Agent, Versioned
+from agex import Agent, Versioned, ExitFail, ExitClarify
 
 # Create an agent
 agent = Agent()
@@ -37,10 +40,15 @@ def calculate_sum(a: int, b: int) -> int:
 def math_explainer(x: int, y: int, state: Versioned) -> str:
     pass  # type: ignore[return-value]
 
-# Execute with state
+# Execute with error handling
 state = Versioned()
-result = math_explainer(5, 3, state=state)
-print(result)
+try:
+    result = math_explainer(5, 3, state=state)
+    print(result)
+except ExitFail as e:
+    print(f"Task failed: {e.reason}")
+except ExitClarify as e:
+    print(f"Agent needs clarification: {e.question}")
 ```
 
 ## Import Patterns
@@ -50,6 +58,7 @@ Most agex functionality is available at the top level:
 ```python
 from agex import Agent, Versioned, view
 from agex import Memory, Disk, Cache  # Storage backends
+from agex import ExitFail, ExitClarify  # Error handling
 from agex import configure_llm, clear_agent_registry  # Utilities
 ```
 
