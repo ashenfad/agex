@@ -29,7 +29,7 @@ def idea_to_plot(idea: str) -> Figure:  # type: ignore[return-value]
     pass
 
 
-def example():
+def main():
     # ask the orchestrator to create a plot from an idea, it will delegate to sub-agents
     idea = """
     I'd like a plot that shows seasonal change over the years for umbrellas sold. The data
@@ -39,3 +39,8 @@ def example():
     plot = idea_to_plot(idea)
     plot.show()
     # see examples/seasonal.png
+
+
+if __name__ == "__main__":
+    # Run with: python examples/multi.py OR python -m examples.multi
+    main()

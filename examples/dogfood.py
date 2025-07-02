@@ -12,23 +12,24 @@ from dogfood_primer import PRIMER
 
 from agex import Agent
 
+# create an architect agent that can create other agents
+architect = Agent(name="architect", primer=PRIMER)
+
+# register the Agent class so the architect can use it...
+# this is where we eat our own dogfood!
+architect.cls(Agent)
+
+# register math module so architect can choose topass it to child agents
+architect.module(math)
+
+
+@architect.task
+def create_specialist(prompt: str) -> Callable:  # type: ignore[return-value]
+    """Create an agent task fn given a prompt."""
+    pass
+
 
 def main():
-    # create an architect agent that can create other agents
-    architect = Agent(name="architect", primer=PRIMER)
-
-    # register the Agent class so the architect can use it...
-    # this is where we eat our own dogfood!
-    architect.cls(Agent)
-
-    # register math module so architect can choose topass it to child agents
-    architect.module(math)
-
-    @architect.task
-    def create_specialist(prompt: str) -> Callable:  # type: ignore[return-value]
-        """Create an agent task fn given a prompt."""
-        pass
-
     # ask the architect to create a brand-new specialist agent
     math_solver = create_specialist(
         "please create an agent that can solve math problems"

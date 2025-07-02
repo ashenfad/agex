@@ -27,7 +27,7 @@ def transform(prompt: str, numbers: list[float]) -> list[float]:  # type: ignore
     pass
 
 
-def example():
+def main():
     """
     We run a calculation and then transform a list of numbers.
     """
@@ -42,3 +42,8 @@ def example():
     print(result[-3:])
     # 360
     # [6.230825429619756, 6.2482787221397, 6.265732014659642]
+
+
+if __name__ == "__main__":
+    # Run with: python examples/mathy.py OR python -m examples.mathy
+    main()

@@ -33,9 +33,16 @@ Please make 50 of the signals have abberations.
 """
 
 
-def example():
+def main():
     data = make_data(gen_data_request)
     print(len(data))
+    print(type(data[0]))
     print(data[0][:3])
     # 1000
+    # <class 'numpy.ndarray'>
     # [ 0.16647177 -0.09266472  0.09004741]
+
+
+if __name__ == "__main__":
+    # Run with: python examples/data.py OR python -m examples.data
+    main()

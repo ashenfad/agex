@@ -39,7 +39,7 @@ def query_db(prompt: str) -> Any:  # type: ignore[return-value]
     pass
 
 
-def example():
+def main():
     state = Versioned()
     update_db("Create a 'users' table with columns: id, name, email, age", state=state)
     update_db("Add 10 users to the users table", state=state)
@@ -51,3 +51,8 @@ def example():
     # see the results directly
     print(conn.execute("SELECT * FROM users").fetchall())
     # [(1, 'User1', 'user1@example.com', 21), (2, 'User2', 'user2@example.com', 22), ...]
+
+
+if __name__ == "__main__":
+    # Run with: python examples/db.py OR python -m examples.db
+    main()

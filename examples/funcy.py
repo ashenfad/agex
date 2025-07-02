@@ -22,12 +22,38 @@ def fn_builder(prompt: str) -> Callable:  # type: ignore[return-value]
     pass
 
 
-def example():
+def main():
     # Use versioned state to maintain context between agent calls
     state = Versioned()
 
     # build a function to find next prime
     fn = fn_builder("a fn for the first prime larger than a given number.", state=state)
+
+    # ----------------------------------------------
+    # actual `fn_builder` agent code for the task:
+    # ----------------------------------------------
+    # def first_prime_larger_than(n):
+    #     def is_prime(num):
+    #         if num <= 1:
+    #             return False
+    #         if num <= 3:
+    #             return True
+    #         if num % 2 == 0 or num % 3 == 0:
+    #             return False
+    #         i = 5
+    #         while i * i <= num:
+    #             if num % i == 0 or num % (i + 2) == 0:
+    #                 return False
+    #             i += 6
+    #         return True
+    #
+    #     candidate = n + 1
+    #     while True:
+    #         if is_prime(candidate):
+    #             return candidate
+    #         candidate += 1
+    #
+    # exit_success(first_prime_larger_than)
 
     # the function is callable in native python
     print(fn(500000))
@@ -38,3 +64,8 @@ def example():
 
     print(fn(500000))
     # 499979
+
+
+if __name__ == "__main__":
+    # Run with: python examples/funcy.py OR python -m examples.funcy
+    main()
