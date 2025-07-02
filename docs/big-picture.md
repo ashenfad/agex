@@ -183,7 +183,11 @@ Over time, agents would develop personal coding styles and specialized toolkits,
 
 ### Agent-Designed Agent Architecture
 
-The most speculative possibility: agents creating their own specialist sub-agents on demand, analyzing their task patterns to architect cognitive division of labor, and designing hierarchical specialist networks. This could transform agents from "users of tools" into "architects of intelligence" - responsible for both solving problems and designing the cognitive structures to solve them effectively.
+**Update**: A minimal implementation of this concept now exists in [`examples/dogfood.py`](../examples/dogfood.py), where agents can create other agents at runtime using natural language prompts.
+
+The broader possibility remains speculative: agents creating their own specialist sub-agents on demand, analyzing their task patterns to architect cognitive division of labor, and designing hierarchical specialist networks. This could transform agents from "users of tools" into "architects of intelligence" - responsible for both solving problems and designing the cognitive structures to solve them effectively.
+
+While the core mechanism works, the utility of recursive agent creation in practical applications is still unproven but intriguing.
 
 
 
