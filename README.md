@@ -65,7 +65,7 @@ Agents can work directly with complex, stateful APIs without requiring wrapper c
 
 ### 5. Beyond Tools: Granular Function Execution
 
-While many agent frameworks use the term "tool," `agex` deliberately uses **`fn`** to signify a more fundamental concept.
+While many agent frameworks use the term "tool", `agex` deliberately uses **`fn`** to signify a more fundamental concept.
 
 *   **Tools** often imply high-level, stateless operations where inputs and outputs are easily serialized to JSON. This model is practical for workflows where an LLM reasons between each action.
 *   An `agex` **`fn`** can be much more granular. Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This allows for complex and efficient problem-solving without the latency and cost of an LLM call at every step.
@@ -78,7 +78,7 @@ The most advanced form of dynamic code generation: agents that can create other 
 
 ```python
 architect = Agent(name="architect", primer=PRIMER)
-architect.cls(Agent)  # Let the Architect use agex!
+architect.cls(Agent)  # Let the architect use agex!
 
 @architect.task  
 def create_specialist(prompt: str) -> Callable:

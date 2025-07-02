@@ -22,7 +22,7 @@ architect = Agent(name="architect", primer=PRIMER)
 # this is where we eat our own dogfood!
 architect.cls(Agent)
 
-# register math module so architect can choose topass it to child agents
+# register math module so the architect may share it with child agents
 architect.module(math)
 
 
