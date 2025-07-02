@@ -36,4 +36,6 @@ Please make 50 of the signals have abberations.
 def example():
     data = make_data(gen_data_request)
     print(len(data))
-    print(data[0][:10])
+    print(data[0][:3])
+    # 1000
+    # [ 0.16647177 -0.09266472  0.09004741]

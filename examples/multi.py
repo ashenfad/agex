@@ -14,7 +14,6 @@ from examples.viz import plot_data
 orchestrator = Agent(
     name="orchestrator",
     primer="You orchestrate other agents to solve a problem.",
-    timeout_seconds=20,
 )
 
 # add sub-agents as functions for orchestrator
@@ -39,3 +38,4 @@ def example():
 
     plot = idea_to_plot(idea)
     plot.show()
+    # see examples/seasonal.png

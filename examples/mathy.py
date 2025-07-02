@@ -9,10 +9,7 @@ import math
 
 from agex import Agent
 
-mathy_agent = Agent(
-    primer="You are an expert at using a calculator. You are given a math problem and your goal is to return just the numeric answer.",
-    max_iterations=5,
-)
+mathy_agent = Agent(primer="You are an expert at solving math problems.")
 
 # medium viz shows function sigs but not docs to save context
 mathy_agent.module(math, visibility="medium")
@@ -25,8 +22,8 @@ def run_calculation(problem: str) -> float:  # type: ignore[return-value]
 
 
 @mathy_agent.task
-def transform_or_aggregate(prompt: str, numbers: list[float]) -> list[float] | float:  # type: ignore[return-value]
-    """Transform or aggregate a list of numbers based on a prompt."""
+def transform(prompt: str, numbers: list[float]) -> list[float]:  # type: ignore[return-value]
+    """Transform a list of numbers based on a prompt."""
     pass
 
 
@@ -37,7 +34,11 @@ def example():
 
     result = run_calculation("What is the square root of 256, multiplied by pi?")
     print(result)
+    # 50.26548245743669
 
     nums = list(range(360))
-    result = transform_or_aggregate("Transform these degrees into radians", nums)
+    result = transform("Transform these degrees into radians", nums)
+    print(len(result))
     print(result[-3:])
+    # 360
+    # [6.230825429619756, 6.2482787221397, 6.265732014659642]

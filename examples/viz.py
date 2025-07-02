@@ -16,7 +16,6 @@ from examples.data import gen_data_request, make_data
 viz = Agent(
     name="viz",
     primer="You excel plotting data via plotly express.",
-    timeout_seconds=20,
 )
 
 viz.module(np, visibility="low")
@@ -52,3 +51,4 @@ def example():
 
     # there's a cool plot with some abberations... really!
     plot.show()
+    # see examples/process.png

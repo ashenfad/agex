@@ -45,6 +45,8 @@ def example():
 
     oldest = query_db("Who is the oldest user?", state=state)
     print(f"Oldest user: {oldest}")
+    # Oldest user: {'id': 10, 'name': 'User10', 'email': 'user10@example.com', 'age': 30}
 
     # see the results directly
     print(conn.execute("SELECT * FROM users").fetchall())
+    # [(1, 'User1', 'user1@example.com', 21), (2, 'User2', 'user2@example.com', 22), ...]
