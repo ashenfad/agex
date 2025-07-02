@@ -14,13 +14,14 @@ from agex import Agent
 
 
 def main():
-    # Create an architect agent that can create other agents
+    # create an architect agent that can create other agents
     architect = Agent(name="architect", primer=PRIMER)
 
-    # Register the Agent class so the architect can use it
+    # register the Agent class so the architect can use it...
+    # this is where we eat our own dogfood!
     architect.cls(Agent)
 
-    # Register math module so architect can pass it to child agents
+    # register math module so architect can choose topass it to child agents
     architect.module(math)
 
     @architect.task
@@ -28,16 +29,55 @@ def main():
         """Create an agent task fn given a prompt."""
         pass
 
-    #
+    # ask the architect to create a brand-new specialist agent
     math_solver = create_specialist(
         "please create an agent that can solve math problems"
     )
+
+    # ----------------------------------------------
+    # actual `create_specialist` agent code for the task:
+    # ----------------------------------------------
+    # with Agent() as math_solver_agent:
+    #     import math
+    #     # Register math module capabilities with the agent
+    #     math_solver_agent.module(math)
+    #
+    #     def solve_math_problem(equation: str) -> str:
+    #         '''Solve a mathematical equation step by step.'''
+    #         pass  # Empty body for agent task
+    #
+    #     task_fn = math_solver_agent.task(solve_math_problem)
+    #
+    #     exit_success(task_fn)
 
     result = math_solver("4x + 5 = 13")
     print(result)
     # Subtract 5 from both sides: 4x = 13 - 5
     # Divide both sides by 4: x = 8 / 4
     # Therefore, x = 2.0
+
+    # ----------------------------------------------
+    # actual `math_solver` agent code for the task:
+    # ----------------------------------------------
+    # # From the equation, I see:
+    # coefficient_x = 4
+    # constant_term = 5
+    # right_side = 13
+
+    # # Step 1: Subtract 5 from both sides
+    # step1 = f"Subtract {constant_term} from both sides: {coefficient_x}x = {right_side} - {constant_term}"
+    # value_after_subtraction = right_side - constant_term
+
+    # # Step 2: Divide both sides by 4
+    # step2 = f"Divide both sides by {coefficient_x}: x = {value_after_subtraction} / {coefficient_x}"
+
+    # # Final calculation
+    # x_value = value_after_subtraction / coefficient_x
+
+    # # Compose the solution steps
+    # solution_steps = f"{step1}\n{step2}\nTherefore, x = {x_value}"
+
+    # exit_success(solution_steps)
 
 
 if __name__ == "__main__":
