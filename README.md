@@ -26,8 +26,6 @@ my_data.sort(key=prime_finder)  # Works with existing Python code
 
 **This works because** `agex` provides true runtime interoperability - agents don't just return JSON, they create real Python objects that live directly in your runtime environment.
 
-**Which enables** seamless data flow between agents (numpy arrays, pandas DataFrames), hierarchical agent orchestration through normal Python control flow, and dynamic code generation that integrates immediately with existing systems.
-
 **📚 [Get Started with the Quick Start Guide](./docs/quick-start.md)** - Learn agex step-by-step with hands-on examples
 
 [Learn more about the core philosophy in The Big Picture](./docs/big-picture.md).
