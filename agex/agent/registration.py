@@ -3,7 +3,7 @@ import inspect
 from types import ModuleType
 from typing import Any, Callable, TypeVar, overload
 
-from agex.agent.base import BaseAgent
+from agex.agent.base import BaseAgent, resolve_agent
 from agex.agent.datatypes import (
     RESERVED_NAMES,
     MemberSpec,
@@ -14,6 +14,8 @@ from agex.agent.datatypes import (
     RegisteredObject,
     Visibility,
 )
+from agex.eval.functions import UserFunction
+from agex.eval.objects import AgexModule
 
 
 def create_predicate(pattern: Pattern | None) -> Callable[[str], bool]:
@@ -47,30 +49,66 @@ class RegistrationMixin(BaseAgent):
         """
 
         def decorator(f: Callable) -> Callable:
-            final_name = name or f.__name__
-            if final_name in RESERVED_NAMES:
-                raise ValueError(
-                    f"The name '{final_name}' is reserved and cannot be registered."
+            # Check if this is a UserFunction (agent registering function from another agent)
+
+            if isinstance(f, UserFunction):
+                # Special case: registering a UserFunction from parent agent
+                final_name = name or f.name
+                if final_name in RESERVED_NAMES:
+                    raise ValueError(
+                        f"The name '{final_name}' is reserved and cannot be registered."
+                    )
+
+                # Create wrapper that preserves UserFunction call semantics
+                def user_function_wrapper(*args, **kwargs):
+                    return f(
+                        *args, **kwargs
+                    )  # UserFunction.__call__ handles agent resolution
+
+                # Preserve metadata from UserFunction
+                user_function_wrapper.__name__ = f.name
+                user_function_wrapper.__doc__ = f.source_text or "User-defined function"
+
+                # Use provided docstring or fall back to UserFunction source
+                final_doc = (
+                    docstring
+                    if docstring is not None
+                    else (f.source_text or user_function_wrapper.__doc__)
                 )
-            final_doc = docstring if docstring is not None else f.__doc__
-            self.fn_registry[final_name] = RegisteredFn(
-                fn=f, visibility=visibility, docstring=final_doc
-            )
-            self._update_fingerprint()
 
-            # Mark as fn-decorated for dual-decorator validation (allow multiple fn decorators)
-            # Only set attributes if the function allows it (built-ins don't)
-            try:
-                if not hasattr(f, "__agent_fn_owners__"):
-                    f.__agent_fn_owners__ = []
-                f.__agent_fn_owners__.append(self)
-                f.__is_agent_fn__ = True  # Keep this for task decorator to detect
-            except (AttributeError, TypeError):
-                # Built-in functions and some other types don't allow setting attributes
-                # This is fine - they can't be task-decorated anyway, so no validation needed
-                pass
+                self.fn_registry[final_name] = RegisteredFn(
+                    fn=user_function_wrapper, visibility=visibility, docstring=final_doc
+                )
+                self._update_fingerprint()
 
-            return f
+                # Return the wrapper for consistency
+                return user_function_wrapper
+            else:
+                # Normal case: real Python function
+                final_name = name or f.__name__
+                if final_name in RESERVED_NAMES:
+                    raise ValueError(
+                        f"The name '{final_name}' is reserved and cannot be registered."
+                    )
+                final_doc = docstring if docstring is not None else f.__doc__
+                self.fn_registry[final_name] = RegisteredFn(
+                    fn=f, visibility=visibility, docstring=final_doc
+                )
+                self._update_fingerprint()
+
+                # Mark as fn-decorated for dual-decorator validation (allow multiple fn decorators)
+                # Only set attributes if the function allows it (built-ins don't)
+                try:
+                    if not hasattr(f, "__agent_fn_owners__"):
+                        f.__agent_fn_owners__ = []
+                    f.__agent_fn_owners__.append(self)
+                    f.__is_agent_fn__ = True  # Keep this for task decorator to detect
+                except (AttributeError, TypeError):
+                    # Built-in functions and some other types don't allow setting attributes
+                    # This is fine - they can't be task-decorated anyway, so no validation needed
+                    pass
+
+                return f
 
         return decorator(_fn) if _fn else decorator
 
@@ -210,8 +248,22 @@ class RegistrationMixin(BaseAgent):
         """
         Registers a module or instance object and its members with the agent.
         """
+        # Check if this is an AgexModule (agent registering module from another agent)
+        from agex.eval.objects import AgexModule
+
+        if isinstance(obj, AgexModule):
+            # Special case: inherit from parent agent's registration with security intersection
+            inherited_registration = self._handle_agex_module_inheritance(
+                obj, name, visibility, include, exclude
+            )
+            self.importable_modules[inherited_registration.name] = (
+                inherited_registration
+            )
+            self._update_fingerprint()
+            return obj  # Return the AgexModule for consistency
+
         # Check if we're dealing with a module or an instance
-        if isinstance(obj, ModuleType):
+        elif isinstance(obj, ModuleType):
             return self._register_module(
                 obj,
                 name=name,
@@ -439,3 +491,98 @@ class RegistrationMixin(BaseAgent):
         # Add it to the object registry
         self.object_registry[final_name] = reg_object
         self._update_fingerprint()
+
+    def _handle_agex_module_inheritance(
+        self,
+        agex_module: AgexModule,
+        name: str | None,
+        visibility: Visibility,
+        include: Pattern | None,
+        exclude: Pattern | None,
+    ) -> RegisteredModule:
+        """
+        Handle security inheritance when registering an AgexModule from a parent agent.
+
+        Args:
+            agex_module: The AgexModule from a parent agent
+            name: Optional name override
+            visibility: Visibility level
+            include: Include pattern for member filtering
+            exclude: Exclude pattern for member filtering
+
+        Returns:
+            RegisteredModule with inherited, filtered permissions
+
+        Raises:
+            ValueError: If security inheritance fails or no members are approved
+        """
+        if not agex_module.agent_fingerprint:
+            # TODO: Handle closure-frozen AgexModules gracefully
+            # When UserFunctions with modules in closures get pickled/unpickled,
+            # the modules become AgexModule(agent_fingerprint=""). We should
+            # allow graceful fallback to direct registration rather than inheritance.
+            raise ValueError(
+                f"AgexModule '{agex_module.name}' has no parent agent for security inheritance"
+            )
+
+        # Resolve parent agent to get its registration
+        parent_agent = resolve_agent(agex_module.agent_fingerprint)
+        parent_registration = parent_agent.importable_modules.get(agex_module.name)
+
+        if not parent_registration:
+            raise ValueError(
+                f"Module '{agex_module.name}' is not registered with parent agent"
+            )
+
+        # Get parent's approved member set (combine fns, consts, and classes)
+        parent_approved = set()
+        parent_approved.update(parent_registration.fns.keys())
+        parent_approved.update(parent_registration.consts.keys())
+        parent_approved.update(parent_registration.classes.keys())
+
+        # Apply include/exclude filters to determine what child agent wants
+        include_pred = create_predicate(include)
+        exclude_pred = create_predicate(exclude)
+
+        # Start with all parent-approved members
+        child_requested = {
+            name
+            for name in parent_approved
+            if include_pred(name) and not exclude_pred(name)
+        }
+
+        # Security inheritance: intersection of parent's approval and child's request
+        final_allowed = parent_approved.intersection(child_requested)
+
+        if not final_allowed:
+            raise ValueError(
+                f"No members approved for inheritance. Parent allows: {sorted(parent_approved)}, "
+                f"child requested: {sorted(child_requested)}"
+            )
+
+        # Create new registration with inherited permissions by filtering parent's registrations
+        final_name = name or agex_module.name
+        if final_name in RESERVED_NAMES:
+            raise ValueError(
+                f"The name '{final_name}' is reserved and cannot be registered."
+            )
+
+        # Filter parent's registrations to only include allowed members
+        inherited_fns = {
+            k: v for k, v in parent_registration.fns.items() if k in final_allowed
+        }
+        inherited_consts = {
+            k: v for k, v in parent_registration.consts.items() if k in final_allowed
+        }
+        inherited_classes = {
+            k: v for k, v in parent_registration.classes.items() if k in final_allowed
+        }
+
+        return RegisteredModule(
+            name=final_name,
+            module=parent_registration.module,  # Same underlying module
+            visibility=visibility,
+            fns=inherited_fns,
+            consts=inherited_consts,
+            classes=inherited_classes,
+        )

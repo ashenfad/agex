@@ -152,7 +152,9 @@ class ExpressionEvaluator(BaseEvaluator):
                         f"Use agent.module({attr_name}) to register it.",
                         node,
                     )
-                return AgexModule(name=found_spec.name)
+                return AgexModule(
+                    name=found_spec.name, agent_fingerprint=self.agent.fingerprint
+                )
 
             return real_attr
 

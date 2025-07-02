@@ -32,7 +32,7 @@ def check_assignment_safety(value: Any) -> Any:
     """
     # Convert modules immediately (known issue)
     if isinstance(value, ModuleType):
-        return AgexModule(name=value.__name__)
+        return AgexModule(name=value.__name__, agent_fingerprint="")
 
     # Fast path: known-safe atomic types
     safe_atomic_types = {int, float, str, bytes, bool, type(None), complex, range}

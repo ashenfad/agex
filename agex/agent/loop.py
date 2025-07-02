@@ -88,6 +88,9 @@ class TaskLoopMixin(BaseAgent):
         initial_task_message = self._build_task_message(
             docstring, inputs_dataclass, inputs_instance, return_type
         )
+        print("============== INITIAL TASK MESSAGE ===============")
+        print(initial_task_message)
+        print("===========================================")
         add_message(exec_state, Message(role="user", content=initial_task_message))
 
         # Main task loop
@@ -186,6 +189,9 @@ class TaskLoopMixin(BaseAgent):
         # Add registered resources (available tools)
 
         registered_definitions = render_definitions(self)  # type: ignore
+        print("============== REGISTERED DEFINITIONS ===============")
+        print(registered_definitions)
+        print("===========================================")
         if registered_definitions.strip():
             parts.append("# Registered Resources\n\n" + registered_definitions)
 
@@ -238,7 +244,21 @@ class TaskLoopMixin(BaseAgent):
             )
         else:
             # Regular return type - show the type annotation
-            return_type_name = str(return_type)
+            # Sanitize type name to avoid exposing user module information
+            type_str = str(return_type)
+
+            # Only sanitize user-defined classes, not built-in/generic types
+            if (
+                hasattr(return_type, "__module__")
+                and hasattr(return_type, "__name__")
+                and return_type.__module__ not in ("builtins", "typing", "__main__")
+            ):
+                # This is a user-defined class from a specific module
+                return_type_name = return_type.__name__
+            else:
+                # Built-in types, generic types, or types from safe modules
+                return_type_name = type_str
+
             parts.append(
                 f"When complete, call `exit_success(result: {return_type_name})` with your result."
             )

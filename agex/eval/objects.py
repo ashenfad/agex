@@ -230,6 +230,9 @@ class AgexModule:
     """A sandboxed, serializable module object for use within the Agex evaluator."""
 
     name: str
+    agent_fingerprint: str = (
+        ""  # Parent agent who registered this module (for security inheritance)
+    )
 
     def __repr__(self):
         return f"<agexmodule '{self.name}'>"

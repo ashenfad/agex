@@ -65,16 +65,49 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         """
 
         def decorator(func: Callable) -> Callable:
-            self._validate_task_decorator(func)
+            # Check if this is a UserFunction (agent creating task from another agent's function)
+            from agex.eval.functions import TaskUserFunction, UserFunction
 
-            # Determine the effective primer. The keyword 'primer' takes highest precedence.
-            # If not provided, check if a positional primer was passed (in which case
-            # primer_or_func will be a string, not the function being decorated).
-            effective_primer = primer
-            if effective_primer is None and not callable(primer_or_func):
-                effective_primer = primer_or_func
+            if isinstance(func, UserFunction):
+                # Special case: creating task from existing UserFunction
+                # Determine the effective primer
+                effective_primer = primer
+                if effective_primer is None and not callable(primer_or_func):
+                    effective_primer = primer_or_func
 
-            return self._create_task_wrapper(func, primer=effective_primer)
+                # Use the UserFunction's docstring or source_text as fallback
+                if effective_primer is None:
+                    effective_primer = (
+                        func.source_text
+                        or "Execute the user-defined function as a task."
+                    )
+
+                # Create TaskUserFunction
+                return TaskUserFunction(
+                    # Copy UserFunction metadata
+                    name=func.name,
+                    args=func.args,
+                    body=func.body,
+                    closure_state=func.closure_state,
+                    source_text=func.source_text,
+                    agent_fingerprint=func.agent_fingerprint,
+                    # Add task-specific metadata
+                    task_agent_fingerprint=self.fingerprint,
+                    task_docstring=effective_primer,
+                    task_return_type=object,  # Generic type since UserFunction loses type hints
+                )
+            else:
+                # Normal case: real function definition
+                self._validate_task_decorator(func)
+
+                # Determine the effective primer. The keyword 'primer' takes highest precedence.
+                # If not provided, check if a positional primer was passed (in which case
+                # primer_or_func will be a string, not the function being decorated).
+                effective_primer = primer
+                if effective_primer is None and not callable(primer_or_func):
+                    effective_primer = primer_or_func
+
+                return self._create_task_wrapper(func, primer=effective_primer)
 
         # If the decorator is used without parentheses (@agent.task), the function
         # is passed directly as primer_or_func. In this case, we call the decorator

@@ -31,9 +31,9 @@ class BaseEvaluator(ast.NodeVisitor):
                 f"Module '{module_name}' is not registered or whitelisted.", node=None
             )
 
-        # Create a simple AgexModule with the name
+        # Create AgexModule with agent fingerprint for security inheritance
         # JIT resolution happens in expressions.py when attributes are accessed
-        return AgexModule(name=module_name)
+        return AgexModule(name=module_name, agent_fingerprint=self.agent.fingerprint)
 
     def _handle_destructuring_assignment(self, target_node: ast.AST, value: Any):
         """

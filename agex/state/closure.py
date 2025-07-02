@@ -104,7 +104,9 @@ class LiveClosureState(State):
             value = self.get(key)  # Use self.get() to properly resolve variables
             # Convert any raw modules to AgexModule (safety net)
             if isinstance(value, ModuleType):
-                frozen_values[key] = AgexModule(name=value.__name__)
+                frozen_values[key] = AgexModule(
+                    name=value.__name__, agent_fingerprint=""
+                )  # Closure freezing, no agent context
             else:
                 frozen_values[key] = value
 
