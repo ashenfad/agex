@@ -1,6 +1,6 @@
 # agex
 
-`agex` (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to think, act, and create using real Python code. It provides a secure, sandboxed execution environment that allows for deep interoperability with your existing codebase, moving beyond simple tool-calling to true runtime integration.
+`agex` (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to think, act, and create using real Python code. It provides a secure, sandboxed execution environment that allows for deep interoperability with your existing codebase, moving beyond simple tool-calling to runtime integration.
 
 ## 30-Second Example
 
@@ -24,17 +24,17 @@ print(prime_finder(100))  # 101
 my_data.sort(key=prime_finder)  # Works with existing Python code
 ```
 
-**This works because** `agex` provides true runtime interoperability - agents don't just return JSON, they create real Python objects that live directly in your runtime environment.
+**This works because** `agex` provides easy runtime interoperability - agents don't just return JSON, they create real Python objects that live directly in your runtime environment.
 
 **📚 [Get Started with the Quick Start Guide](./docs/quick-start.md)** - Learn agex step-by-step with hands-on examples
 
-[Learn more about the core philosophy in The Big Picture](./docs/big-picture.md).
+**🔭 [Learn more about the core philosophy in The Big Picture](./docs/big-picture.md)**
 
 ## What Makes This Different
 
 `agex` enables workflows without the accidential complexity of frameworks that rely on JSON or isolated execution environments. The key difference is **runtime interoperability** - `agex` transparently handles the passing of complex Python objects between your code and an agent's sandboxed environment, working with rich objects like `numpy` arrays, `pandas` DataFrames, and custom classes without extra work.
 
-This runtime interoperability enables several capabilities that are difficult elsewhere:
+This interoperability enables:
 
 ### **Dynamic Code Generation & Extension**
 
