@@ -4,9 +4,18 @@ This guide walks you through the core concepts of agex with hands-on examples. B
 
 ## Basic Setup
 
-First, install agex and set up your LLM configuration:
+First, install agex with your preferred LLM provider:
 
 ```bash
+# Install with specific provider
+pip install "agex[openai]"      # For OpenAI models
+pip install "agex[anthropic]"   # For Anthropic Claude models  
+pip install "agex[gemini]"      # For Google Gemini models
+
+# Or install with all providers
+pip install "agex[all-providers]"
+
+# Or install just the core (dummy provider only)
 pip install agex
 ```
 
@@ -22,8 +31,10 @@ Or programmatically:
 ```python
 from agex import configure_llm
 
-# Configure your LLM (see API docs for other providers)
+# Configure your LLM (OpenAI, Anthropic, or Gemini)
 configure_llm(provider="openai", model="gpt-4")
+configure_llm(provider="anthropic", model="claude-3-sonnet-20240229")
+configure_llm(provider="gemini", model="gemini-1.5-flash")
 ```
 
 ## 1. Your First Agent

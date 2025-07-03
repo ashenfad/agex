@@ -64,7 +64,7 @@ def configure_llm(**kwargs):
     Set global LLM defaults for all new agents.
 
     Example:
-        tic.configure_llm(provider="anthropic", model="claude-3-sonnet")
+        configure_llm(provider="anthropic", model="claude-3-sonnet-20240229")
 
     Args:
         **kwargs: LLM configuration parameters

@@ -117,7 +117,21 @@ For design concepts and higher-level documentation, see:
 - **[Security Model](./docs/security.md)** - Execution environment and safety guarantees
 - **[Nearly Python](./docs/nearly-python.md)** - Understanding agent code constraints and Python compatibility
 
-## Setup
+## Installation
+
+Install agex with your preferred LLM provider:
+
+```bash
+# Install with specific provider
+pip install "agex[openai]"        # For OpenAI models
+pip install "agex[anthropic]"     # For Anthropic Claude models  
+pip install "agex[gemini]"        # For Google Gemini models
+
+# Or install with all providers
+pip install "agex[all-providers]"
+```
+
+## Development Setup
 
 This project uses `pyenv` to manage the Python version and `uv` for package management.
 
@@ -127,7 +141,7 @@ This project uses `pyenv` to manage the Python version and `uv` for package mana
 2.  **Create a virtual environment and install dependencies:**
     ```bash
     uv venv
-    uv pip install -e ".[dev]"
+    uv pip install -e ".[dev,all-providers]"
     ```
 
 3.  **Set up pre-commit hooks:**

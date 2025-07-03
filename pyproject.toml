@@ -5,9 +5,8 @@ description = "Python emulation for agents."
 requires-python = ">=3.12"
 dependencies = [
     "tiktoken",
-    "xxhash",
+    "xxhash", 
     "diskcache",
-    "openai",
     "pydantic",
 ]
 
@@ -27,6 +26,22 @@ examples = [
     "nbformat",
     "pandas",
     "sqlite3",
+]
+# LLM provider dependencies
+openai = [
+    "openai",
+]
+anthropic = [
+    "anthropic",
+]
+gemini = [
+    "google-generativeai",
+]
+# Convenience group for all providers
+all-providers = [
+    "openai",
+    "anthropic", 
+    "google-generativeai",
 ]
 
 [tool.ruff]
