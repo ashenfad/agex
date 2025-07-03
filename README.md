@@ -26,15 +26,15 @@ my_data.sort(key=prime_finder)  # Works with existing Python code
 
 **This works because** `agex` provides easy runtime interoperability - agents don't just return JSON, they create real Python objects that live directly in your runtime environment.
 
-**📚 [Get Started with the Quick Start Guide](./docs/quick-start.md)** - Learn agex step-by-step with hands-on examples
+**📚 [Get a Quick Start](./docs/quick-start.md)** - Learn step-by-step with hands-on examples
 
-**🔭 [Learn more about the core philosophy in The Big Picture](./docs/big-picture.md)**
+**🔭 [Get a Big Picture](./docs/big-picture.md)** - Learn about the core philosophy
 
 ## What Makes This Different
 
 `agex` enables workflows without the accidential complexity of frameworks that rely on JSON or isolated execution environments. The key difference is **runtime interoperability** - `agex` transparently handles the passing of complex Python objects between your code and an agent's sandboxed environment, working with rich objects like `numpy` arrays, `pandas` DataFrames, and custom classes without extra work.
 
-This interoperability enables:
+This interoperability unlocks several capabilities:
 
 ### **Dynamic Code Generation & Extension**
 
@@ -44,7 +44,8 @@ In [`examples/funcy.py`](./examples/funcy.py), an agent is tasked with building 
 
 ### **Agent Orchestration**
 
-`agex` is designed for building complex systems out of specialized agents. One agent's core `task` can be exposed as a simple `fn` (tool) for another agent, enabling natural and powerful composition.
+`agex` is designed for building complex systems out of specialized agents. One agent's core `task` can be exposed as a simple `fn` (tool) for another agent. The function
+definition becomes the contract between agents.
 
 Examples of multi-agent patterns:
 
@@ -114,6 +115,7 @@ Key sections:
 For design concepts and higher-level documentation, see:
 - **[The Big Picture](./docs/big-picture.md)** - Framework philosophy, architecture, and multi-agent patterns
 - **[Security Model](./docs/security.md)** - Execution environment and safety guarantees
+- **[Nearly Python](./docs/nearly-python.md)** - Understanding agent code constraints and Python compatibility
 
 ## Setup
 
