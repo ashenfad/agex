@@ -31,6 +31,9 @@ class OpenAIClient(LLMClient):
         request_kwargs = {**self._kwargs, **kwargs}
 
         try:
+            print(
+                "ADAM ------------------------ calling openai with model", self._model
+            )
             # Use OpenAI's native structured outputs with beta.chat.completions.parse
             response = self.client.chat.completions.parse(
                 model=self._model,

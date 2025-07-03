@@ -87,3 +87,14 @@ class LLMClient(ABC):
             Model identifier string
         """
         ...
+
+    @property
+    @abstractmethod
+    def provider_name(self) -> str:
+        """
+        The provider name for this client.
+
+        Returns:
+            Provider name string (e.g., "OpenAI", "Anthropic", "Google Gemini")
+        """
+        ...

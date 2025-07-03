@@ -237,9 +237,14 @@ class TaskLoopMixin(BaseAgent):
             parts.append("When complete, call `exit_success()` to indicate completion.")
         elif "Callable" in str(return_type):
             # Function return type - special instructions
-            return_type_name = str(return_type)
+            # Clean up the type representation to remove confusing module references
+            return_type_str = str(return_type)
+            # Remove "typing." prefix but keep the useful type information
+            if return_type_str.startswith("typing."):
+                return_type_str = return_type_str[7:]  # Remove "typing." prefix
+
             parts.append(
-                f"When complete, call `exit_success(your_function)` where your_function is the {return_type_name} you created. "
+                f"When complete, call `exit_success(your_function)` where your_function is the {return_type_str} you created. "
                 "Pass the function object itself, not the result of calling the function."
             )
         else:

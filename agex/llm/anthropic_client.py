@@ -64,6 +64,14 @@ class AnthropicClient(LLMClient):
         }
 
         try:
+            print(
+                "ADAM ------------------------ calling anthropic with model",
+                self._model,
+            )
+            # Set default max_tokens if not provided
+            if "max_tokens" not in request_kwargs:
+                request_kwargs["max_tokens"] = 4096
+
             # Make the API call with tool calling
             response = self.client.messages.create(
                 model=self._model,

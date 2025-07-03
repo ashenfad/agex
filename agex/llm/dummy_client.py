@@ -55,3 +55,7 @@ class DummyLLMClient(LLMClient):
     @property
     def model(self) -> str:
         return "dummy"
+
+    @property
+    def provider_name(self) -> str:
+        return "Dummy"

@@ -31,11 +31,16 @@ if GeminiClient is not None:
 
 
 def get_llm_client(
-    provider: Literal["openai", "anthropic", "gemini", "dummy"] = "openai", **kwargs
+    provider: Literal["openai", "anthropic", "gemini", "dummy"] | None = None, **kwargs
 ) -> LLMClient:
     """
     Factory function to get an LLM client.
     """
+    # If no provider specified, get it from configuration
+    if provider is None:
+        config = get_llm_config(**kwargs)
+        provider = config["provider"]
+
     if provider == "dummy":
         return DummyLLMClient(**kwargs)
 

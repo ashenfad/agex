@@ -55,6 +55,9 @@ class GeminiClient(LLMClient):
                 **request_kwargs,
             )
 
+            print(
+                "ADAM ------------------------ calling gemini with model", self._model
+            )
             # Generate response
             response = self.client.generate_content(
                 gemini_messages, generation_config=generation_config
