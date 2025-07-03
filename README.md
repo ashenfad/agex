@@ -34,7 +34,7 @@ my_data.sort(key=prime_finder)  # Works with existing Python code
 
 `agex` enables workflows without the accidential complexity of frameworks that rely on JSON or isolated execution environments. The key difference is **runtime interoperability** - `agex` transparently handles the passing of complex Python objects between your code and an agent's sandboxed environment, working with rich objects like `numpy` arrays, `pandas` DataFrames, and custom classes without extra work.
 
-This interoperability unlocks several capabilities:
+This interoperability manifests in interesting ways:
 
 ### **Dynamic Code Generation & Extension**
 
@@ -44,8 +44,8 @@ In [`examples/funcy.py`](./examples/funcy.py), an agent is tasked with building 
 
 ### **Agent Orchestration**
 
-`agex` is designed for building complex systems out of specialized agents. One agent's core `task` can be exposed as a simple `fn` (tool) for another agent. The function
-definition becomes the contract between agents.
+`agex` is designed for building complex systems out of specialized agents. One agent's core `task` can be exposed as a simple `fn` (tool) for another agent. The function definition becomes the contract between agents. Complex data shapes can flow directly between the agents through these
+shared functions.
 
 Examples of multi-agent patterns:
 
@@ -71,7 +71,7 @@ This distinction is key to enabling agents that don't just *use* tools, but trul
 
 ### **Recursive Agent Creation**
 
-Agents that can create other agents at runtime. This enables truly recursive AI systems where specialist agents can be born on-demand.
+Agents that can create other agents at runtime. This enables truly recursive AI systems where specialist agents can be born on-demand. They do this by using the regular agex API. 
 
 ```python
 architect = Agent(name="architect", primer=PRIMER)

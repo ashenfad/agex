@@ -1,6 +1,10 @@
 # The Big Picture: Agents That Think in Code
 
-This document explains the vision and architectural principles behind `agex`. Unlike frameworks that constrain agents to JSON tool calls, `agex` gives agents a familiar Python environment where they can think, explore, and build solutions using real code.
+> This document originally served placeholder of design goals. Many (but not all) have become
+> real. Its still useful as a record of the vision and architectural principles behind `agex`. 
+
+Most agentic frameworks make you work against the grain of Python - wrapping functions in JSON schemas, serializing objects, and learning framework-specific abstractions. `agex` takes a different approach: **agents work directly with your Python runtime**. Agents should consume fns
+(the tools they have to work with) and are themselves functions (the tasks they are assigned).
 
 ## Core Philosophy: Code as the Language of Reasoning
 
@@ -22,7 +26,7 @@ Each agent operates in a familiar, persistent environment where they can introsp
 
 ### Smart Context Management
 
-The framework automatically manages token budgets and context windows - recent information gets priority, older context gets compressed, and agents maintain continuity without manual intervention. This eliminates the typical context management burden while keeping agents focused on relevant information.
+The framework automatically manages token budgets and context windows - recent information gets priority, older context gets compressed (**(Future Feature)**), and agents maintain continuity without manual intervention. This eliminates the typical context management burden while keeping agents focused on relevant information.
 
 ### Natural Error Handling
 
@@ -79,18 +83,6 @@ insights = clean_and_analyze(messy_dataframe)
 # insights is a real dict in your session - no serialization needed
 ```
 
-**Dynamic Code Extension:**
-```python
-# Agent extends your existing classes with new capabilities
-@my_coder.task
-def add_method_to_class(cls: type, method_description: str) -> type:  # type: ignore[return-value]
-    """Dynamically add a new method to an existing class."""
-    pass
-
-EnhancedProcessor = add_method_to_class(MyDataProcessor, "add outlier detection")
-# Your class now has the new method, usable immediately
-```
-
 ### Natural Agent Orchestration
 
 Because agents return real Python objects, complex multi-agent workflows become simple Python control flow:
@@ -114,9 +106,6 @@ else:
 
 No workflow DSLs or configuration files needed - just Python.
 
-### Living Codebase Integration
-
-This enables workflows impossible with isolated execution: agents become collaborative development partners who extend existing systems at runtime, evolve code without breaking interfaces, and orchestrate through natural Python control flow. The result is agents that don't just help *with* your code - they become part of your development environment.
 
 ## Hierarchical Agent Architecture
 
