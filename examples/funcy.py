@@ -62,7 +62,7 @@ def main():
     print(fn(500000))
     # 500009
 
-    # agent remembers existing context and builds related function
+    # agent remembers existing conversation context and builds related function
     fn = fn_builder("Okay, now make it the next lower prime.", state=state)
 
     print(fn(500000))

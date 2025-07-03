@@ -67,20 +67,20 @@ def main():
     # coefficient_x = 4
     # constant_term = 5
     # right_side = 13
-
+    #
     # # Step 1: Subtract 5 from both sides
     # step1 = f"Subtract {constant_term} from both sides: {coefficient_x}x = {right_side} - {constant_term}"
     # value_after_subtraction = right_side - constant_term
-
+    #
     # # Step 2: Divide both sides by 4
     # step2 = f"Divide both sides by {coefficient_x}: x = {value_after_subtraction} / {coefficient_x}"
-
+    #
     # # Final calculation
     # x_value = value_after_subtraction / coefficient_x
-
+    #
     # # Compose the solution steps
     # solution_steps = f"{step1}\n{step2}\nTherefore, x = {x_value}"
-
+    #
     # exit_success(solution_steps)
 
 
