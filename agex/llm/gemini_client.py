@@ -16,7 +16,7 @@ class GeminiClient(LLMClient):
         self._kwargs = kwargs
 
         # Initialize the Gemini client
-        self.client = genai.GenerativeModel(model)
+        self.client = genai.GenerativeModel(model)  # type: ignore
 
         self._context_windows = {
             "gemini-1.5-flash": 1048576,  # 1M tokens
@@ -49,7 +49,7 @@ class GeminiClient(LLMClient):
 
         try:
             # Configure generation with structured output
-            generation_config = genai.GenerationConfig(
+            generation_config = genai.GenerationConfig(  # type: ignore
                 response_mime_type="application/json",
                 response_schema=response_schema,
                 **request_kwargs,

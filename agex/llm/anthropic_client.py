@@ -73,14 +73,18 @@ class AnthropicClient(LLMClient):
                 request_kwargs["max_tokens"] = 4096
 
             # Make the API call with tool calling
-            response = self.client.messages.create(
-                model=self._model,
-                system=system_message,
-                messages=conversation_messages,
-                tools=[structured_response_tool],
-                tool_choice={"type": "tool", "name": "structured_response"},
+            # Only include system parameter if we have a system message
+            api_kwargs = {
+                "model": self._model,
+                "messages": conversation_messages,
+                "tools": [structured_response_tool],
+                "tool_choice": {"type": "tool", "name": "structured_response"},
                 **request_kwargs,
-            )
+            }
+            if system_message is not None:
+                api_kwargs["system"] = system_message
+
+            response = self.client.messages.create(**api_kwargs)
 
             # Extract the structured response from tool use
             if not response.content or len(response.content) == 0:
