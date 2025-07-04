@@ -96,8 +96,8 @@ class BaseEvaluator(ast.NodeVisitor):
         # Check operation-based timeout (backup safety net)
         # This catches cases where time.time() calls are expensive or unreliable
         max_operations = max(
-            1000000, int(self._timeout_seconds * 100000)
-        )  # ~100000 ops/sec baseline
+            10000000, int(self._timeout_seconds * 1000000)
+        )  # ~1000000 ops/sec baseline
         if self._operation_count > max_operations:
             raise EvalError(
                 f"Program exceeded maximum operation limit ({max_operations:,} operations). "

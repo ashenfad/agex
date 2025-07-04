@@ -209,6 +209,8 @@ def test_render_high_vis_module(dummy_module):
     )
     output = render_definitions(agent)
     expected = '''
+# Available modules (import before using):
+
 module my_mod:
     class ClsHigh:
         def __init__(self):
@@ -244,6 +246,8 @@ def test_render_medium_vis_module(dummy_module):
     )
     output = render_definitions(agent)
     expected = '''
+# Available modules (import before using):
+
 module my_mod:
     class ClsHigh:
         def __init__(self):
@@ -271,7 +275,11 @@ def test_render_low_vis_module_is_empty(dummy_module):
         configure={"func_med": MemberSpec(visibility="medium")},
     )
     output = render_definitions(agent)
-    assert output.strip() == "module my_mod:\n    ..."
+    expected = """# Available modules (import before using):
+
+module my_mod:
+    ..."""
+    assert output.strip() == expected
 
 
 def test_render_low_vis_module_promoted_by_high_vis_func(dummy_module):
@@ -285,6 +293,8 @@ def test_render_low_vis_module_promoted_by_high_vis_func(dummy_module):
     )
     output = render_definitions(agent)
     expected = '''
+# Available modules (import before using):
+
 module my_mod:
     def func_high():
         """
@@ -308,6 +318,8 @@ def test_render_low_vis_module_promoted_by_class(dummy_module):
     )
     output = render_definitions(agent)
     expected = '''
+# Available modules (import before using):
+
 module my_mod:
     class ClsHigh:
         def __init__(self):
@@ -337,6 +349,8 @@ def test_render_low_vis_module_promoted_by_method(dummy_module):
     # ClsMed is medium-vis, but it is also promoted, so it gets rendered.
     # Inside ClsMed, only high-vis members are rendered.
     expected = '''
+# Available modules (import before using):
+
 module my_mod:
     class ClsMed:
         def __init__(self):
@@ -366,6 +380,8 @@ def test_low_vis_class_in_low_vis_module_promoted_by_method(dummy_module):
     # ClsLow is promoted to medium.
     # It should be rendered because it's promoted.
     expected = '''
+# Available modules (import before using):
+
 module my_mod:
     class ClsLow:
         def __init__(self):

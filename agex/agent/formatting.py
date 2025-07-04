@@ -59,7 +59,7 @@ def _format_section(header: str, lines: list[str]) -> str:
     """Format a section with header and Python code block."""
     # Clean up header formatting
     if header == "Agent printed":
-        header = "## Agent Output"
+        header = "## Stdout (prints and errors)..."
     elif "=" in "".join(lines):  # Likely state changes
         header = "## State Changes"
     else:

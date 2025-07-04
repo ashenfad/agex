@@ -71,11 +71,16 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
         output.append("# Available classes (use directly, no import needed):")
         output.extend(classes_to_render)
 
-    # Render modules
+    # Render modules with helpful header
+    modules_to_render = []
     for name, spec in agent.importable_modules.items():
         rendered_module = _render_module(name, spec, full=full)
         if rendered_module:
-            output.append(rendered_module)
+            modules_to_render.append(rendered_module)
+
+    if modules_to_render:
+        output.append("# Available modules (import before using):")
+        output.extend(modules_to_render)
 
     # Render registered objects (live objects)
     for name, spec in agent.object_registry.items():

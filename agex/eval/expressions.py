@@ -44,7 +44,7 @@ class ExpressionEvaluator(BaseEvaluator):
         if name in self.agent.cls_registry:
             return self.agent.cls_registry[name].cls
 
-        raise EvalError(f"Name '{name}' is not defined.", node)
+        raise EvalError(f"Name '{name}' is not defined. (forgot import?)", node)
 
     def visit_Constant(self, node: ast.Constant) -> Any:
         """Handles literal values like numbers, strings, True, False, None."""

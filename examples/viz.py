@@ -11,10 +11,10 @@ even smaller LLMs can effectively use the agex framework.
 import numpy as np
 import pandas
 import plotly.express
+from data import gen_data_request, make_data
 from plotly.graph_objects import Figure
 
 from agex import Agent
-from examples.data import gen_data_request, make_data
 
 viz = Agent(
     name="viz",
@@ -41,7 +41,7 @@ The y-axis is the signal.
 """
 
 
-def example():
+def main():
     """
     We gather bulk data from an agent and hand it to another for plotting.
     """
@@ -55,3 +55,7 @@ def example():
     # there's a cool plot with some abberations... really!
     plot.show()
     # see examples/process.png
+
+
+if __name__ == "__main__":
+    main()

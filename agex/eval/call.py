@@ -166,21 +166,20 @@ class CallEvaluator(BaseEvaluator):
                             validate_with_sampling(result.result, return_type)
                         except Exception as e:
                             # Re-raise as a AgexError to be caught by the loop
-                            # Sanitize type name to avoid exposing user module information
-                            type_str = str(return_type)
-
-                            # Only sanitize user-defined classes, not built-in/generic types
+                            # Use clean type names for all types when possible
                             if (
                                 hasattr(return_type, "__module__")
                                 and hasattr(return_type, "__name__")
-                                and return_type.__module__
-                                not in ("builtins", "typing", "__main__")
+                                and not hasattr(
+                                    return_type, "__origin__"
+                                )  # Not a generic type
                             ):
-                                # This is a user-defined class from a specific module
+                                # Use the clean class name for simple types (str, int, custom classes)
                                 type_name = return_type.__name__
                             else:
-                                # Built-in types, generic types, or types from safe modules
-                                type_name = type_str
+                                # For generic types (list[int], dict[str, int]) or complex types,
+                                # use the full string representation to preserve type parameters
+                                type_name = str(return_type)
                             raise AgexError(
                                 f"Output validation failed. The returned value did not match the expected type '{type_name}'.\nDetails: {e}",
                                 node,

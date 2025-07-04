@@ -359,3 +359,91 @@ def test_task_with_no_return_type():
     # The task should complete successfully and return None
     result = no_return_task()
     assert result is None
+
+
+def test_task_with_custom_class_return_type():
+    """Test that custom classes defined in __main__ display cleanly in task messages."""
+
+    # Define a custom class in __main__ (like Review in the evaluator-optimizer example)
+    class Review:
+        def __init__(self, rating: int, comment: str):
+            self.rating = rating
+            self.comment = comment
+
+    agent = Agent(max_iterations=2)
+
+    # We don't need to actually execute the task - just verify the message formatting
+    # Create a mock task message to test the formatting
+    from agex.agent.loop import TaskLoopMixin
+
+    # Test the _build_task_message method directly
+    task_message = TaskLoopMixin._build_task_message(
+        agent,
+        docstring="Create a product review.",
+        inputs_dataclass=type,  # dummy
+        inputs_instance=None,
+        return_type=Review,
+    )
+
+    # Verify that the task message contains clean type name "Review" not "<class '__main__.Review'>"
+    assert "exit_success(result: Review)" in task_message
+    assert "__main__" not in task_message
+    assert "<class" not in task_message
+
+
+def test_task_with_builtin_type_return_clean_display():
+    """Test that built-in types like str display cleanly in task messages."""
+
+    agent = Agent(max_iterations=2)
+
+    # Test the _build_task_message method directly for built-in types
+    from agex.agent.loop import TaskLoopMixin
+
+    # Test with str
+    task_message = TaskLoopMixin._build_task_message(
+        agent,
+        docstring="Return a greeting message.",
+        inputs_dataclass=type,  # dummy
+        inputs_instance=None,
+        return_type=str,
+    )
+
+    # Verify that the task message contains clean type name "str" not "<class 'str'>"
+    assert "exit_success(result: str)" in task_message
+    assert "<class 'str'>" not in task_message
+
+    # Test with int
+    task_message = TaskLoopMixin._build_task_message(
+        agent,
+        docstring="Return a number.",
+        inputs_dataclass=type,  # dummy
+        inputs_instance=None,
+        return_type=int,
+    )
+
+    assert "exit_success(result: int)" in task_message
+    assert "<class 'int'>" not in task_message
+
+    # Test with list
+    task_message = TaskLoopMixin._build_task_message(
+        agent,
+        docstring="Return a list.",
+        inputs_dataclass=type,  # dummy
+        inputs_instance=None,
+        return_type=list,
+    )
+
+    assert "exit_success(result: list)" in task_message
+    assert "<class 'list'>" not in task_message
+
+    # Test with generic type list[int] - should preserve type parameters
+    task_message = TaskLoopMixin._build_task_message(
+        agent,
+        docstring="Return a list of integers.",
+        inputs_dataclass=type,  # dummy
+        inputs_instance=None,
+        return_type=list[int],
+    )
+
+    assert "exit_success(result: list[int])" in task_message
+    assert "<class" not in task_message

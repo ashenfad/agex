@@ -249,20 +249,18 @@ class TaskLoopMixin(BaseAgent):
             )
         else:
             # Regular return type - show the type annotation
-            # Sanitize type name to avoid exposing user module information
-            type_str = str(return_type)
-
-            # Only sanitize user-defined classes, not built-in/generic types
+            # Use clean type names for all types when possible
             if (
                 hasattr(return_type, "__module__")
                 and hasattr(return_type, "__name__")
-                and return_type.__module__ not in ("builtins", "typing", "__main__")
+                and not hasattr(return_type, "__origin__")  # Not a generic type
             ):
-                # This is a user-defined class from a specific module
+                # Use the clean class name for simple types (str, int, custom classes)
                 return_type_name = return_type.__name__
             else:
-                # Built-in types, generic types, or types from safe modules
-                return_type_name = type_str
+                # For generic types (list[int], dict[str, int]) or complex types,
+                # use the full string representation to preserve type parameters
+                return_type_name = str(return_type)
 
             parts.append(
                 f"When complete, call `exit_success(result: {return_type_name})` with your result."

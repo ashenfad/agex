@@ -39,7 +39,7 @@ Agex is a Python agentic framework that enables LLM agents to work with real Pyt
 - Agents work within a secure Python environment with only registered capabilities available
 
 ### Tasks vs Functions
-- **Tasks** (`@agent.task`): Functions where the agent provides the implementation
+- **Tasks** (register with `agent.task`): Functions where the agent provides the implementation
   - You define the signature and description - agent writes the code
   - Must have empty bodies (just `pass`, docstrings, comments)
 - **Functions** (`agent.fn`): Existing functions you make available to agents
@@ -151,6 +151,7 @@ with Agent() as child_agent:
 1. **agent.task(function) -> callable task**
    - Converts empty function into agent-implemented task
    - Function must have empty body (pass, docstrings, comments only)
+   - Do not use `@agent.task` decorator, just use `agent.task(function)`
    - Returns callable that triggers the new agent when called
 
 2. **agent.fn(function) -> callable function**  

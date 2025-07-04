@@ -8,11 +8,11 @@ Note: This example was tested with gpt-4.1-nano to demonstrate that
 even smaller LLMs can effectively use the agex framework.
 """
 
+from data import make_data
 from plotly.graph_objects import Figure
+from viz import plot_data
 
 from agex import Agent
-from examples.data import make_data
-from examples.viz import plot_data
 
 orchestrator = Agent(
     name="orchestrator",
