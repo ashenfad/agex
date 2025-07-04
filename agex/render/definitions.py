@@ -105,7 +105,7 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
 
     # Render registered objects (live objects)
     for name, spec in agent.object_registry.items():
-        rendered_object = _render_object(name, spec, full=full)
+        rendered_object = _render_object(name, spec, agent, full=full)
         if rendered_object:
             output.append(rendered_object)
 
@@ -236,7 +236,9 @@ def _is_object_promoted(spec: RegisteredObject) -> bool:
     )
 
 
-def _render_object(name: str, spec: RegisteredObject, full: bool = False) -> str:
+def _render_object(
+    name: str, spec: RegisteredObject, agent: BaseAgent, full: bool = False
+) -> str:
     """Renders a single registered object definition based on its visibility and its members' visibilities."""
     # Determine the object's effective visibility. A low-vis object can be
     # "promoted" to medium-vis if it contains a high-vis member.
@@ -261,16 +263,34 @@ def _render_object(name: str, spec: RegisteredObject, full: bool = False) -> str
             effective_visibility,
             full=full,
         ):
-            # Create a fake RegisteredFn for rendering consistency
-            fake_fn_spec = RegisteredFn(
-                fn=lambda: None,  # Placeholder function
-                docstring=method_spec.docstring,
-                visibility=method_spec.visibility or spec.visibility,
-            )
+            # Get the actual method from the agent's host object registry
+            live_obj = agent._host_object_registry.get(name)
+            if live_obj and hasattr(live_obj, method_name):
+                # Use the actual method for proper signature rendering
+                actual_method = getattr(live_obj, method_name)
+                # Use the spec's docstring if provided, otherwise the method's own docstring
+                doc = (
+                    method_spec.docstring
+                    if method_spec.docstring is not None
+                    else actual_method.__doc__
+                )
+                method_fn_spec = RegisteredFn(
+                    fn=actual_method,
+                    docstring=doc,
+                    visibility=method_spec.visibility or spec.visibility,
+                )
+            else:
+                # Fallback to placeholder if the live object isn't available
+                method_fn_spec = RegisteredFn(
+                    fn=lambda: None,  # Placeholder function
+                    docstring=method_spec.docstring,
+                    visibility=method_spec.visibility or spec.visibility,
+                )
+
             rendered_methods.append(
                 _render_function(
                     method_name,
-                    fake_fn_spec,
+                    method_fn_spec,
                     indent=indent,
                     is_method=True,
                     available_classes=set(),
@@ -326,9 +346,14 @@ def _render_function(
     if signature is None:
         # For builtins that fail inspection, provide a fallback
         signature_line = f"{prefix}{fn_name}(...)"
-        if not full and spec.visibility == "medium":
-            return f"{signature_line}:"
-        return signature_line
+
+        # Still try to show docstring if available and visibility is high or full mode
+        docstring = spec.docstring or inspect.getdoc(fn)
+        if (full or spec.visibility == "high") and docstring:
+            return f"{signature_line}:\n{_render_docstring(docstring, indent=indent + '    ', full=full)}"
+
+        # In all other cases, the body is elided.
+        return f"{signature_line}:\n{indent}    ..."
 
     params = []
     for i, (p_name, p) in enumerate(signature.parameters.items()):

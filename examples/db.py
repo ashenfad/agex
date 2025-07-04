@@ -23,7 +23,7 @@ conn = sqlite3.connect(":memory:")
 db.module(
     conn,  # we register instance methods just like we do for module fns
     name="db",  # name is required when registering instance methods
-    include=["execute", "execute_many", "commit"],
+    include=["execute", "executemany", "commit"],
 )
 
 # also register the Cursor class for gathering results
