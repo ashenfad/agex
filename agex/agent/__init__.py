@@ -51,7 +51,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
     def __init__(
         self,
         primer: str | None = None,
-        timeout_seconds: float = 10.0,
+        timeout_seconds: float = 5.0,
         max_iterations: int = 10,
         max_tokens: int = 2**16,
         # Agent identification
