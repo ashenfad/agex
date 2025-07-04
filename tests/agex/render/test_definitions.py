@@ -606,3 +606,26 @@ def test_render_object_empty():
     # Should show the object but with ellipsis
     assert "object db:" in rendered
     assert "    ..." in rendered
+
+
+def test_render_class_with_init_type_hints():
+    """Test that attributes defined in __init__ with type annotations are rendered with type hints."""
+    agent = Agent()
+
+    class TestClassWithInitTypes:
+        def __init__(self, name: str, age: int, email: str | None = None):
+            self.name = name
+            self.age = age
+            self.email = email
+            self.count = 0  # No type annotation
+
+    agent.cls(TestClassWithInitTypes)
+
+    rendered = render_definitions(agent)
+
+    # Should include type hints for parameters that become attributes
+    assert "name: str" in rendered
+    assert "age: int" in rendered
+    assert "email: str | None" in rendered
+    assert "count" in rendered  # No type hint for this one
+    assert "count:" not in rendered  # Should not have a colon if no type hint

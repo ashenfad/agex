@@ -415,6 +415,28 @@ def _render_class(
 
     # For high- or medium-visibility classes, render members based on their visibility.
     if spec.visibility in ("high", "medium") or full:
+        # Build a mapping of attribute names to their type annotations
+        attr_type_hints = {}
+
+        # First, check class-level annotations
+        if hasattr(spec.cls, "__annotations__"):
+            attr_type_hints.update(spec.cls.__annotations__)
+
+        # Then, check __init__ method parameters for instance attributes
+        if hasattr(spec.cls, "__init__"):
+            try:
+                init_signature = inspect.signature(spec.cls.__init__)
+                for param_name, param in init_signature.parameters.items():
+                    if (
+                        param_name != "self"
+                        and param.annotation != inspect.Parameter.empty
+                    ):
+                        # Map parameter name to attribute name (they should match)
+                        attr_type_hints[param_name] = param.annotation
+            except (ValueError, TypeError):
+                # If signature inspection fails, continue without __init__ annotations
+                pass
+
         # Render attributes
         for attr_name, attr_spec in spec.attrs.items():
             if not _should_render_member(
@@ -422,11 +444,8 @@ def _render_class(
             ):
                 continue
             type_hint = ""
-            if (
-                hasattr(spec.cls, "__annotations__")
-                and attr_name in spec.cls.__annotations__
-            ):
-                type_hint = f": {_render_type_annotation(spec.cls.__annotations__[attr_name], available_classes)}"
+            if attr_name in attr_type_hints:
+                type_hint = f": {_render_type_annotation(attr_type_hints[attr_name], available_classes)}"
             attr_strs.append(f"{member_indent}{attr_name}{type_hint}")
 
         # Render methods
