@@ -140,7 +140,7 @@ class TaskLoopMixin(BaseAgent):
                 current_context = context_renderer.render(exec_state, self.max_tokens)
                 markdown_context = format_context_as_markdown(current_context)
                 add_message(
-                    exec_state, Message(role="system", content=markdown_context)
+                    exec_state, Message(role="assistant", content=markdown_context)
                 )
 
             except ExitSuccess as exit_signal:
@@ -159,7 +159,7 @@ class TaskLoopMixin(BaseAgent):
                 current_context = context_renderer.render(exec_state, self.max_tokens)
                 markdown_context = format_context_as_markdown(current_context)
                 add_message(
-                    exec_state, Message(role="system", content=markdown_context)
+                    exec_state, Message(role="assistant", content=markdown_context)
                 )
             finally:
                 # Always snapshot after each evaluation iteration (if we own the state)

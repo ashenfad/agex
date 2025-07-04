@@ -173,7 +173,9 @@ class TaskUserFunction(UserFunction):
     task_docstring: str = ""  # Task instructions
     task_return_type: type = object  # Expected return type
 
-    def execute(self, args: list, kwargs: dict, source_code: str | None):
+    def execute(
+        self, args: list, kwargs: dict, source_code: str | None, parent_evaluator=None
+    ):
         """Override execute to run task loop instead of function body."""
         # Resolve the task-executing agent
         task_agent = resolve_agent(self.task_agent_fingerprint)
@@ -243,6 +245,20 @@ class FunctionEvaluator(BaseEvaluator):
                 # where line numbers don't align properly
                 source_text = None
 
+        # Extract docstring from function body (first statement if it's a string literal)
+        docstring = None
+        if node.body:
+            first_stmt = node.body[0]
+            if isinstance(first_stmt, ast.Expr):
+                # Check for string constant (Python 3.8+)
+                if isinstance(first_stmt.value, ast.Constant) and isinstance(
+                    first_stmt.value.value, str
+                ):
+                    docstring = first_stmt.value.value
+                # Check for string literal (older Python versions)
+                elif hasattr(ast, "Str") and isinstance(first_stmt.value, ast.Str):
+                    docstring = first_stmt.value.s  # type: ignore
+
         func = UserFunction(
             name=node.name,
             args=node.args,
@@ -251,6 +267,8 @@ class FunctionEvaluator(BaseEvaluator):
             source_text=source_text,
             agent_fingerprint=self.agent.fingerprint,
         )
+        # Set the docstring as a Python-compatible attribute
+        func.__doc__ = docstring
         self.state.set(node.name, func)
 
     def visit_Lambda(self, node: ast.Lambda) -> UserFunction:

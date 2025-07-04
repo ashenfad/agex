@@ -75,11 +75,10 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 if effective_primer is None and not callable(primer_or_func):
                     effective_primer = primer_or_func
 
-                # Use the UserFunction's docstring or source_text as fallback
+                # Use the UserFunction's docstring
                 if effective_primer is None:
                     effective_primer = (
-                        func.source_text
-                        or "Execute the user-defined function as a task."
+                        func.__doc__ or "Execute the user-defined function as a task."
                     )
 
                 # Create TaskUserFunction
