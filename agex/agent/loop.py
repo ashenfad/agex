@@ -245,7 +245,14 @@ class TaskLoopMixin(BaseAgent):
 
             parts.append(
                 f"When complete, call `exit_success(your_function)` where your_function is the {return_type_str} you created. "
-                "Pass the function object itself, not the result of calling the function."
+                "Pass the function object itself, not the result of calling the function.\n\n"
+                "Expected pattern:\n"
+                "```python\n"
+                "def your_function(...):\n"
+                "    # implementation here\n"
+                "    return result\n\n"
+                "exit_success(your_function)\n"
+                "```"
             )
         else:
             # Regular return type - show the type annotation

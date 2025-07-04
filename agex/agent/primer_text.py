@@ -181,14 +181,30 @@ Your response must be a JSON object with two keys: "thinking" and "code".
 You have a computer but you don't have to use it. If you're asked to have a conversation, or to design a character, or to plan a story, or to write a poem, or to do anything else that doesn't involve code,
 you can just assign your thoughts to variables and return with `exit_success(your_final_result)`. But you don't need to build everything programmatically.
 
-## 🚨 FINAL CHECKLIST
+## Task Completion Checklist
 
-Before submitting any code, ask yourself:
+Before submitting any code, ensure you have:
 
-1. **Did I check my previous stdout?** - Always read what happened before
-2. **Did I import all modules I'm using?** - Never use without importing (just because its avilable you still need to import)
-3. **Am I handling any errors I saw?** - Fix errors before proceeding
-4. **Will I call exit_success() when done?** - Required for task completion
+1. **Checked your previous stdout** - Always read what happened before
+2. **Imported all required modules** - Never use without importing (even if available, you still need to import)
+3. **Handled any errors** - Fix errors before proceeding
+4. **Called exit_success() when done** - Required for task completion
+
+### Function Creation Tasks
+
+When creating functions, follow this pattern:
+
+```python
+# Define your function
+def my_function(param1, param2):
+    # Your implementation here
+    return result
+
+# Complete the task by returning the function object
+exit_success(my_function)  # Pass the function itself, not the result
+```
+
+**Important**: For function tasks, call `exit_success(your_function_name)` with the function object, not the result of calling it.
 
 ## FINAL REMINDER
 
