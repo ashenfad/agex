@@ -5,6 +5,7 @@ from typing import Any
 from agex.agent.datatypes import _AgentExit
 from agex.eval.builtins import dataclass
 from agex.eval.functions import UserFunction, _ReturnException
+from agex.eval.objects import BoundInstanceObject
 from agex.eval.user_errors import (
     AgexAttributeError,
     AgexError,
@@ -97,35 +98,59 @@ class AttributeTarget(AssignmentTarget):
     """Represents assignment to an object attribute."""
 
     def __init__(self, obj: Any, attr_name: str, node: ast.AST):
-        if not isinstance(obj, (AgexObject, AgexInstance)):
+        # Allow attribute assignment on any object that supports it
+        # Check if the object supports attribute assignment
+        supports_assignment = (
+            hasattr(obj, attr_name)  # Attribute already exists
+            or hasattr(obj, "__dict__")  # Object has a __dict__ for new attributes
+            or hasattr(obj, "__setattr__")  # Object defines custom __setattr__
+        )
+
+        if not supports_assignment:
             raise AgexTypeError(
-                "Attribute assignment is only supported for dataclass or class instances.",
+                f"'{type(obj).__name__}' object does not support attribute assignment.",
                 node,
             )
+
         self._obj = obj
         self._attr_name = attr_name
         self._node = node
 
     def get_value(self) -> Any:
         try:
-            return self._obj.getattr(self._attr_name)
-        except AgexAttributeError as e:
-            e.node = self._node  # Add location info to the error
-            raise e
+            # Handle AgexObject, AgexInstance, and BoundInstanceObject with their special methods
+            if isinstance(self._obj, (AgexObject, AgexInstance, BoundInstanceObject)):
+                return self._obj.getattr(self._attr_name)
+            else:
+                # Handle regular Python objects
+                return getattr(self._obj, self._attr_name)
+        except AttributeError:
+            raise AgexAttributeError(
+                f"'{type(self._obj).__name__}' object has no attribute '{self._attr_name}'",
+                self._node,
+            )
 
     def _do_set_value(self, value: Any):
         try:
-            self._obj.setattr(self._attr_name, value)
-        except AgexAttributeError as e:
-            e.node = self._node  # Add location info to the error
-            raise e
+            # Handle AgexObject, AgexInstance, and BoundInstanceObject with their special methods
+            if isinstance(self._obj, (AgexObject, AgexInstance, BoundInstanceObject)):
+                self._obj.setattr(self._attr_name, value)
+            else:
+                # Handle regular Python objects
+                setattr(self._obj, self._attr_name, value)
+        except AttributeError as e:
+            raise AgexAttributeError(str(e), self._node)
 
     def del_value(self):
         try:
-            self._obj.delattr(self._attr_name)
-        except AgexAttributeError as e:
-            e.node = self._node  # Add location info to the error
-            raise e
+            # Handle AgexObject, AgexInstance, and BoundInstanceObject with their special methods
+            if isinstance(self._obj, (AgexObject, AgexInstance, BoundInstanceObject)):
+                self._obj.delattr(self._attr_name)
+            else:
+                # Handle regular Python objects
+                delattr(self._obj, self._attr_name)
+        except AttributeError as e:
+            raise AgexAttributeError(str(e), self._node)
 
 
 class SubscriptTarget(AssignmentTarget):

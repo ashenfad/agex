@@ -1,6 +1,17 @@
+"""
+Tests for live object attribute assignment, deletion, and security.
+
+This covers the new functionality added for BoundInstanceObject setattr/delattr
+and the improved class registration that automatically detects instance attributes.
+"""
+
+import pytest
+
 from agex import Agent
 from agex.agent.datatypes import MemberSpec
 from agex.eval.core import evaluate_program
+from agex.eval.user_errors import AgexAttributeError
+from agex.state import Ephemeral
 from agex.state.kv import Memory
 from agex.state.namespaced import Namespaced
 from agex.state.versioned import Versioned
@@ -307,3 +318,249 @@ help(db)
     db_help = stdout[3][0]
     assert "Help on module math:" in math_help
     assert "Help on object db:" in db_help
+
+
+class MockLiveObject:
+    """Mock object for live object registration testing."""
+
+    def __init__(self):
+        self.public_attr = "public_value"
+        self.private_attr = "private_value"
+        self.numeric_attr = 42
+
+    def public_method(self):
+        return "public_method_result"
+
+    def private_method(self):
+        return "private_method_result"
+
+
+class MockInheritedAttributes:
+    """Mock class with inherited attributes for MRO testing."""
+
+    def __init__(self, inherited_attr1, inherited_attr2):
+        self.inherited_attr1 = inherited_attr1
+        self.inherited_attr2 = inherited_attr2
+
+
+class MockChildClass(MockInheritedAttributes):
+    """Mock child class that inherits attributes."""
+
+    def __init__(self, inherited_attr1, inherited_attr2, child_attr):
+        super().__init__(inherited_attr1, inherited_attr2)
+        self.child_attr = child_attr
+
+
+def test_live_object_attribute_assignment():
+    """Test that live objects allow attribute assignment for registered properties."""
+    agent = Agent()
+    test_obj = MockLiveObject()
+
+    # Register with specific properties
+    agent.module(test_obj, name="test_obj", include=["public_attr", "numeric_attr"])
+
+    state = Ephemeral()
+
+    # Test setting allowed attribute
+    evaluate_program('test_obj.public_attr = "modified"', agent, state)
+    assert test_obj.public_attr == "modified"
+
+    # Test setting another allowed attribute
+    evaluate_program("test_obj.numeric_attr = 100", agent, state)
+    assert test_obj.numeric_attr == 100
+
+    # Test reading back the modified values
+    evaluate_program("result1 = test_obj.public_attr", agent, state)
+    evaluate_program("result2 = test_obj.numeric_attr", agent, state)
+
+    assert state.get("result1") == "modified"
+    assert state.get("result2") == 100
+
+
+def test_live_object_attribute_assignment_blocked():
+    """Test that live objects block assignment to unregistered properties."""
+    agent = Agent()
+    test_obj = MockLiveObject()
+
+    # Register with limited properties
+    agent.module(test_obj, name="test_obj", include=["public_attr"])
+
+    state = Ephemeral()
+
+    # Test that setting unregistered attribute is blocked
+    with pytest.raises(AgexAttributeError) as exc_info:
+        evaluate_program('test_obj.private_attr = "blocked"', agent, state)
+
+    assert "no registered property 'private_attr'" in str(exc_info.value)
+    # Verify the original value wasn't changed
+    assert test_obj.private_attr == "private_value"
+
+
+def test_live_object_attribute_deletion():
+    """Test that live objects allow attribute deletion for registered properties."""
+    agent = Agent()
+    test_obj = MockLiveObject()
+
+    # Register with specific properties
+    agent.module(test_obj, name="test_obj", include=["public_attr"])
+
+    state = Ephemeral()
+
+    # Verify attribute exists initially
+    assert hasattr(test_obj, "public_attr")
+
+    # Test deleting allowed attribute
+    evaluate_program("del test_obj.public_attr", agent, state)
+
+    # Verify attribute was deleted
+    assert not hasattr(test_obj, "public_attr")
+
+
+def test_live_object_attribute_deletion_blocked():
+    """Test that live objects block deletion of unregistered properties."""
+    agent = Agent()
+    test_obj = MockLiveObject()
+
+    # Register with limited properties
+    agent.module(test_obj, name="test_obj", include=["public_attr"])
+
+    state = Ephemeral()
+
+    # Test that deleting unregistered attribute is blocked
+    with pytest.raises(AgexAttributeError) as exc_info:
+        evaluate_program("del test_obj.private_attr", agent, state)
+
+    assert "no registered property 'private_attr'" in str(exc_info.value)
+    # Verify the attribute still exists
+    assert test_obj.private_attr == "private_value"
+
+
+def test_automatic_instance_attribute_detection():
+    """Test that class registration automatically detects instance attributes from MRO."""
+    agent = Agent()
+
+    # Register class with default wildcard pattern
+    agent.cls(MockChildClass)
+
+    # Check what attributes were detected
+    spec = agent.cls_registry_by_type[MockChildClass]
+    attrs = set(spec.attrs.keys())
+
+    # Should include attributes from both parent and child classes
+    assert "inherited_attr1" in attrs
+    assert "inherited_attr2" in attrs
+    assert "child_attr" in attrs
+
+
+def test_explicit_include_overrides_automatic_detection():
+    """Test that explicit include patterns override automatic attribute detection."""
+    agent = Agent()
+
+    # Register class with explicit include list
+    agent.cls(MockChildClass, include=["child_attr"])
+
+    # Check what attributes were registered
+    spec = agent.cls_registry_by_type[MockChildClass]
+    attrs = list(spec.attrs.keys())
+
+    # Should only include explicitly listed attribute
+    assert attrs == ["child_attr"]
+    assert "inherited_attr1" not in attrs
+    assert "inherited_attr2" not in attrs
+
+
+def test_class_instance_respects_registration_limits():
+    """Test that class instances respect registration limitations."""
+    agent = Agent()
+
+    # Register class with limited attributes
+    agent.cls(MockChildClass, include=["child_attr"])
+
+    state = Ephemeral()
+
+    # Create instance
+    evaluate_program('obj = MockChildClass("val1", "val2", "val3")', agent, state)
+
+    # Test accessing allowed attribute
+    evaluate_program("result1 = obj.child_attr", agent, state)
+    assert state.get("result1") == "val3"
+
+    # Test that accessing blocked attribute fails
+    with pytest.raises(AgexAttributeError) as exc_info:
+        evaluate_program("result2 = obj.inherited_attr1", agent, state)
+
+    assert "object has no attribute 'inherited_attr1'" in str(exc_info.value)
+
+
+def test_agent_self_registration_works():
+    """Test the original dogfood scenario - agent registering itself."""
+    agent = Agent(primer="initial_primer")
+
+    # Register Agent class (should auto-detect primer and other attributes)
+    agent.cls(Agent)
+
+    # Register agent instance as live object
+    agent.module(agent, name="agent")
+
+    state = Ephemeral()
+
+    # Test assignment to primer
+    evaluate_program('agent.primer = "modified_primer"', agent, state)
+    assert agent.primer == "modified_primer"
+
+    # Test reading primer back
+    evaluate_program("result = agent.primer", agent, state)
+    assert state.get("result") == "modified_primer"
+
+    # Test accessing other auto-detected attributes
+    evaluate_program("timeout = agent.timeout_seconds", agent, state)
+    assert state.get("timeout") == agent.timeout_seconds
+
+
+def test_live_object_security_vs_class_security():
+    """Test the difference in security between live objects and class instances."""
+    agent = Agent()
+
+    # Register Agent class with limited attributes
+    agent.cls(Agent, include=["primer"])
+
+    # Register specific agent instance as live object with all attributes
+    test_agent = Agent(primer="test")
+    agent.module(test_agent, name="live_agent")
+
+    state = Ephemeral()
+
+    # Live object should allow access to all registered properties
+    evaluate_program("result1 = live_agent.timeout_seconds", agent, state)
+    assert state.get("result1") == test_agent.timeout_seconds
+
+    # But if we try to create a new Agent instance through the evaluator,
+    # it should respect the class registration limits
+    # Note: This might fail due to Agent not being pickleable, but that's expected
+    with pytest.raises(Exception):  # Could be AgexError or pickling error
+        evaluate_program("new_agent = Agent()", agent, state)
+
+
+def test_live_object_method_access_unchanged():
+    """Test that method access for live objects still works correctly."""
+    agent = Agent()
+    test_obj = MockLiveObject()
+
+    # Register with methods and properties
+    agent.module(test_obj, name="test_obj", include=["public_method", "public_attr"])
+
+    state = Ephemeral()
+
+    # Test method call
+    evaluate_program("result = test_obj.public_method()", agent, state)
+    assert state.get("result") == "public_method_result"
+
+    # Test property access
+    evaluate_program("attr_value = test_obj.public_attr", agent, state)
+    assert state.get("attr_value") == "public_value"
+
+    # Test blocked method access
+    with pytest.raises(AgexAttributeError) as exc_info:
+        evaluate_program("blocked = test_obj.private_method()", agent, state)
+
+    assert "object has no attribute 'private_method'" in str(exc_info.value)

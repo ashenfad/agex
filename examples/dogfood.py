@@ -20,10 +20,10 @@ architect = Agent(name="architect", primer=PRIMER)
 
 # register the Agent class so the architect can use it...
 # this is where we eat our own dogfood!
-architect.cls(Agent)
+architect.cls(Agent, visibility="medium")
 
 # register math module so the architect may share it with child agents
-architect.module(math)
+architect.module(math, visibility="low")
 
 
 @architect.task

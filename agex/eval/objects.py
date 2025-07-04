@@ -182,6 +182,28 @@ class BoundInstanceObject:
             f"'{self.reg_object.name}' object has no attribute '{name}'"
         )
 
+    def setattr(self, name: str, value: Any):
+        """Set an attribute on the live host object."""
+        # Check if this attribute is registered as a property
+        if name not in self.reg_object.properties:
+            raise AgexAttributeError(
+                f"'{self.reg_object.name}' object has no registered property '{name}'"
+            )
+
+        live_instance = self.host_registry[self.reg_object.name]
+        setattr(live_instance, name, value)
+
+    def delattr(self, name: str):
+        """Delete an attribute from the live host object."""
+        # Check if this attribute is registered as a property
+        if name not in self.reg_object.properties:
+            raise AgexAttributeError(
+                f"'{self.reg_object.name}' object has no registered property '{name}'"
+            )
+
+        live_instance = self.host_registry[self.reg_object.name]
+        delattr(live_instance, name)
+
     def __enter__(self):
         """Context manager entry - delegate to the live object if it supports it."""
         live_instance = self.host_registry[self.reg_object.name]

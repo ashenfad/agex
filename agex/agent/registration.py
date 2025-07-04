@@ -1,3 +1,4 @@
+import ast
 import fnmatch
 import inspect
 from types import ModuleType
@@ -19,16 +20,52 @@ from agex.eval.objects import AgexModule
 
 
 def create_predicate(pattern: Pattern | None) -> Callable[[str], bool]:
-    """Creates a predicate function from a pattern."""
+    """Creates a predicate function that matches names against a pattern."""
     if pattern is None:
-        return lambda _: False  # Select nothing
-    if callable(pattern):
-        return pattern
+        return lambda name: False
     if isinstance(pattern, str):
         return lambda name: fnmatch.fnmatch(name, pattern)
     if isinstance(pattern, (list, set)):
-        return lambda name: any(fnmatch.fnmatch(name, p) for p in pattern)
-    raise TypeError(f"Unsupported pattern type: {type(pattern)}")
+        return lambda name: any(create_predicate(p)(name) for p in pattern)
+    raise TypeError(f"Invalid pattern type: {type(pattern)}")
+
+
+def _get_instance_attributes_from_init(cls: type) -> set[str]:
+    """Extract instance attributes from __init__ methods across the entire MRO."""
+    attributes = set()
+
+    # Check all classes in the Method Resolution Order
+    for base_cls in cls.__mro__:
+        if not hasattr(base_cls, "__init__") or base_cls.__init__ is object.__init__:
+            continue
+
+        try:
+            source = inspect.getsource(base_cls.__init__)
+            # Remove common leading whitespace to make it parseable
+            import textwrap
+
+            source = textwrap.dedent(source)
+
+            tree = ast.parse(source)
+
+            class AttributeVisitor(ast.NodeVisitor):
+                def visit_Assign(self, node):
+                    for target in node.targets:
+                        if isinstance(target, ast.Attribute):
+                            if (
+                                isinstance(target.value, ast.Name)
+                                and target.value.id == "self"
+                            ):
+                                attributes.add(target.attr)
+                    self.generic_visit(node)
+
+            visitor = AttributeVisitor()
+            visitor.visit(tree)
+        except Exception:
+            # If AST parsing fails for this class, continue with others
+            continue
+
+    return attributes
 
 
 T = TypeVar("T", bound=type)
@@ -167,6 +204,11 @@ class RegistrationMixin(BaseAgent):
                 for name, member in inspect.getmembers(c)
                 if not name.startswith("__") or name == "__init__"
             }.union(getattr(c, "__annotations__", {}))
+
+            # Add instance attributes from __init__ method when using wildcard patterns
+            if include == "*" or (isinstance(include, str) and "*" in include):
+                instance_attrs = _get_instance_attributes_from_init(c)
+                all_members.update(instance_attrs)
 
             if isinstance(include, (list, set)):
                 # Explicitly add the included names, as they might be instance attributes
