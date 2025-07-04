@@ -107,8 +107,8 @@ def validate_with_sampling(value: Any, annotation: Any) -> Any:
 
         return adapter.validate_python(value)
     except ValidationError as e:
-        # Re-raise with more context about what was being validated.
-        raise ValidationError(f"Validation failed for type '{annotation}':\n{e}") from e
+        # Re-raise the original ValidationError - it already contains all the necessary information
+        raise
 
 
 def _validate_sequence_sample(sequence: list | tuple, annotation: Any) -> list | tuple:

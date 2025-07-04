@@ -13,7 +13,9 @@ from ..agent.datatypes import (
 )
 
 
-def _render_type_annotation(annotation: Any) -> str:
+def _render_type_annotation(
+    annotation: Any, available_classes: set[str] | None = None
+) -> str:
     """Renders a type annotation to a string, handling complex types."""
     if annotation is inspect.Parameter.empty or annotation is None:
         return ""
@@ -24,6 +26,16 @@ def _render_type_annotation(annotation: Any) -> str:
     # Clean up common boilerplate for better readability
     s = s.replace("typing.", "")
     s = s.replace("<class '", "").replace("'>", "")
+
+    # Clean up module prefixes for available classes
+    if available_classes:
+        for class_name in available_classes:
+            # Replace patterns like __main__.ClassName with just ClassName
+            s = s.replace(f"__main__.{class_name}", class_name)
+            # Also handle other module patterns
+            import re
+
+            s = re.sub(rf"\b\w+\.{re.escape(class_name)}\b", class_name, s)
 
     return s
 
@@ -44,11 +56,16 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
     visibility, ignoring these rules.
     """
     output = []
+    # Collect available class names for type annotation rendering
+    available_classes = set(agent.cls_registry.keys())
+
     # Render standalone functions
     for name, spec in agent.fn_registry.items():
         if not full and spec.visibility != "high":
             continue
-        output.append(_render_function(name, spec, full=full))
+        output.append(
+            _render_function(name, spec, available_classes=available_classes, full=full)
+        )
 
     # Render classes
     classes_to_render = []
@@ -64,7 +81,11 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
         if full or effective_visibility != "low":
             # We create a new spec with the effective visibility to pass down.
             spec_to_render = dataclasses.replace(spec, visibility=effective_visibility)
-            classes_to_render.append(_render_class(name, spec_to_render, full=full))
+            classes_to_render.append(
+                _render_class(
+                    name, spec_to_render, available_classes=available_classes, full=full
+                )
+            )
 
     # Add helpful header if classes are present
     if classes_to_render:
@@ -160,7 +181,9 @@ def _render_module(name: str, spec: RegisteredModule, full: bool = False) -> str
                 visibility=fn_member_spec.visibility or spec.visibility,
             )
             rendered_fns.append(
-                _render_function(fn_name, fn_spec, indent=indent, full=full)
+                _render_function(
+                    fn_name, fn_spec, indent=indent, available_classes=set(), full=full
+                )
             )
 
     # Render classes
@@ -185,7 +208,13 @@ def _render_module(name: str, spec: RegisteredModule, full: bool = False) -> str
                 cls_spec, visibility=effective_cls_visibility
             )
             rendered_classes.append(
-                _render_class(cls_name, spec_to_render, indent=indent, full=full)
+                _render_class(
+                    cls_name,
+                    spec_to_render,
+                    indent=indent,
+                    available_classes=set(),
+                    full=full,
+                )
             )
 
     rendered_classes.sort()
@@ -240,7 +269,12 @@ def _render_object(name: str, spec: RegisteredObject, full: bool = False) -> str
             )
             rendered_methods.append(
                 _render_function(
-                    method_name, fake_fn_spec, indent=indent, is_method=True, full=full
+                    method_name,
+                    fake_fn_spec,
+                    indent=indent,
+                    is_method=True,
+                    available_classes=set(),
+                    full=full,
                 )
             )
 
@@ -273,6 +307,7 @@ def _render_function(
     spec: RegisteredFn,
     indent: str = "",
     is_method=False,
+    available_classes: set[str] | None = None,
     full: bool = False,
 ) -> str:
     """Renders a single function or method signature."""
@@ -302,7 +337,7 @@ def _render_function(
             continue
 
         param_str = p_name
-        type_str = _render_type_annotation(p.annotation)
+        type_str = _render_type_annotation(p.annotation, available_classes)
         if type_str:
             param_str += f": {type_str}"
 
@@ -311,7 +346,9 @@ def _render_function(
         params.append(param_str)
 
     return_str = ""
-    ret_type_str = _render_type_annotation(signature.return_annotation)
+    ret_type_str = _render_type_annotation(
+        signature.return_annotation, available_classes
+    )
     if ret_type_str:
         return_str = f" -> {ret_type_str}"
 
@@ -328,7 +365,11 @@ def _render_function(
 
 
 def _render_class(
-    name: str, spec: RegisteredClass, indent: str = "", full: bool = False
+    name: str,
+    spec: RegisteredClass,
+    indent: str = "",
+    available_classes: set[str] | None = None,
+    full: bool = False,
 ) -> str:
     """Renders a single class definition based on its visibility."""
     member_indent = indent + "    "
@@ -360,6 +401,7 @@ def _render_class(
                 init_fn_spec,
                 indent=member_indent,
                 is_method=True,
+                available_classes=available_classes,
                 full=full,
             )
         )
@@ -377,7 +419,7 @@ def _render_class(
                 hasattr(spec.cls, "__annotations__")
                 and attr_name in spec.cls.__annotations__
             ):
-                type_hint = f": {spec.cls.__annotations__[attr_name].__name__}"
+                type_hint = f": {_render_type_annotation(spec.cls.__annotations__[attr_name], available_classes)}"
             attr_strs.append(f"{member_indent}{attr_name}{type_hint}")
 
         # Render methods
@@ -406,6 +448,7 @@ def _render_class(
                     meth_fn_spec,
                     indent=member_indent,
                     is_method=True,
+                    available_classes=available_classes,
                     full=full,
                 )
             )

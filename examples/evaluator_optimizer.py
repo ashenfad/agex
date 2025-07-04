@@ -22,12 +22,11 @@ evaluator = Agent(name="evaluator", primer="You critique jokes & suggest improve
 
 
 @evaluator.cls
-@optimizer.cls
+@optimizer.cls(constructable=False)
 @dataclass
 class Review:
     quality: Literal["good", "average", "bad"]
     feedback: str
-    joke: str
 
 
 @optimizer.task
@@ -37,7 +36,7 @@ def create_joke(topic: str) -> str:  # type: ignore[return-value]
 
 
 @optimizer.task
-def hone_joke(review: Review) -> str:  # type: ignore[return-value]
+def hone_joke(joke: str, review: Review) -> str:  # type: ignore[return-value]
     """Hone a joke given feedback"""
     pass
 
@@ -49,17 +48,15 @@ def review_joke(joke: str) -> Review:  # type: ignore[return-value]
 
 
 def main():
-    state = Versioned()
-
     # create an initial joke
-    joke = create_joke("pun about programming and fish", state=state)
+    joke = create_joke("pun about programming and fish")
 
     # hone the joke until it meets the quality criteria
-    while (review := review_joke(joke, state=state)).quality != "good":
-        joke = hone_joke(review, state=state)
+    while (review := review_joke(joke)).quality != "good":
+        joke = hone_joke(joke, review)
 
     print("Final joke:")
-    print(review.joke)
+    print(joke)
 
     print("Final feedback:")
     print(review.feedback)
