@@ -356,6 +356,10 @@ def _render_function(
 
     docstring = spec.docstring or inspect.getdoc(fn)
 
+    # Replace generic dataclass docstring with something more helpful
+    if docstring == "Initialize self.  See help(type(self)) for accurate signature.":
+        docstring = "Creates new instance"
+
     # Functions with high visibility (or when `full=True`) show their docstring.
     if (full or spec.visibility == "high") and docstring:
         return f"{signature_line}:\n{_render_docstring(docstring, indent=indent + '    ', full=full)}"
@@ -393,6 +397,9 @@ def _render_class(
         # If there's no explicit doc override, use the function's own docstring.
         if doc is None:
             doc = init_fn.__doc__
+            # Replace generic dataclass docstring with something more helpful
+            if doc == "Initialize self.  See help(type(self)) for accurate signature.":
+                doc = "Creates new instance"
 
         init_fn_spec = RegisteredFn(fn=init_fn, docstring=doc, visibility=vis)
         init_str.append(
