@@ -36,16 +36,47 @@ my_data.sort(key=prime_finder)  # Works with existing Python code
 
 This interoperability manifests in interesting ways:
 
-### **Dynamic Code Generation & Extension**
+### **Dynamic Code Generation**
 
-Agents can generate and return executable Python functions and classes at runtime. This allows them to not just use tools, but to create them.
+As shown earlier, agents can generate and return executable Python functions and classes at runtime.
 
-In [`examples/funcy.py`](./examples/funcy.py), an agent is tasked with building a `Callable` function from a text prompt. The returned function is a real Python fn that can be immediately integrated into existing logic (e.g., `my_list.sort(key=agent_made_func)`).
+In [`examples/funcy.py`](./examples/funcy.py) we show this in more
+detail as an agent is tasked with building a `Callable` function from a text prompt. The returned function is a real Python fn that can be immediately integrated into existing logic (e.g., `my_list.sort(key=agent_made_func)`).
+
+### **Fns vs Tools**
+
+Most frameworks need low-level operations bundled together as higher-level tools. This means anticipating what combinations and variations you'll need, either as stand-alone tools or complex
+param space:
+
+```python
+# Traditional approach: Custom tools for every combination
+@tool
+def convert_degrees_to_radians_list(degrees): ...
+@tool  
+def convert_and_filter_positive_degrees(degrees): ...
+@tool
+def convert_filter_and_sort_degrees(degrees): ...
+
+# agex: Agent composes from primitives
+agent.module(math)  # Just give them math.radians()
+nums = transform("convert degrees to radians", list(range(360)))
+```
+
+Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This shifts the work of writing composite operations from humans to agents.
+
+See [`examples/mathy.py`](./examples/mathy.py) for agents handling complex mathematical transformations without custom tools.
+
+This distinction is key to enabling agents that don't just *use* tools, but truly *program* with them.
+
+### **Live Object Integration**
+
+Agents can work directly with complex, stateful APIs without requiring wrapper classes or simplified interfaces. `agex` exposes live Python objects—including unpickleable ones like database connections—while maintaining state serialization safety.
+
+[`examples/db.py`](./examples/db.py) showcases this with raw SQLite integration: agents work directly with `sqlite3.Connection` and `Cursor` objects. No `DatabaseManager` wrapper needed—agents adapt to the existing API.
 
 ### **Agent Orchestration**
 
-`agex` is designed for building complex systems out of specialized agents. One agent's core `task` can be exposed as a simple `fn` (tool) for another agent. The function definition becomes the contract between agents. Complex data shapes can flow directly between the agents through these
-shared functions.
+`agex` supports complex systems of specialized agents. One agent's core `task` can be exposed as a simple `fn` (tool) for another agent. The function definition becomes the contract between agents. Complex data shapes can flow directly between the agents through these shared functions.
 
 Examples of multi-agent patterns:
 
@@ -54,24 +85,9 @@ Examples of multi-agent patterns:
 
 All orchestration is done with simple Python control flow—no YAML or complex DSLs required.
 
-### **Live Object Integration**
-
-Agents can work directly with complex, stateful APIs without requiring wrapper classes or simplified interfaces. `agex` exposes live Python objects—including unpickleable ones like database connections—while maintaining state serialization safety.
-
-[`examples/db.py`](./examples/db.py) showcases this with raw SQLite integration: agents work directly with `sqlite3.Connection` and `Cursor` objects, handling complex method chaining (`db.execute().fetchall()`) and transaction management. No `DatabaseManager` wrapper needed—agents adapt to the existing API.
-
-### **Granular Function Execution**
-
-While many agent frameworks use the term "tool", `agex` deliberately uses **`fn`** to signify a more fundamental concept.
-
-*   **Tools** often imply high-level, stateless operations where inputs and outputs are easily serialized to JSON. This model is practical for workflows where an LLM reasons between each action.
-*   An `agex` **`fn`** can be much more granular. Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This allows for complex and efficient problem-solving without the latency and cost of an LLM call at every step.
-
-This distinction is key to enabling agents that don't just *use* tools, but truly *program* with them.
-
 ### **Recursive Agent Creation**
 
-Agents that can create other agents at runtime. This enables truly recursive AI systems where specialist agents can be born on-demand. They do this by using the regular agex API. 
+Agents can design and spawn other agents at runtime. This enables truly recursive AI systems where specialist agents can be born on-demand. They do this by using the regular agex API. 
 
 ```python
 architect = Agent(name="architect", primer=PRIMER)
