@@ -255,9 +255,6 @@ class FunctionEvaluator(BaseEvaluator):
                     first_stmt.value.value, str
                 ):
                     docstring = first_stmt.value.value
-                # Check for string literal (older Python versions)
-                elif hasattr(ast, "Str") and isinstance(first_stmt.value, ast.Str):
-                    docstring = first_stmt.value.s  # type: ignore
 
         func = UserFunction(
             name=node.name,
