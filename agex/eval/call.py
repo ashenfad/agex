@@ -123,7 +123,7 @@ class CallEvaluator(BaseEvaluator):
                 return fn(*args, **kwargs)
 
             if isinstance(fn, UserFunction):
-                return fn.execute(args, kwargs, self.source_code)
+                return fn.execute(args, kwargs, self.source_code, parent_evaluator=self)
 
             if not callable(fn):
                 fn_name_for_error = getattr(
@@ -151,7 +151,18 @@ class CallEvaluator(BaseEvaluator):
                 namespaced_state = NamespacedState(parent_state, namespace)  # type: ignore
                 kwargs["state"] = namespaced_state
 
-            result = fn(*args, **kwargs)
+                # Measure sub-agent call time to deduct from parent timeout
+                import time
+
+                sub_agent_start = time.time()
+                try:
+                    result = fn(*args, **kwargs)
+                finally:
+                    sub_agent_duration = time.time() - sub_agent_start
+                    self.add_sub_agent_time(sub_agent_duration)
+            else:
+                # Regular function call - no timer changes needed
+                result = fn(*args, **kwargs)
 
             # Special handling for agent exit signals
             if isinstance(result, _AgentExit):

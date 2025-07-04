@@ -63,9 +63,11 @@ class UserFunction:
                 "UserFunction cannot be called directly without an Agent context."
             )
         # No source code available from fingerprint
-        return self.execute(list(args), kwargs, None)
+        return self.execute(list(args), kwargs, None, parent_evaluator=None)
 
-    def execute(self, args: list, kwargs: dict, source_code: str | None):
+    def execute(
+        self, args: list, kwargs: dict, source_code: str | None, parent_evaluator=None
+    ):
         """Execute the function with a new evaluator."""
         from agex.eval.arguments import bind_arguments
         from agex.eval.core import Evaluator
@@ -78,12 +80,25 @@ class UserFunction:
         # Resolve agent from fingerprint
         agent = resolve_agent(self.agent_fingerprint)
 
-        evaluator = Evaluator(
-            agent=agent,
-            state=exec_state,
-            source_code=source_code,
-            # Functions inherit the agent's timeout
-        )
+        # Create evaluator with timeout context from parent if available
+        if parent_evaluator is not None:
+            # Inherit timeout context from parent evaluator
+            evaluator = Evaluator(
+                agent=agent,
+                state=exec_state,
+                source_code=source_code,
+                timeout_seconds=parent_evaluator._timeout_seconds,
+                start_time=parent_evaluator._start_time,
+                sub_agent_time=parent_evaluator._sub_agent_time,
+            )
+        else:
+            # Fresh timeout budget (for direct calls)
+            evaluator = Evaluator(
+                agent=agent,
+                state=exec_state,
+                source_code=source_code,
+                timeout_seconds=agent.timeout_seconds,
+            )
         bound_args = bind_arguments(
             self.name, self.args, args, kwargs, eval_fn=evaluator.visit
         )

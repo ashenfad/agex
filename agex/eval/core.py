@@ -33,11 +33,19 @@ class Evaluator(
         state: State,
         source_code: str | None = None,
         timeout_seconds: float | None = None,
+        start_time: float | None = None,
+        sub_agent_time: float = 0.0,
     ):
         actual_timeout = (
             timeout_seconds if timeout_seconds is not None else agent.timeout_seconds
         )
-        super().__init__(agent, state, actual_timeout)
+        super().__init__(
+            agent,
+            state,
+            actual_timeout,
+            start_time=start_time,
+            sub_agent_time=sub_agent_time,
+        )
         self.source_code = source_code
 
     def visit_Module(self, node: ast.Module):

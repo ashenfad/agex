@@ -51,7 +51,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
     def __init__(
         self,
         primer: str | None = None,
-        timeout_seconds: float = 5.0,
+        timeout_seconds: float = 10.0,
         max_iterations: int = 10,
         max_tokens: int = 2**16,
         # Agent identification
@@ -66,7 +66,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
 
         Args:
             primer: A string to guide the agent's behavior.
-            timeout_seconds: The maximum time in seconds to execute a task.
+            timeout_seconds: The maximum time in seconds for a single action evaluation.
             max_iterations: The maximum number of think-act cycles for a task.
             max_tokens: The maximum number of tokens to use for context rendering.
             name: Unique identifier for this agent (for sub-agent namespacing).

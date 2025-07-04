@@ -13,14 +13,19 @@ class BaseEvaluator(ast.NodeVisitor):
     """A base class for evaluators, holding shared state."""
 
     def __init__(
-        self, agent: "BaseAgent", state: "State", timeout_seconds: float = 5.0
+        self,
+        agent: "BaseAgent",
+        state: "State",
+        timeout_seconds: float = 5.0,
+        start_time: float | None = None,
+        sub_agent_time: float = 0.0,
     ):
         self.agent = agent
         self.state = state
         self.source_code: str | None = None
-        self._start_time = time.time()
+        self._start_time = start_time if start_time is not None else time.time()
         self._timeout_seconds = timeout_seconds
-        self._operation_count = 0
+        self._sub_agent_time = sub_agent_time  # Total time spent in sub-agent calls
 
     def _create_agex_module(self, module_name: str) -> AgexModule:
         """Creates a sandboxed AgexModule from the agent's registry."""
@@ -80,28 +85,20 @@ class BaseEvaluator(ast.NodeVisitor):
         self._check_timeout()
         return super().visit(node)
 
-    def _check_timeout(self) -> None:
-        """Check if execution has exceeded time or operation limits."""
-        self._operation_count += 1
+    def add_sub_agent_time(self, duration: float) -> None:
+        """Add time spent in sub-agent calls to be deducted from timeout."""
+        self._sub_agent_time += duration
 
-        # Check time-based timeout
-        elapsed = time.time() - self._start_time
+    def _check_timeout(self) -> None:
+        """Check if execution has exceeded time limit."""
+        # Calculate elapsed time, excluding sub-agent time
+        current_time = time.time()
+        elapsed = (current_time - self._start_time) - self._sub_agent_time
+
         if elapsed > self._timeout_seconds:
             raise EvalError(
                 f"Program execution timed out after {self._timeout_seconds:.1f} seconds. "
                 f"Consider optimizing your code or reducing computational complexity.",
-                None,
-            )
-
-        # Check operation-based timeout (backup safety net)
-        # This catches cases where time.time() calls are expensive or unreliable
-        max_operations = max(
-            10000000, int(self._timeout_seconds * 1000000)
-        )  # ~1000000 ops/sec baseline
-        if self._operation_count > max_operations:
-            raise EvalError(
-                f"Program exceeded maximum operation limit ({max_operations:,} operations). "
-                f"This likely indicates an infinite loop or very inefficient algorithm.",
                 None,
             )
 
