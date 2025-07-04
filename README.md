@@ -64,13 +64,22 @@ nums = transform("convert degrees to radians", list(range(360)))
 
 Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This shifts the work of writing composite operations from humans to agents.
 
+This distinction is key to enabling agents that don't just *use* tools, but truly *program* with them.
+
 See [`examples/mathy.py`](./examples/mathy.py) for agents handling complex mathematical transformations without custom tools.
 
-This distinction is key to enabling agents that don't just *use* tools, but truly *program* with them.
+See [`examples/viz.py`](./examples/viz.py) for agents producing and
+ingesting large datasets without wrappers or JSON serialization.
 
 ### **Live Object Integration**
 
-Agents can work directly with complex, stateful APIs without requiring wrapper classes or simplified interfaces. `agex` exposes live Python objects—including unpickleable ones like database connections—while maintaining state serialization safety.
+Agents can work directly with complex, stateful APIs without requiring wrapper classes. `agex` exposes live Python objects—including unpickleable ones like database connections—while maintaining state serialization safety.
+
+```python
+# connect to a database and share the instance methods to the agent
+conn = sqlite3.connect(...)  
+agent.module(conn, name="db", include=["execute", "commit"])
+```
 
 [`examples/db.py`](./examples/db.py) showcases this with raw SQLite integration: agents work directly with `sqlite3.Connection` and `Cursor` objects. No `DatabaseManager` wrapper needed—agents adapt to the existing API.
 
