@@ -112,7 +112,7 @@ math_solver = create_specialist("solve mathematical equations step by step")
 result = math_solver("4x + 5 = 13")  # "Therefore, x = 2.0"
 ```
 
-**Why this matters:** While mind-bending and certainly intriguing, the practical utility is very much unproven. The real takeaway, though, is that this demonstrates how naturally agents can integrate with existing libraries—even the framework itself.
+**Why this matters:** While a bit mind-bending and certainly intriguing, the practical utility is very much unproven. The real takeaway, though, is how naturally agents can integrate with existing libraries—even `agex` itself.
 
 See [`examples/dogfood.py`](./examples/dogfood.py) for the complete implementation of agents creating agents.
 
