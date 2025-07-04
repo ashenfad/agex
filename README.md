@@ -94,9 +94,9 @@ Examples of multi-agent patterns:
 
 All orchestration is done with simple Python control flow—no YAML or complex DSLs required.
 
-### **Recursive Agent Creation**
+### **Agents Architecting Agents**
 
-Agents can design and spawn other agents at runtime. This enables truly recursive AI systems where specialist agents can be born on-demand. They do this by using the regular agex API. 
+Agents can design and spawn other agents at runtime. This enables dynamic AI systems where specialist agents can be born on-demand. They do this by using the regular agex API. 
 
 ```python
 architect = Agent(name="architect", primer=PRIMER)
@@ -112,7 +112,7 @@ math_solver = create_specialist("solve mathematical equations step by step")
 result = math_solver("4x + 5 = 13")  # "Therefore, x = 2.0"
 ```
 
-**Why this matters:** Most frameworks can have agents *use* tools - `agex` agents can *architect* intelligence, creating new agents with their own capabilities and reasoning patterns. The utility of this is very much unproven but it is intriguing.
+**Why this matters:** While mind-bending and certainly intriguing, the practical utility is very much unproven. The real takeaway, though, is that this demonstrates how naturally agents can integrate with existing libraries—even the framework itself.
 
 See [`examples/dogfood.py`](./examples/dogfood.py) for the complete implementation of agents creating agents.
 
