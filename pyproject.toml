@@ -22,6 +22,7 @@ test = [
 ]
 examples = [
     "plotly[express]",
+    "kaleido",  # for exporting plotly figures
     "numpy",
     "nbformat",
     "pandas",

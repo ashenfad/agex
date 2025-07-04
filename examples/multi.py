@@ -40,7 +40,7 @@ def main():
     """
 
     plot = idea_to_plot(idea)
-    plot.show()
+    plot.write_image("examples/seasonal.png")
     # see examples/seasonal.png
 
 

@@ -139,9 +139,7 @@ class TaskLoopMixin(BaseAgent):
 
                 current_context = context_renderer.render(exec_state, self.max_tokens)
                 markdown_context = format_context_as_markdown(current_context)
-                add_message(
-                    exec_state, Message(role="assistant", content=markdown_context)
-                )
+                add_message(exec_state, Message(role="user", content=markdown_context))
 
             except ExitSuccess as exit_signal:
                 # Task completed successfully - return the result
@@ -158,9 +156,7 @@ class TaskLoopMixin(BaseAgent):
                 # THEN render context (which will now include the error)
                 current_context = context_renderer.render(exec_state, self.max_tokens)
                 markdown_context = format_context_as_markdown(current_context)
-                add_message(
-                    exec_state, Message(role="assistant", content=markdown_context)
-                )
+                add_message(exec_state, Message(role="user", content=markdown_context))
             finally:
                 # Always snapshot after each evaluation iteration (if we own the state)
                 if versioned_state is not None:

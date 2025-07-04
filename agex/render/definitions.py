@@ -13,6 +13,26 @@ from ..agent.datatypes import (
 )
 
 
+def _is_sub_agent_function(fn: Any) -> bool:
+    """Check if a function is a sub-agent function (TaskUserFunction)."""
+    from agex.eval.functions import TaskUserFunction
+
+    # Direct TaskUserFunction
+    if isinstance(fn, TaskUserFunction):
+        return True
+
+    # Check if it's a wrapper around a TaskUserFunction (from registration.py)
+    # When a TaskUserFunction is registered, it creates a wrapper that preserves metadata
+    if hasattr(fn, "__name__") and hasattr(fn, "__doc__"):
+        # The wrapper preserves the original function's docstring or sets it to "User-defined function"
+        # We need to check if the underlying function is a TaskUserFunction
+        # Look for the dual-decorator attributes that indicate a task function
+        if hasattr(fn, "__agex_task_namespace__"):
+            return True
+
+    return False
+
+
 def _render_type_annotation(
     annotation: Any, available_classes: set[str] | None = None
 ) -> str:
@@ -333,6 +353,10 @@ def _render_function(
     """Renders a single function or method signature."""
     prefix = indent
     fn = spec.fn
+
+    # Check if this is a sub-agent function
+    is_sub_agent = _is_sub_agent_function(fn)
+
     try:
         signature = inspect.signature(fn)
     except ValueError:
@@ -345,15 +369,19 @@ def _render_function(
 
     if signature is None:
         # For builtins that fail inspection, provide a fallback
-        signature_line = f"{prefix}{fn_name}(...)"
+        signature_line = f"{prefix}{fn_name}(...):"
+
+        # Add sub-agent comment if needed
+        if is_sub_agent:
+            signature_line += "  # Sub-agent task function"
 
         # Still try to show docstring if available and visibility is high or full mode
         docstring = spec.docstring or inspect.getdoc(fn)
         if (full or spec.visibility == "high") and docstring:
-            return f"{signature_line}:\n{_render_docstring(docstring, indent=indent + '    ', full=full)}"
+            return f"{signature_line}\n{_render_docstring(docstring, indent=indent + '    ', full=full)}"
 
         # In all other cases, the body is elided.
-        return f"{signature_line}:\n{indent}    ..."
+        return f"{signature_line}\n{indent}    ..."
 
     params = []
     for i, (p_name, p) in enumerate(signature.parameters.items()):
@@ -377,7 +405,11 @@ def _render_function(
     if ret_type_str:
         return_str = f" -> {ret_type_str}"
 
-    signature_line = f"{prefix}{fn_name}({', '.join(params)}){return_str}"
+    signature_line = f"{prefix}{fn_name}({', '.join(params)}){return_str}:"
+
+    # Add sub-agent comment if needed
+    if is_sub_agent:
+        signature_line += "  # Sub-agent task function"
 
     docstring = spec.docstring or inspect.getdoc(fn)
 
@@ -387,10 +419,10 @@ def _render_function(
 
     # Functions with high visibility (or when `full=True`) show their docstring.
     if (full or spec.visibility == "high") and docstring:
-        return f"{signature_line}:\n{_render_docstring(docstring, indent=indent + '    ', full=full)}"
+        return f"{signature_line}\n{_render_docstring(docstring, indent=indent + '    ', full=full)}"
 
     # In all other cases, the body is elided.
-    return f"{signature_line}:\n{indent}    ..."
+    return f"{signature_line}\n{indent}    ..."
 
 
 def _render_class(

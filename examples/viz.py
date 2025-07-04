@@ -53,7 +53,7 @@ def main():
     plot = plot_data(viz_request, data)
 
     # there's a cool plot with some abberations... really!
-    plot.show()
+    plot.write_image("examples/process.png")
     # see examples/process.png
 
 
