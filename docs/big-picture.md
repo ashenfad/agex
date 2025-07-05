@@ -106,7 +106,6 @@ else:
 
 No workflow DSLs or configuration files needed - just Python.
 
-
 ## Hierarchical Agent Architecture
 
 ### Agent-to-Agent Communication
@@ -149,7 +148,19 @@ Multiple agents can collaborate while maintaining isolation:
 - Clean separation prevents accidental interference
 - Enables complex multi-agent workflows with clear boundaries
 
+### Storage, State, and Concurrency
 
+A core design principle in `agex` is that state should be both secure and flexible. This is achieved through a deliberate architectural choice: the **serialization boundary**. When an agent completes an evaluation cycle (a single step in its reasoning loop), any data stored in a persistent `Versioned` object is serialized.
+
+This approach has several advantages:
+
+- **Security & Rollback**: Serialization isolates the agent's execution from the host's runtime, preventing unwanted side effects. It also creates atomic, versioned snapshots of the state, allowing for easy rollbacks if a task fails or produces undesirable results.
+- **Future-Proofing for Distribution**: This boundary is what makes future distributed execution models (e.g., running agents in separate processes or on different machines) possible.
+- **Expanded Data Capacity**: While there is some overhead to serialization, it allows agents to work with complex Python objects (`numpy` arrays, `pandas` DataFrames, custom classes) that are orders of magnitude larger and more complex than what is feasible with standard JSON-based approaches.
+
+This state-snapshotting model also provides a simple and powerful guarantee for multi-agent systems: **atomicity**. In hierarchical agent architectures, state is only saved after the top-level agent task completes. This effectively creates a transaction, preventing race conditions where multiple sub-agents might otherwise attempt to write to the same state concurrently.
+
+This design simplifies reasoning about state in complex orchestrations. However, it also means that `agex` is currently best suited for hierarchical or sequential agent workflows, as opposed to "swarm" scenarios where multiple sibling agents need to collaborate on a shared state asynchronously. This versioning is robust enough to handle distributed workers for the same agent. If two independent processes were to modify the same state, the `Versioned` store behaves like a distributed version control system (e.g., Git). Rather than corrupting data, each process would create a distinct, parallel history—effectively creating branches. This guarantees data integrity, though it means the application logic may need to reconcile these different "heads" later, similar to a `git merge` operation.
 
 ## Long-Term Agent Evolution (Future Roadmap)
 
@@ -177,8 +188,6 @@ Over time, agents would develop personal coding styles and specialized toolkits,
 The broader possibility remains speculative: agents creating their own specialist sub-agents on demand, analyzing their task patterns to architect cognitive division of labor, and designing hierarchical specialist networks. This could transform agents from "users of tools" into "architects of intelligence" - responsible for both solving problems and designing the cognitive structures to solve them effectively.
 
 While the core mechanism works, the utility of recursive agent creation in practical applications is still unproven but intriguing.
-
-
 
 ## Security & Boundaries
 
