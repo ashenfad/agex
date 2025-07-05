@@ -45,8 +45,7 @@ detail as an agent is tasked with building a `Callable` function from a text pro
 
 ### **Fns vs Tools**
 
-Most frameworks need low-level operations bundled together as higher-level tools. This means anticipating what combinations and variations you'll need, either as stand-alone tools or complex
-param space:
+Most frameworks need low-level operations bundled together as higher-level tools. This means anticipating what combinations and variations you'll need, either as stand-alone tools or complex param space:
 
 ```python
 # Traditional approach: Custom tools for every combination
@@ -68,8 +67,7 @@ This distinction is key to enabling agents that don't just *use* tools, but trul
 
 See [`examples/mathy.py`](./examples/mathy.py) for agents handling complex mathematical transformations without custom tools.
 
-See [`examples/viz.py`](./examples/viz.py) for agents producing and
-ingesting large datasets without wrappers or JSON serialization.
+See [`examples/viz.py`](./examples/viz.py) for agents producing and ingesting large datasets without wrappers or JSON serialization.
 
 ### **Live Object Integration**
 
@@ -140,7 +138,7 @@ Key sections:
 For design concepts and higher-level documentation, see:
 - **[The Big Picture](./docs/big-picture.md)** - Framework philosophy, architecture, and multi-agent patterns
 - **[Security Model](./docs/security.md)** - Execution environment and safety guarantees
-- **[Nearly Python](./docs/nearly-python.md)** - Understanding agent code constraints and Python compatibility
+- **[Sandbox Limitations](./docs/nearly-python.md)** - Understanding agent code constraints and Python compatibility
 
 ## Installation
 
