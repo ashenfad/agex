@@ -1,6 +1,6 @@
 # agex
 
-`agex` (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to think, act, and create using real Python code. It provides a secure, sandboxed execution environment that allows for deep interoperability with your existing codebase, moving beyond simple tool-calling to runtime integration.
+`agex` (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to think and act using real Python code. It provides a sandboxed execution environment enabling easy access to your existing codebase. Libraries can integrate directly without intermediate tooling logic.
 
 ## 30-Second Example
 
@@ -10,7 +10,7 @@ from typing import Callable
 from agex import Agent
 
 agent = Agent()
-agent.module(math)  # Give the agent math tools
+agent.module(math)  # Share capabilities with the agent 
 
 @agent.task
 def make_function(description: str) -> Callable:  # type: ignore[return-value]
@@ -32,9 +32,9 @@ my_data.sort(key=prime_finder)  # Works with existing Python code
 
 ## What Makes This Different
 
-`agex` enables workflows without the accidential complexity of frameworks that rely on JSON or isolated execution environments. The key difference is **runtime interoperability** - `agex` transparently handles the passing of complex Python objects between your code and an agent's sandboxed environment, working with rich objects like `numpy` arrays, `pandas` DataFrames, and custom classes without extra work.
+`agex` enables workflows without the accidental complexity of frameworks that rely on JSON or isolated execution environments. The key difference is **object passing** - `agex` transparently handles the passing of complex Python objects between your code and an agent's sandboxed environment, working with rich objects like `numpy` arrays, `pandas` DataFrames, and custom classes without extra work.
 
-This interoperability manifests in interesting ways:
+Some aspects of this approach:
 
 ### **Dynamic Code Generation**
 
