@@ -131,21 +131,20 @@ class CallEvaluator(BaseEvaluator):
                 )
                 raise AgexError(f"'{fn_name_for_error}' is not callable.", node)
 
-            # Check if this is a dual-decorated function needing state injection
+                # Check if this is a dual-decorated function needing state injection
             if hasattr(fn, "__agex_task_namespace__"):
                 # Create hierarchical namespaced state for sub-agent
-                # Only wrap persistent states to avoid transient evaluation contexts
                 namespace = fn.__agex_task_namespace__
 
-                # If current state is persistent (Versioned or Namespaced), use it directly
-                # If current state is transient (Scoped, LiveClosureState), find underlying persistent state
+                # If current state is a base storage type (Versioned, Namespaced, Ephemeral), use it directly
+                # If current state is transient (Scoped, LiveClosureState), find underlying base state
+                from ..state import Ephemeral, Versioned
                 from ..state import Namespaced as NamespacedState
-                from ..state import Versioned
 
-                if isinstance(self.state, (Versioned, NamespacedState)):
+                if isinstance(self.state, (Versioned, NamespacedState, Ephemeral)):
                     parent_state = self.state
                 else:
-                    # Use base_store to find underlying persistent state
+                    # Use base_store to find underlying base state
                     parent_state = self.state.base_store
 
                 namespaced_state = NamespacedState(parent_state, namespace)  # type: ignore

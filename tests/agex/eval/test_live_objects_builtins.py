@@ -534,11 +534,20 @@ def test_live_object_security_vs_class_security():
     evaluate_program("result1 = live_agent.timeout_seconds", agent, state)
     assert state.get("result1") == test_agent.timeout_seconds
 
-    # But if we try to create a new Agent instance through the evaluator,
+    # But if we create a new Agent instance through the evaluator,
     # it should respect the class registration limits
-    # Note: This might fail due to Agent not being pickleable, but that's expected
-    with pytest.raises(Exception):  # Could be AgexError or pickling error
-        evaluate_program("new_agent = Agent()", agent, state)
+    evaluate_program("new_agent = Agent()", agent, state)
+
+    # Test that the new instance respects class registration limits
+    # Should be able to access registered attribute
+    evaluate_program("primer_value = new_agent.primer", agent, state)
+    assert state.get("primer_value") is None  # Default primer value
+
+    # Should NOT be able to access unregistered attribute
+    with pytest.raises(AgexAttributeError) as exc_info:
+        evaluate_program("timeout_value = new_agent.timeout_seconds", agent, state)
+
+    assert "object has no attribute 'timeout_seconds'" in str(exc_info.value)
 
 
 def test_live_object_method_access_unchanged():

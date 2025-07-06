@@ -2,7 +2,7 @@
 A state management system for tic agents.
 """
 
-from .core import State
+from .core import State, is_ephemeral_root
 from .ephemeral import Ephemeral
 from .kv import KVStore
 from .namespaced import Namespaced
@@ -12,6 +12,7 @@ from .versioned import Versioned
 
 __all__ = [
     "State",
+    "is_ephemeral_root",
     "Ephemeral",
     "KVStore",
     "Namespaced",

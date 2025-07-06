@@ -24,7 +24,6 @@ from agex.render.value import ValueRenderer
 from ..eval.core import evaluate_program
 from ..render.context import ContextRenderer
 from ..state import Namespaced, Versioned
-from ..state.kv import Memory
 
 
 class TaskLoopMixin(BaseAgent):
@@ -66,9 +65,10 @@ class TaskLoopMixin(BaseAgent):
             versioned_state = state
             exec_state = Namespaced(versioned_state, namespace=self.name)
         else:
-            # None = we create and own new versioned state
-            versioned_state = Versioned(Memory())
-            exec_state = Namespaced(versioned_state, namespace=self.name)
+            # None = we create and own new ephemeral state (no persistence by default)
+            from ..state import Ephemeral
+
+            exec_state = Ephemeral()
 
         # Add inputs and expected return type to state for agent access
         if inputs_instance is not None:
@@ -159,7 +159,9 @@ class TaskLoopMixin(BaseAgent):
                 add_message(exec_state, Message(role="user", content=markdown_context))
             finally:
                 # Always snapshot after each evaluation iteration (if we own the state)
-                if versioned_state is not None:
+                from ..state import is_ephemeral_root
+
+                if versioned_state is not None and not is_ephemeral_root(exec_state):
                     result = versioned_state.snapshot()
                     if result.unsaved_keys:
                         # Add a message to stdout about the unsaved keys
