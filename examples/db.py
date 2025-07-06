@@ -2,8 +2,13 @@
 Raw SQLite API Integration
 
 Agent works directly with sqlite3.Connection and Cursor objects - no wrapper
-classes needed. Demonstrates complex method chaining (db.execute().fetchall())
-and stateful object management with live database connections.
+classes needed. Demonstrates stateful object management with live database
+connections.
+
+Note: This example uses versioned storage for state checkpointing and cross-process
+persistence, which requires method chaining for unpickleable objects like cursors.
+The agent is coached via detailed primer instructions on how to work within these
+constraints effectively.
 
 Note: This example was tested with gpt-4.1-nano to demonstrate that
 even smaller LLMs can effectively use the agex framework.
