@@ -2,6 +2,8 @@
 
 agex agents generate and execute code in a secure sandbox that looks and feels like Python—but with some important differences. This guide helps you understand what constraints agents face when writing code, so you can design better integrations and understand agent behavior.
 
+**State Choice Affects Constraints**: Some limitations depend on whether you use ephemeral state (default, no persistence) or persistent state (remembers variables between task calls). Ephemeral state is more flexible but doesn't persist memory; persistent state has more constraints but enables complex multi-step workflows.
+
 ## What Works (Agent-Generated Code)
 
 Most Python features work exactly as you'd expect when agents generate code:
@@ -176,18 +178,40 @@ def increment_with_state():
 **Future**: Unlikely to change - would break the sandbox security model.
 
 ### Unpicklable Objects
-**Cannot be assigned**: Agents cannot store objects like iterators, database cursors, and file handles in variables.
+**Depends on your state choice**: Whether agents can assign unpicklable objects depends on whether you choose persistent or ephemeral state.
+
+**With ephemeral state (default)**: Agents can freely assign unpicklable objects:
 
 ```python
-# ❌ Agents cannot assign unpicklable objects
+# ✅ With ephemeral state, agents can assign unpicklable objects
+cursor = db.execute("SELECT * FROM users")  # Works fine
+result = cursor.fetchall()
+
+# ✅ Database connections, file handles, iterators all work
+file_handle = open("data.txt")
+content = file_handle.read()
+```
+
+**With persistent state**: Agents cannot assign unpicklable objects and must chain operations:
+
+```python
+# Developer setup code using persistent state:
+from agex.state import Versioned
+
+# ❌ With persistent state, agents cannot assign unpicklable objects
 cursor = db.execute("SELECT * FROM users")  # Cannot assign cursor
 result = cursor.fetchall()
 
-# ✅ Agents will chain operations immediately  
+# ✅ Must chain operations immediately  
 result = db.execute("SELECT * FROM users").fetchall()
 ```
 
-To handle this limitation, register stateful objects directly in your setup code:
+**Choosing between approaches**:
+
+- **Ephemeral state**: Use for simple, one-off tasks where you don't need memory between calls
+- **Persistent state**: Use for complex workflows where agents need to remember variables across multiple task calls
+
+**Exposing stateful objects**: Regardless of state choice, you can register stateful objects directly:
 
 ```python
 # Developer setup code:
@@ -199,9 +223,9 @@ agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall"])
 result = db.execute("SELECT * FROM users").fetchall()
 ```
 
-**Impact**: You can expose stateful objects by registering them directly with the agent. The objects persist outside the sandbox while agents can call their methods.
+**Impact**: Choose ephemeral state for maximum flexibility with objects, or persistent state for multi-step workflows. You can always expose stateful objects by registering them directly with the agent.
 
-**Future**: Unlikely to change - would require major changes to the storage system.
+**Future**: Unlikely to change - the persistent state behavior is tied to the serialization-based storage system.
 
 ### Object Identity Between Executions
 **Objects are reconstructed**: Between eval cycles, objects are serialized and deserialized, breaking object identity and shared references.
@@ -255,5 +279,7 @@ print(my_counter())  # 2
 These constraints exist for important reasons:
 
 - **Security**: Prevents agents from accessing dangerous Python features
-- **Serialization**: Agent state must be serializable to enable persistent memory and rollback
+- **Serialization**: Some constraints (like unpicklable objects) only apply when using persistent state to enable memory and rollback
 - **Sandboxing**: Ensures agent code cannot escape the execution environment
+
+**Note**: With ephemeral state (the default), serialization constraints don't apply since no state is persisted between task calls. Choose persistent state when you need agents to remember variables across multiple task executions.

@@ -1,40 +1,72 @@
 # State Management
 
-Agent state in agex enables persistent memory across [agent tasks](task.md) through a versioned, checkpointed storage system.
+Agent state in agex gives you flexible control over memory and persistence across [agent tasks](task.md). You can choose between ephemeral execution (default) for maximum flexibility, or persistent state for complex multi-step workflows.
 
-## Why State Management Matters
+## State Options Overview
 
-Many agent frameworks treat state management as an optional add-on or require complex configuration to achieve reliable persistence. agex provides state management as a core, first-class feature with:
+agex provides three approaches to state management:
 
-- **Persistent Memory**: Agents remember variables, functions, and objects across calls
-- **Automatic Checkpointing**: Every agent execution creates a commit snapshot  
-- **Rollback Safety**: Debug by reverting to any previous state
-- **Mutation Detection**: Automatically captures side-effect changes to prevent data loss
+### **1. Ephemeral (Default) - No State Parameter**
+- **No persistence**: Variables don't survive between task calls
+- **Maximum flexibility**: Agents can work with any Python object, including unpicklable ones
+- **Simplicity**: No state management needed - just call your tasks
+- **Use for**: Simple, one-off tasks, prototyping, working with complex objects
 
-## `Versioned` - State Container
+### **2. Ephemeral with Memory - `Ephemeral()` Object**
+- **Process-bound memory**: Agents remember variables across calls within the same process
+- **Maximum flexibility**: Agents can work with any Python object, including unpicklable ones
+- **No checkpointing**: No rollback capabilities or automatic snapshots
+- **Process-only**: Memory lost when process ends
+- **Use for**: Multi-step workflows that need memory but don't require persistence or rollback
 
-`Versioned` is the state container that agents use for persistent memory. Pass it to [agent tasks](task.md) via the `state` parameter:
+### **3. Persistent State - `Versioned()` Object**
+- **Cross-process persistence**: Agents remember variables across calls and process restarts
+- **Automatic checkpointing**: Every agent execution creates a commit snapshot  
+- **Rollback safety**: Debug by reverting to any previous state
+- **Mutation detection**: Automatically captures side-effect changes to prevent data loss
+- **Constraints**: Objects must be picklable for persistence
+- **Use for**: Production workflows, multi-step processes, agent coordination, debugging
+
+## State Containers
+
+### `Ephemeral` - Process-Bound Memory
+
+`Ephemeral` provides memory within the current process without persistence or checkpointing:
+
+```python
+from agex import Ephemeral
+
+# Create ephemeral state container
+state = Ephemeral()
+
+# Use with agent tasks  
+result = my_agent_task(data, state=state)
+```
+
+### `Versioned` - Persistent Memory
+
+`Versioned` is the state container that agents use for persistent memory with checkpointing:
 
 ```python
 from agex import Versioned
 
-# Create state container
+# Create persistent state container
 state = Versioned()
 
 # Use with agent tasks  
 result = my_agent_task(data, state=state)
 ```
 
-## Automatic Features
+## Persistent State Features
 
-When you use `Versioned` state, you get these benefits automatically:
+When you explicitly use `Versioned` state, you get these benefits automatically:
 
 - **Checkpointing**: Each agent execution creates a commit snapshot
 - **Mutation Detection**: Side-effect changes to objects are automatically preserved  
 - **Rollback Safety**: Framework can revert to any previous state for debugging
 - **Namespace Isolation**: Multi-agent workflows get separate state spaces
 
-No additional code required - the framework handles all versioning behind the scenes.
+No additional code required - the framework handles all versioning behind the scenes when you pass a `Versioned` state object.
 
 ## Storage Options
 
@@ -79,7 +111,9 @@ state = Versioned(Cache(disk_store, max_bytes=64*1024*1024))
 
 ## Using State with Agent Tasks
 
-### Ephemeral Mode (Default)
+### 1. Ephemeral (Default) - No State Parameter
+
+When you don't pass a `state` parameter, each call is completely independent:
 
 ```python
 @agent.task
@@ -87,12 +121,50 @@ def analyze_data(data: list[float]) -> dict:  # type: ignore[return-value]
     """Analyze data without memory."""
     pass
 
-# Each call is independent
+# Each call is independent - no state management needed
 result1 = analyze_data([1, 2, 3])
 result2 = analyze_data([4, 5, 6])  # No memory of previous call
+
+# ✅ Agents can work with any Python object, including unpicklable ones
+@agent.task
+def process_db_data(query: str) -> dict:  # type: ignore[return-value]
+    """Process database query results."""
+    pass
+
+# Works with database cursors, file handles, iterators, etc.
+result = process_db_data("SELECT * FROM users")
 ```
 
-### Persistent Mode
+### 2. Ephemeral with Memory - `Ephemeral()` Object
+
+When you pass an `Ephemeral()` state object, agents remember variables across calls within the same process:
+
+```python
+from agex import Ephemeral
+
+@agent.task  
+def build_analysis(data: list[float]) -> dict:  # type: ignore[return-value]
+    """Build cumulative analysis with memory."""
+    pass
+
+# State persists across calls within the same process
+shared_state = Ephemeral()
+result1 = build_analysis([1, 2, 3], state=shared_state)
+result2 = build_analysis([4, 5, 6], state=shared_state)  # Remembers result1
+
+# ✅ Agents can work with any Python object, including unpicklable ones
+@agent.task
+def process_cursors(query: str) -> dict:  # type: ignore[return-value]
+    """Process and remember database cursors."""
+    pass
+
+# Can store database cursors, file handles, etc. in variables
+result = process_cursors("SELECT * FROM users", state=shared_state)
+```
+
+### 3. Persistent State - `Versioned()` Object
+
+When you pass a `Versioned()` state object, agents get persistent memory with automatic checkpointing:
 
 ```python
 from agex import Versioned
@@ -102,13 +174,38 @@ def build_analysis(data: list[float]) -> dict:  # type: ignore[return-value]
     """Build cumulative analysis with memory."""
     pass
 
-# State persists across calls
+# State persists across calls and process restarts
 shared_state = Versioned()
 result1 = build_analysis([1, 2, 3], state=shared_state)
 result2 = build_analysis([4, 5, 6], state=shared_state)  # Remembers result1
+
+# ⚠️ Objects must be picklable for persistence
+# Database cursors, file handles, etc. cannot be assigned to variables
+# but can still be used via direct method chaining
 ```
 
+### Choosing Between Approaches
+
+**Use ephemeral (no state) when:**
+- Building simple, one-off tasks
+- Prototyping or experimenting
+- You don't need memory between task calls
+
+**Use ephemeral with memory when:**
+- Building multi-step workflows that need memory
+- Working with complex objects (database connections, file handles)
+- You don't need persistence across process restarts
+- You don't need rollback/debugging capabilities
+
+**Use persistent state when:**
+- Building production workflows
+- You need persistence across process restarts
+- Coordinating multiple agents
+- You need rollback/debugging capabilities
+
 ### Multi-Agent Coordination
+
+Multi-agent workflows require persistent state for memory sharing and coordination:
 
 ```python
 from agex import Agent, Versioned
@@ -128,6 +225,7 @@ def pipeline(raw_data: list) -> dict:  # type: ignore[return-value]
     pass
 
 # Agents share state with automatic namespace isolation
+# Note: Multi-agent coordination requires persistent state
 shared_state = Versioned()
 result = pipeline([1, 2, 3], state=shared_state)
 ```
@@ -158,6 +256,19 @@ class RedisStore(KVStore):
 # Use with your agent
 state = Versioned(RedisStore("redis://localhost:6379"))
 ```
+
+## Quick Reference
+
+| Feature | Ephemeral (Default) | Ephemeral with Memory | Persistent State |
+|---------|---------------------|----------------------|------------------|
+| **Memory** | No persistence between calls | Variables persist within process | Variables persist across processes |
+| **Object Support** | Any Python object | Any Python object | Only picklable objects |
+| **Usage** | `my_task(data)` | `my_task(data, state=Ephemeral())` | `my_task(data, state=Versioned())` |
+| **Checkpointing** | None | None | Automatic snapshots |
+| **Rollback** | Not available | Not available | Full rollback support |
+| **Process Restart** | N/A | Memory lost | Memory preserved |
+| **Multi-Agent** | Not supported | Basic sharing | Automatic namespace isolation |
+| **Best For** | Simple tasks | Multi-step workflows, complex objects | Production workflows, coordination |
 
 
 ## Next Steps
