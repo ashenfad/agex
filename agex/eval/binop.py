@@ -4,6 +4,7 @@ from typing import Any
 
 from .base import BaseEvaluator
 from .error import EvalError
+from .loops import _safe_bool_eval
 from .user_errors import (
     AgexArithmeticError,
     AgexOverflowError,
@@ -114,9 +115,28 @@ class BinOpEvaluator(BaseEvaluator):
                 )
 
             try:
-                if not op_func(left_val, right_val):
-                    # Short-circuit
-                    return False
+                result = op_func(left_val, right_val)
+
+                # Check if result is a pandas-like object that shouldn't be boolean-evaluated
+                # In such cases, we can't short-circuit and should just return the result
+                if hasattr(result, "dtype") and hasattr(result, "__len__"):
+                    # This looks like a pandas Series or numpy array
+                    # For chained comparisons with pandas, we can't short-circuit
+                    # so just continue with the next comparison
+                    if len(node.ops) > 1:
+                        # Multiple comparisons with pandas Series - this is complex
+                        # For now, just return the result and let the user handle it
+                        return result
+                    else:
+                        # Single comparison returning a Series - that's normal
+                        return result
+                else:
+                    # Regular scalar comparison - use safe boolean evaluation for short-circuiting
+                    if not _safe_bool_eval(
+                        result, node, f"Comparison operation '{type(op).__name__}'"
+                    ):
+                        # Short-circuit
+                        return False
             except TypeError as e:
                 # Re-raise as a user-catchable error
                 raise AgexTypeError(str(e), node) from e

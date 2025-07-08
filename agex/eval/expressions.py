@@ -5,6 +5,7 @@ from ..eval.utils import get_allowed_attributes_for_instance
 from .base import BaseEvaluator
 from .builtins import BUILTINS
 from .error import EvalError
+from .loops import _safe_bool_eval
 from .objects import AgexInstance, AgexModule, AgexObject
 from .user_errors import AgexAttributeError, AgexIndexError, AgexKeyError, AgexTypeError
 
@@ -79,13 +80,13 @@ class ExpressionEvaluator(BaseEvaluator):
         if isinstance(node.op, ast.And):
             for value_node in node.values:
                 result = self.visit(value_node)
-                if not result:
+                if not _safe_bool_eval(result, value_node, "Boolean 'and' operation"):
                     return result
             return result
         elif isinstance(node.op, ast.Or):
             for value_node in node.values:
                 result = self.visit(value_node)
-                if result:
+                if _safe_bool_eval(result, value_node, "Boolean 'or' operation"):
                     return result
             return result
         else:
@@ -93,7 +94,8 @@ class ExpressionEvaluator(BaseEvaluator):
 
     def visit_IfExp(self, node: ast.IfExp) -> Any:
         """Handles ternary expressions like `a if condition else b`."""
-        if self.visit(node.test):
+        test_result = self.visit(node.test)
+        if _safe_bool_eval(test_result, node.test, "Ternary expression condition"):
             return self.visit(node.body)
         else:
             return self.visit(node.orelse)
@@ -148,8 +150,7 @@ class ExpressionEvaluator(BaseEvaluator):
 
                 if not found_spec:
                     raise AgexAttributeError(
-                        f"Submodule '{submodule_name}' is not registered. "
-                        f"Use agent.module({attr_name}) to register it.",
+                        f"Submodule '{submodule_name}' is not allowed. ",
                         node,
                     )
                 return AgexModule(

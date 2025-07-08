@@ -13,6 +13,7 @@ from agex.eval.user_errors import (
     AgexKeyError,
     AgexNameError,
     AgexTypeError,
+    AgexValueError,
 )
 from agex.state.scoped import Scoped
 
@@ -21,6 +22,48 @@ from .binop import OPERATOR_MAP
 from .error import EvalError
 from .objects import AgexClass, AgexDataClass, AgexInstance, AgexObject
 from .safe import check_assignment_safety
+
+
+def _handle_assignment_exceptions(
+    operation, node: ast.AST, operation_name: str = "Operation"
+):
+    """
+    Helper function to handle common exceptions during assignment/deletion/access operations.
+
+    Args:
+        operation: A callable that performs the actual operation
+        node: The AST node for error reporting
+        operation_name: Human-readable name for the operation (e.g., "Assignment", "Deletion", "Access")
+    """
+    try:
+        return operation()
+    except AgexError:
+        # Let user-facing errors bubble up unchanged (they already have line/col info)
+        raise
+    except IndexError:
+        if "assignment" in operation_name.lower():
+            raise AgexIndexError("List assignment index out of range.", node)
+        elif "deletion" in operation_name.lower():
+            raise AgexIndexError("List deletion index out of range.", node)
+        else:
+            raise AgexIndexError("List index out of range.", node)
+    except KeyError as e:
+        # Extract key from exception if available
+        key = getattr(e, "args", [None])[0] if e.args else "unknown"
+        raise AgexKeyError(f"Key '{key}' not found.", node)
+    except AttributeError as e:
+        raise AgexAttributeError(str(e), node)
+    except ValueError as e:
+        # Handle pandas and other ValueError cases
+        raise AgexValueError(str(e), node) from e
+    except TypeError as e:
+        # Handle type errors during assignment
+        raise AgexTypeError(str(e), node) from e
+    except Exception as e:
+        # Catch-all for other assignment errors, wrap with line/col info
+        from .error import EvalError
+
+        raise EvalError(f"{operation_name} error: {e}", node, cause=e)
 
 
 class AssignmentTarget(ABC):
@@ -117,40 +160,46 @@ class AttributeTarget(AssignmentTarget):
         self._node = node
 
     def get_value(self) -> Any:
-        try:
+        def do_access():
             # Handle AgexObject, AgexInstance, and BoundInstanceObject with their special methods
             if isinstance(self._obj, (AgexObject, AgexInstance, BoundInstanceObject)):
                 return self._obj.getattr(self._attr_name)
             else:
                 # Handle regular Python objects
                 return getattr(self._obj, self._attr_name)
-        except AttributeError:
+
+        try:
+            return _handle_assignment_exceptions(
+                do_access, self._node, "Attribute access"
+            )
+        except AgexAttributeError:
+            # Provide a more specific error message for attribute access
             raise AgexAttributeError(
                 f"'{type(self._obj).__name__}' object has no attribute '{self._attr_name}'",
                 self._node,
             )
 
     def _do_set_value(self, value: Any):
-        try:
+        def do_assignment():
             # Handle AgexObject, AgexInstance, and BoundInstanceObject with their special methods
             if isinstance(self._obj, (AgexObject, AgexInstance, BoundInstanceObject)):
                 self._obj.setattr(self._attr_name, value)
             else:
                 # Handle regular Python objects
                 setattr(self._obj, self._attr_name, value)
-        except AttributeError as e:
-            raise AgexAttributeError(str(e), self._node)
+
+        _handle_assignment_exceptions(do_assignment, self._node, "Attribute assignment")
 
     def del_value(self):
-        try:
+        def do_deletion():
             # Handle AgexObject, AgexInstance, and BoundInstanceObject with their special methods
             if isinstance(self._obj, (AgexObject, AgexInstance, BoundInstanceObject)):
                 self._obj.delattr(self._attr_name)
             else:
                 # Handle regular Python objects
                 delattr(self._obj, self._attr_name)
-        except AttributeError as e:
-            raise AgexAttributeError(str(e), self._node)
+
+        _handle_assignment_exceptions(do_deletion, self._node, "Attribute deletion")
 
 
 class SubscriptTarget(AssignmentTarget):
@@ -204,30 +253,26 @@ class SubscriptTarget(AssignmentTarget):
             )
 
     def get_value(self) -> Any:
-        try:
+        def do_access():
             return self._container[self._final_key]
-        except KeyError:
-            raise AgexKeyError(f"Key '{self._final_key}' not found.", self._node)
-        except IndexError:
-            raise AgexIndexError("List index out of range.", self._node)
+
+        return _handle_assignment_exceptions(do_access, self._node, "Subscript access")
 
     def _do_set_value(self, value: Any):
-        try:
+        def do_assignment():
             self._container[self._final_key] = value
             if self._root_name:
                 self._evaluator.state.set(self._root_name, self._root_container)
-        except IndexError:
-            raise AgexIndexError("List assignment index out of range.", self._node)
+
+        _handle_assignment_exceptions(do_assignment, self._node, "Subscript assignment")
 
     def del_value(self):
-        try:
+        def do_deletion():
             del self._container[self._final_key]
             if self._root_name:
                 self._evaluator.state.set(self._root_name, self._root_container)
-        except KeyError:
-            raise AgexKeyError(f"Key '{self._final_key}' not found.", self._node)
-        except IndexError:
-            raise AgexIndexError("List index out of range.", self._node)
+
+        _handle_assignment_exceptions(do_deletion, self._node, "Subscript deletion")
 
 
 class StatementEvaluator(BaseEvaluator):
