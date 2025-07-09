@@ -179,6 +179,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         inputs_dataclass = self._create_inputs_dataclass(task_name, original_sig)
 
         # Create new signature with added state parameter
+        # Insert state parameter before **kwargs if it exists, otherwise append at end
         new_params = list(original_sig.parameters.values())
         state_param = inspect.Parameter(
             "state",
@@ -186,7 +187,21 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             default=None,
             annotation="Versioned | None",
         )
-        new_params.append(state_param)
+
+        # Find if there's a **kwargs parameter (VAR_KEYWORD)
+        var_keyword_index = None
+        for i, param in enumerate(new_params):
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                var_keyword_index = i
+                break
+
+        if var_keyword_index is not None:
+            # Insert state parameter before **kwargs
+            new_params.insert(var_keyword_index, state_param)
+        else:
+            # No **kwargs, append at end as before
+            new_params.append(state_param)
+
         new_sig = original_sig.replace(parameters=new_params)
 
         # Create the replacement function

@@ -122,12 +122,23 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
     if modules_to_render:
         output.append("# Available modules (import before using):")
         output.extend(modules_to_render)
+        note = "# To use the modules above, import them as you would any Python module:"
+        note += "\n# - import some_module"
+        note += "\n# - import some_module as alias"
+        note += "\n# Note: you may not have full access to these modules or classes."
+        note += "\n# If you do not, you will see this as an error in your stdout (such as a 'no attribute' error)."
+        output.append(note)
 
     # Render registered objects (live objects)
     for name, spec in agent.object_registry.items():
         rendered_object = _render_object(name, spec, agent, full=full)
         if rendered_object:
             output.append(rendered_object)
+
+    output.extend(
+        _render_object(name, spec, agent, full=full)
+        for name, spec in agent.object_registry.items()
+    )
 
     return "\n\n".join(output)
 

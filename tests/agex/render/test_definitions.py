@@ -227,6 +227,12 @@ module my_mod:
         """
     def func_med():
         ...
+
+# To use the modules above, import them as you would any Python module:
+# - import some_module
+# - import some_module as alias
+# Note: you may not have full access to these modules or classes.
+# If you do not, you will see this as an error in your stdout (such as a 'no attribute' error).
 '''.strip()
     assert output.strip() == expected
 
@@ -260,6 +266,12 @@ module my_mod:
         """
         High-vis func doc.
         """
+
+# To use the modules above, import them as you would any Python module:
+# - import some_module
+# - import some_module as alias
+# Note: you may not have full access to these modules or classes.
+# If you do not, you will see this as an error in your stdout (such as a 'no attribute' error).
 '''.strip()
     # Note: func_med (medium-vis) is not rendered because the container is medium-vis.
     assert output.strip() == expected
@@ -278,7 +290,13 @@ def test_render_low_vis_module_is_empty(dummy_module):
     expected = """# Available modules (import before using):
 
 module my_mod:
-    ..."""
+    ...
+
+# To use the modules above, import them as you would any Python module:
+# - import some_module
+# - import some_module as alias
+# Note: you may not have full access to these modules or classes.
+# If you do not, you will see this as an error in your stdout (such as a 'no attribute' error)."""
     assert output.strip() == expected
 
 
@@ -300,6 +318,12 @@ module my_mod:
         """
         High-vis func doc.
         """
+
+# To use the modules above, import them as you would any Python module:
+# - import some_module
+# - import some_module as alias
+# Note: you may not have full access to these modules or classes.
+# If you do not, you will see this as an error in your stdout (such as a 'no attribute' error).
 '''.strip()
     assert output.strip() == expected
 
@@ -328,6 +352,12 @@ module my_mod:
             """
             High-vis meth doc.
             """
+
+# To use the modules above, import them as you would any Python module:
+# - import some_module
+# - import some_module as alias
+# Note: you may not have full access to these modules or classes.
+# If you do not, you will see this as an error in your stdout (such as a 'no attribute' error).
 '''.strip()
     assert output.strip() == expected
 
@@ -359,6 +389,12 @@ module my_mod:
             """
             Promoting meth doc.
             """
+
+# To use the modules above, import them as you would any Python module:
+# - import some_module
+# - import some_module as alias
+# Note: you may not have full access to these modules or classes.
+# If you do not, you will see this as an error in your stdout (such as a 'no attribute' error).
 '''.strip()
     assert output.strip() == expected
 
@@ -390,6 +426,12 @@ module my_mod:
             """
             Promoting meth doc.
             """
+
+# To use the modules above, import them as you would any Python module:
+# - import some_module
+# - import some_module as alias
+# Note: you may not have full access to these modules or classes.
+# If you do not, you will see this as an error in your stdout (such as a 'no attribute' error).
 '''.strip()
     assert output.strip() == expected
 

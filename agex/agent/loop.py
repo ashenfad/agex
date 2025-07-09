@@ -228,6 +228,9 @@ class TaskLoopMixin(BaseAgent):
                 "Here is its structure and content:"
             )
             parts.append(f"```\n{rendered_inputs}\n```")
+            parts.append(
+                "\nAccess these values with patterns like `inputs.some_attr`\n"
+            )
 
         # Add expected output format with clarification for function types
         if return_type is inspect.Parameter.empty:
