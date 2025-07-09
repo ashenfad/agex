@@ -14,13 +14,12 @@ import random
 import numpy as np
 
 from agex import Agent
-from agex.patterns import NUMPY_EXCLUDE, RANDOM_EXCLUDE
 
 data_maker = Agent(name="data_maker", primer="You excel at generating data via numpy.")
 
-data_maker.module(np, visibility="low", exclude=NUMPY_EXCLUDE)
+data_maker.module(np, visibility="low")
 data_maker.module(np.random, visibility="low")
-data_maker.module(random, visibility="low", exclude=RANDOM_EXCLUDE)
+data_maker.module(random, visibility="low")
 
 
 @data_maker.task
