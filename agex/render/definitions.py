@@ -135,11 +135,6 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
         if rendered_object:
             output.append(rendered_object)
 
-    output.extend(
-        _render_object(name, spec, agent, full=full)
-        for name, spec in agent.object_registry.items()
-    )
-
     return "\n\n".join(output)
 
 
@@ -396,7 +391,9 @@ def _render_function(
 
     params = []
     for i, (p_name, p) in enumerate(signature.parameters.items()):
-        if is_method and i == 0:
+        # For unbound methods, skip the first parameter (self/cls) but add it without type annotation
+        # For bound methods, the self parameter is already stripped by Python's introspection
+        if is_method and i == 0 and not hasattr(fn, "__self__"):
             params.append(p_name)  # self/cls
             continue
 
