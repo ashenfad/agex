@@ -94,7 +94,7 @@ with ctx as value:
     result = f"processed_{value}"
 
 print("Outside context")
-exit_success(result)
+task_success(result)
 """,
             )
         ]
@@ -173,7 +173,7 @@ with db as transaction:
     result = {"name": user_data[0], "email": user_data[1], "total_users": new_count}
 
 print("Transaction completed successfully")
-exit_success(result)
+task_success(result)
 """,
                 )
             ]
@@ -270,7 +270,7 @@ except Exception as e:
         "rollback_successful": initial_count == final_count
     }
 
-exit_success(result)
+task_success(result)
 """,
                 )
             ]
@@ -345,7 +345,7 @@ with res1 as r1:
     results.append(f"Released {r2}, still have {r1}")
 
 results.append("All resources released")
-exit_success(results)
+task_success(results)
 """,
             )
         ]
@@ -430,7 +430,7 @@ result = {
     "added": final_count - initial_count
 }
 
-exit_success(result)
+task_success(result)
 """,
                 )
             ]
@@ -504,7 +504,7 @@ with conn.execute("SELECT value FROM items ORDER BY value") as cursor:
 final_count = count  # This should work
 results.append(f"Final count: {final_count}")
 
-exit_success(results)
+task_success(results)
 """,
                 )
             ]
@@ -574,7 +574,7 @@ with db as connection:
 db.commit()
 
 # Exit with success
-exit_success("Created 'users' table with columns: id, name, email, age")
+task_success("Created 'users' table with columns: id, name, email, age")
 """,
             )
         ]

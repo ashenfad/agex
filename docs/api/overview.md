@@ -19,7 +19,7 @@ Define agent tasks using the `@agent.task` decorator. Support for standalone tas
 Manage persistent state across agent executions with automatic checkpointing and rollback capabilities.
 
 ### [Error Handling](errors.md)
-Understand agent exit functions (`exit_success`, `exit_fail`, `exit_clarify`) and exception handling (`ExitFail`, `ExitClarify`, `TimeoutError`).
+Understand agent task control functions (`task_success`, `task_fail`, `task_continue`) and exception handling (`TaskFail`, `TimeoutError`).
 
 ### [View](view.md) ⚠️ *Experimental*
 Inspect agents and their execution state for debugging. API subject to frequent changes.
@@ -31,7 +31,7 @@ Most agex functionality is available at the top level:
 ```python
 from agex import Agent, Versioned, view
 from agex import Memory, Disk, Cache  # Storage backends
-from agex import ExitFail, ExitClarify  # Error handling
+from agex import TaskFail  # Error handling
 from agex import configure_llm, clear_agent_registry  # Utilities
 ```
 

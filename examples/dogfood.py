@@ -55,7 +55,7 @@ def main():
     #
     #     task_fn = math_solver_agent.task(solve_math_problem)
     #
-    #     exit_success(task_fn)
+    #     task_success(task_fn)
 
     result = math_solver("4x + 5 = 13")
     print(result)
@@ -84,7 +84,7 @@ def main():
     # # Compose the solution steps
     # solution_steps = f"{step1}\n{step2}\nTherefore, x = {x_value}"
     #
-    # exit_success(solution_steps)
+    # task_success(solution_steps)
 
 
 if __name__ == "__main__":

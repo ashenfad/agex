@@ -14,7 +14,12 @@ from agex.agent.conversation import (
     conversation_log,
     initialize_conversation_log,
 )
-from agex.agent.datatypes import ExitSuccess, _AgentExit
+from agex.agent.datatypes import (
+    TaskContinue,
+    TaskFail,
+    TaskSuccess,
+    _AgentExit,
+)
 from agex.agent.formatting import format_context_as_markdown
 from agex.agent.primer_text import BUILTIN_PRIMER
 from agex.llm.core import Message
@@ -27,6 +32,12 @@ from ..state import Namespaced, Versioned
 
 
 class TaskLoopMixin(BaseAgent):
+    def _render_and_add_context(self, exec_state, context_renderer):
+        """Helper method to render context and add it as a message to avoid code duplication."""
+        current_context = context_renderer.render(exec_state, self.max_tokens)
+        markdown_context = format_context_as_markdown(current_context)
+        add_message(exec_state, Message(role="user", content=markdown_context))
+
     def _run_task_loop(
         self,
         task_name: str,
@@ -51,8 +62,7 @@ class TaskLoopMixin(BaseAgent):
             The validated result from the agent
 
         Raises:
-            TaskFailedException: If agent calls exit_fail()
-            ClarificationRequested: If agent calls exit_clarify()
+            TaskFail: If agent calls task_fail()
         """
         # Determine state and versioning responsibility
         versioned_state: Versioned | None = None
@@ -137,15 +147,17 @@ class TaskLoopMixin(BaseAgent):
                         self.timeout_seconds,
                     )
 
-                current_context = context_renderer.render(exec_state, self.max_tokens)
-                markdown_context = format_context_as_markdown(current_context)
-                add_message(exec_state, Message(role="user", content=markdown_context))
+                self._render_and_add_context(exec_state, context_renderer)
 
-            except ExitSuccess as exit_signal:
+            except TaskSuccess as task_signal:
                 # Task completed successfully - return the result
-                return exit_signal.result
-            except _AgentExit:
-                # Let other agent exit signals pass through (ExitFail, ExitClarify)
+                return task_signal.result
+            except TaskContinue:
+                # Agent wants to continue to next iteration - just continue the loop
+                self._render_and_add_context(exec_state, context_renderer)
+                continue
+            except (TaskFail, _AgentExit):
+                # Let other agent exit signals pass through (TaskFail)
                 raise
             except Exception as e:
                 # Catch evaluation errors and put them on stdout for agent feedback FIRST
@@ -154,9 +166,7 @@ class TaskLoopMixin(BaseAgent):
                 exec_state.set("__stdout__", current_stdout)
 
                 # THEN render context (which will now include the error)
-                current_context = context_renderer.render(exec_state, self.max_tokens)
-                markdown_context = format_context_as_markdown(current_context)
-                add_message(exec_state, Message(role="user", content=markdown_context))
+                self._render_and_add_context(exec_state, context_renderer)
             finally:
                 # Always snapshot after each evaluation iteration (if we own the state)
                 from ..state import is_ephemeral_root
@@ -234,8 +244,8 @@ class TaskLoopMixin(BaseAgent):
 
         # Add expected output format with clarification for function types
         if return_type is inspect.Parameter.empty:
-            # No return type annotation - just call exit_success() with no arguments
-            parts.append("When complete, call `exit_success()` to indicate completion.")
+            # No return type annotation - just call task_success() with no arguments
+            parts.append("When complete, call `task_success()` to indicate completion.")
         elif "Callable" in str(return_type):
             # Function return type - special instructions
             # Clean up the type representation to remove confusing module references
@@ -245,7 +255,7 @@ class TaskLoopMixin(BaseAgent):
                 return_type_str = return_type_str[7:]  # Remove "typing." prefix
 
             parts.append(
-                f"When complete, call `exit_success(your_function)` where your_function is the {return_type_str} you created. "
+                f"When complete, call `task_success(your_function)` where your_function is the {return_type_str} you created. "
                 "Pass the function object itself, not the result of calling the function.\n"
             )
         else:
@@ -264,7 +274,7 @@ class TaskLoopMixin(BaseAgent):
                 return_type_name = str(return_type)
 
             parts.append(
-                f"When complete, call `exit_success(result: {return_type_name})` with your result."
+                f"When complete, call `task_success(result: {return_type_name})` with your result."
             )
 
         return "\n\n".join(parts)

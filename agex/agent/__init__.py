@@ -5,15 +5,15 @@ from .base import BaseAgent, clear_agent_registry, register_agent, resolve_agent
 from .datatypes import (
     RESERVED_NAMES,
     AttrDescriptor,
-    ExitClarify,
-    ExitFail,
-    ExitSuccess,
     MemberSpec,
     Pattern,
     RegisteredClass,
     RegisteredFn,
     RegisteredItem,
     RegisteredModule,
+    TaskContinue,
+    TaskFail,
+    TaskSuccess,
     Visibility,
 )
 from .loop import TaskLoopMixin
@@ -28,10 +28,10 @@ __all__ = [
     "resolve_agent",
     "clear_agent_registry",
     "clear_dynamic_dataclass_registry",
-    # Agent exit system
-    "ExitSuccess",
-    "ExitFail",
-    "ExitClarify",
+    # Task control functions
+    "TaskSuccess",
+    "TaskFail",
+    "TaskContinue",
     # Registration types
     "MemberSpec",
     "AttrDescriptor",

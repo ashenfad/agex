@@ -56,7 +56,7 @@ def main():
     #             return candidate
     #         candidate += 1
     #
-    # exit_success(first_prime_larger_than)
+    # task_success(first_prime_larger_than)
 
     # the function is callable in native python
     print(fn(500000))

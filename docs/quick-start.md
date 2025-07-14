@@ -233,7 +233,7 @@ This peer collaboration pattern enables quality improvement, fact-checking, and 
 Agent tasks can raise specific exceptions you should handle:
 
 ```python
-from agex import Agent, ExitFail, ExitClarify
+from agex import Agent, TaskFail
 
 agent = Agent()
 
@@ -245,11 +245,9 @@ def risky_task(input_data: str) -> str:  # type: ignore[return-value]
 try:
     result = risky_task("ambiguous input")
     print(f"Success: {result}")
-except ExitFail as e:
-    print(f"Task failed: {e.reason}")
-except ExitClarify as e:
-    print(f"Agent needs clarification: {e.question}")
-    # Provide more context and retry
+except TaskFail as e:
+    print(f"Task failed: {e.message}")
+# Note: Successful completion is handled internally and returns the result directly
 ```
 
 ## Next Steps

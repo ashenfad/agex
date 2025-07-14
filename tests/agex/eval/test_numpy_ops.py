@@ -107,7 +107,7 @@ def test_task_returning_list_of_numpy_arrays():
         responses=[
             LLMResponse(
                 thinking="I will create and return a list of two numpy arrays.",
-                code="import np\nexit_success([np.array([1, 2]), np.array([3, 4])])",
+                code="import np\ntask_success([np.array([1, 2]), np.array([3, 4])])",
             ),
         ]
     )

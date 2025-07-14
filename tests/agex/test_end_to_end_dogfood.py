@@ -43,7 +43,7 @@ with Agent() as new_agent:
     # Convert to task
     task_fn = new_agent.task(greet)
 
-exit_success(task_fn)
+    task_success(task_fn)
 """,
         )
     ]
@@ -94,7 +94,7 @@ with Agent() as new_agent:
     fingerprint = new_agent.fingerprint
 
 # Return the agent fingerprint so we can verify it
-exit_success(fingerprint)
+task_success(fingerprint)
 """,
         )
     ]
@@ -147,7 +147,7 @@ with Agent() as new_agent:
     # Extract fingerprint before leaving context
     fingerprint = new_agent.fingerprint
 
-exit_success(fingerprint)
+task_success(fingerprint)
 """,
         )
     ]
@@ -229,7 +229,7 @@ with Agent() as geom_agent:
         'task_function': triangle_analyzer
     }
 
-exit_success(result)
+    task_success(result)
 """,
         )
     ]
@@ -287,7 +287,7 @@ def test_agex_module_fingerprinting():
             thinking="I need to import math and return the math module.",
             code="""
 import math
-exit_success(math)
+task_success(math)
 """,
         )
     ]

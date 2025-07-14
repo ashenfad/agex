@@ -13,25 +13,26 @@ class _AgentExit(Exception):
     pass
 
 
+# Task control classes for improved iterative workflow
 @dataclass
-class ExitSuccess(_AgentExit):
+class TaskSuccess(_AgentExit):
     """Signal that the agent has completed its task successfully."""
 
     result: Any = None
 
 
 @dataclass
-class ExitFail(_AgentExit):
+class TaskFail(_AgentExit):
     """Signal that the agent has failed and cannot complete its task."""
 
-    reason: str
+    message: str
 
 
 @dataclass
-class ExitClarify(_AgentExit):
-    """Signal that the agent needs clarification from the user."""
+class TaskContinue(_AgentExit):
+    """Signal that the agent wants to continue to the next iteration."""
 
-    question: str
+    observations: tuple[Any, ...] = field(default_factory=tuple)
 
 
 @dataclass

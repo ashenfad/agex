@@ -20,7 +20,7 @@ with Agent() as specialist:
     # ... configure specialist ...
     task_fn = specialist.task(some_function)
 
-exit_success(task_fn)  # Return the callable, not the result of calling it
+task_success(task_fn)  # Return the callable, not the result of calling it
 ```
 
 Note that `Agent` will be directly available to you, no need to import!
@@ -91,7 +91,7 @@ with Agent() as new_agent:
     # ... configure the agent ...
     result = new_agent.task(some_function)
 # Agent is automatically cleaned up after 'with' block
-exit_success(result)  # Return result before context ends
+task_success(result)  # Return result before context ends
 ```
 
 ```python
@@ -120,7 +120,7 @@ with Agent() as math_agent:
     task_function = math_agent.task(solve_equation)
 
 # Return the callable task function (must happen before context ends)
-exit_success(task_function)
+task_success(task_function)
 
 # The returned task_function can then be called like:
 # result = task_function("2*x + 5 = 15")
@@ -164,7 +164,7 @@ with Agent() as child_agent:
 
 - **Empty Task Bodies**: Functions passed to `.task()` must only contain `pass`, docstrings, and comments
 - **Context Manager Required**: Always use `with Agent() as agent:` pattern
-- **Result Extraction**: Call `exit_success()` before leaving the `with` block
+- **Result Extraction**: Call `task_success()` before leaving the `with` block
 - **Security Inheritance**: Child agents can only inherit capabilities you already have available
 - **No Agent Assignment**: Agent objects cannot be stored in variables outside context managers
 
@@ -174,7 +174,7 @@ with Agent() as child_agent:
 - **Context managers**: `with Agent() as agent:`
 - **Empty task bodies**: `def task(): pass`
 - **Module inheritance**: Parent registers, child inherits subset
-- **Immediate extraction**: `exit_success(result)` before context ends
+- **Immediate extraction**: `task_success(result)` before context ends
 - **Callable task creation**: Tasks from new agents become callable functions
 
 ### ❌ What Doesn't Work

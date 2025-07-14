@@ -1,5 +1,5 @@
 # Main tic functionality
-from .agent import Agent, ExitClarify, ExitFail, clear_agent_registry
+from .agent import Agent, TaskFail, clear_agent_registry
 from .eval.core import evaluate_program as evaluate
 from .llm.config import configure_llm
 from .render.view import view
@@ -18,6 +18,5 @@ __all__ = [
     "Disk",
     "Cache",
     "view",
-    "ExitClarify",
-    "ExitFail",
+    "TaskFail",
 ]

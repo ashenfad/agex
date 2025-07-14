@@ -3,7 +3,11 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
-from agex.agent.datatypes import ExitClarify, ExitFail, ExitSuccess
+from agex.agent.datatypes import (
+    TaskContinue,
+    TaskFail,
+    TaskSuccess,
+)
 from agex.eval.base import BaseEvaluator
 from agex.eval.functions import UserFunction
 from agex.eval.objects import (
@@ -369,11 +373,34 @@ def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
     evaluator.state.set("__stdout__", new_stdout)
 
 
+def _task_continue_with_observations(*observations: Any, state: State) -> None:
+    """Implementation of task_continue that handles auto-printing observations."""
+    if observations:
+        # Add observations to stdout
+        current_stdout = state.get("__stdout__")
+        if not isinstance(current_stdout, list):
+            current_stdout = []
+
+        # Format observations for printing
+        formatted_output = ["=== CONTINUING TASK - OBSERVATIONS ==="]
+        for obs in observations:
+            formatted_output.append(str(obs))
+        formatted_output.append("=== END OBSERVATIONS ===")
+
+        # Add to stdout
+        new_stdout = current_stdout + [PrintTuple((line,)) for line in formatted_output]
+        state.set("__stdout__", new_stdout)
+
+    # Raise TaskContinue to end current iteration
+    raise TaskContinue(observations=observations)
+
+
 STATEFUL_BUILTINS: dict[str, StatefulFn] = {
     "print": StatefulFn(_print_stateful),
     "help": StatefulFn(_help, needs_evaluator=True),
     "dir": StatefulFn(_dir, needs_evaluator=True),
     "hasattr": StatefulFn(_hasattr, needs_evaluator=True),
+    "task_continue": StatefulFn(_task_continue_with_observations),
 }
 
 
@@ -415,9 +442,7 @@ BUILTINS = {
     "IndexError": AgexIndexError,
     "ZeroDivisionError": AgexZeroDivisionError,
     "ArithmeticError": AgexArithmeticError,
-    # Agent exit signals
-    "exit": ExitSuccess,
-    "exit_success": ExitSuccess,
-    "exit_fail": ExitFail,
-    "exit_clarify": ExitClarify,
+    # Task control functions
+    "task_success": TaskSuccess,
+    "task_fail": TaskFail,
 }

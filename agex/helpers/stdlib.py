@@ -48,6 +48,12 @@ def register_stdlib(agent: Agent) -> None:
 
     # Date/time modules
     agent.module(datetime, visibility="low")
+    agent.cls(datetime.datetime, visibility="low")
+    agent.cls(datetime.date, visibility="low")
+    agent.cls(datetime.time, visibility="low")
+    agent.cls(datetime.timedelta, visibility="low")
+    agent.cls(datetime.timezone, visibility="low")
+    agent.cls(datetime.tzinfo, visibility="low")
 
     # String and text processing
     agent.module(re, visibility="low")

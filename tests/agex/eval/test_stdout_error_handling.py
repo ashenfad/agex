@@ -30,7 +30,7 @@ def test_error_appears_immediately_in_first_iteration():
             ),
             LLMResponse(
                 thinking="I can see the error now. Let me fix it.",
-                code="result = 1 + 1\nexit_success(result)",
+                code="result = 1 + 1\ntask_success(result)",
             ),
         ]
     )
@@ -73,7 +73,7 @@ def test_stdout_cleared_between_iterations():
             ),
             LLMResponse(
                 thinking="Third iteration - I'll check what's in stdout and finish.",
-                code='print("iteration 3 message")\nexit_success("done")',
+                code='print("iteration 3 message")\ntask_success("done")',
             ),
         ]
     )
@@ -127,7 +127,7 @@ def test_error_cleared_between_iterations():
             ),
             LLMResponse(
                 thinking="Third iteration - now complete successfully.",
-                code="z = 42\nexit_success(z)",
+                code="z = 42\ntask_success(z)",
             ),
         ]
     )
@@ -173,7 +173,7 @@ def test_mixed_prints_and_errors_cleared():
             ),
             LLMResponse(
                 thinking="Print something else and succeed.",
-                code='print("after error")\nexit_success("complete")',
+                code='print("after error")\ntask_success("complete")',
             ),
         ]
     )
@@ -218,11 +218,11 @@ def test_validation_error_shows_full_type():
         responses=[
             LLMResponse(
                 thinking="I will try to return a list of strings.",
-                code="exit_success(['a', 'b'])",
+                code="task_success(['a', 'b'])",
             ),
             LLMResponse(
                 thinking="I see the validation error. I'll return a list of ints now.",
-                code="exit_success([1, 2])",
+                code="task_success([1, 2])",
             ),
         ]
     )

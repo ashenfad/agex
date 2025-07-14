@@ -33,7 +33,7 @@ def test_register_and_use_live_object():
     responses = [
         LLMResponse(
             thinking="I need to query the database and get the connection ID.",
-            code='user = db.query("users", inputs.user_id)\nconn_id = db.connection_id\nexit_success((user, conn_id))',
+            code='user = db.query("users", inputs.user_id)\nconn_id = db.connection_id\ntask_success((user, conn_id))',
         )
     ]
     agent.llm_client = DummyLLMClient(responses=responses)
@@ -75,7 +75,7 @@ def test_live_object_state_safety():
     responses = [
         LLMResponse(
             thinking="I'll assign the method to a variable and then call it.",
-            code='query_method = db.query\nresult = query_method("users", inputs.user_id)\nexit_success(result)',
+            code='query_method = db.query\nresult = query_method("users", inputs.user_id)\ntask_success(result)',
         )
     ]
     agent.llm_client = DummyLLMClient(responses=responses)

@@ -12,7 +12,7 @@ These tests verify that all components work together correctly:
 
 import pytest
 
-from agex.agent import Agent, ExitFail
+from agex.agent import Agent, TaskFail
 from agex.llm import DummyLLMClient
 from agex.llm.core import LLMResponse
 
@@ -40,7 +40,7 @@ def test_successful_task_completion():
     responses = [
         LLMResponse(
             thinking="I need to solve this math problem by adding the numbers and multiplying by 2.",
-            code="sum_result = add(inputs.x, inputs.y)\nfinal_result = multiply(sum_result, 2)\nexit_success(final_result)",
+            code="sum_result = add(inputs.x, inputs.y)\nfinal_result = multiply(sum_result, 2)\ntask_success(final_result)",
         )
     ]
 
@@ -89,7 +89,7 @@ def test_task_with_parse_error_recovery():
         ),
         LLMResponse(
             thinking="I'll call the function to get the answer.",
-            code="result = get_answer()\nexit_success(result)",
+            code="result = get_answer()\ntask_success(result)",
         ),
     ]
 
@@ -123,7 +123,7 @@ def test_task_with_evaluation_error_recovery():
         ),
         LLMResponse(
             thinking="Let me fix that syntax error.",
-            code="result = 1 + 1\nexit_success(result)",
+            code="result = 1 + 1\ntask_success(result)",
         ),
     ]
 
@@ -150,7 +150,7 @@ def test_task_with_inputs_access():
     responses = [
         LLMResponse(
             thinking="I need to process the input data.",
-            code="message = inputs.text.upper()\ncount = inputs.repeat_count\nresult = message * count\nexit_success(result)",
+            code="message = inputs.text.upper()\ncount = inputs.repeat_count\nresult = message * count\ntask_success(result)",
         )
     ]
 
@@ -178,7 +178,7 @@ def test_task_timeout_after_max_iterations():
     """Test that tasks timeout if they exceed max iterations."""
     agent = Agent(max_iterations=2)
 
-    # Response that never calls exit_success
+    # Response that never calls task_success
     responses = [
         LLMResponse(
             thinking="I'll do some work but not finish.",
@@ -203,14 +203,14 @@ def test_task_timeout_after_max_iterations():
         never_ending_task()
 
 
-def test_task_with_exit_fail():
-    """Test that ExitFail exceptions are properly propagated."""
+def test_task_with_task_fail():
+    """Test that TaskFail exceptions are properly propagated."""
     agent = Agent(max_iterations=2)
 
     responses = [
         LLMResponse(
             thinking="I cannot complete this task.",
-            code='exit_fail("Task is impossible to complete")',
+            code='task_fail("Task is impossible to complete")',
         )
     ]
 
@@ -225,15 +225,15 @@ def test_task_with_exit_fail():
             This function should never return normally, but would return a string if it did
 
         Raises:
-            ExitFail: Always raised to indicate task failure
+            TaskFail: Always raised to indicate task failure
         """
         pass
 
-    # Should raise ExitFail
-    with pytest.raises(ExitFail) as exc_info:
+    # Should raise TaskFail
+    with pytest.raises(TaskFail) as exc_info:
         impossible_task()
 
-    assert exc_info.value.reason == "Task is impossible to complete"
+    assert exc_info.value.message == "Task is impossible to complete"
 
 
 def test_task_with_no_inputs():
@@ -243,7 +243,7 @@ def test_task_with_no_inputs():
     responses = [
         LLMResponse(
             thinking="This is a simple task with no inputs.",
-            code='result = "Hello, World!"\nexit_success(result)',
+            code='result = "Hello, World!"\ntask_success(result)',
         )
     ]
 
@@ -270,7 +270,7 @@ def test_task_with_complex_return_type():
     responses = [
         LLMResponse(
             thinking="I'll create a dictionary with the requested data.",
-            code='result = {"name": inputs.name, "age": inputs.age, "status": "processed"}\nexit_success(result)',
+            code='result = {"name": inputs.name, "age": inputs.age, "status": "processed"}\ntask_success(result)',
         )
     ]
 
@@ -311,7 +311,7 @@ def test_agent_function_visibility_in_task():
     responses = [
         LLMResponse(
             thinking="I'll use the factorial function to compute the result.",
-            code="result = calculate_factorial(inputs.number)\nexit_success(result)",
+            code="result = calculate_factorial(inputs.number)\ntask_success(result)",
         )
     ]
 
@@ -335,13 +335,13 @@ def test_agent_function_visibility_in_task():
 
 
 def test_task_with_no_return_type():
-    """Test that tasks with no return type annotation show proper exit_success() instruction."""
+    """Test that tasks with no return type annotation show proper task_success() instruction."""
     agent = Agent(max_iterations=2)
 
     responses = [
         LLMResponse(
-            thinking="This task has no return type, so I'll just call exit_success() with no arguments.",
-            code="print('Task completed successfully')\nexit_success()",
+            thinking="This task has no return type, so I'll just call task_success() with no arguments.",
+            code="print('Task completed successfully')\ntask_success()",
         )
     ]
 
@@ -350,9 +350,9 @@ def test_task_with_no_return_type():
     @agent.task("Perform a task that doesn't return anything.")
     def no_return_task():  # No return type annotation
         """
-        Execute a task that performs some action but doesn't return a value.
-        This tests that the task message shows exit_success() instead of
-        exit_success(result: <class 'inspect._empty'>).
+            Execute a task that performs some action but doesn't return a value.
+                This tests that the task message shows task_success() instead of
+        task_success(result: <class 'inspect._empty'>).
         """
         pass
 
@@ -386,7 +386,7 @@ def test_task_with_custom_class_return_type():
     )
 
     # Verify that the task message contains clean type name "Review" not "<class '__main__.Review'>"
-    assert "exit_success(result: Review)" in task_message
+    assert "task_success(result: Review)" in task_message
     assert "__main__" not in task_message
     assert "<class" not in task_message
 
@@ -409,7 +409,7 @@ def test_task_with_builtin_type_return_clean_display():
     )
 
     # Verify that the task message contains clean type name "str" not "<class 'str'>"
-    assert "exit_success(result: str)" in task_message
+    assert "task_success(result: str)" in task_message
     assert "<class 'str'>" not in task_message
 
     # Test with int
@@ -421,7 +421,7 @@ def test_task_with_builtin_type_return_clean_display():
         return_type=int,
     )
 
-    assert "exit_success(result: int)" in task_message
+    assert "task_success(result: int)" in task_message
     assert "<class 'int'>" not in task_message
 
     # Test with list
@@ -433,7 +433,7 @@ def test_task_with_builtin_type_return_clean_display():
         return_type=list,
     )
 
-    assert "exit_success(result: list)" in task_message
+    assert "task_success(result: list)" in task_message
     assert "<class 'list'>" not in task_message
 
     # Test with generic type list[int] - should preserve type parameters
@@ -445,5 +445,5 @@ def test_task_with_builtin_type_return_clean_display():
         return_type=list[int],
     )
 
-    assert "exit_success(result: list[int])" in task_message
+    assert "task_success(result: list[int])" in task_message
     assert "<class" not in task_message

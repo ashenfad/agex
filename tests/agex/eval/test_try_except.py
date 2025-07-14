@@ -4,7 +4,7 @@ Tests for try...except...else...finally blocks.
 
 import pytest
 
-from agex.agent import ExitSuccess
+from agex.agent import TaskSuccess
 from agex.eval.user_errors import AgexKeyError
 from tests.agex.eval.helpers import eval_and_get_state
 
@@ -100,11 +100,11 @@ def test_agent_exit_is_not_caught():
     """
     program = """
 try:
-    exit_success(result="Finished")
+    task_success(result="Finished")
 except:
     pass # This must not catch the exit signal
 """
-    with pytest.raises(ExitSuccess):
+    with pytest.raises(TaskSuccess):
         eval_and_get_state(program)
 
 

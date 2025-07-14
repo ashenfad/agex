@@ -2,7 +2,7 @@
 
 ## The Problem
 
-Agents sometimes rush to complete tasks without adequately reviewing their own work. They may call `exit_success(result)` prematurely with incomplete, incorrect, or suboptimal results. This leads to:
+Agents sometimes rush to complete tasks without adequately reviewing their own work. They may call `task_success(result)` prematurely with incomplete, incorrect, or suboptimal results. This leads to:
 
 - **Quality issues**: Solutions that work but aren't robust or well-tested
 - **Missed requirements**: Partial fulfillment of complex task specifications  
@@ -11,7 +11,7 @@ Agents sometimes rush to complete tasks without adequately reviewing their own w
 
 ## The Solution: Task-Level Confirmation
 
-A `confirmation=True` parameter on tasks that forces the agent to review and explicitly confirm its own results after calling `exit_success()`.
+A `confirmation=True` parameter on tasks that forces the agent to review and explicitly confirm its own results after calling `task_success()`.
 
 ```python
 @agent.task(confirmation=True)
@@ -19,14 +19,14 @@ def analyze_data(data: DataFrame) -> str:
     """Analyze the dataset and provide insights."""
     # Agent does analysis work...
     analysis_result = "The data shows a 15% increase in sales..."
-    exit_success(analysis_result)
+    task_success(analysis_result)
     # At this point, agent is forced to review its own work
 ```
 
 ### How It Works
 
 1. **Normal Execution**: Agent works on the task as usual
-2. **Exit Attempt**: Agent calls `exit_success(result)` 
+2. **Exit Attempt**: Agent calls `task_success(result)` 
 3. **Confirmation Phase**: Instead of immediately exiting, the agent enters a review mode
 4. **Self-Review**: Agent is prompted to examine its own result critically
 5. **Decision**: Agent can either confirm the result or continue working to improve it
@@ -40,7 +40,7 @@ def write_test_cases(function_code: str) -> str:
     
     # Agent generates initial test cases
     test_code = generate_tests(function_code)
-    exit_success(test_code)
+    task_success(test_code)
     
     # Framework intercepts and prompts for confirmation:
     # "Review your test cases. Do they cover all edge cases? 
@@ -53,7 +53,7 @@ def write_test_cases(function_code: str) -> str:
     
     # Agent continues working...
     improved_tests = add_edge_case_tests(test_code)
-    exit_success(improved_tests)
+    task_success(improved_tests)
     
     # Second review might lead to confirmation
 ```

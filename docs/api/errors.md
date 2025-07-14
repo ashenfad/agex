@@ -4,24 +4,25 @@ When you call agent tasks, they may raise specific exceptions based on how the a
 
 **You don't implement these behaviors** - agents handle completion internally. **You only need to catch the resulting exceptions.**
 
-## Exception Types
+## Agent Task Exceptions
 
-All error exceptions are available at the top level:
+Agent tasks can raise specific exceptions during execution:
 
 ```python
-from agex import Agent, ExitFail, ExitClarify
+from agex import Agent, TaskFail
+# Note: TaskSuccess is handled internally and doesn't need to be imported
 ```
 
-### `ExitFail`
+### `TaskFail`
 
 Raised when an agent determines it cannot complete the task.
 
 **Attributes:**
-- `reason: str` - The error message provided by the agent
+- `message: str` - The error message provided by the agent
 
 **Example:**
 ```python
-from agex import Agent, ExitFail
+from agex import Agent, TaskFail
 
 agent = Agent()
 
@@ -31,34 +32,9 @@ def impossible_task() -> str:  # type: ignore[return-value]
 
 try:
     result = impossible_task()
-except ExitFail as e:
-    print(f"Task failed: {e.reason}")
+except TaskFail as e:
+    print(f"Task failed: {e.message}")
     # Handle the failure appropriately
-```
-
-### `ExitClarify`
-
-Raised when an agent needs clarification to complete the task.
-
-**Attributes:**
-- `question: str` - The clarification question from the agent
-
-**Example:**
-```python
-from agex import Agent, ExitClarify
-
-agent = Agent()
-
-@agent.task("Analyze ambiguous data")
-def analyze_data(data: str) -> dict:  # type: ignore[return-value]
-    pass
-
-try:
-    result = analyze_data("unclear input")
-except ExitClarify as e:
-    print(f"Agent needs clarification: {e.question}")
-    # Provide additional context and retry
-    # result = analyze_data_with_context(data, context)
 ```
 
 ### `TimeoutError`
@@ -95,7 +71,7 @@ Error behavior depends on who calls the agent task:
 When called directly by user code, agent errors become exceptions:
 
 ```python
-from agex import Agent, ExitFail, ExitClarify
+from agex import Agent, TaskFail
 
 agent = Agent()
 
@@ -107,11 +83,8 @@ def risky_operation(data: str) -> str:  # type: ignore[return-value]
 try:
     result = risky_operation("input")
     print(f"Success: {result}")
-except ExitFail as e:
-    print(f"Operation failed: {e.reason}")
-except ExitClarify as e:
-    print(f"Need clarification: {e.question}")
-    # Could retry with additional context
+except TaskFail as e:
+    print(f"Operation failed: {e.message}")
 except TimeoutError as e:
     print(f"Agent timed out: {e}")
 ```
@@ -148,11 +121,11 @@ def coordinate_processing(data: str) -> str:  # type: ignore[return-value]
 
 Agents have three internal functions to signal different outcomes:
 
-- **`exit_success(result)`** - Agent completed successfully and returns the result
-- **`exit_fail(message)`** - Agent cannot complete the task and provides an error message  
-- **`exit_clarify(question)`** - Agent needs clarification and asks a question
+- **`task_success(result)`** - Agent completed successfully and returns the result
+- **`task_fail(message)`** - Agent cannot complete the task and provides an error message  
+- **`task_continue(*observations)`** - Agent wants to continue to the next iteration with optional observations
 
-These internal agent calls become the exceptions you handle in your code.
+These internal agent calls become the exceptions you handle in your code (except for `task_success` which returns the result directly).
 
 ## Best Practices
 
@@ -164,19 +137,17 @@ These internal agent calls become the exceptions you handle in your code.
 try:
     result = agent_task(data)
     process_result(result)
-except ExitFail as e:
-    log_error(f"Task failed: {e.reason}")
+except TaskFail as e:
+    log_error(f"Task failed: {e.message}")
     handle_failure()
-except ExitClarify as e:
-    additional_context = gather_context(e.question)
-    result = agent_task_with_context(data, additional_context)
+# Note: TaskSuccess is handled internally and returns the result directly
 ```
 
 **Distinguish timeout from task failure:**
 ```python
 try:
     result = complex_task(data)
-except ExitFail:
+except TaskFail:
     # Task logic determined it couldn't complete - this is expected
     handle_task_failure()
 except TimeoutError:
@@ -210,7 +181,7 @@ from agex import Versioned
 state = Versioned()
 try:
     result = task_with_errors(state=state)
-except ExitFail as e:
+except TaskFail as e:
     # Check final state - old errors won't accumulate
     final_stdout = state.get("agent_name/__stdout__", [])
     # Only contains recent output, not historical errors

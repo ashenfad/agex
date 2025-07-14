@@ -569,7 +569,7 @@ def test_task_input_dataclass_pickling():
         responses=[
             LLMResponse(
                 thinking="I will return the expected result",
-                code="exit_success('test result')",
+                code="task_success('test result')",
             )
         ]
     )
@@ -629,7 +629,7 @@ def test_unserializable_object_in_state_is_handled_gracefully():
             ),
             LLMResponse(
                 thinking="Now I will finish.",
-                code="exit_success('done')",
+                code="task_success('done')",
             ),
         ]
     )
@@ -673,7 +673,7 @@ def test_shallow_validation_on_large_input_list():
     # The non-failing path of this test will enter the task loop.
     # We provide a single dummy response for it to consume.
     agent.llm_client = DummyLLMClient(
-        responses=[LLMResponse(thinking="Looks good.", code="exit_success(1)")]
+        responses=[LLMResponse(thinking="Looks good.", code="task_success(1)")]
     )
 
     @agent.task("A task that accepts a large list.")
@@ -715,11 +715,11 @@ def test_shallow_validation_on_agent_output():
         responses=[
             LLMResponse(
                 thinking="I will try to return an invalid dictionary.",
-                code="exit_success(invalid_dict)",
+                code="task_success(invalid_dict)",
             ),
             LLMResponse(
                 thinking="That failed. I will return a valid dictionary now.",
-                code="exit_success(valid_dict)",
+                code="task_success(valid_dict)",
             ),
         ]
     )

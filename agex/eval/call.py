@@ -2,7 +2,7 @@ import ast
 import inspect
 from typing import Any
 
-from ..agent.datatypes import ExitSuccess, _AgentExit
+from ..agent.datatypes import TaskSuccess, _AgentExit
 from .base import BaseEvaluator
 from .builtins import STATEFUL_BUILTINS, _print_stateful
 from .error import EvalError
@@ -95,9 +95,13 @@ class CallEvaluator(BaseEvaluator):
             fn_name = node.func.id
             if (stateful_fn_wrapper := STATEFUL_BUILTINS.get(fn_name)) is not None:
                 try:
-                    # Special case for print, which doesn't get evaluator but needs state
+                    # Special cases for functions that need state but not evaluator
                     if fn_name == "print":
                         return _print_stateful(*args, state=self.state)
+                    elif fn_name == "task_continue":
+                        from .builtins import _task_continue_with_observations
+
+                        return _task_continue_with_observations(*args, state=self.state)
 
                     if stateful_fn_wrapper.needs_evaluator:
                         return stateful_fn_wrapper.fn(self, *args, **kwargs)
@@ -165,13 +169,13 @@ class CallEvaluator(BaseEvaluator):
 
             # Special handling for agent exit signals
             if isinstance(result, _AgentExit):
-                # If this is an ExitSuccess signal, validate the result first
-                if isinstance(result, ExitSuccess):
+                # If this is a TaskSuccess signal, validate the result first
+                if isinstance(result, TaskSuccess):
                     return_type = self.state.get("__expected_return_type__")
                     # Only validate if there's a return type and it's not inspect._empty
                     if return_type and return_type is not inspect.Parameter.empty:
                         try:
-                            # The 'result' here is the ExitSuccess instance.
+                            # The 'result' here is the TaskSuccess instance.
                             # We need to validate the value it's carrying.
                             validate_with_sampling(result.result, return_type)
                         except Exception as e:
