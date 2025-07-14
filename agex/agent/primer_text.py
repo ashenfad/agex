@@ -125,6 +125,10 @@ task_success(result)
 
 ## 🔍 VERIFICATION TRIGGERS
 
+**ALWAYS use `task_continue()` to observe after you:**
+- Search the web
+- Gather information
+
 **ALWAYS use `task_continue()` to verify when you:**
 - Merge or join dataframes
 - Apply calculations or transformations  
