@@ -1,14 +1,40 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Literal
+from typing import List, Literal, Union
 
 from pydantic import BaseModel
 
 
 @dataclass
-class Message:
+class TextMessage:
     role: Literal["user", "assistant", "system"]
     content: str
+
+
+@dataclass
+class TextPart:
+    text: str
+    type: Literal["text"] = "text"
+
+
+@dataclass
+class ImagePart:
+    """Represents a base64 encoded image."""
+
+    image: str
+    type: Literal["image"] = "image"
+
+
+ContentPart = Union[TextPart, ImagePart]
+
+
+@dataclass
+class MultimodalMessage:
+    role: Literal["user", "assistant", "system"]
+    content: List[ContentPart]
+
+
+Message = Union[TextMessage, MultimodalMessage]
 
 
 class LLMResponse(BaseModel):

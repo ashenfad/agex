@@ -3,7 +3,14 @@ from typing import List
 
 import google.generativeai as genai
 
-from agex.llm.core import LLMClient, LLMResponse, Message
+from agex.llm.core import (
+    LLMClient,
+    LLMResponse,
+    Message,
+    MultimodalMessage,
+    TextMessage,
+    TextPart,
+)
 
 
 class GeminiClient(LLMClient):
@@ -54,10 +61,6 @@ class GeminiClient(LLMClient):
                 response_schema=response_schema,
                 **request_kwargs,
             )
-
-            print(
-                "ADAM ------------------------ calling gemini with model", self._model
-            )
             # Generate response
             response = self.client.generate_content(
                 gemini_messages, generation_config=generation_config
@@ -88,26 +91,41 @@ class GeminiClient(LLMClient):
 
         for message in messages:
             if message.role == "system":
-                # Gemini handles system messages differently - they're part of the model configuration
-                # For now, we'll prepend system messages to the first user message
+                if isinstance(message, MultimodalMessage):
+                    raise TypeError("Gemini system messages cannot contain images.")
                 if system_content is None:
                     system_content = message.content
                 else:
                     system_content += "\n\n" + message.content
-            elif message.role == "user":
-                content = message.content
-                if system_content:
-                    # Prepend system message to first user message
-                    content = f"System: {system_content}\n\nUser: {content}"
+            else:
+                role = "user" if message.role == "user" else "model"
+                parts = []
+
+                # Handle prepending system content to the first user message
+                if role == "user" and system_content:
+                    parts.append({"text": f"System: {system_content}"})
                     system_content = None  # Only add once
-                gemini_messages.append({"role": "user", "parts": [{"text": content}]})
-            elif message.role == "assistant":
-                gemini_messages.append(
-                    {
-                        "role": "model",  # Gemini uses "model" instead of "assistant"
-                        "parts": [{"text": message.content}],
-                    }
-                )
+
+                # Process message content
+                content_parts = []
+                if isinstance(message, TextMessage):
+                    content_parts = [TextPart(text=message.content)]
+                elif isinstance(message, MultimodalMessage):
+                    content_parts = message.content
+
+                for part in content_parts:
+                    if part.type == "text":
+                        parts.append({"text": part.text})
+                    elif part.type == "image":
+                        parts.append(
+                            {
+                                "inline_data": {
+                                    "mime_type": "image/png",
+                                    "data": part.image,
+                                }
+                            }
+                        )
+                gemini_messages.append({"role": role, "parts": parts})
 
         return gemini_messages
 

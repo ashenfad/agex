@@ -2,7 +2,41 @@ from typing import List
 
 import anthropic
 
-from agex.llm.core import LLMClient, LLMResponse, Message
+from agex.llm.core import (
+    ContentPart,
+    LLMClient,
+    LLMResponse,
+    Message,
+    MultimodalMessage,
+    TextMessage,
+    TextPart,
+)
+
+
+def _format_content(message: Message) -> List[dict]:
+    """Format a Message object's content into the list structure Anthropic expects."""
+    content_parts: List[ContentPart] = []
+    if isinstance(message, TextMessage):
+        content_parts = [TextPart(text=message.content)]
+    elif isinstance(message, MultimodalMessage):
+        content_parts = message.content
+
+    formatted_parts = []
+    for part in content_parts:
+        if part.type == "text":
+            formatted_parts.append({"type": "text", "text": part.text})
+        elif part.type == "image":
+            formatted_parts.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": part.image,
+                    },
+                }
+            )
+    return formatted_parts
 
 
 class AnthropicClient(LLMClient):
@@ -35,13 +69,17 @@ class AnthropicClient(LLMClient):
 
         for msg in messages:
             if msg.role == "system":
+                # System message content must be a simple string for Anthropic
+                if isinstance(msg, MultimodalMessage):
+                    raise TypeError("Anthropic system messages cannot contain images.")
                 if system_message is None:
                     system_message = msg.content
                 else:
-                    # Multiple system messages - combine them
                     system_message += "\n\n" + msg.content
             else:
-                conversation_messages.append({"role": msg.role, "content": msg.content})
+                conversation_messages.append(
+                    {"role": msg.role, "content": _format_content(msg)}
+                )
 
         # Define the structured response tool
         structured_response_tool = {

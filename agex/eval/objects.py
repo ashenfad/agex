@@ -3,7 +3,7 @@ Internal representation of user-defined objects (dataclasses).
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal, Union
 
 from .user_errors import AgexAttributeError, AgexTypeError
 
@@ -260,7 +260,18 @@ class AgexModule:
         return f"<agexmodule '{self.name}'>"
 
 
-class PrintTuple(tuple):
-    """A wrapper to distinguish tuples created by print() for special rendering."""
+class PrintAction(tuple):
+    """Represents the un-rendered content of a print() call."""
 
     pass
+
+
+@dataclass
+class ImageAction:
+    """Represents an un-rendered image from a view_image() call."""
+
+    image: Any
+    detail: Literal["low", "high"] = "high"
+
+
+ContentPart = Union[PrintAction, ImageAction]

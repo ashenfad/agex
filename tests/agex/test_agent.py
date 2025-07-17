@@ -14,6 +14,20 @@ from agex.state.kv import Memory
 from tests.agex import test_module
 
 
+def test_view_image_primer_text_is_always_visible():
+    """
+    Tests that the `view_image` function is always included in the system
+    primer, regardless of whether a vision library is registered.
+    """
+    # Agent with NO image-related modules
+    agent = Agent()
+    system_message = agent._build_system_message()
+    assert "view_image" in system_message
+    assert "PIL.Image.Image" in system_message
+    assert "matplotlib.figure.Figure" in system_message
+    assert "numpy.ndarray" in system_message
+
+
 def test_agent_fn_registration_decorator():
     agent = Agent()
 

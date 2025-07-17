@@ -3,7 +3,7 @@ from types import ModuleType
 import pytest
 
 from agex.agent import Agent
-from agex.eval.objects import PrintTuple
+from agex.eval.objects import PrintAction
 from agex.eval.user_errors import AgexAttributeError
 
 from .helpers import eval_and_get_state
@@ -101,7 +101,7 @@ dir()
     assert isinstance(stdout, list)
     # The last printed item should be the result of dir(inst)
     dir_result_tuple = stdout[-1]
-    assert isinstance(dir_result_tuple, PrintTuple)
+    assert isinstance(dir_result_tuple, PrintAction)
     dir_result_list = dir_result_tuple[0]
     assert "included_method" in dir_result_list
     assert "excluded_method" not in dir_result_list

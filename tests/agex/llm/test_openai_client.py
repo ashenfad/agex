@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agex.llm.core import LLMResponse, Message
+from agex.llm.core import LLMResponse, TextMessage
 from agex.llm.openai_client import OpenAIClient
 
 
@@ -35,13 +35,13 @@ def test_openai_client_message_handling():
         mock_client.chat.completions.parse.return_value = mock_response
 
         messages = [
-            Message(role="system", content="You are a helpful assistant."),
-            Message(role="user", content="Hello"),
-            Message(role="assistant", content="Hi there!"),
-            Message(role="user", content="How are you?"),
+            TextMessage(role="system", content="You are a helpful assistant."),
+            TextMessage(role="user", content="Hello"),
+            TextMessage(role="assistant", content="Hi there!"),
+            TextMessage(role="user", content="How are you?"),
         ]
 
-        response = client.complete(messages)
+        response = client.complete(messages)  # type: ignore
 
         # Verify the call was made correctly
         mock_client.chat.completions.parse.assert_called_once()
@@ -81,9 +81,9 @@ def test_openai_client_structured_output():
     with patch.object(client, "client") as mock_client:
         mock_client.chat.completions.parse.return_value = mock_response
 
-        messages = [Message(role="user", content="Hello")]
+        messages = [TextMessage(role="user", content="Hello")]
 
-        response = client.complete(messages)
+        response = client.complete(messages)  # type: ignore
 
         # Verify structured output configuration
         call_args = mock_client.chat.completions.parse.call_args
@@ -107,10 +107,10 @@ def test_openai_client_request_parameters():
     with patch.object(client, "client") as mock_client:
         mock_client.chat.completions.parse.return_value = mock_response
 
-        messages = [Message(role="user", content="Hello")]
+        messages = [TextMessage(role="user", content="Hello")]
 
         # Call with additional parameters
-        response = client.complete(messages, top_p=0.9)
+        response = client.complete(messages, top_p=0.9)  # type: ignore
 
         # Verify parameters were passed
         call_args = mock_client.chat.completions.parse.call_args
@@ -130,12 +130,12 @@ def test_openai_client_none_parsed_response():
     with patch.object(client, "client") as mock_client:
         mock_client.chat.completions.parse.return_value = mock_response
 
-        messages = [Message(role="user", content="Hello")]
+        messages = [TextMessage(role="user", content="Hello")]
 
         with pytest.raises(
             RuntimeError, match="OpenAI returned None for parsed response"
         ):
-            client.complete(messages)
+            client.complete(messages)  # type: ignore
 
 
 def test_openai_client_api_error():
@@ -145,10 +145,10 @@ def test_openai_client_api_error():
     with patch.object(client, "client") as mock_client:
         mock_client.chat.completions.parse.side_effect = Exception("API Error")
 
-        messages = [Message(role="user", content="Hello")]
+        messages = [TextMessage(role="user", content="Hello")]
 
         with pytest.raises(RuntimeError, match="OpenAI completion failed: API Error"):
-            client.complete(messages)
+            client.complete(messages)  # type: ignore
 
 
 def test_openai_client_token_estimation():
@@ -205,11 +205,11 @@ def test_openai_client_message_dataclass_conversion():
         mock_client.chat.completions.parse.return_value = mock_response
 
         messages = [
-            Message(role="system", content="System message"),
-            Message(role="user", content="User message"),
+            TextMessage(role="system", content="System message"),
+            TextMessage(role="user", content="User message"),
         ]
 
-        client.complete(messages)
+        client.complete(messages)  # type: ignore
 
         # Verify messages were converted to dicts
         call_args = mock_client.chat.completions.parse.call_args

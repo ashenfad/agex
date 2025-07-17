@@ -2,7 +2,7 @@ from dataclasses import fields, is_dataclass
 from typing import Any
 
 from ..eval.functions import UserFunction
-from ..eval.objects import AgexClass, AgexInstance, AgexObject, PrintTuple
+from ..eval.objects import AgexClass, AgexInstance, AgexObject, PrintAction
 
 
 class ValueRenderer:
@@ -27,8 +27,8 @@ class ValueRenderer:
             return self._render_user_function(value)
         if isinstance(value, AgexObject):
             return self._render_agex_instance_or_object(value, current_depth, compact)
-        if isinstance(value, PrintTuple):
-            return self._render_print_tuple(value, current_depth, compact)
+        if isinstance(value, PrintAction):
+            return self._render_print_action(value, current_depth, compact)
         if isinstance(value, AgexInstance):
             return self._render_agex_instance_or_object(value, current_depth, compact)
         if isinstance(value, AgexClass):
@@ -136,8 +136,10 @@ class ValueRenderer:
     def _render_agex_class(self, value: AgexClass) -> str:
         return f"<class '{value.name}'>"
 
-    def _render_print_tuple(self, value: PrintTuple, depth: int, compact: bool) -> str:
-        """Renders the content of a PrintTuple space-separated."""
+    def _render_print_action(
+        self, value: PrintAction, depth: int, compact: bool
+    ) -> str:
+        """Renders the content of a PrintAction space-separated."""
         # This rendering ignores max_len for now, as it's for a single line.
         items = [self.render(item, depth + 1, compact) for item in value]
         return " ".join(items)
@@ -204,7 +206,8 @@ class ValueRenderer:
                 )
                 or (
                     # Handle other module-qualified names with memory addresses
-                    f"{type_name} object at 0x" in str_repr
+                    f"{type_name} object at 0x"
+                    in str_repr
                 )
             )
 

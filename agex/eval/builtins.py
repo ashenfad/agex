@@ -16,7 +16,8 @@ from agex.eval.objects import (
     AgexInstance,
     AgexModule,
     AgexObject,
-    PrintTuple,
+    ImageAction,
+    PrintAction,
 )
 from agex.eval.user_errors import (
     AgexArithmeticError,
@@ -57,7 +58,7 @@ class StatefulFn:
 def _print_stateful(*args: Any, state: State):
     """
     A custom implementation of 'print' that appends its arguments to the
-    `__stdout__` list in the agent's state as a single `PrintTuple`.
+    `__stdout__` list in the agent's state as a single `PrintAction`.
     """
     # Ensure __stdout__ exists and is a list
     current_stdout = state.get("__stdout__")
@@ -65,7 +66,24 @@ def _print_stateful(*args: Any, state: State):
         current_stdout = []
 
     # Append all arguments as a single entry
-    new_stdout = current_stdout + [PrintTuple(args)]
+    new_stdout = current_stdout + [PrintAction(args)]
+    state.set("__stdout__", new_stdout)
+
+
+def _view_image_stateful(image: Any, detail: str = "high", *, state: State) -> None:
+    """
+    A custom builtin to "view" an image, which adds an ImageAction to stdout.
+    """
+    if detail not in ("low", "high"):
+        raise AgexValueError("detail must be 'low' or 'high'")
+
+    # Ensure __stdout__ exists and is a list
+    current_stdout = state.get("__stdout__")
+    if not isinstance(current_stdout, list):
+        current_stdout = []
+
+    # Append an ImageAction to the stdout stream
+    new_stdout = current_stdout + [ImageAction(image=image, detail=detail)]
     state.set("__stdout__", new_stdout)
 
 
@@ -184,7 +202,7 @@ def _dir(evaluator: BaseEvaluator, *args, **kwargs) -> list[str]:
     if not isinstance(current_stdout, list):
         current_stdout = []
 
-    new_stdout = current_stdout + [PrintTuple((attrs,))]
+    new_stdout = current_stdout + [PrintAction((attrs,))]
     evaluator.state.set("__stdout__", new_stdout)
 
     return attrs
@@ -369,7 +387,7 @@ def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
     if not isinstance(current_stdout, list):
         current_stdout = []
 
-    new_stdout = current_stdout + [PrintTuple((doc,))]
+    new_stdout = current_stdout + [PrintAction((doc,))]
     evaluator.state.set("__stdout__", new_stdout)
 
 
@@ -388,7 +406,9 @@ def _task_continue_with_observations(*observations: Any, state: State) -> None:
         formatted_output.append("=== END OBSERVATIONS ===")
 
         # Add to stdout
-        new_stdout = current_stdout + [PrintTuple((line,)) for line in formatted_output]
+        new_stdout = current_stdout + [
+            PrintAction((line,)) for line in formatted_output
+        ]
         state.set("__stdout__", new_stdout)
 
     # Raise TaskContinue to end current iteration
@@ -397,6 +417,7 @@ def _task_continue_with_observations(*observations: Any, state: State) -> None:
 
 STATEFUL_BUILTINS: dict[str, StatefulFn] = {
     "print": StatefulFn(_print_stateful),
+    "view_image": StatefulFn(_view_image_stateful),
     "help": StatefulFn(_help, needs_evaluator=True),
     "dir": StatefulFn(_dir, needs_evaluator=True),
     "hasattr": StatefulFn(_hasattr, needs_evaluator=True),

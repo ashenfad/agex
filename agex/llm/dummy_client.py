@@ -7,7 +7,7 @@ sequentially, useful for testing agent behavior without actual LLM calls.
 
 from typing import List
 
-from .core import LLMClient, LLMResponse, Message
+from .core import LLMClient, LLMResponse, Message, MultimodalMessage
 
 
 class DummyLLMClient(LLMClient):
@@ -16,7 +16,7 @@ class DummyLLMClient(LLMClient):
     Useful for testing agent logic without actual LLM calls.
     """
 
-    def __init__(self, responses: List[LLMResponse] | None = None):
+    def __init__(self, responses: List[LLMResponse] | None = None, **kwargs):
         """
         Initialize with a sequence of LLMResponse objects to return.
 
@@ -34,14 +34,32 @@ class DummyLLMClient(LLMClient):
                 )
             ]
         self.call_count = 0
+        self.all_messages: list[list[Message]] = []
 
     def complete(self, messages: List[Message], **kwargs) -> LLMResponse:
         """
         Return the next LLMResponse in the sequence, cycling through the list.
+        If any message is a MultimodalMessage, it prepends a note to the 'thinking' field.
         """
+        # Store the received messages for test inspection
+        self.all_messages.append(messages)
+
         # Get the next response in the cycle
-        response = self.responses[self.call_count % len(self.responses)]
+        response = self.responses[self.call_count % len(self.responses)].model_copy()
         self.call_count += 1
+
+        # Check for any multimodal messages to simulate vision processing
+        has_images = any(
+            isinstance(msg, MultimodalMessage)
+            and any(part.type == "image" for part in msg.content)
+            for msg in messages
+        )
+
+        if has_images:
+            response.thinking = (
+                f"[Dummy client acknowledges seeing an image.]\n{response.thinking}"
+            )
+
         return response
 
     def estimate_tokens(self, text: str) -> int:

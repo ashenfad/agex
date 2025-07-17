@@ -6,9 +6,9 @@ in versioned state, enabling conversation history to be captured, versioned, and
 reconstructed from any state snapshot.
 """
 
-from typing import List
+from typing import Sequence
 
-from agex.llm.core import Message
+from agex.llm.core import Message, TextMessage
 from agex.state import State
 
 
@@ -34,7 +34,7 @@ def add_message(state: State, message: Message) -> None:
     state.set("__msg_log__", msg_log)
 
 
-def conversation_log(state: State, system_message: str) -> List[Message]:
+def conversation_log(state: State, system_message: str) -> Sequence[Message]:
     """Reconstruct the full conversation from state.
 
     Args:
@@ -49,7 +49,7 @@ def conversation_log(state: State, system_message: str) -> List[Message]:
         state.get(msg_key) for msg_key in msg_log if state.get(msg_key)
     ]
 
-    return [Message(role="system", content=system_message)] + conversation_messages
+    return [TextMessage(role="system", content=system_message)] + conversation_messages
 
 
 def initialize_conversation_log(state: State) -> None:

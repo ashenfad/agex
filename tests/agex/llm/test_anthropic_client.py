@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 from agex.llm.anthropic_client import AnthropicClient
-from agex.llm.core import LLMResponse, Message
+from agex.llm.core import LLMResponse, TextMessage
 
 
 def test_anthropic_client_initialization():
@@ -34,13 +34,13 @@ def test_anthropic_client_message_separation():
         mock_client.messages.create.return_value = mock_response
 
         messages = [
-            Message(role="system", content="You are a helpful assistant."),
-            Message(role="user", content="Hello"),
-            Message(role="assistant", content="Hi there!"),
-            Message(role="user", content="How are you?"),
+            TextMessage(role="system", content="You are a helpful assistant."),
+            TextMessage(role="user", content="Hello"),
+            TextMessage(role="assistant", content="Hi there!"),
+            TextMessage(role="user", content="How are you?"),
         ]
 
-        response = client.complete(messages)
+        response = client.complete(messages)  # type: ignore
 
         # Verify the call was made correctly
         mock_client.messages.create.assert_called_once()
@@ -53,11 +53,11 @@ def test_anthropic_client_message_separation():
         conv_messages = call_args[1]["messages"]
         assert len(conv_messages) == 3  # Excluding system message
         assert conv_messages[0]["role"] == "user"
-        assert conv_messages[0]["content"] == "Hello"
+        assert conv_messages[0]["content"] == [{"type": "text", "text": "Hello"}]
         assert conv_messages[1]["role"] == "assistant"
-        assert conv_messages[1]["content"] == "Hi there!"
+        assert conv_messages[1]["content"] == [{"type": "text", "text": "Hi there!"}]
         assert conv_messages[2]["role"] == "user"
-        assert conv_messages[2]["content"] == "How are you?"
+        assert conv_messages[2]["content"] == [{"type": "text", "text": "How are you?"}]
 
         # Check that structured response tool was configured
         tools = call_args[1]["tools"]
@@ -85,12 +85,12 @@ def test_anthropic_client_multiple_system_messages():
         mock_client.messages.create.return_value = mock_response
 
         messages = [
-            Message(role="system", content="You are a helpful assistant."),
-            Message(role="system", content="You are also very knowledgeable."),
-            Message(role="user", content="Hello"),
+            TextMessage(role="system", content="You are a helpful assistant."),
+            TextMessage(role="system", content="You are also very knowledgeable."),
+            TextMessage(role="user", content="Hello"),
         ]
 
-        response = client.complete(messages)
+        response = client.complete(messages)  # type: ignore
 
         # Verify system messages were combined
         call_args = mock_client.messages.create.call_args

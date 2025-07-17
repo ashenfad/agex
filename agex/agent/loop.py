@@ -22,7 +22,13 @@ from agex.agent.datatypes import (
 )
 from agex.agent.formatting import format_context_as_markdown
 from agex.agent.primer_text import BUILTIN_PRIMER
-from agex.llm.core import Message
+from agex.llm.core import (
+    ContentPart,
+    ImagePart,
+    MultimodalMessage,
+    TextMessage,
+    TextPart,
+)
 from agex.render.definitions import render_definitions
 from agex.render.value import ValueRenderer
 
@@ -32,11 +38,30 @@ from ..state import Namespaced, Versioned
 
 
 class TaskLoopMixin(BaseAgent):
-    def _render_and_add_context(self, exec_state, context_renderer):
+    def _render_and_add_context(self, exec_state, context_renderer: ContextRenderer):
         """Helper method to render context and add it as a message to avoid code duplication."""
-        current_context = context_renderer.render(exec_state, self.max_tokens)
-        markdown_context = format_context_as_markdown(current_context)
-        add_message(exec_state, Message(role="user", content=markdown_context))
+        # This now returns a list of content parts, which could include images.
+        context_parts: list[ContentPart] = context_renderer.render(
+            exec_state, self.max_tokens
+        )
+
+        if not context_parts:
+            return  # Nothing to add
+
+        # Check if the context is purely text or contains images
+        has_images = any(isinstance(part, ImagePart) for part in context_parts)
+
+        if has_images:
+            # Create a multimodal message if there are images
+            message = MultimodalMessage(role="user", content=context_parts)
+        else:
+            # Otherwise, combine text parts into a single text message for efficiency
+            full_text = "\n".join(
+                part.text for part in context_parts if isinstance(part, TextPart)
+            )
+            message = TextMessage(role="user", content=full_text)
+
+        add_message(exec_state, message)
 
     def _run_task_loop(
         self,
@@ -101,7 +126,7 @@ class TaskLoopMixin(BaseAgent):
         print("============== INITIAL TASK MESSAGE ===============")
         print(initial_task_message)
         print("===========================================")
-        add_message(exec_state, Message(role="user", content=initial_task_message))
+        add_message(exec_state, TextMessage(role="user", content=initial_task_message))
 
         # Main task loop
         for iteration in range(self.max_iterations):
@@ -134,7 +159,7 @@ class TaskLoopMixin(BaseAgent):
                     f"```python\n{llm_response.code}\n```"
                 )
                 add_message(
-                    exec_state, Message(role="assistant", content=assistant_content)
+                    exec_state, TextMessage(role="assistant", content=assistant_content)
                 )
 
             # Evaluate the code (either parsed or raw)

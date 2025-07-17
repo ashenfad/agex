@@ -1,3 +1,4 @@
+from agex.llm.core import TextPart
 from agex.render.context import ContextRenderer
 from agex.state import kv
 from agex.state.versioned import Versioned
@@ -15,9 +16,14 @@ def test_render_combined_streams():
 
     renderer = ContextRenderer("gpt-4o")
     # High budget, everything should be visible.
-    output = renderer.render(state, budget=100)
+    output_parts = renderer.render(state, budget=100)
 
-    assert "x = 1" in output
-    assert "y = 2" in output
-    assert "Agent printed:\n" in output
-    assert "Hello" in output
+    # Combine all text parts into a single string for easy checking
+    full_text = "\n".join(
+        part.text for part in output_parts if isinstance(part, TextPart)
+    )
+
+    assert "x = 1" in full_text
+    assert "y = 2" in full_text
+    assert "Agent printed:\n" in full_text
+    assert "Hello" in full_text

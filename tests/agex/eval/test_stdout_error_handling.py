@@ -7,6 +7,7 @@ These tests verify that:
 """
 
 from agex.agent import Agent, clear_agent_registry
+from agex.llm.core import TextPart
 from agex.llm.dummy_client import DummyLLMClient, LLMResponse
 from agex.state.kv import Memory
 from agex.state.versioned import Versioned
@@ -243,7 +244,16 @@ def test_validation_error_shows_full_type():
     # The message before the last one should be the system context with the error
     system_context_message_key = log_keys[-2]
     system_context_message = state.get(f"test_agent/{system_context_message_key}")
-    system_context_content = system_context_message.content
+
+    # The content can either be a list of parts or a raw string.
+    if isinstance(system_context_message.content, list):
+        system_context_content = "\n".join(
+            part.text
+            for part in system_context_message.content
+            if isinstance(part, TextPart)
+        )
+    else:
+        system_context_content = system_context_message.content
 
     expected_error_string = (
         "Output validation failed. The returned value did not "

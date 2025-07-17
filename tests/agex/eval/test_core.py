@@ -1,5 +1,5 @@
 from agex.agent import Agent
-from agex.eval.objects import PrintTuple
+from agex.eval.objects import PrintAction
 
 from .helpers import eval_and_get_state
 
@@ -19,23 +19,23 @@ def test_stateful_print_builtin():
     state = eval_and_get_state("1+1", agent)
     assert state.get("__stdout__") is None
 
-    # First print call with multiple arguments becomes a single PrintTuple
+    # First print call with multiple arguments becomes a single PrintAction
     state = eval_and_get_state('print(1, "hello")', agent, state)
-    assert state.get("__stdout__") == [PrintTuple((1, "hello"))]
+    assert state.get("__stdout__") == [PrintAction((1, "hello"))]
 
-    # Second print call appends another PrintTuple
+    # Second print call appends another PrintAction
     state = eval_and_get_state("print(True, None)", agent, state)
     assert state.get("__stdout__") == [
-        PrintTuple((1, "hello")),
-        PrintTuple((True, None)),
+        PrintAction((1, "hello")),
+        PrintAction((True, None)),
     ]
 
     # Printing a variable
     state = eval_and_get_state("x = [10, 20]\nprint(x)", agent, state)
     stdout = state.get("__stdout__")
-    assert stdout[-1] == PrintTuple(([10, 20],))
+    assert stdout[-1] == PrintAction(([10, 20],))
     assert stdout == [
-        PrintTuple((1, "hello")),
-        PrintTuple((True, None)),
-        PrintTuple(([10, 20],)),
+        PrintAction((1, "hello")),
+        PrintAction((True, None)),
+        PrintAction(([10, 20],)),
     ]

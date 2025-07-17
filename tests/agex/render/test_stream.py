@@ -1,3 +1,4 @@
+from agex.llm.core import TextPart
 from agex.render.stream import StreamRenderer
 
 
@@ -28,26 +29,31 @@ def test_large_collection_in_state():
 def test_stdout_budget_truncation():
     """Checks that the stdout stream is truncated independently."""
     renderer = StreamRenderer("gpt-4o")
-    output = renderer.render_item_stream(
+    output_parts = renderer.render_item_stream(
         items=[
-            "This is a very long line that will be truncated",
+            "This is a very long line that will definitely be truncated because it is extremely long",
             "This should be visible",
         ],
         budget=20,
-        header="Agent printed:\n",
+    )
+    full_text = "\n".join(
+        part.text for part in output_parts if isinstance(part, TextPart)
     )
 
-    assert "This should be visible" in output
-    assert "..." in output
-    assert "very long line" not in output
+    assert "This should be visible" in full_text
+    assert "..." in full_text
+    assert "very long line" not in full_text
 
 
 def test_large_collection_in_stdout():
     """Checks that large collections in stdout are summarized."""
     renderer = StreamRenderer("gpt-4o")
-    output = renderer.render_item_stream(
+    output_parts = renderer.render_item_stream(
         items=[list(range(10000)), "visible"], budget=100
     )
+    full_text = "\n".join(
+        part.text for part in output_parts if isinstance(part, TextPart)
+    )
 
-    assert "[... (10000 items)]" in output
-    assert "visible" in output
+    assert "[... (10000 items)]" in full_text
+    assert "visible" in full_text
