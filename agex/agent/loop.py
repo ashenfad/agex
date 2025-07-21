@@ -34,7 +34,20 @@ from ..state import Namespaced, Versioned
 
 
 class TaskLoopMixin(BaseAgent):
-    def _run_task_loop(
+    def _yield_new_events(self, exec_state, events_yielded_count):
+        """
+        Helper method to yield new events and return updated count.
+        Uses events() to capture hierarchical events including sub-agents.
+        """
+        from agex.state import events
+
+        all_events = events(exec_state)  # Gets all events including children
+        new_events = all_events[events_yielded_count:]
+        for event in new_events:
+            yield event
+        return len(all_events)
+
+    def _task_loop_generator(
         self,
         task_name: str,
         docstring: str | None,
@@ -44,23 +57,10 @@ class TaskLoopMixin(BaseAgent):
         state: Versioned | Namespaced | None,
     ):
         """
-        Execute the agent task loop.
-
-        Args:
-            task_name: Name of the task function
-            docstring: Task description (prompt for the agent)
-            inputs_dataclass: Dynamically created dataclass type for inputs
-            inputs_instance: Instance of the inputs dataclass with actual values
-            return_type: Expected return type for validation
-            state: Optional persistent state
-
-        Returns:
-            The validated result from the agent
-
-        Raises:
-            TaskFail: If agent calls task_fail()
+        Generator that yields events as they happen during task execution.
+        This is the core implementation used by both streaming and regular modes.
         """
-        # Determine state and versioning responsibility
+        # Determine state and versioning responsibility (same logic as _run_task_loop)
         versioned_state: Versioned | None = None
         if isinstance(state, Namespaced):
             # Namespaced = someone else owns versioning, we just work within namespace
@@ -85,6 +85,11 @@ class TaskLoopMixin(BaseAgent):
         if "__event_log__" not in exec_state:
             exec_state.set("__event_log__", [])
 
+        # Track events already in the log (important for persistent state)
+        from agex.state import events
+
+        events_yielded = len(events(exec_state))
+
         # Build system message (always static, never stored in state)
         system_message = self._build_system_message()
 
@@ -106,6 +111,8 @@ class TaskLoopMixin(BaseAgent):
             message=initial_task_message,
         )
         add_event_to_log(exec_state, task_start_event)
+        yield task_start_event
+        events_yielded += 1
 
         # Main task loop
         for iteration in range(self.max_iterations):
@@ -120,7 +127,7 @@ class TaskLoopMixin(BaseAgent):
             llm_response = self._get_llm_response(messages)
             code_to_evaluate = llm_response.code
 
-            # Store assistant response in event log
+            # Store assistant response in event log and yield immediately
             if llm_response:
                 action_event = ActionEvent(
                     agent_name=self.name,
@@ -128,6 +135,8 @@ class TaskLoopMixin(BaseAgent):
                     code=llm_response.code,
                 )
                 add_event_to_log(exec_state, action_event)
+                yield action_event
+                events_yielded += 1
 
             # Evaluate the code (either parsed or raw)
             try:
@@ -139,29 +148,48 @@ class TaskLoopMixin(BaseAgent):
                         self.timeout_seconds,
                     )
 
-                # Events are now automatically managed by add_event_to_log helper
-                # No need to refresh event_log manually
-
             except TaskSuccess as task_signal:
+                # Before handling completion, yield any evaluation events first
+                events_yielded = yield from self._yield_new_events(
+                    exec_state, events_yielded
+                )
+
                 # Task completed successfully - log completion event and return the result
                 success_event = SuccessEvent(
                     agent_name=self.name,
                     result=task_signal.result,
                 )
                 add_event_to_log(exec_state, success_event)
+                yield success_event
                 return task_signal.result
             except TaskContinue:
+                # Before continuing, yield any evaluation events first
+                events_yielded = yield from self._yield_new_events(
+                    exec_state, events_yielded
+                )
+
                 # Agent wants to continue to next iteration - just continue the loop
                 continue
             except TaskFail as task_fail:
+                # Before handling failure, yield any evaluation events first
+                events_yielded = yield from self._yield_new_events(
+                    exec_state, events_yielded
+                )
+
                 # Log failure event and then re-raise
                 fail_event = FailEvent(
                     agent_name=self.name,
                     message=task_fail.message,
                 )
                 add_event_to_log(exec_state, fail_event)
+                yield fail_event
                 raise
             except _AgentExit:
+                # Before handling exit, yield any evaluation events first
+                events_yielded = yield from self._yield_new_events(
+                    exec_state, events_yielded
+                )
+
                 # Let other agent exit signals pass through (without logging)
                 raise
             except Exception as e:
@@ -173,6 +201,13 @@ class TaskLoopMixin(BaseAgent):
                     parts=[PrintAction([f"💥 Evaluation error: {e}"])],
                 )
                 add_event_to_log(exec_state, error_output)
+                yield error_output
+                events_yielded += 1
+            else:
+                # Normal completion - yield any evaluation events
+                events_yielded = yield from self._yield_new_events(
+                    exec_state, events_yielded
+                )
             finally:
                 # Always snapshot after each evaluation iteration (if we own the state)
                 from ..state import is_ephemeral_root
@@ -201,11 +236,53 @@ class TaskLoopMixin(BaseAgent):
                             parts=[PrintAction([warning_message])],
                         )
                         add_event_to_log(exec_state, warning_output)
+                        yield warning_output
+                        events_yielded += 1
 
         # If we get here, we hit max iterations
         raise TimeoutError(
             f"Task '{task_name}' exceeded maximum iterations ({self.max_iterations})"
         )
+
+    def _run_task_loop(
+        self,
+        task_name: str,
+        docstring: str | None,
+        inputs_dataclass: type,
+        inputs_instance: Any,
+        return_type: type,
+        state: Versioned | Namespaced | None,
+    ):
+        """
+        Execute the agent task loop.
+        This now consumes the generator to provide identical behavior to the streaming version.
+
+        Args:
+            task_name: Name of the task function
+            docstring: Task description (prompt for the agent)
+            inputs_dataclass: Dynamically created dataclass type for inputs
+            inputs_instance: Instance of the inputs dataclass with actual values
+            return_type: Expected return type for validation
+            state: Optional persistent state
+
+        Returns:
+            The validated result from the agent
+
+        Raises:
+            TaskFail: If agent calls task_fail()
+        """
+        generator = self._task_loop_generator(
+            task_name, docstring, inputs_dataclass, inputs_instance, return_type, state
+        )
+
+        try:
+            # Consume all events until completion
+            while True:
+                next(generator)
+        except StopIteration as e:
+            return e.value  # Generator's return value
+        except TaskFail:
+            raise  # Let TaskFail propagate normally
 
     def _build_system_message(self) -> str:
         """Build the system message with builtin primer, registered resources, and agent primer."""

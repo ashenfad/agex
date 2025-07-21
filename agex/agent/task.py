@@ -240,12 +240,51 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 state=state,
             )
 
+        def stream(*args, **kwargs):
+            """Stream events in real-time during task execution."""
+            # Same parameter processing as regular task execution
+            bound_args = new_sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+
+            # Pop the state argument, it's handled separately
+            state = bound_args.arguments.pop("state", None)
+
+            # Create inputs dataclass instance with pass-by-value semantics
+            inputs_instance = None
+            if bound_args.arguments:
+                validated_args = {}
+                for name, value in bound_args.arguments.items():
+                    annotation = original_sig.parameters[name].annotation
+                    if annotation == inspect.Parameter.empty:
+                        annotation = Any  # Default to Any if no type hint
+                    try:
+                        validated_value = validate_with_sampling(value, annotation)
+                        validated_args[name] = validated_value
+                    except Exception as e:
+                        raise ValueError(
+                            f"Validation failed for argument '{name}':\n{e}"
+                        ) from e
+                inputs_instance = inputs_dataclass(**validated_args)
+
+            # Return the generator directly for streaming
+            return self._task_loop_generator(
+                task_name=task_name,
+                docstring=effective_docstring,
+                inputs_dataclass=inputs_dataclass,
+                inputs_instance=inputs_instance,
+                return_type=return_type,
+                state=state,
+            )
+
         # Preserve metadata
         task_wrapper.__name__ = func.__name__
         task_wrapper.__doc__ = func.__doc__
         task_wrapper.__annotations__ = func.__annotations__.copy()
         task_wrapper.__annotations__["state"] = "Versioned | None"
         task_wrapper.__signature__ = new_sig
+
+        # Add streaming method to the task wrapper
+        task_wrapper.stream = stream
 
         # Set namespace for dual-decorator pattern (also serves as task-decorated marker)
         namespace = self.name if self.name is not None else self.__class__.__name__
