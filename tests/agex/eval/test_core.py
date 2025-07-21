@@ -1,5 +1,6 @@
+from agex import events
 from agex.agent import Agent
-from agex.eval.objects import PrintAction
+from agex.agent.events import OutputEvent
 
 from .helpers import eval_and_get_state
 
@@ -17,25 +18,29 @@ def test_stateful_print_builtin():
     """
     agent = Agent()
     state = eval_and_get_state("1+1", agent)
-    assert state.get("__stdout__") is None
+    all_events = events(state)
+    assert not any(isinstance(e, OutputEvent) for e in all_events)
 
-    # First print call with multiple arguments becomes a single PrintAction
+    # First print call with multiple arguments becomes a single OutputEvent
     state = eval_and_get_state('print(1, "hello")', agent, state)
-    assert state.get("__stdout__") == [PrintAction((1, "hello"))]
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    assert output_events[0].parts == [1, "hello"]
 
-    # Second print call appends another PrintAction
+    # Second print call appends another OutputEvent
     state = eval_and_get_state("print(True, None)", agent, state)
-    assert state.get("__stdout__") == [
-        PrintAction((1, "hello")),
-        PrintAction((True, None)),
-    ]
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 2
+    assert output_events[0].parts == [1, "hello"]
+    assert output_events[1].parts == [True, None]
 
     # Printing a variable
     state = eval_and_get_state("x = [10, 20]\nprint(x)", agent, state)
-    stdout = state.get("__stdout__")
-    assert stdout[-1] == PrintAction(([10, 20],))
-    assert stdout == [
-        PrintAction((1, "hello")),
-        PrintAction((True, None)),
-        PrintAction(([10, 20],)),
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 3
+    assert output_events[2].parts == [[10, 20]]
+    assert [e.parts for e in output_events] == [
+        [1, "hello"],
+        [True, None],
+        [[10, 20]],
     ]

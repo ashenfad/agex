@@ -18,7 +18,7 @@ def view(
 def view(
     obj: Versioned,
     *,
-    focus: Literal["recent", "full", "stdout"] = "recent",
+    focus: Literal["recent", "full", "events"] = "recent",
     model_name: str = "gpt-4",
     max_tokens: int = 4096,
 ) -> Union[str, list[str], dict[str, Any]]: ...
@@ -27,11 +27,11 @@ def view(
 def view(
     obj: Union[Agent, Versioned],
     *,
-    focus: Literal["recent", "full", "stdout"] = "recent",
+    focus: Literal["recent", "full", "events"] = "recent",
     model_name: str = "gpt-4",
     max_tokens: int = 4096,
     full: bool = False,
-) -> Union[str, list[str], dict[str, Any]]:
+) -> Union[str, list[str], dict[str, Any], list[Any]]:
     """
     Provides a human-readable view of an agent's API or its state.
 
@@ -41,9 +41,9 @@ def view(
     Args:
         obj: The Agent or Versioned state store to view.
         focus: For state views, the type of view to generate.
-            "recent": State changes and stdout from the most recent commit.
+            "recent": State changes from the most recent commit.
             "full": The full, raw key-value state at the current commit.
-            "stdout": The full stdout log as a list of strings.
+            "events": The full event log as a list of event objects.
         full: For agent views, if True, shows all members regardless of visibility.
         model_name: The tokenizer model for the "recent" state view.
         max_tokens: The token budget for the "recent" state view.
@@ -66,8 +66,10 @@ def view(
         if focus == "full":
             return {k: v for k, v in state.items() if not k.startswith("__")}
 
-        if focus == "stdout":
-            return state.get("__stdout__", [])
+        if focus == "events":
+            from agex.state.log import get_events_from_log
+
+            return get_events_from_log(state)
 
         if focus == "recent":
             if not state.current_commit:

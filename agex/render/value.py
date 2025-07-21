@@ -206,8 +206,7 @@ class ValueRenderer:
                 )
                 or (
                     # Handle other module-qualified names with memory addresses
-                    f"{type_name} object at 0x"
-                    in str_repr
+                    f"{type_name} object at 0x" in str_repr
                 )
             )
 

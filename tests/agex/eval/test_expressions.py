@@ -2,7 +2,9 @@ from types import ModuleType
 
 import pytest
 
+from agex import events
 from agex.agent import Agent
+from agex.agent.events import OutputEvent
 from agex.eval.functions import NativeFunction
 from agex.eval.user_errors import AgexAttributeError
 
@@ -131,9 +133,9 @@ import my_mod
 help(my_mod)
 """
     state = eval_and_get_state(program, agent)
-    stdout = state.get("__stdout__")
-    assert len(stdout) == 1
-    help_text = stdout[0][0]
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    help_text = output_events[0].parts[0]
     assert "Help on module my_mod" in help_text
     assert "my_fn" in help_text
 
@@ -152,9 +154,9 @@ def test_help_on_registered_fn():
     program = "help(my_reg_fn_for_help)"
 
     state = eval_and_get_state(program, agent)
-    stdout = state.get("__stdout__")
-    assert len(stdout) == 1
-    help_text = stdout[0][0]
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    help_text = output_events[0].parts[0]
     assert "A docstring for help." in help_text
 
 

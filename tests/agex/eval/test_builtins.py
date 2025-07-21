@@ -2,8 +2,9 @@ from types import ModuleType
 
 import pytest
 
+from agex import events
 from agex.agent import Agent
-from agex.eval.objects import PrintAction
+from agex.agent.events import OutputEvent
 from agex.eval.user_errors import AgexAttributeError
 
 from .helpers import eval_and_get_state
@@ -97,12 +98,11 @@ dir()
     # Check that dir() on the object respects the sandbox
     program2 = "dir(inst)"
     state2 = eval_and_get_state(program2, agent, state)
-    stdout = state2.get("__stdout__")
-    assert isinstance(stdout, list)
+    output_events = [e for e in events(state2) if isinstance(e, OutputEvent)]
+    assert len(output_events) > 0
+
     # The last printed item should be the result of dir(inst)
-    dir_result_tuple = stdout[-1]
-    assert isinstance(dir_result_tuple, PrintAction)
-    dir_result_list = dir_result_tuple[0]
+    dir_result_list = output_events[-1].parts[0]
     assert "included_method" in dir_result_list
     assert "excluded_method" not in dir_result_list
 
@@ -142,16 +142,16 @@ host = RegisteredHost()
     assert state.get("has_safe_method") is False
 
     # Check dir() output
-    stdout = state.get("__stdout__")
-    assert isinstance(stdout, list)
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 2
 
     # First dir() call was on the list
-    dir_list_result = stdout[-2][0]
+    dir_list_result = output_events[0].parts[0]
     assert "append" in dir_list_result
     assert "__sizeof__" not in dir_list_result
 
     # Second dir() call was on the unregistered object
-    dir_unregistered_result = stdout[-1][0]
+    dir_unregistered_result = output_events[1].parts[0]
     assert dir_unregistered_result == []
 
     # Verify that direct access fails for unregistered attributes/methods
@@ -190,9 +190,9 @@ has_get_value = hasattr(x, "get_value")
     state = eval_and_get_state(program, agent)
 
     # dir() should be empty because no attributes/methods are whitelisted
-    stdout = state.get("__stdout__")
-    assert isinstance(stdout, list)
-    dir_result = stdout[-1][0]
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    dir_result = output_events[0].parts[0]
     assert dir_result == []
 
     # hasattr() should always be False

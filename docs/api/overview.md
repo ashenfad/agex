@@ -18,6 +18,9 @@ Define agent tasks using the `@agent.task` decorator. Support for standalone tas
 ### [State](state.md)
 Manage persistent state across agent executions with automatic checkpointing and rollback capabilities.
 
+### [Events](events.md)
+Access comprehensive agent execution events for debugging, monitoring, and multi-agent coordination. Real-time introspection into agent thinking and actions.
+
 ### [Error Handling](errors.md)
 Understand agent task control functions (`task_success`, `task_fail`, `task_continue`) and exception handling (`TaskFail`, `TimeoutError`).
 

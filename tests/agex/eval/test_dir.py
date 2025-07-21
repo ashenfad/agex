@@ -1,6 +1,8 @@
 from types import ModuleType
 
+from agex import events
 from agex.agent import Agent
+from agex.agent.events import OutputEvent
 
 from .helpers import eval_and_get_state
 
@@ -15,9 +17,9 @@ def my_func():
 dir()
 """
     state = eval_and_get_state(program)
-    stdout = state.get("__stdout__")
-    assert len(stdout) == 1
-    dir_result = stdout[0][0]
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    dir_result = output_events[0].parts[0]
     # It should not include 'z' from the function's inner scope
     assert sorted(dir_result) == ["my_func", "x", "y"]
 
@@ -36,9 +38,9 @@ import my_mod
 dir(my_mod)
 """
     state = eval_and_get_state(program, agent)
-    stdout = state.get("__stdout__")
-    assert len(stdout) == 1
-    dir_result = stdout[0][0]
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    dir_result = output_events[0].parts[0]
     assert dir_result == ["my_public_fn"]
 
 
@@ -49,9 +51,9 @@ my_list = [1, 2]
 dir(my_list)
 """
     state = eval_and_get_state(program)
-    stdout = state.get("__stdout__")
-    assert len(stdout) == 1
-    dir_result = stdout[0][0]
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    dir_result = output_events[0].parts[0]
     # Check for a few common, public list methods
     assert "append" in dir_result
     assert "pop" in dir_result

@@ -7,14 +7,12 @@ and the improved class registration that automatically detects instance attribut
 
 import pytest
 
-from agex import Agent
+from agex import Agent, events
 from agex.agent.datatypes import MemberSpec
+from agex.agent.events import OutputEvent
 from agex.eval.core import evaluate_program
 from agex.eval.user_errors import AgexAttributeError
 from agex.state import Ephemeral
-from agex.state.kv import Memory
-from agex.state.namespaced import Namespaced
-from agex.state.versioned import Versioned
 
 
 class MockDatabaseConnection:
@@ -52,18 +50,16 @@ def test_dir_on_registered_object():
     )
 
     # Set up state for direct evaluation
-    versioned_state = Versioned(Memory())
-    exec_state = Namespaced(versioned_state, namespace=agent.name)
-    exec_state.set("__stdout__", [])
+    exec_state = Ephemeral()
 
     # Test dir() on the registered object
     code = "dir_result = dir(db)"
     evaluate_program(code, agent, exec_state, 30.0)
 
-    # Check stdout for the printed result
-    stdout = exec_state.get("__stdout__")
-    assert len(stdout) == 1
-    dir_result = stdout[0][0]  # PrintTuple content
+    # Check the event log for the printed result
+    output_events = [e for e in events(exec_state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    dir_result = output_events[0].parts[0]
 
     # Should contain the registered methods and properties
     assert "query" in dir_result
@@ -83,9 +79,7 @@ def test_hasattr_on_registered_object():
     )  # Exclude connect method and private methods
 
     # Set up state for direct evaluation
-    versioned_state = Versioned(Memory())
-    exec_state = Namespaced(versioned_state, namespace=agent.name)
-    exec_state.set("__stdout__", [])
+    exec_state = Ephemeral()
 
     # Test hasattr() on the registered object
     code = """
@@ -124,18 +118,16 @@ def test_help_on_registered_object():
     )
 
     # Set up state for direct evaluation
-    versioned_state = Versioned(Memory())
-    exec_state = Namespaced(versioned_state, namespace=agent.name)
-    exec_state.set("__stdout__", [])
+    exec_state = Ephemeral()
 
     # Test help() on the registered object
     code = "help(db)"
     evaluate_program(code, agent, exec_state, 30.0)
 
-    # Check stdout for the help output
-    stdout = exec_state.get("__stdout__")
-    assert len(stdout) == 1
-    help_text = stdout[0][0]  # PrintTuple content
+    # Check the event log for the help output
+    output_events = [e for e in events(exec_state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    help_text = output_events[0].parts[0]
 
     # Should contain object help header
     assert "Help on object db:" in help_text
@@ -166,18 +158,16 @@ def test_help_general_includes_objects():
     agent.module(db, name="db")
 
     # Set up state for direct evaluation
-    versioned_state = Versioned(Memory())
-    exec_state = Namespaced(versioned_state, namespace=agent.name)
-    exec_state.set("__stdout__", [])
+    exec_state = Ephemeral()
 
     # Test general help()
     code = "help()"
     evaluate_program(code, agent, exec_state, 30.0)
 
-    # Check stdout for the help output
-    stdout = exec_state.get("__stdout__")
-    assert len(stdout) == 1
-    help_text = stdout[0][0]  # PrintTuple content
+    # Check the event log for the help output
+    output_events = [e for e in events(exec_state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    help_text = output_events[0].parts[0]
 
     # Should contain all sections
     assert "Available items:" in help_text
@@ -197,9 +187,7 @@ def test_dir_no_args_includes_object_names():
     agent.module(db, name="db")
 
     # Set up state for direct evaluation
-    versioned_state = Versioned(Memory())
-    exec_state = Namespaced(versioned_state, namespace=agent.name)
-    exec_state.set("__stdout__", [])
+    exec_state = Ephemeral()
 
     # Add the object to scope (this would normally happen via name resolution)
     exec_state.set("db", agent.object_registry["db"])
@@ -212,10 +200,10 @@ dir()
 """
     evaluate_program(code, agent, exec_state, 30.0)
 
-    # Check stdout for the dir output
-    stdout = exec_state.get("__stdout__")
-    assert len(stdout) == 1
-    dir_result = stdout[0][0]  # PrintTuple content
+    # Check the event log for the dir output
+    output_events = [e for e in events(exec_state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    dir_result = output_events[0].parts[0]
 
     # Should include variables and the registered object name
     assert "x" in dir_result
@@ -232,18 +220,16 @@ def test_help_on_object_with_no_docstrings():
     agent.module(db, name="db")
 
     # Set up state for direct evaluation
-    versioned_state = Versioned(Memory())
-    exec_state = Namespaced(versioned_state, namespace=agent.name)
-    exec_state.set("__stdout__", [])
+    exec_state = Ephemeral()
 
     # Test help() on the registered object
     code = "help(db)"
     evaluate_program(code, agent, exec_state, 30.0)
 
-    # Check stdout for the help output
-    stdout = exec_state.get("__stdout__")
-    assert len(stdout) == 1
-    help_text = stdout[0][0]  # PrintTuple content
+    # Check the event log for the help output
+    output_events = [e for e in events(exec_state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    help_text = output_events[0].parts[0]
 
     # Should contain object help header
     assert "Help on object db:" in help_text
@@ -271,9 +257,7 @@ def test_object_behaves_like_module():
     agent.module(db, name="db")
 
     # Set up state for direct evaluation
-    versioned_state = Versioned(Memory())
-    exec_state = Namespaced(versioned_state, namespace=agent.name)
-    exec_state.set("__stdout__", [])
+    exec_state = Ephemeral()
 
     # Test that both can be introspected similarly
     code = """
@@ -295,12 +279,12 @@ help(db)
     evaluate_program(code, agent, exec_state, 30.0)
 
     # Check that both work similarly
-    stdout = exec_state.get("__stdout__")
-    assert len(stdout) == 4  # 2 dir() calls + 2 help() calls
+    output_events = [e for e in events(exec_state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 4  # 2 dir() calls + 2 help() calls
 
     # dir() results
-    math_dir = stdout[0][0]
-    db_dir = stdout[1][0]
+    math_dir = output_events[0].parts[0]
+    db_dir = output_events[1].parts[0]
     assert "sin" in math_dir
     assert "cos" in math_dir
     assert "pi" in math_dir
@@ -314,8 +298,8 @@ help(db)
     assert exec_state.get("has_db_nonexistent") is False
 
     # help() results
-    math_help = stdout[2][0]
-    db_help = stdout[3][0]
+    math_help = output_events[2].parts[0]
+    db_help = output_events[3].parts[0]
     assert "Help on module math:" in math_help
     assert "Help on object db:" in db_help
 

@@ -1,6 +1,8 @@
 import pytest
 
+from agex import events
 from agex.agent import Agent
+from agex.agent.events import OutputEvent
 from agex.eval.error import EvalError
 from agex.eval.user_errors import AgexAttributeError
 
@@ -64,9 +66,9 @@ dir(c)
     assert state.get("c_method_res") == "child_method_called"
 
     # Check dir() output
-    stdout = state.get("__stdout__")
-    assert isinstance(stdout, list)
-    dir_result = stdout[-1][0]
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 1
+    dir_result = output_events[0].parts[0]
     assert "parent_attr" in dir_result
     assert "parent_method" in dir_result
     assert "child_attr" in dir_result

@@ -10,9 +10,7 @@ from typing import Any
 
 from agex.agent.base import BaseAgent
 from agex.agent.conversation import (
-    add_message,
     conversation_log,
-    initialize_conversation_log,
 )
 from agex.agent.datatypes import (
     TaskContinue,
@@ -20,49 +18,22 @@ from agex.agent.datatypes import (
     TaskSuccess,
     _AgentExit,
 )
-from agex.agent.formatting import format_context_as_markdown
-from agex.agent.primer_text import BUILTIN_PRIMER
-from agex.llm.core import (
-    ContentPart,
-    ImagePart,
-    MultimodalMessage,
-    TextMessage,
-    TextPart,
+from agex.agent.events import (
+    ActionEvent,
+    FailEvent,
+    OutputEvent,
+    SuccessEvent,
+    TaskStartEvent,
 )
+from agex.agent.primer_text import BUILTIN_PRIMER
 from agex.render.definitions import render_definitions
 from agex.render.value import ValueRenderer
 
 from ..eval.core import evaluate_program
-from ..render.context import ContextRenderer
 from ..state import Namespaced, Versioned
 
 
 class TaskLoopMixin(BaseAgent):
-    def _render_and_add_context(self, exec_state, context_renderer: ContextRenderer):
-        """Helper method to render context and add it as a message to avoid code duplication."""
-        # This now returns a list of content parts, which could include images.
-        context_parts: list[ContentPart] = context_renderer.render(
-            exec_state, self.max_tokens
-        )
-
-        if not context_parts:
-            return  # Nothing to add
-
-        # Check if the context is purely text or contains images
-        has_images = any(isinstance(part, ImagePart) for part in context_parts)
-
-        if has_images:
-            # Create a multimodal message if there are images
-            message = MultimodalMessage(role="user", content=context_parts)
-        else:
-            # Otherwise, combine text parts into a single text message for efficiency
-            full_text = "\n".join(
-                part.text for part in context_parts if isinstance(part, TextPart)
-            )
-            message = TextMessage(role="user", content=full_text)
-
-        add_message(exec_state, message)
-
     def _run_task_loop(
         self,
         task_name: str,
@@ -110,23 +81,31 @@ class TaskLoopMixin(BaseAgent):
             exec_state.set("inputs", inputs_instance)
         exec_state.set("__expected_return_type__", return_type)
 
-        # Initialize conversation log
-        initialize_conversation_log(exec_state)
-
-        # Use the agent's configured model for context rendering
-        context_renderer = ContextRenderer(self.llm_config["model"])
+        # Initialize the event log if it doesn't exist
+        if "__event_log__" not in exec_state:
+            exec_state.set("__event_log__", [])
 
         # Build system message (always static, never stored in state)
         system_message = self._build_system_message()
 
-        # Add task message to conversation log for this invocation
+        # Build the initial task message
         initial_task_message = self._build_task_message(
             docstring, inputs_dataclass, inputs_instance, return_type
         )
-        print("============== INITIAL TASK MESSAGE ===============")
-        print(initial_task_message)
-        print("===========================================")
-        add_message(exec_state, TextMessage(role="user", content=initial_task_message))
+
+        # Create comprehensive task start event with message content
+        from agex.state.log import add_event_to_log
+
+        task_start_event = TaskStartEvent(
+            agent_name=self.name,
+            task_name=task_name,
+            inputs={
+                f.name: getattr(inputs_instance, f.name)
+                for f in inputs_dataclass.__dataclass_fields__.values()
+            },
+            message=initial_task_message,
+        )
+        add_event_to_log(exec_state, task_start_event)
 
         # Main task loop
         for iteration in range(self.max_iterations):
@@ -134,33 +113,21 @@ class TaskLoopMixin(BaseAgent):
             exec_state.set("__stdout__", [])
 
             # Reconstruct conversation from state
-            messages = conversation_log(exec_state, system_message)
-
-            print("============== LAST MESSAGE ===============")
-            print(messages[-1:])
-            print("===========================================")
+            messages = conversation_log(exec_state, system_message, self)
 
             # Get LLM response and determine what code to evaluate
             # Try to get structured response first
             llm_response = self._get_llm_response(messages)
             code_to_evaluate = llm_response.code
 
-            print("=============== LLM THOUGHT ===============")
-            print(llm_response.thinking)
-            print("================ LLM CODE =================")
-            print(llm_response.code)
-            print("===========================================")
-
-            # Store assistant response in conversation log
+            # Store assistant response in event log
             if llm_response:
-                # Serialize the structured response for the log
-                assistant_content = (
-                    f"# Thinking\n{llm_response.thinking}\n\n"
-                    f"```python\n{llm_response.code}\n```"
+                action_event = ActionEvent(
+                    agent_name=self.name,
+                    thinking=llm_response.thinking,
+                    code=llm_response.code,
                 )
-                add_message(
-                    exec_state, TextMessage(role="assistant", content=assistant_content)
-                )
+                add_event_to_log(exec_state, action_event)
 
             # Evaluate the code (either parsed or raw)
             try:
@@ -172,26 +139,40 @@ class TaskLoopMixin(BaseAgent):
                         self.timeout_seconds,
                     )
 
-                self._render_and_add_context(exec_state, context_renderer)
+                # Events are now automatically managed by add_event_to_log helper
+                # No need to refresh event_log manually
 
             except TaskSuccess as task_signal:
-                # Task completed successfully - return the result
+                # Task completed successfully - log completion event and return the result
+                success_event = SuccessEvent(
+                    agent_name=self.name,
+                    result=task_signal.result,
+                )
+                add_event_to_log(exec_state, success_event)
                 return task_signal.result
             except TaskContinue:
                 # Agent wants to continue to next iteration - just continue the loop
-                self._render_and_add_context(exec_state, context_renderer)
                 continue
-            except (TaskFail, _AgentExit):
-                # Let other agent exit signals pass through (TaskFail)
+            except TaskFail as task_fail:
+                # Log failure event and then re-raise
+                fail_event = FailEvent(
+                    agent_name=self.name,
+                    message=task_fail.message,
+                )
+                add_event_to_log(exec_state, fail_event)
+                raise
+            except _AgentExit:
+                # Let other agent exit signals pass through (without logging)
                 raise
             except Exception as e:
-                # Catch evaluation errors and put them on stdout for agent feedback FIRST
-                current_stdout = exec_state.get("__stdout__", [])
-                current_stdout.append(f"💥 Evaluation error: {e}")
-                exec_state.set("__stdout__", current_stdout)
+                # Catch evaluation errors and put them in an OutputEvent so the agent can see them
+                from agex.eval.objects import PrintAction
 
-                # THEN render context (which will now include the error)
-                self._render_and_add_context(exec_state, context_renderer)
+                error_output = OutputEvent(
+                    agent_name=self.name,
+                    parts=[PrintAction([f"💥 Evaluation error: {e}"])],
+                )
+                add_event_to_log(exec_state, error_output)
             finally:
                 # Always snapshot after each evaluation iteration (if we own the state)
                 from ..state import is_ephemeral_root
@@ -199,13 +180,27 @@ class TaskLoopMixin(BaseAgent):
                 if versioned_state is not None and not is_ephemeral_root(exec_state):
                     result = versioned_state.snapshot()
                     if result.unsaved_keys:
-                        # Add a message to stdout about the unsaved keys
-                        current_stdout = exec_state.get("__stdout__", [])
-                        current_stdout.append(
+                        # Add a message to stdout about the unsaved keys so the agent can see it
+                        from agex.eval.objects import PrintAction
+
+                        # Strip namespace prefix from keys so agent sees clean variable names
+                        agent_visible_keys = []
+                        namespace_prefix = f"{self.name}/"
+                        for key in result.unsaved_keys:
+                            if key.startswith(namespace_prefix):
+                                agent_visible_keys.append(key[len(namespace_prefix) :])
+                            else:
+                                agent_visible_keys.append(key)
+
+                        warning_message = (
                             f"⚠️ Could not save the following variables because they "
-                            f"are not serializable: {', '.join(result.unsaved_keys)}"
+                            f"are not serializable: {', '.join(agent_visible_keys)}"
                         )
-                        exec_state.set("__stdout__", current_stdout)
+                        warning_output = OutputEvent(
+                            agent_name=self.name,
+                            parts=[PrintAction([warning_message])],
+                        )
+                        add_event_to_log(exec_state, warning_output)
 
         # If we get here, we hit max iterations
         raise TimeoutError(
@@ -222,9 +217,6 @@ class TaskLoopMixin(BaseAgent):
         # Add registered resources (available tools)
 
         registered_definitions = render_definitions(self)  # type: ignore
-        print("============== REGISTERED DEFINITIONS ===============")
-        print(registered_definitions)
-        print("===========================================")
         if registered_definitions.strip():
             parts.append("# Registered Resources\n\n" + registered_definitions)
 

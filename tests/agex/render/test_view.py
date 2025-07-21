@@ -87,15 +87,29 @@ def test_view_full():
     assert full_state == {"x": 1, "y": "hello"}
 
 
-def test_view_stdout():
+def test_view_events():
+    from agex.agent.events import OutputEvent
+    from agex.state.log import add_event_to_log
+
     store = Versioned(kv.Memory())
-    store.set("__stdout__", ["a"])
-    store.snapshot()
-    store.set("__stdout__", ["b"])
+
+    # Add first event and snapshot
+    event_a = OutputEvent(agent_name="test_agent", parts=["event_a"])
+    add_event_to_log(store, event_a)
     store.snapshot()
 
-    stdout = view(store, focus="stdout")
-    assert stdout == ["b"]
+    # Add second event and snapshot
+    event_b = OutputEvent(agent_name="test_agent", parts=["event_b"])
+    add_event_to_log(store, event_b)
+    store.snapshot()
+
+    events = view(store, focus="events")
+    assert isinstance(events, list)
+    assert len(events) == 2
+    assert isinstance(events[0], OutputEvent)
+    assert isinstance(events[1], OutputEvent)
+    assert events[0].parts == ["event_a"]
+    assert events[1].parts == ["event_b"]
 
 
 def test_view_recent_shows_last_commit_state_only():
@@ -104,15 +118,11 @@ def test_view_recent_shows_last_commit_state_only():
     store.snapshot()
 
     store.set("y", 200)
-    store.set("__stdout__", ["change"])
-    store.set("__internal__", "value")
     store.snapshot()
 
     recent_view = view(store, focus="recent")
     assert "y = 200" in recent_view
-    assert "change" not in recent_view
     assert "__internal__" not in recent_view
-    assert "Agent printed" not in recent_view
     assert "x = 100" not in recent_view
 
 

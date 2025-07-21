@@ -97,15 +97,24 @@ class CallEvaluator(BaseEvaluator):
                 try:
                     # Special cases for functions that need state but not evaluator
                     if fn_name == "print":
-                        return _print_stateful(*args, state=self.state)
+                        return _print_stateful(
+                            *args, state=self.state, agent_name=self.agent.name
+                        )
                     elif fn_name == "view_image":
                         from .builtins import _view_image_stateful
 
-                        return _view_image_stateful(*args, **kwargs, state=self.state)
+                        return _view_image_stateful(
+                            *args,
+                            **kwargs,
+                            state=self.state,
+                            agent_name=self.agent.name,
+                        )
                     elif fn_name == "task_continue":
                         from .builtins import _task_continue_with_observations
 
-                        return _task_continue_with_observations(*args, state=self.state)
+                        return _task_continue_with_observations(
+                            *args, state=self.state, agent_name=self.agent.name
+                        )
 
                     if stateful_fn_wrapper.needs_evaluator:
                         return stateful_fn_wrapper.fn(self, *args, **kwargs)

@@ -5,8 +5,10 @@ from types import ModuleType
 
 import pytest
 
+from agex import events
 from agex.agent import Agent, MemberSpec, RegisteredClass
 from agex.agent.base import clear_agent_registry
+from agex.agent.events import OutputEvent
 from agex.llm import DummyLLMClient
 from agex.llm.core import LLMResponse
 from agex.state import Namespaced, Versioned
@@ -667,14 +669,39 @@ def test_unserializable_object_in_state_is_handled_gracefully():
     result = task_with_unserializable_state(state=state)  # type: ignore
     assert result == "done"
 
-    # After task completion, stdout should be empty because warnings are cleared between iterations
-    # This is the correct behavior - warnings appear in the next iteration, then get cleared
-    stdout = state.get("test_agent/__stdout__")
-    # stdout should be empty due to clearing between iterations
-    assert stdout == []
+    # After task completion, check that warning was shown to agent as output
+    all_events = events(state, "test_agent", children=False)
 
-    # However, we can verify the task completed successfully, which means
-    # the agent was able to continue despite the serialization warning
+    output_events = [e for e in all_events if isinstance(e, OutputEvent)]
+
+    # Find output events that contain serialization warning messages
+    warning_outputs = []
+    for event in output_events:
+        for part in event.parts:
+            # Handle both raw PrintAction objects and rendered TextPart objects
+            part_text = ""
+            if hasattr(part, "text"):
+                part_text = str(part.text)
+            elif hasattr(part, "__iter__") and len(part) > 0:
+                # PrintAction is iterable, get the first argument
+                part_text = str(part[0])
+
+            if "Could not save" in part_text:
+                warning_outputs.append(event)
+                break
+
+    assert len(warning_outputs) >= 1
+
+    # Get the warning message from the PrintAction
+    warning_part = warning_outputs[-1].parts[0]
+    if hasattr(warning_part, "text"):
+        warning_message = str(warning_part.text)
+    else:
+        # It's a PrintAction, get the first argument
+        warning_message = str(warning_part[0])
+
+    assert "Could not save" in warning_message
+    assert "my_object" in warning_message
 
 
 def test_shallow_validation_on_large_input_list():
@@ -752,8 +779,37 @@ def test_shallow_validation_on_agent_output():
     # Check that the final result is the valid one
     assert result == large_valid_dict
 
-    # After task completion, stdout should be empty because errors are cleared between iterations
-    # This is the correct behavior - the agent DID see the validation error in iteration 2
-    # (as evidenced by the fact that it then provided valid output), but old errors don't accumulate
-    stdout = state.get("test_agent/__stdout__")
-    assert stdout == []  # No accumulated errors
+    # Check that validation error was shown to agent as output
+    # The agent DID see the validation error (as evidenced by the fact that it then provided valid output)
+    all_events = events(state, "test_agent", children=False)
+    output_events = [e for e in all_events if isinstance(e, OutputEvent)]
+
+    # Find output events that contain validation error messages
+    validation_outputs = []
+    for event in output_events:
+        for part in event.parts:
+            # Handle both raw PrintAction objects and rendered TextPart objects
+            part_text = ""
+            if hasattr(part, "text"):
+                part_text = str(part.text)
+            elif hasattr(part, "__iter__") and len(part) > 0:
+                # PrintAction is iterable, get the first argument
+                part_text = str(part[0])
+
+            if "Output validation failed" in part_text:
+                validation_outputs.append(event)
+                break
+
+    assert len(validation_outputs) >= 1
+
+    # Get the error message from the PrintAction or TextPart
+    error_part = validation_outputs[0].parts[0]
+    if hasattr(error_part, "text"):
+        error_message = str(error_part.text)
+    else:
+        # It's a PrintAction, get the first argument
+        error_message = str(error_part[0])
+
+    assert "Output validation failed" in error_message
+    assert "dict[str, int]" in error_message
+    assert "..." not in error_message

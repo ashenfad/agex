@@ -1,6 +1,6 @@
 import pytest
 
-from agex import Agent
+from agex.agent import Agent
 from agex.agent.datatypes import MemberSpec
 from agex.eval.user_errors import AgexAttributeError
 from agex.llm.core import LLMResponse
@@ -118,7 +118,6 @@ def test_access_unexposed_member_fails():
     # Set up state for direct evaluation
     versioned_state = Versioned(Memory())
     exec_state = Namespaced(versioned_state, namespace=agent.name)
-    exec_state.set("__stdout__", [])
 
     # Test code that tries to access unexposed method
     code_to_test = 'result = db.query("users", 1)'

@@ -228,6 +228,62 @@ print(f"Final content: {content}")
 
 This peer collaboration pattern enables quality improvement, fact-checking, and iterative refinement workflows.
 
+## 7. Event Monitoring and Debugging
+
+One of agex's most powerful features is comprehensive event tracking that lets you see exactly what agents are thinking and doing. This is invaluable for debugging, monitoring, and understanding agent behavior.
+
+### Basic Event Monitoring
+
+Every agent action generates events that you can retrieve and analyze:
+
+```python
+from agex import Agent, Versioned, events
+
+# Create agent with persistent state to capture events
+agent = Agent(name="debug_agent")
+state = Versioned()
+
+@agent.task
+def analyze_data(numbers: list[int]) -> dict:  # type: ignore[return-value]
+    """Analyze a list of numbers and return statistics."""
+    pass
+
+# Execute the task
+result = analyze_data([1, 5, 3, 9, 2, 7], state=state)
+print(f"Result: {result}")
+
+# Get all events from this agent execution
+agent_events = events(state, "debug_agent")
+print(f"Generated {len(agent_events)} events")
+
+# Events include TaskStartEvent, ActionEvent, OutputEvent, SuccessEvent, and FailEvent
+# See what the agent was thinking during execution
+from agex.agent.events import ActionEvent
+
+for event in agent_events:
+    if isinstance(event, ActionEvent):
+        print(f"Agent was thinking: {event.thinking[:80]}...")
+        print(f"Agent executed: {event.code[:80]}...")
+```
+
+Events are incredibly useful for inspecting and debugging agent behavior. You can see exactly what agents were thinking, what code they executed, and where failures occurred. This makes troubleshooting agent issues straightforward.
+
+### Multi-Agent Timeline Analysis
+
+For complex workflows, see the execution timeline across all agents:
+
+```python
+# Get events from all agents and see the timeline
+all_events = events(state)
+print("Execution Timeline:")
+for event in all_events[-10:]:  # Last 10 events
+    time_str = event.timestamp.strftime('%H:%M:%S.%f')[:-3]
+    event_type = type(event).__name__
+    print(f"{time_str} - {event.agent_name}: {event_type}")
+```
+
+The events system makes debugging agent behavior straightforward and provides complete visibility into multi-agent coordination. For comprehensive event monitoring patterns, see the **[Events API](./api/events.md)**.
+
 ## Error Handling
 
 Agent tasks can raise specific exceptions you should handle:
@@ -253,6 +309,7 @@ except TaskFail as e:
 ## Next Steps
 
 - **[API Reference](./api/overview.md)** - Complete documentation for all agex APIs
+- **[Events API](./api/events.md)** - Comprehensive guide to event monitoring and debugging
 - **[Examples](../examples/)** - Real-world examples showing advanced patterns
 - **[The Big Picture](./big-picture.md)** - Framework philosophy and design principles
 

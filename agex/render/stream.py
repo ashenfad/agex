@@ -48,8 +48,9 @@ def _estimate_image_cost(image: Any, detail: str = "high") -> int:
     elif matplotlib and isinstance(image, matplotlib.figure.Figure):
         # Matplotlib figures are in inches; convert to pixels using a common default DPI.
         dpi = image.get_dpi() if image.get_dpi() else 100.0
-        width, height = int(image.get_figwidth() * dpi), int(
-            image.get_figheight() * dpi
+        width, height = (
+            int(image.get_figwidth() * dpi),
+            int(image.get_figheight() * dpi),
         )
     elif plotly and isinstance(image, plotly.graph_objects.Figure):
         # Plotly figures often have explicit pixel dimensions.

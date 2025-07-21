@@ -19,32 +19,49 @@ class Namespaced(State):
             )
 
         self.state = state
-        self.namespace = namespace
+
+        # Build the full namespace path
+        if isinstance(state, Namespaced):
+            # Wrapping another Namespaced - extend its path
+            self.namespace = f"{state.namespace}/{namespace}"
+        else:
+            # Wrapping Versioned or Ephemeral (root level)
+            self.namespace = namespace
 
     @property
     def base_store(self) -> "State":
         return self.state.base_store
 
     def _local_namespace(self, key: str) -> str | None:
-        path = key.split("/")
-        if len(path) > 1 and path[-2] == self.namespace:
-            return path[-1]
+        prefix = f"{self.namespace}/"
+        if key.startswith(prefix):
+            remainder = key[len(prefix) :]
+            # Only return if there are no more slashes (direct child, not nested namespace)
+            if remainder and "/" not in remainder:
+                return remainder
         return None
 
     def get(self, key: str, default: Any = None) -> Any:
-        return self.state.get(f"{self.namespace}/{key}", default)
+        return self.base_store.get(f"{self.namespace}/{key}", default)
 
     def set(self, key: str, value: Any) -> None:
-        return self.state.set(f"{self.namespace}/{key}", value)
+        return self.base_store.set(f"{self.namespace}/{key}", value)
 
     def remove(self, key: str) -> bool:
-        return self.state.remove(f"{self.namespace}/{key}")
+        return self.base_store.remove(f"{self.namespace}/{key}")
 
     def keys(self) -> Iterable[str]:
         return (
             lcl
             for k in self.base_store.keys()
             if (lcl := self._local_namespace(k)) is not None
+        )
+
+    def descendant_keys(self) -> Iterable[str]:
+        """Get all keys from this namespace and child namespaces (hierarchical traversal)."""
+        prefix = f"{self.namespace}/"
+        return (
+            k[len(prefix) :] for k in self.base_store.keys() if k.startswith(prefix)
         )
 
     def values(self) -> Iterable[Any]:
@@ -54,4 +71,4 @@ class Namespaced(State):
         return ((k, self.get(k)) for k in self.keys())
 
     def __contains__(self, key: str) -> bool:
-        return f"{self.namespace}/{key}" in self.state
+        return f"{self.namespace}/{key}" in self.base_store

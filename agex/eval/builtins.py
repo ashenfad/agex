@@ -1,3 +1,4 @@
+import copy
 import inspect
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -8,6 +9,7 @@ from agex.agent.datatypes import (
     TaskFail,
     TaskSuccess,
 )
+from agex.agent.events import OutputEvent
 from agex.eval.base import BaseEvaluator
 from agex.eval.functions import UserFunction
 from agex.eval.objects import (
@@ -17,7 +19,6 @@ from agex.eval.objects import (
     AgexModule,
     AgexObject,
     ImageAction,
-    PrintAction,
 )
 from agex.eval.user_errors import (
     AgexArithmeticError,
@@ -29,7 +30,18 @@ from agex.eval.user_errors import (
     AgexZeroDivisionError,
 )
 from agex.eval.utils import get_allowed_attributes_for_instance
-from agex.state import State
+from agex.state import Ephemeral, State
+
+
+def _smart_render_for_snapshot(value: Any) -> str:
+    """
+    Smart rendering for snapshotting objects in ephemeral mode.
+    Uses ValueRenderer with conservative limits to avoid huge strings.
+    """
+    from agex.render.value import ValueRenderer
+
+    renderer = ValueRenderer(max_len=512, max_depth=2)
+    return renderer.render(value)
 
 
 def _is_bound_instance_object(obj: Any) -> bool:
@@ -55,36 +67,79 @@ class StatefulFn:
     needs_evaluator: bool = False
 
 
-def _print_stateful(*args: Any, state: State):
+def _print_stateful(*args: Any, state: State, agent_name: str):
     """
     A custom implementation of 'print' that appends its arguments to the
-    `__stdout__` list in the agent's state as a single `PrintAction`.
+    `__event_log__` list in the agent's state as a single `OutputEvent`.
+    This function is "store-aware" to ensure the event log is immutable.
     """
-    # Ensure __stdout__ exists and is a list
-    current_stdout = state.get("__stdout__")
-    if not isinstance(current_stdout, list):
-        current_stdout = []
+    # "Snapshot" the arguments to ensure immutability in the log
+    is_ephemeral = isinstance(state.base_store, Ephemeral)
+    snapped_args: tuple
+    try:
+        if is_ephemeral:
+            # In ephemeral mode, deepcopy to protect against mutable objects
+            # changing after being printed.
+            snapped_args = copy.deepcopy(args)
+        else:
+            # In Versioned mode, try to store raw references first.
+            # The versioning system handles serialization and immutability.
+            snapped_args = args
 
-    # Append all arguments as a single entry
-    new_stdout = current_stdout + [PrintAction(args)]
-    state.set("__stdout__", new_stdout)
+            # Test if this would be serializable to avoid breaking the event log
+            import pickle
+
+            test_event = OutputEvent(agent_name=agent_name, parts=list(snapped_args))
+            pickle.dumps(test_event)  # This will raise if unpicklable
+
+    except Exception:
+        # Fall back to smart rendering for both state types
+        snapped_args = tuple(_smart_render_for_snapshot(arg) for arg in args)
+
+    # Create and add the event using efficient reference-based storage
+    from agex.state.log import add_event_to_log
+
+    event = OutputEvent(agent_name=agent_name, parts=list(snapped_args))
+    add_event_to_log(state, event)
 
 
-def _view_image_stateful(image: Any, detail: str = "high", *, state: State) -> None:
+def _view_image_stateful(
+    image: Any, detail: str = "high", *, state: State, agent_name: str
+) -> None:
     """
-    A custom builtin to "view" an image, which adds an ImageAction to stdout.
+    A custom builtin to "view" an image, which adds an ImageAction to the event log.
     """
     if detail not in ("low", "high"):
         raise AgexValueError("detail must be 'low' or 'high'")
 
-    # Ensure __stdout__ exists and is a list
-    current_stdout = state.get("__stdout__")
-    if not isinstance(current_stdout, list):
-        current_stdout = []
+    # "Snapshot" the arguments to ensure immutability in the log
+    is_ephemeral = isinstance(state.base_store, Ephemeral)
+    snapped_image: Any
+    try:
+        if is_ephemeral:
+            snapped_image = copy.deepcopy(image)
+        else:
+            snapped_image = image
 
-    # Append an ImageAction to the stdout stream
-    new_stdout = current_stdout + [ImageAction(image=image, detail=detail)]
-    state.set("__stdout__", new_stdout)
+            # Test if this would be serializable to avoid breaking the event log
+            import pickle
+
+            image_action = ImageAction(image=snapped_image, detail=detail)
+            test_event = OutputEvent(agent_name=agent_name, parts=[image_action])
+            pickle.dumps(test_event)  # This will raise if unpicklable
+
+    except Exception:
+        # Fall back to smart rendering for both state types
+        snapped_image = _smart_render_for_snapshot(image)
+
+    # For now, ImageAction is a dataclass that gets put inside an OutputEvent
+    image_action = ImageAction(image=snapped_image, detail=detail)
+
+    # Create and add the event using efficient reference-based storage
+    from agex.state.log import add_event_to_log
+
+    event = OutputEvent(agent_name=agent_name, parts=[image_action])
+    add_event_to_log(state, event)
 
 
 dataclass = _DataclassDecorator()
@@ -198,12 +253,12 @@ def _dir(evaluator: BaseEvaluator, *args, **kwargs) -> list[str]:
         allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
         attrs = sorted(list(allowed))
 
-    current_stdout = evaluator.state.get("__stdout__")
-    if not isinstance(current_stdout, list):
-        current_stdout = []
+    # No deepcopy needed here, as `attrs` is a new list of strings, which is immutable.
+    # Create and add the event using efficient reference-based storage
+    from agex.state.log import add_event_to_log
 
-    new_stdout = current_stdout + [PrintAction((attrs,))]
-    evaluator.state.set("__stdout__", new_stdout)
+    event = OutputEvent(agent_name=evaluator.agent.name, parts=[attrs])
+    add_event_to_log(evaluator.state, event)
 
     return attrs
 
@@ -247,52 +302,108 @@ def _hasattr(evaluator: BaseEvaluator, *args, **kwargs) -> bool:
 
 def _get_general_help_text(agent: "BaseAgent") -> str:
     """Returns a string with a summary of all registered items."""
-    parts = []
+    parts = ["Available items:"]
 
     # Functions
-    fns = sorted([name for name in agent.fn_registry.keys()])
+    fns = sorted(agent.fn_registry.keys())
     if fns:
-        parts.append("Functions:")
-        for name in fns:
-            parts.append(f"  - {name}")
+        parts.append("\nFunctions:")
+        parts.extend([f"- {fn}" for fn in fns])
 
     # Classes
-    if agent.cls_registry:
-        if parts:
-            parts.append("")  # Add a blank line for separation
-        parts.append("Classes:")
-        for name in sorted(agent.cls_registry.keys()):
-            parts.append(f"  - {name}")
+    clss = sorted(agent.cls_registry.keys())
+    if clss:
+        parts.append("\nClasses:")
+        parts.extend([f"- {cls}" for cls in clss])
 
-    # Modules
-    if agent.importable_modules:
-        if parts:
-            parts.append("")  # Add a blank line for separation
-        parts.append("Modules:")
-        for name in sorted(agent.importable_modules.keys()):
-            parts.append(f"  - {name}")
+    # Objects (Modules and registered objects)
+    mods = sorted(agent.importable_modules.keys())
+    objects = sorted(agent.object_registry.keys())
 
-    # Objects (live objects)
-    if agent.object_registry:
-        if parts:
-            parts.append("")  # Add a blank line for separation
-        parts.append("Objects:")
-        for name in sorted(agent.object_registry.keys()):
-            parts.append(f"  - {name}")
+    # Combine modules and objects
+    all_objects = sorted(set(mods) | set(objects))
+    if all_objects:
+        parts.append("\nObjects:")
+        parts.extend([f"- {obj}" for obj in all_objects])
 
-    if not parts:
-        return (
-            "No functions, classes, modules, or objects are registered with the agent."
-        )
+    if len(parts) == 1:  # Only "Available items:" was added
+        return "No resources registered with the agent."
 
-    return "Available items:\n" + "\n".join(parts)
+    return "\n".join(parts)
 
 
 def _format_user_function_sig(fn: UserFunction) -> str:
-    """Creates a string signature for a UserFunction."""
+    """Formats a UserFunction into a signature string."""
     # This is a simplified formatter. A real one would handle more arg types.
     arg_names = [arg.arg for arg in fn.args.args]
     return f"{fn.name}({', '.join(arg_names)})"
+
+
+def _get_help_text(agent: "BaseAgent", item: Any) -> str:
+    """Returns a detailed help string for a specific registered item."""
+    if isinstance(item, AgexInstance):
+        # For an instance, show help for its class.
+        return _get_help_text(agent, item.cls)
+    if isinstance(item, AgexClass):
+        parts = [f"Help on class {item.name}:\n"]
+        if "__init__" in item.methods:
+            init_sig = _format_user_function_sig(item.methods["__init__"])
+            parts.append(f"{item.name}{init_sig.replace('__init__', '', 1)}")
+        else:
+            parts.append(f"{item.name}()")
+
+        methods = sorted(item.methods.keys())
+        if methods:
+            parts.append("\nMethods defined here:")
+            for method_name in methods:
+                method_sig = _format_user_function_sig(item.methods[method_name])
+                parts.append(f"  {method_sig}")
+        return "\n".join(parts)
+    if isinstance(item, AgexModule):
+        parts = ["Help on module " + item.name + ":\n"]
+        reg_module = agent.importable_modules.get(item.name)
+        if reg_module:
+            contents = sorted(
+                [attr for attr in dir(reg_module.module) if not attr.startswith("_")]
+            )
+            if contents:
+                parts.append("CONTENTS")
+                parts.extend([f"    {item}" for item in contents])
+        return "\n".join(parts)
+    if _is_bound_instance_object(item):
+        from ..eval.objects import BoundInstanceObject
+
+        if isinstance(item, BoundInstanceObject):
+            parts = [f"Help on object {item.reg_object.name}:\n"]
+            # Methods
+            methods = sorted(item.reg_object.methods.keys())
+            if methods:
+                parts.append("METHODS")
+                for name in methods:
+                    doc = item.reg_object.methods[name].docstring
+                    parts.append(f"    {name} - {doc}" if doc else f"    {name}")
+            # Properties
+            properties = sorted(item.reg_object.properties.keys())
+            if properties:
+                if methods:
+                    parts.append("")
+                parts.append("PROPERTIES")
+                for name in properties:
+                    doc = item.reg_object.properties[name].docstring
+                    parts.append(f"    {name} - {doc}" if doc else f"    {name}")
+            return "\n".join(parts)
+    # For other types, try to get a docstring.
+    return inspect.getdoc(item) or "No help available."
+
+
+def _is_allowed_for_help(item: Any) -> bool:
+    """Check if an item is allowed for help() - registered resources or basic Python types."""
+    return (
+        isinstance(item, (AgexClass, AgexInstance, AgexModule))
+        or _is_bound_instance_object(item)
+        or isinstance(item, (int, float, str, bool, list, dict, tuple, set, type(None)))
+        or hasattr(item, "__doc__")  # Any object with documentation
+    )
 
 
 def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
@@ -302,117 +413,34 @@ def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
     if len(args) > 1:
         raise AgexError(f"help() takes at most 1 argument ({len(args)} given)")
 
-    obj = args[0] if args else None
+    item = args[0] if args else None
 
-    doc = None
-    if obj is None:
-        doc = _get_general_help_text(evaluator.agent)
-    elif isinstance(obj, AgexInstance):
-        # For an instance, show help for its class.
-        return _help(evaluator, obj.cls)
-    elif isinstance(obj, AgexClass):
-        parts = [f"Help on class {obj.name}:\n"]
-        if "__init__" in obj.methods:
-            init_sig = _format_user_function_sig(obj.methods["__init__"])
-            parts.append(f"{obj.name}{init_sig.replace('__init__', '', 1)}")
-        else:
-            parts.append(f"{obj.name}()")
+    if item is not None and not _is_allowed_for_help(item):
+        raise AgexTypeError("help() is only supported for registered resources.")
 
-        methods = sorted(obj.methods.keys())
-        if methods:
-            parts.append("\nMethods defined here:")
-            for method_name in methods:
-                method_sig = _format_user_function_sig(obj.methods[method_name])
-                parts.append(f"  {method_sig}")
-        doc = "\n".join(parts)
-    elif isinstance(obj, AgexModule):
-        # Special handling to render help for a AgexModule
-        parts = ["Help on module " + obj.name + ":\n"]
-        # Introspect the actual registered module for contents
-        reg_module = evaluator.agent.importable_modules.get(obj.name)
-        if reg_module:
-            contents = sorted(
-                [attr for attr in dir(reg_module.module) if not attr.startswith("_")]
-            )
-            if contents:
-                parts.append("CONTENTS")
-                parts.extend([f"    {item}" for item in contents])
-        doc = "\n".join(parts)
-    elif _is_bound_instance_object(obj):
-        # Handle BoundInstanceObject (registered live objects)
-        from ..eval.objects import BoundInstanceObject
+    doc = (
+        _get_help_text(evaluator.agent, item)
+        if item
+        else _get_general_help_text(evaluator.agent)
+    )
+    # Print the help text to stdout
+    # No deepcopy needed, `doc` is a string.
+    # Create and add the event using efficient reference-based storage
+    from agex.state.log import add_event_to_log
 
-        if isinstance(obj, BoundInstanceObject):
-            parts = [f"Help on object {obj.reg_object.name}:\n"]
-
-            # Show methods
-            methods = sorted(obj.reg_object.methods.keys())
-            if methods:
-                parts.append("METHODS")
-                for method_name in methods:
-                    method_spec = obj.reg_object.methods[method_name]
-                    docstring = method_spec.docstring
-                    if docstring:
-                        parts.append(f"    {method_name} - {docstring}")
-                    else:
-                        parts.append(f"    {method_name}")
-
-            # Show properties
-            properties = sorted(obj.reg_object.properties.keys())
-            if properties:
-                if methods:  # Add spacing if we already showed methods
-                    parts.append("")
-                parts.append("PROPERTIES")
-                for prop_name in properties:
-                    prop_spec = obj.reg_object.properties[prop_name]
-                    docstring = prop_spec.docstring
-                    if docstring:
-                        parts.append(f"    {prop_name} - {docstring}")
-                    else:
-                        parts.append(f"    {prop_name}")
-
-            doc = "\n".join(parts)
-        else:
-            doc = "No help available."
-    else:
-        # For everything else (AgexObject, NativeFunction, raw Python objects/functions),
-        # just try to get a docstring.
-        doc = inspect.getdoc(obj)
-
-    if doc is None:
-        doc = "No help available."
-
-    # All help output goes to stdout
-    current_stdout = evaluator.state.get("__stdout__")
-    if not isinstance(current_stdout, list):
-        current_stdout = []
-
-    new_stdout = current_stdout + [PrintAction((doc,))]
-    evaluator.state.set("__stdout__", new_stdout)
+    event = OutputEvent(agent_name=evaluator.agent.name, parts=[doc])
+    add_event_to_log(evaluator.state, event)
 
 
-def _task_continue_with_observations(*observations: Any, state: State) -> None:
-    """Implementation of task_continue that handles auto-printing observations."""
-    if observations:
-        # Add observations to stdout
-        current_stdout = state.get("__stdout__")
-        if not isinstance(current_stdout, list):
-            current_stdout = []
-
-        # Format observations for printing
-        formatted_output = ["=== CONTINUING TASK - OBSERVATIONS ==="]
-        for obs in observations:
-            formatted_output.append(str(obs))
-        formatted_output.append("=== END OBSERVATIONS ===")
-
-        # Add to stdout
-        new_stdout = current_stdout + [
-            PrintAction((line,)) for line in formatted_output
-        ]
-        state.set("__stdout__", new_stdout)
-
-    # Raise TaskContinue to end current iteration
-    raise TaskContinue(observations=observations)
+def _task_continue_with_observations(
+    *observations: Any, state: State, agent_name: str
+) -> None:
+    """
+    Signal to the agent to continue, providing a list of observations.
+    This is effectively a programmatic `print()` that also forces a continue.
+    """
+    _print_stateful(*observations, state=state, agent_name=agent_name)
+    raise TaskContinue()
 
 
 STATEFUL_BUILTINS: dict[str, StatefulFn] = {

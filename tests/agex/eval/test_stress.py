@@ -1,3 +1,6 @@
+from agex import events
+from agex.agent.events import OutputEvent
+
 from .helpers import eval_and_get_state
 
 
@@ -65,10 +68,10 @@ except Exception as e:
     assert state.get("total") == 36
     assert state.get("error_msg") == "Caught expected error"
 
-    # Check introspection results in stdout
-    stdout = state.get("__stdout__")
-    assert len(stdout) == 2  # help() and dir() both print
-    help_text = stdout[0][0]
+    # Check introspection results in event log
+    output_events = [e for e in events(state) if isinstance(e, OutputEvent)]
+    assert len(output_events) == 2  # help() and dir() both print
+    help_text = output_events[0].parts[0]
     assert "Help on class Widget" in help_text
     assert "get_value(self)" in help_text
 

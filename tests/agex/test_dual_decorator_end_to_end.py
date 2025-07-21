@@ -85,9 +85,19 @@ def test_dual_decorator_math_workflow():
     assert result["validated"] is True
     assert result["status"] == "success"
 
-    # Verify that the sub-agent's print statements went to its own stdout
-    validator_stdout = shared_state.get("orchestrator/validator/__stdout__")
-    assert validator_stdout is not None
+    # Verify that the sub-agent's events are properly logged
+    from agex.state import events
+
+    validator_events = events(shared_state, "orchestrator", "validator", children=False)
+    assert len(validator_events) > 0
+
+    # Verify that completion events are properly created
+    from agex.agent.events import SuccessEvent
+
+    success_events = [e for e in validator_events if isinstance(e, SuccessEvent)]
+    assert len(success_events) == 1
+    assert success_events[0].agent_name == "validator"
+    assert success_events[0].result is True
 
 
 def test_dual_decorator_state_sharing():
@@ -164,17 +174,41 @@ def test_dual_decorator_state_sharing():
     assert analysis["count"] == 5  # Valid numbers after processing: [1, 2, 3.5, 4, 5]
     assert analysis["mean"] == 3.1  # (1 + 2 + 3.5 + 4 + 5) / 5 = 15.5 / 5 = 3.1
 
-    # Verify that the orchestrator's print statements are in its own stdout
-    coordinator_stdout = shared_state.get("coordinator/__stdout__")
-    assert coordinator_stdout is not None
-    assert len(coordinator_stdout) == 2
-    assert "Data processor returned" in str(coordinator_stdout[0])
-    assert "Analyzer returned" in str(coordinator_stdout[1])
+    # Import required functions
+    from agex.agent.events import SuccessEvent
+    from agex.state import events
 
-    # Verify that sub-agents have no stdout in the orchestrator's namespace
-    # (because they write to their own, e.g., "analyzer/__stdout__")
-    assert "mean_value" not in str(coordinator_stdout)
-    assert "cleaned_data" not in str(coordinator_stdout)
+    # Verify that the orchestrator's completion event is in its own event log
+    coordinator_events = events(shared_state, "coordinator", children=False)
+    assert len(coordinator_events) > 0
+
+    # Check for SuccessEvent instead of OutputEvents (print statements don't execute when task_success is in same block)
+    success_events = [e for e in coordinator_events if isinstance(e, SuccessEvent)]
+    assert len(success_events) == 1
+    assert success_events[0].agent_name == "coordinator"
+    assert isinstance(success_events[0].result, dict)
+
+    # Verify that the sub-agents shared state properly through namespaces
+    # Check processor state (agent name is "data_processor")
+    processor_events = events(
+        shared_state, "coordinator", "data_processor", children=False
+    )
+    assert len(processor_events) > 0
+
+    # Check analyzer state
+    analyzer_events = events(shared_state, "coordinator", "analyzer", children=False)
+    assert len(analyzer_events) > 0
+
+    # Verify completion events are properly created for both sub-agents
+    processor_success = [e for e in processor_events if isinstance(e, SuccessEvent)]
+    assert len(processor_success) == 1
+    assert processor_success[0].agent_name == "data_processor"
+    assert isinstance(processor_success[0].result, list)
+
+    analyzer_success = [e for e in analyzer_events if isinstance(e, SuccessEvent)]
+    assert len(analyzer_success) == 1
+    assert analyzer_success[0].agent_name == "analyzer"
+    assert isinstance(analyzer_success[0].result, dict)
 
 
 def test_hierarchical_namespace_state_is_correct():

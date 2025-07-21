@@ -70,19 +70,19 @@ def test_diffs():
     # First set of changes
     store.set("x", 1)
     store.set("y", 2)
-    store.set("__stdout__", ["hello"])
+    store.set("__event_log__", ["event1"])
     commit1 = store.snapshot().commit_hash
 
     # Second set of changes
     store.set("y", 3)
     store.set("z", 4)
-    store.set("__stdout__", ["world"])
+    store.set("__event_log__", ["event2"])
     commit2 = store.snapshot().commit_hash
 
     # Check changes for commit 1
     state_changes = store.diffs(commit1)
     assert state_changes == {"x": 1, "y": 2}
-    assert store.checkout(commit1).get("__stdout__") == ["hello"]  # type: ignore
+    assert store.checkout(commit1).get("__event_log__") == ["event1"]  # type: ignore
 
     # Check changes for commit 2
     state_changes_2 = store.diffs(commit2)
@@ -91,7 +91,7 @@ def test_diffs():
     # Check changes for the most recent commit (default)
     state_changes_3 = store.diffs()
     assert state_changes_3 == state_changes_2
-    assert store.get("__stdout__") == ["world"]
+    assert store.get("__event_log__") == ["event2"]
 
 
 def test_snapshot_on_empty_ephemeral_does_not_create_commit():
