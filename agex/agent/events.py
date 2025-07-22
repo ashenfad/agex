@@ -268,10 +268,7 @@ class FailEvent(BaseEvent):
     def __str__(self) -> str:
         """Detailed string with failure message."""
         base = super().__str__()
-        message_preview = (
-            self.message[:80] + "..." if len(self.message) > 80 else self.message
-        )
-        return f"{base}\n  Message: {message_preview}"
+        return f"{base}\n  Message: {self.message}"
 
     def _repr_markdown_(self) -> str:
         """Rich markdown with failure details."""
