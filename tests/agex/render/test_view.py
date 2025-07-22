@@ -87,31 +87,6 @@ def test_view_full():
     assert full_state == {"x": 1, "y": "hello"}
 
 
-def test_view_events():
-    from agex.agent.events import OutputEvent
-    from agex.state.log import add_event_to_log
-
-    store = Versioned(kv.Memory())
-
-    # Add first event and snapshot
-    event_a = OutputEvent(agent_name="test_agent", parts=["event_a"])
-    add_event_to_log(store, event_a)
-    store.snapshot()
-
-    # Add second event and snapshot
-    event_b = OutputEvent(agent_name="test_agent", parts=["event_b"])
-    add_event_to_log(store, event_b)
-    store.snapshot()
-
-    events = view(store, focus="events")
-    assert isinstance(events, list)
-    assert len(events) == 2
-    assert isinstance(events[0], OutputEvent)
-    assert isinstance(events[1], OutputEvent)
-    assert events[0].parts == ["event_a"]
-    assert events[1].parts == ["event_b"]
-
-
 def test_view_recent_shows_last_commit_state_only():
     store = Versioned(kv.Memory())
     store.set("x", 100)

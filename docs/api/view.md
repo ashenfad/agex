@@ -1,8 +1,10 @@
 # View API
 
-⚠️ **Experimental API**: The `view()` function is the least developed interface in agex and will likely change frequently as the framework evolves.
+⚠️ **Experimental API**: The `view()` function is an experimental interface that is subject to change.
 
-The `view()` function provides human-readable inspection of agents and their execution state.
+The `view()` function provides a human-readable inspection of an agent's static capabilities or its current memory state. It is a debugging utility designed for quick, interactive use.
+
+For programmatic access to an agent's full execution history, use the more powerful [`events()` API](events.md).
 
 ## Import
 
@@ -10,9 +12,9 @@ The `view()` function provides human-readable inspection of agents and their exe
 from agex import view
 ```
 
-## Agent Inspection
+## Agent Inspection: `view(agent)`
 
-View an agent's registered capabilities:
+View an agent's registered capabilities to see what functions, classes, and modules are available to it. This shows the "micro-DSL" you have defined for the agent.
 
 ```python
 from agex import Agent, view
@@ -27,17 +29,13 @@ def calculate_sum(a: int, b: int) -> int:
 api_view = view(agent)
 print(api_view)
 
-# Full view shows all members including low-visibility
+# The `full=True` flag shows all members, including low-visibility ones
 complete_view = view(agent, full=True)
 ```
 
-**Parameters:**
-- `obj: Agent` - The agent to inspect
-- `full: bool = False` - Show all members regardless of visibility
+## State Inspection: `view(state)`
 
-## State Inspection
-
-View agent execution state:
+View a snapshot of an agent's memory (`Versioned` state). This is useful for debugging the outcome of an agent's execution.
 
 ```python
 from agex import Agent, Versioned, view
@@ -45,57 +43,49 @@ from agex import Agent, Versioned, view
 agent = Agent()
 
 @agent.task("Analyze some data")
-def analyze_data(numbers: list[int], state: Versioned) -> dict:
-    pass  # type: ignore[return-value]
+def analyze_data(numbers: list[int], state: Versioned) -> dict:  # type: ignore[return-value]
+    pass
 
 # Initialize and execute
 state = Versioned()
 result = analyze_data([1, 2, 3, 4, 5], state=state)
 
-# View state
+# View a summary of the most recent state changes
 state_view = view(state)
 print(state_view)
 ```
 
-**Parameters:**
-- `obj: Versioned` - The state object to inspect
-- `focus: "recent" | "full" | "stdout" = "recent"` - What to show
-- `model_name: str = "gpt-4"` - Tokenizer for "recent" view
-- `max_tokens: int = 4096` - Token budget for "recent" view
+### State Focus Options
 
-### Focus Options
+The `focus` parameter controls what part of the state to display:
 
-**`focus="recent"`** (default): Recent state changes as formatted summary
-**`focus="full"`**: Complete state as dictionary 
-**`focus="stdout"`**: Agent print output as list of strings
+- **`focus="recent"`** (Default): Shows a summary of state changes from the most recent agent execution. This is like a "diff" of the agent's memory.
+- **`focus="full"`**: Shows the complete, raw key-value state at the current commit. This is a full snapshot of the agent's memory.
 
 ```python
-recent_view = view(state, focus="recent")      # What changed
-full_state = view(state, focus="full")         # All variables
-stdout_log = view(state, focus="stdout")       # Print output
-```
+# See what changed in the last step
+recent_changes = view(state, focus="recent")
 
-## Common Usage
-
-```python
-# Debug agent capabilities
-print(view(agent))
-
-# Check what agent did
-print(view(state, focus="recent"))
-
-# Access specific state values
+# Get the entire state dictionary
 full_state = view(state, focus="full")
 if "result" in full_state:
-    print(f"Result: {full_state['result']}")
-
-# See agent's print statements
-for output in view(state, focus="stdout"):
-    print(f"Agent: {output}")
+    print(f"Final result: {full_state['result']}")
 ```
+
+## Summary of Inspection Tools
+
+Use the right tool for the job:
+
+| Tool | Question it Answers | Use Case |
+|---|---|---|
+| **`view(agent)`** | "What *can* this agent do?" | Debugging agent setup & capabilities |
+| **`view(state)`** | "What is the agent's memory *right now*?" | Quick, interactive debugging of state |
+| **`events(state)`** | "What did the agent *do* historically?" | Post-hoc analysis, programmatic review |
+| **`task.stream()`** | "What is the agent *doing* right now?" | Real-time, interactive event streaming |
 
 ## Next Steps
 
 - See [Agent API](agent.md) for registering capabilities
 - See [State API](state.md) for state management
+- See [Events API](events.md) for programmatic event access
 - See [Task API](task.md) for creating agent tasks 
