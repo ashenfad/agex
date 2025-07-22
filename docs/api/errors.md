@@ -207,21 +207,6 @@ def robust_pipeline(data: str) -> dict:  # type: ignore[return-value]
 # - Return successful result or escalate the error
 ```
 
-## Integration with State
-
-When agents encounter errors during execution, only recent error information is preserved in state:
-
-```python
-from agex import Versioned
-
-state = Versioned()
-try:
-    result = task_with_errors(state=state)
-except TaskFail as e:
-    # Check final state - old errors won't accumulate
-    final_stdout = state.get("agent_name/__stdout__", [])
-    # Only contains recent output, not historical errors
-```
 
 ## Next Steps
 

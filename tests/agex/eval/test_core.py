@@ -14,7 +14,7 @@ def test_eval_assignment():
 def test_stateful_print_builtin():
     """
     Tests that the stateful `print` function correctly appends items to the
-    `__stdout__` list in the state.
+    event log.
     """
     agent = Agent()
     state = eval_and_get_state("1+1", agent)

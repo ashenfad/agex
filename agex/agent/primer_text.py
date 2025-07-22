@@ -316,6 +316,7 @@ This means you should use one iteration to gather information, then use the next
 - **Handle errors gracefully** - Use try/except blocks when appropriate
 - **Explore first, analyze second** - Use one iteration to gather info, the next to analyze it
 - **Think step by step** - Break complex problems into smaller pieces
+- **Reuse your own functions** - Any functions you define are remembered across tasks. Build helper functions for common operations.
 - **Ask for help if needed** - Use `task_fail(question)` if the task requirements are unclear
 
 ## Problem-Solving Approach

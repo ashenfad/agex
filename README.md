@@ -81,6 +81,8 @@ agent.module(conn, name="db", include=["execute", "commit"])
 
 [`examples/db.py`](./examples/db.py) showcases this with raw SQLite integration: agents work directly with `sqlite3.Connection` and `Cursor` objects. No `DatabaseManager` wrapper needed—agents adapt to the existing API.
 
+This concept also allows agents to build and reuse their own tools over time, creating an **[evolving, persistent compute environment](./examples/parse.py)**.
+
 ### **Agent Orchestration**
 
 `agex` supports complex systems of specialized agents. One agent's core `task` can be exposed as a simple `fn` (tool) for another agent. The function definition becomes the contract between agents. Complex data shapes can flow directly between the agents through these shared functions.
@@ -165,7 +167,7 @@ This project uses `pyenv` to manage the Python version and `uv` for package mana
 2.  **Create a virtual environment and install dependencies:**
     ```bash
     uv venv
-    uv pip install -e ".[dev,all-providers]"
+    uv pip install -e ".[dev,test,all-providers]"
     ```
 
 3.  **Set up pre-commit hooks:**

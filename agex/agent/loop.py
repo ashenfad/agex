@@ -28,11 +28,13 @@ from agex.agent.events import (
     TaskStartEvent,
 )
 from agex.agent.primer_text import BUILTIN_PRIMER
+from agex.eval.objects import PrintAction
 from agex.render.definitions import render_definitions
 from agex.render.value import ValueRenderer
+from agex.state.log import add_event_to_log
 
 from ..eval.core import evaluate_program
-from ..state import Namespaced, Versioned
+from ..state import Ephemeral, Namespaced, Versioned
 
 
 class TaskLoopMixin(BaseAgent):
@@ -77,8 +79,6 @@ class TaskLoopMixin(BaseAgent):
             exec_state = Namespaced(versioned_state, namespace=self.name)
         else:
             # None = we create and own new ephemeral state (no persistence by default)
-            from ..state import Ephemeral
-
             exec_state = Ephemeral()
 
         # Add inputs and expected return type to state for agent access
@@ -104,8 +104,6 @@ class TaskLoopMixin(BaseAgent):
         )
 
         # Create comprehensive task start event with message content
-        from agex.state.log import add_event_to_log
-
         task_start_event = TaskStartEvent(
             agent_name=self.name,
             task_name=task_name,
@@ -121,9 +119,6 @@ class TaskLoopMixin(BaseAgent):
 
         # Main task loop
         for iteration in range(self.max_iterations):
-            # Clear ALL stdout at the beginning of each iteration so only recent output is shown
-            exec_state.set("__stdout__", [])
-
             # Reconstruct conversation from state
             messages = conversation_log(exec_state, system_message, self)
 
@@ -214,8 +209,6 @@ class TaskLoopMixin(BaseAgent):
                 raise
             except Exception as e:
                 # Catch evaluation errors and put them in an OutputEvent so the agent can see them
-                from agex.eval.objects import PrintAction
-
                 error_output = OutputEvent(
                     agent_name=self.name,
                     parts=[PrintAction([f"💥 Evaluation error: {e}"])],
@@ -236,8 +229,6 @@ class TaskLoopMixin(BaseAgent):
                     result = versioned_state.snapshot()
                     if result.unsaved_keys:
                         # Add a message to stdout about the unsaved keys so the agent can see it
-                        from agex.eval.objects import PrintAction
-
                         # Strip namespace prefix from keys so agent sees clean variable names
                         agent_visible_keys = []
                         namespace_prefix = f"{self.name}/"

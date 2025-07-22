@@ -8,7 +8,7 @@ from .helpers import eval_and_get_state
 def test_stateful_help_builtin_general():
     """
     Tests that the stateful `help()` function, when called with no arguments,
-    writes its output to __stdout__.
+    writes its output to the event log.
     """
     agent = Agent()
 
