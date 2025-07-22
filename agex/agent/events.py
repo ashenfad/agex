@@ -9,6 +9,7 @@ class BaseEvent(BaseModel):
 
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     agent_name: str
+    commit_hash: str | None = None
 
     def __repr_args__(self):
         """Override Pydantic's repr args to customize the display."""

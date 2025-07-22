@@ -9,12 +9,17 @@ from typing import Callable
 
 from agex.agent.events import BaseEvent, Event
 from agex.state.core import State
+from agex.state.versioned import Versioned
 
 
 def add_event_to_log(
     state: State, event: BaseEvent, on_event: Callable[[BaseEvent], None] | None = None
 ) -> None:
     """Add an event to the log using references for O(1) storage per event."""
+    # If the state is versioned, stamp the current commit hash on the event
+    if isinstance(state, Versioned) and state.current_commit:
+        event.commit_hash = state.current_commit
+
     # Call the event handler first, if provided
     if on_event:
         try:
@@ -46,11 +51,6 @@ def add_event_to_log(
 def get_events_from_log(state: State) -> list[Event]:
     """Get events from the state."""
     event_refs = state.get("__event_log__", [])
-    events = []
-
-    for event_key in event_refs:
-        event = state.get(event_key)
-        if event:
-            events.append(event)
-
-    return events
+    # It's possible for events to be added to the log but not yet committed
+    # to the state, so we need to handle missing keys gracefully.
+    return [state.get(ref) for ref in event_refs if ref in state]
