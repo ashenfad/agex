@@ -349,3 +349,102 @@ class TestStreaming:
         # OutputEvents should be in sequence
         output_events = [e for e in events_list if isinstance(e, OutputEvent)]
         assert len(output_events) >= 3  # At least 3 print statements
+
+    def test_state_isolation(self):
+        """Test that streaming with different states doesn't interfere."""
+        agent = Agent(name="isolated_agent")
+
+        agent.llm_client = DummyLLMClient(
+            [
+                LLMResponse(
+                    thinking="I'll print something.",
+                    code='print("test message")\ntask_success("done")',
+                )
+            ]
+        )
+
+        @agent.task
+        def isolated_task():
+            """Task for isolation test."""
+            pass
+
+        # Run with two separate states
+        state1 = Versioned()
+        state2 = Versioned()
+
+        events1 = list(isolated_task.stream(state=state1))
+        events2 = list(isolated_task.stream(state=state2))
+
+        # Both should have identical event sequences
+        assert len(events1) == len(events2)
+
+        # Event types should match
+        types1 = [type(e).__name__ for e in events1]
+        types2 = [type(e).__name__ for e in events2]
+        assert types1 == types2
+
+    def test_output_event_rich_display(self):
+        """Test OutputEvent rich display methods."""
+        import datetime
+        from datetime import timezone
+
+        from agex.agent.events import OutputEvent
+
+        # Create a mock OutputEvent
+        event = OutputEvent(
+            timestamp=datetime.datetime.now(timezone.utc),
+            agent_name="test_agent",
+            parts=["simple string", 42, [1, 2, 3]],
+        )
+
+        # Test markdown representation (fallback)
+        markdown = event._repr_markdown_()
+        assert "test_agent" in markdown
+        assert "Output:" in markdown
+        assert "simple string" in markdown
+
+        # Test HTML representation
+        html = event._repr_html_()
+        assert "🤖 test_agent › Output" in html
+        assert "simple string" in html
+        assert "border: 1px solid #ddd" in html  # Check styling
+
+    def test_output_event_rich_object_handling(self):
+        """Test OutputEvent handles rich objects properly."""
+        import datetime
+        from datetime import timezone
+
+        from agex.agent.events import OutputEvent
+
+        # Mock object with _repr_html_ method
+        class MockRichObject:
+            def _repr_html_(self):
+                return "<div>Rich representation</div>"
+
+        # Mock object with _repr_mimebundle_ method
+        class MockMimeBundleObject:
+            def _repr_mimebundle_(self, include=None):
+                return {"text/html": "<span>Mime bundle HTML</span>"}
+
+        event = OutputEvent(
+            timestamp=datetime.datetime.now(timezone.utc),
+            agent_name="test_agent",
+            parts=[MockRichObject(), MockMimeBundleObject(), "regular string"],
+        )
+
+        html = event._repr_html_()
+
+        # Should include rich representations
+        assert "Rich representation" in html
+        assert "Mime bundle HTML" in html
+        assert "regular string" in html
+
+    def test_ipython_formatter_registration(self):
+        """Test that IPython formatter registration doesn't crash without IPython."""
+        # This test mainly ensures the import error handling works
+        # The actual formatter registration can't be easily tested without IPython
+        from agex.agent import events
+
+        # Should not raise any exceptions during module import
+        # The _register_ipython_formatters() function should handle missing IPython gracefully
+        assert events.OutputEvent is not None

@@ -147,6 +147,53 @@ class OutputEvent(BaseEvent):
                 break
         return base + output_md
 
+    def _repr_html_(self) -> str:
+        """Rich HTML representation for IPython/Jupyter environments."""
+        base_html = f"""
+        <div style="border: 1px solid #ddd; border-radius: 5px; padding: 10px; margin: 5px 0;">
+            <div style="font-weight: bold; color: #555; margin-bottom: 8px;">
+                🤖 {self.agent_name} › Output
+            </div>
+        """
+
+        # Add each output part using IPython's rich display if available
+        parts_html = ""
+        for i, part in enumerate(self.parts):
+            if i >= 3:  # Limit to first 3 parts
+                parts_html += f"<div style='color: #666; font-style: italic;'>... and {len(self.parts) - 3} more parts</div>"
+                break
+
+            # Try to get rich representation, fall back to string
+            try:
+                # Check if object has _repr_html_ method (pandas DataFrames, etc.)
+                if hasattr(part, "_repr_html_"):
+                    parts_html += (
+                        f"<div style='margin: 5px 0;'>{part._repr_html_()}</div>"
+                    )
+                # Check for _repr_mimebundle_ (matplotlib figures, etc.)
+                elif hasattr(part, "_repr_mimebundle_"):
+                    bundle = part._repr_mimebundle_(include=["text/html"])
+                    if "text/html" in bundle:
+                        parts_html += (
+                            f"<div style='margin: 5px 0;'>{bundle['text/html']}</div>"
+                        )
+                    else:
+                        parts_html += f"<pre style='background: #f5f5f5; padding: 8px; border-radius: 3px;'>{str(part)}</pre>"
+                else:
+                    # Default to escaped string representation
+                    import html
+
+                    escaped_part = html.escape(str(part))
+                    parts_html += f"<pre style='background: #f5f5f5; padding: 8px; border-radius: 3px;'>{escaped_part}</pre>"
+            except Exception:
+                # Fallback to string if anything goes wrong
+                import html
+
+                escaped_part = html.escape(str(part))
+                parts_html += f"<pre style='background: #f5f5f5; padding: 8px; border-radius: 3px;'>{escaped_part}</pre>"
+
+        return base_html + parts_html + "</div>"
+
 
 class ErrorEvent(BaseEvent):
     """Fired for framework-level errors that agents shouldn't need to handle."""
@@ -239,3 +286,38 @@ class FailEvent(BaseEvent):
 Event = (
     TaskStartEvent | ActionEvent | OutputEvent | ErrorEvent | SuccessEvent | FailEvent
 )
+
+
+def _register_ipython_formatters():
+    """
+    Conditionally register rich IPython formatters if IPython is available.
+    This enhances the display of OutputEvent in Jupyter notebooks without
+    requiring IPython as a dependency.
+    """
+    try:
+        from IPython.core.getipython import get_ipython
+
+        # Only register if we're actually in an IPython environment
+        ip = get_ipython()
+        if ip is not None:
+            # Register the HTML formatter for OutputEvent
+            # This will use our _repr_html_ method automatically
+            html_formatter = ip.display_formatter.formatters["text/html"]  # type: ignore[attr-defined]
+
+            # Custom formatter function that uses our _repr_html_ method
+            def output_event_html_formatter(obj):
+                return obj._repr_html_()
+
+            # Register the formatter
+            html_formatter.for_type(OutputEvent, output_event_html_formatter)  # type: ignore[attr-defined]
+
+    except ImportError:
+        # IPython not available - that's fine, we'll use the default _repr_markdown_
+        pass
+    except Exception:
+        # Any other error in registration - fail silently and use defaults
+        pass
+
+
+# Register formatters when module is imported
+_register_ipython_formatters()
