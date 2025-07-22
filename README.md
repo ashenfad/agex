@@ -132,8 +132,8 @@ Key sections:
 - **[Agent](./docs/api/agent.md)** - Creating and configuring agents
 - **[Registration](./docs/api/registration.md)** - Exposing functions, classes, and modules to agents  
 - **[Task](./docs/api/task.md)** - Defining and executing agent tasks
-- **[State](./docs/api/state.md)** - Persistent memory and state management
-- **[Events](./docs/api/events.md)** - Observability, streaming, and debugging of agent execution
+- **[State](./docs/api/state.md)** - Persistent memory with a git-like history that lets you `checkout` the agent's workspace at any point in time.
+- **[Events](./docs/api/events.md)** - A complete event log where every agent action is linked to a versioned state snapshot for powerful time-travel debugging.
 - **[View](./docs/api/view.md)** - Inspecting agents and execution state *(experimental)*
 
 For design concepts and higher-level documentation, see:

@@ -129,6 +129,7 @@ All events share these common properties from `BaseEvent`:
 
 - **`timestamp`**: UTC timestamp (datetime) when the event occurred
 - **`agent_name`**: Name of the agent that generated the event
+- **`commit_hash`**: If using `Versioned` state, the commit hash of the agent's state before this event occurred. See [Inspecting Historical State](../api/state.md#inspecting-historical-state) for how to use this for debugging.
 
 ## Consuming Events
 

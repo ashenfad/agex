@@ -72,6 +72,8 @@ if "result" in full_state:
     print(f"Final result: {full_state['result']}")
 ```
 
+You can also use `view()` to inspect a historical state snapshot retrieved using `state.checkout()`. See [Inspecting Historical State](state.md#inspecting-historical-state) for a complete example.
+
 ## Summary of Inspection Tools
 
 Use the right tool for the job:

@@ -68,6 +68,36 @@ When you explicitly use `Versioned` state, you get these benefits automatically:
 
 No additional code required - the framework handles all versioning behind the scenes when you pass a `Versioned` state object.
 
+## Inspecting Historical State
+
+A key feature of `Versioned` state is the ability to inspect the agent's workspace at a prior point in time. Because every agent execution creates a commit, the agent's history can be navigated much like a git repository.
+
+Every event in the [Events API](./events.md) is stamped with the `commit_hash` of the state as it existed just before that event occurred. This enables a debugging workflow for "time-travel" inspection:
+
+1.  **Inspect the event log** to find an interesting agent action.
+2.  **Get the `commit_hash`** from that event.
+3.  **Checkout the historical state** to see the exact memory the agent had when it made its decision.
+
+```python
+from agex import events, view
+
+# 1. Find an event of interest after a run
+all_events = events(state)
+action_event = next(e for e in all_events if isinstance(e, ActionEvent))
+
+# 2. Get the commit hash from that event
+commit_to_inspect = action_event.commit_hash
+
+# 3. Checkout the state to a new variable
+historical_state = state.checkout(commit_to_inspect)
+# `historical_state` is a read-only view of the past.
+# The original `state` object is unchanged.
+print(f"--- Inspecting state at {commit_to_inspect[:7]} ---")
+print(view(historical_state, focus="full"))
+```
+
+This allows for detailed inspection of an agent's historical state to understand its decision-making process.
+
 ## Storage Options
 
 Choose the storage backend that fits your use case:
