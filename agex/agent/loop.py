@@ -6,7 +6,7 @@ for agent tasks, including LLM communication and code evaluation.
 """
 
 import inspect
-from typing import Any
+from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
 from agex.agent.conversation import (
@@ -34,7 +34,7 @@ from ..state import Namespaced, Versioned
 
 
 class TaskLoopMixin(BaseAgent):
-    def _yield_new_events(self, exec_state, events_yielded_count):
+    def _yield_new_events(self, exec_state, events_yielded_count, on_event):
         """
         Helper method to yield new events and return updated count.
         Uses events() to capture hierarchical events including sub-agents.
@@ -44,6 +44,8 @@ class TaskLoopMixin(BaseAgent):
         all_events = events(exec_state)  # Gets all events including children
         new_events = all_events[events_yielded_count:]
         for event in new_events:
+            # The handler has already been called when the event was created.
+            # This generator is just for the stream() consumer.
             yield event
         return len(all_events)
 
@@ -55,6 +57,7 @@ class TaskLoopMixin(BaseAgent):
         inputs_instance: Any,
         return_type: type,
         state: Versioned | Namespaced | None,
+        on_event: Callable[[Any], None] | None = None,
     ):
         """
         Generator that yields events as they happen during task execution.
@@ -110,7 +113,7 @@ class TaskLoopMixin(BaseAgent):
             },
             message=initial_task_message,
         )
-        add_event_to_log(exec_state, task_start_event)
+        add_event_to_log(exec_state, task_start_event, on_event=on_event)
         yield task_start_event
         events_yielded += 1
 
@@ -134,7 +137,7 @@ class TaskLoopMixin(BaseAgent):
                     thinking=llm_response.thinking,
                     code=llm_response.code,
                 )
-                add_event_to_log(exec_state, action_event)
+                add_event_to_log(exec_state, action_event, on_event=on_event)
                 yield action_event
                 events_yielded += 1
 
@@ -146,12 +149,13 @@ class TaskLoopMixin(BaseAgent):
                         self,  # type: ignore
                         exec_state,
                         self.timeout_seconds,
+                        on_event=on_event,
                     )
 
             except TaskSuccess as task_signal:
                 # Before handling completion, yield any evaluation events first
                 events_yielded = yield from self._yield_new_events(
-                    exec_state, events_yielded
+                    exec_state, events_yielded, on_event
                 )
 
                 # Task completed successfully - log completion event and return the result
@@ -159,13 +163,13 @@ class TaskLoopMixin(BaseAgent):
                     agent_name=self.name,
                     result=task_signal.result,
                 )
-                add_event_to_log(exec_state, success_event)
+                add_event_to_log(exec_state, success_event, on_event=on_event)
                 yield success_event
                 return task_signal.result
             except TaskContinue:
                 # Before continuing, yield any evaluation events first
                 events_yielded = yield from self._yield_new_events(
-                    exec_state, events_yielded
+                    exec_state, events_yielded, on_event
                 )
 
                 # Agent wants to continue to next iteration - just continue the loop
@@ -173,7 +177,7 @@ class TaskLoopMixin(BaseAgent):
             except TaskFail as task_fail:
                 # Before handling failure, yield any evaluation events first
                 events_yielded = yield from self._yield_new_events(
-                    exec_state, events_yielded
+                    exec_state, events_yielded, on_event
                 )
 
                 # Log failure event and then re-raise
@@ -181,13 +185,13 @@ class TaskLoopMixin(BaseAgent):
                     agent_name=self.name,
                     message=task_fail.message,
                 )
-                add_event_to_log(exec_state, fail_event)
+                add_event_to_log(exec_state, fail_event, on_event=on_event)
                 yield fail_event
                 raise
             except _AgentExit:
                 # Before handling exit, yield any evaluation events first
                 events_yielded = yield from self._yield_new_events(
-                    exec_state, events_yielded
+                    exec_state, events_yielded, on_event
                 )
 
                 # Let other agent exit signals pass through (without logging)
@@ -200,13 +204,13 @@ class TaskLoopMixin(BaseAgent):
                     agent_name=self.name,
                     parts=[PrintAction([f"💥 Evaluation error: {e}"])],
                 )
-                add_event_to_log(exec_state, error_output)
+                add_event_to_log(exec_state, error_output, on_event=on_event)
                 yield error_output
                 events_yielded += 1
             else:
                 # Normal completion - yield any evaluation events
                 events_yielded = yield from self._yield_new_events(
-                    exec_state, events_yielded
+                    exec_state, events_yielded, on_event
                 )
             finally:
                 # Always snapshot after each evaluation iteration (if we own the state)
@@ -235,7 +239,7 @@ class TaskLoopMixin(BaseAgent):
                             agent_name=self.name,
                             parts=[PrintAction([warning_message])],
                         )
-                        add_event_to_log(exec_state, warning_output)
+                        add_event_to_log(exec_state, warning_output, on_event=on_event)
                         yield warning_output
                         events_yielded += 1
 
@@ -252,6 +256,7 @@ class TaskLoopMixin(BaseAgent):
         inputs_instance: Any,
         return_type: type,
         state: Versioned | Namespaced | None,
+        on_event: Callable[[Any], None] | None = None,
     ):
         """
         Execute the agent task loop.
@@ -272,7 +277,13 @@ class TaskLoopMixin(BaseAgent):
             TaskFail: If agent calls task_fail()
         """
         generator = self._task_loop_generator(
-            task_name, docstring, inputs_dataclass, inputs_instance, return_type, state
+            task_name,
+            docstring,
+            inputs_dataclass,
+            inputs_instance,
+            return_type,
+            state,
+            on_event,
         )
 
         try:

@@ -67,7 +67,7 @@ class StatefulFn:
     needs_evaluator: bool = False
 
 
-def _print_stateful(*args: Any, state: State, agent_name: str):
+def _print_stateful(*args: Any, state: State, agent_name: str, on_event=None):
     """
     A custom implementation of 'print' that appends its arguments to the
     `__event_log__` list in the agent's state as a single `OutputEvent`.
@@ -100,11 +100,11 @@ def _print_stateful(*args: Any, state: State, agent_name: str):
     from agex.state.log import add_event_to_log
 
     event = OutputEvent(agent_name=agent_name, parts=list(snapped_args))
-    add_event_to_log(state, event)
+    add_event_to_log(state, event, on_event=on_event)
 
 
 def _view_image_stateful(
-    image: Any, detail: str = "high", *, state: State, agent_name: str
+    image: Any, detail: str = "high", *, state: State, agent_name: str, on_event=None
 ) -> None:
     """
     A custom builtin to "view" an image, which adds an ImageAction to the event log.
@@ -139,7 +139,7 @@ def _view_image_stateful(
     from agex.state.log import add_event_to_log
 
     event = OutputEvent(agent_name=agent_name, parts=[image_action])
-    add_event_to_log(state, event)
+    add_event_to_log(state, event, on_event=on_event)
 
 
 dataclass = _DataclassDecorator()
@@ -429,17 +429,19 @@ def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
     from agex.state.log import add_event_to_log
 
     event = OutputEvent(agent_name=evaluator.agent.name, parts=[doc])
-    add_event_to_log(evaluator.state, event)
+    add_event_to_log(evaluator.state, event, on_event=evaluator.on_event)
 
 
 def _task_continue_with_observations(
-    *observations: Any, state: State, agent_name: str
+    *observations: Any, state: State, agent_name: str, on_event=None
 ) -> None:
     """
     Signal to the agent to continue, providing a list of observations.
     This is effectively a programmatic `print()` that also forces a continue.
     """
-    _print_stateful(*observations, state=state, agent_name=agent_name)
+    _print_stateful(
+        *observations, state=state, agent_name=agent_name, on_event=on_event
+    )
     raise TaskContinue()
 
 

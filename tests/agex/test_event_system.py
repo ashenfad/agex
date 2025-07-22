@@ -444,3 +444,99 @@ class TestEventSystem:
 
         assert has_task_start
         assert has_success
+
+    def test_on_event_handler(self):
+        """Test that on_event handler is called for parent and sub-agent events."""
+        # --- Setup ---
+        event_log = []
+
+        def test_handler(event):
+            event_log.append(event)
+
+        def faulty_handler(event):
+            raise ValueError("Handler failed")
+
+        orchestrator = Agent(name="orchestrator")
+        specialist = Agent(name="specialist")
+
+        @orchestrator.fn
+        @specialist.task
+        def specialist_task(data: str):
+            """A specialist task that prints."""
+            pass
+
+        @orchestrator.task
+        def main_task(data: str):
+            """An orchestrator task that calls a specialist."""
+            pass
+
+        specialist.llm_client = DummyLLMClient(
+            [
+                LLMResponse(
+                    thinking="Specialist thinking",
+                    code='print(f"Specialist processed: {inputs.data}")\ntask_success(inputs.data.upper())',
+                )
+            ]
+        )
+        orchestrator.llm_client = DummyLLMClient(
+            [
+                LLMResponse(
+                    thinking="Orchestrator thinking",
+                    code="result = specialist_task(inputs.data)\ntask_success(result)",
+                )
+            ]
+        )
+
+        # --- Test Regular Execution ---
+        event_log.clear()
+        state = Versioned()
+        result = main_task("test", state=state, on_event=test_handler)
+
+        assert result == "TEST"
+        event_names = [e.__class__.__name__ for e in event_log]
+
+        # Verify events from both agents were captured in order
+        expected_sequence = [
+            "TaskStartEvent",  # Orchestrator starts
+            "ActionEvent",  # Orchestrator thinks
+            "TaskStartEvent",  # Specialist starts
+            "ActionEvent",  # Specialist thinks
+            "OutputEvent",  # Specialist prints
+            "SuccessEvent",  # Specialist succeeds
+            "SuccessEvent",  # Orchestrator succeeds
+        ]
+        assert event_names == expected_sequence
+
+        agent_names = [e.agent_name for e in event_log]
+        expected_agents = [
+            "orchestrator",
+            "orchestrator",
+            "specialist",
+            "specialist",
+            "specialist",
+            "specialist",
+            "orchestrator",
+        ]
+        assert agent_names == expected_agents
+
+        # --- Test Stream Execution ---
+        event_log.clear()
+        state = Versioned()
+        stream_events = []
+        for event in main_task.stream("test", state=state, on_event=test_handler):
+            stream_events.append(event)
+
+        # Verify handler and stream saw the same events
+        assert len(event_log) == len(stream_events)
+        assert [e.__class__.__name__ for e in event_log] == [
+            e.__class__.__name__ for e in stream_events
+        ]
+
+        # --- Test Faulty Handler ---
+        event_log.clear()
+        state = Versioned()
+        # This should execute without crashing
+        result = main_task("test", state=state, on_event=faulty_handler)
+        assert result == "TEST"
+        # The handler should have failed, but the task completed. No events should be in the log.
+        assert len(event_log) == 0

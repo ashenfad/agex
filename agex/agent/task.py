@@ -187,6 +187,12 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             default=None,
             annotation="Versioned | None",
         )
+        on_event_param = inspect.Parameter(
+            "on_event",
+            inspect.Parameter.KEYWORD_ONLY,
+            default=None,
+            annotation="Callable[[BaseEvent], None] | None",
+        )
 
         # Find if there's a **kwargs parameter (VAR_KEYWORD)
         var_keyword_index = None
@@ -196,22 +202,25 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 break
 
         if var_keyword_index is not None:
-            # Insert state parameter before **kwargs
+            # Insert parameters before **kwargs
+            new_params.insert(var_keyword_index, on_event_param)
             new_params.insert(var_keyword_index, state_param)
         else:
-            # No **kwargs, append at end as before
+            # No **kwargs, append at end
             new_params.append(state_param)
+            new_params.append(on_event_param)
 
         new_sig = original_sig.replace(parameters=new_params)
 
         # Create the replacement function
         def task_wrapper(*args, **kwargs):
-            # Bind to the new signature that includes the 'state' parameter
+            # Bind to the new signature that includes the 'state' and 'on_event' parameters
             bound_args = new_sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
 
-            # Pop the state argument, it's handled separately
+            # Pop the state and on_event arguments, they are handled separately
             state = bound_args.arguments.pop("state", None)
+            on_event = bound_args.arguments.pop("on_event", None)
 
             # Create inputs dataclass instance with pass-by-value semantics
             inputs_instance = None
@@ -238,6 +247,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 inputs_instance=inputs_instance,
                 return_type=return_type,
                 state=state,
+                on_event=on_event,
             )
 
         def stream(*args, **kwargs):
@@ -246,8 +256,9 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             bound_args = new_sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
 
-            # Pop the state argument, it's handled separately
+            # Pop the state and on_event arguments, they are handled separately
             state = bound_args.arguments.pop("state", None)
+            on_event = bound_args.arguments.pop("on_event", None)
 
             # Create inputs dataclass instance with pass-by-value semantics
             inputs_instance = None
@@ -274,6 +285,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 inputs_instance=inputs_instance,
                 return_type=return_type,
                 state=state,
+                on_event=on_event,
             )
 
         # Preserve metadata
@@ -281,6 +293,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         task_wrapper.__doc__ = func.__doc__
         task_wrapper.__annotations__ = func.__annotations__.copy()
         task_wrapper.__annotations__["state"] = "Versioned | None"
+        task_wrapper.__annotations__["on_event"] = "Callable[[BaseEvent], None] | None"
         task_wrapper.__signature__ = new_sig
 
         # Add streaming method to the task wrapper

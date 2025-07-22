@@ -130,6 +130,39 @@ All events share these common properties from `BaseEvent`:
 - **`timestamp`**: UTC timestamp (datetime) when the event occurred
 - **`agent_name`**: Name of the agent that generated the event
 
+## Consuming Events
+
+There are three primary ways to consume events from agent tasks, depending on whether you need real-time access or post-hoc analysis.
+
+### 1. Post-Hoc Analysis with `events()`
+
+The `events()` function is the ideal tool for analyzing a task after it has completed. You pass it the `state` object used during the run, and it returns a complete, chronologically sorted list of all events that occurred, including those from sub-agents.
+
+```python
+from agex import events, Versioned
+
+state = Versioned()
+result = my_task("run analysis", state=state)
+
+# After the task is done, get all events for analysis
+all_events = events(state)
+action_events = [e for e in all_events if isinstance(e, ActionEvent)]
+print(f"The agent took {len(action_events)} actions.")
+```
+This is the primary method for debugging and detailed inspection of an agent's behavior.
+
+### 2. Real-time Streaming with `.stream()`
+
+For interactive use cases, like in a Jupyter notebook, you can use the `.stream()` method on a task. It returns a generator that yields events as they happen.
+
+See the **[Streaming Execution Guide in the Task API Docs](task.md#2-streaming-execution-with-stream)** for full details.
+
+### 3. Real-time Handlers with `on_event`
+
+For production monitoring and integration with observability platforms, you can pass an `on_event` handler to a task. This provides a "fire-and-forget" callback that receives every event in real time for the entire execution, including all sub-agent events.
+
+See the **[Real-time Handlers Guide in the Task API Docs](task.md#3-real-time-handlers-with-on_event)** for full details.
+
 ## Usage Patterns
 
 ### Basic Event Retrieval

@@ -98,7 +98,10 @@ class CallEvaluator(BaseEvaluator):
                     # Special cases for functions that need state but not evaluator
                     if fn_name == "print":
                         return _print_stateful(
-                            *args, state=self.state, agent_name=self.agent.name
+                            *args,
+                            state=self.state,
+                            agent_name=self.agent.name,
+                            on_event=self.on_event,
                         )
                     elif fn_name == "view_image":
                         from .builtins import _view_image_stateful
@@ -108,12 +111,16 @@ class CallEvaluator(BaseEvaluator):
                             **kwargs,
                             state=self.state,
                             agent_name=self.agent.name,
+                            on_event=self.on_event,
                         )
                     elif fn_name == "task_continue":
                         from .builtins import _task_continue_with_observations
 
                         return _task_continue_with_observations(
-                            *args, state=self.state, agent_name=self.agent.name
+                            *args,
+                            state=self.state,
+                            agent_name=self.agent.name,
+                            on_event=self.on_event,
                         )
 
                     if stateful_fn_wrapper.needs_evaluator:
@@ -166,6 +173,10 @@ class CallEvaluator(BaseEvaluator):
 
                 namespaced_state = NamespacedState(parent_state, namespace)  # type: ignore
                 kwargs["state"] = namespaced_state
+
+                # Propagate the event handler to the sub-agent call
+                if self.on_event:
+                    kwargs["on_event"] = self.on_event
 
                 # Measure sub-agent call time to deduct from parent timeout
                 import time

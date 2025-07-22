@@ -1,4 +1,5 @@
 import ast
+from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
 from agex.state.core import State
@@ -35,6 +36,7 @@ class Evaluator(
         timeout_seconds: float | None = None,
         start_time: float | None = None,
         sub_agent_time: float = 0.0,
+        on_event: Callable[[Any], None] | None = None,
     ):
         actual_timeout = (
             timeout_seconds if timeout_seconds is not None else agent.timeout_seconds
@@ -47,6 +49,7 @@ class Evaluator(
             sub_agent_time=sub_agent_time,
         )
         self.source_code = source_code
+        self.on_event = on_event
 
     def visit_Module(self, node: ast.Module):
         """Evaluates a module by visiting each statement in its body."""
@@ -62,7 +65,11 @@ class Evaluator(
 
 
 def evaluate_program(
-    program: str, agent: BaseAgent, state: State, timeout_seconds: float | None = None
+    program: str,
+    agent: BaseAgent,
+    state: State,
+    timeout_seconds: float | None = None,
+    on_event: Callable[[Any], None] | None = None,
 ):
     """
     Updates state with the result of running the program. The agent provides
@@ -73,12 +80,17 @@ def evaluate_program(
         agent: The agent providing the execution context
         state: The state to execute in
         timeout_seconds: Optional timeout override. If None, uses agent.timeout_seconds
+        on_event: Optional handler to call for each event
     """
     actual_timeout = (
         timeout_seconds if timeout_seconds is not None else agent.timeout_seconds
     )
     tree = ast.parse(program)
     evaluator = Evaluator(
-        agent, state, source_code=program, timeout_seconds=actual_timeout
+        agent,
+        state,
+        source_code=program,
+        timeout_seconds=actual_timeout,
+        on_event=on_event,
     )
     evaluator.visit(tree)

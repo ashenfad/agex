@@ -41,9 +41,50 @@ def analyze_data(data: list[float]) -> dict:  # type: ignore[return-value]
 - **Docstring**: Documentation for human callers
 
 
+## Executing Tasks
+
+An `@agent.task`-decorated function can be executed in three ways, depending on your needs for interactivity and observability.
+
+### 1. Standard Execution
+
+This is the most common way to run a task. You call the function, it blocks until the agent is finished, and then it returns the final result.
+
+```python
+result = solve_equation("2*x + 5 = 15")
+print(f"Result: {result}")
+```
+
+### 2. Streaming Execution with `.stream()`
+
+For interactive scenarios like Jupyter notebooks, you can use the `.stream()` method. This returns a **generator** that yields events as they happen, allowing you to see the agent's progress in real time.
+
+The `.stream()` method accepts the exact same arguments as the original task function.
+
+```python
+# In a Jupyter notebook
+from IPython.display import display
+
+for event in solve_equation.stream("4x + 2 = 10"):
+    display(event) # Renders a rich view of each event
+```
+
+### 3. Real-time Handlers with `on_event`
+
+For production monitoring and integration with observability platforms (like OpenTelemetry), you can pass an `on_event` handler. This provides a "fire-and-forget" way to get a real-time, hierarchical stream of all events without needing to consume a generator.
+
+The handler is a callable that receives the raw event object each time an event is created.
+
+```python
+def my_event_handler(event):
+    print(f"[{event.timestamp}] Event from {event.agent_name}: {event.__class__.__name__}")
+
+# The handler will be called for all events from the main task and any sub-agents.
+result = solve_equation("x**2 = 16", on_event=my_event_handler)
+```
+
 ## Function Signature
 
-The decorator automatically adds a `state` parameter to your function:
+The decorator automatically adds `state` and `on_event` parameters to your function signature as keyword-only arguments.
 
 ```python
 @agent.task
@@ -52,8 +93,9 @@ def my_function(x: int, y: str) -> bool:  # type: ignore[return-value]
     pass
 
 # Becomes callable as:
-# my_function(x=10, y="hello")                    # Ephemeral mode
-# my_function(x=10, y="hello", state=my_state)   # Persistent mode
+# my_function(x=10, y="hello")
+# my_function(x=10, y="hello", state=my_state)
+# my_function(x=10, y="hello", state=my_state, on_event=my_handler)
 ```
 
 ### State Parameter
@@ -71,6 +113,13 @@ result2 = my_function(x=20, y="world", state=shared_state)  # Remembers previous
 ```
 
 See [State](state.md) for more details on state management.
+
+### on_event Parameter
+- **Optional**: `on_event: Callable[[BaseEvent], None] | None = None`
+- **Purpose**: Provide a callback function to receive events in real time.
+- **Propagation**: The handler is automatically passed to any sub-agent tasks, providing a single, unified event stream for an entire end-to-end operation.
+
+See the [Events API Guide](events.md) for more on event consumption patterns.
 
 ## Dual-Decorator Pattern
 
