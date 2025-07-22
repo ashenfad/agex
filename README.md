@@ -131,8 +131,9 @@ Complete API reference documentation is available:
 Key sections:
 - **[Agent](./docs/api/agent.md)** - Creating and configuring agents
 - **[Registration](./docs/api/registration.md)** - Exposing functions, classes, and modules to agents  
-- **[Task](./docs/api/task.md)** - Defining agent tasks with `@agent.task`
+- **[Task](./docs/api/task.md)** - Defining and executing agent tasks
 - **[State](./docs/api/state.md)** - Persistent memory and state management
+- **[Events](./docs/api/events.md)** - Observability, streaming, and debugging of agent execution
 - **[View](./docs/api/view.md)** - Inspecting agents and execution state *(experimental)*
 
 For design concepts and higher-level documentation, see:
