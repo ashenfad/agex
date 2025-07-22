@@ -29,6 +29,13 @@ class TaskFail(_AgentExit):
 
 
 @dataclass
+class TaskClarify(_AgentExit):
+    """Signal that the agent needs more information to complete its task."""
+
+    message: str
+
+
+@dataclass
 class TaskContinue(_AgentExit):
     """Signal that the agent wants to continue to the next iteration."""
 

@@ -13,6 +13,7 @@ These tests verify that all components work together correctly:
 import pytest
 
 from agex.agent import Agent, TaskFail
+from agex.agent.datatypes import TaskClarify
 from agex.llm import DummyLLMClient
 from agex.llm.core import LLMResponse
 
@@ -234,6 +235,34 @@ def test_task_with_task_fail():
         impossible_task()
 
     assert exc_info.value.message == "Task is impossible to complete"
+
+
+def test_task_with_task_clarify():
+    """Test that TaskClarify exceptions are properly propagated."""
+    agent = Agent(max_iterations=2)
+
+    clarification_message = "Please provide more details."
+    responses = [
+        LLMResponse(
+            thinking="I need more information to proceed.",
+            code=f'task_clarify("{clarification_message}")',
+        )
+    ]
+
+    agent.llm_client = DummyLLMClient(responses=responses)
+
+    @agent.task("A task that requires clarification.")
+    def needs_clarification_task() -> str:  # type: ignore[return-value]
+        """
+        Execute a task that is designed to always ask for clarification.
+        """
+        pass
+
+    # Should raise TaskClarify
+    with pytest.raises(TaskClarify) as exc_info:
+        needs_clarification_task()
+
+    assert exc_info.value.message == clarification_message
 
 
 def test_task_with_no_inputs():

@@ -9,8 +9,38 @@ When you call agent tasks, they may raise specific exceptions based on how the a
 Agent tasks can raise specific exceptions during execution:
 
 ```python
-from agex import Agent, TaskFail
+from agex import Agent, TaskFail, TaskClarify
 # Note: TaskSuccess is handled internally and doesn't need to be imported
+```
+
+### `TaskClarify`
+
+Raised when an agent needs more information from the caller (a human or another agent) to proceed. This is a non-terminal, interactive signal.
+
+**Attributes:**
+- `message: str` - The agent's question or request for clarification
+
+**Example:**
+```python
+from agex import Agent, TaskClarify
+
+agent = Agent()
+
+@agent.task("Perform an action that might require confirmation.")
+def confirmable_action(action: str) -> str:  # type: ignore[return-value]
+    pass
+
+try:
+    result = confirmable_action("delete all files")
+except TaskClarify as e:
+    # The agent is asking for confirmation
+    if input(f"{e.message} (y/n)? ").lower() == 'y':
+        # Provide confirmation and retry the task
+        # (In a real app, you might pass the confirmation in the prompt or state)
+        print("Retrying with confirmation...")
+    else:
+        print("Action cancelled.")
+
 ```
 
 ### `TaskFail`
@@ -122,7 +152,8 @@ def coordinate_processing(data: str) -> str:  # type: ignore[return-value]
 Agents have three internal functions to signal different outcomes:
 
 - **`task_success(result)`** - Agent completed successfully and returns the result
-- **`task_fail(message)`** - Agent cannot complete the task and provides an error message  
+- **`task_fail(message)`** - Agent cannot complete the task and provides an error message
+- **`task_clarify(message)`** - Agent needs more information and provides a clarification message
 - **`task_continue(*observations)`** - Agent wants to continue to the next iteration with optional observations
 
 These internal agent calls become the exceptions you handle in your code (except for `task_success` which returns the result directly).
@@ -131,12 +162,14 @@ These internal agent calls become the exceptions you handle in your code (except
 
 ### For Your Code
 
-**Handle expected errors:**
+**Handle expected errors and clarifications:**
 ```python
 # ✅ Good - comprehensive error handling
 try:
     result = agent_task(data)
     process_result(result)
+except TaskClarify as e:
+    handle_clarification(e.message)
 except TaskFail as e:
     log_error(f"Task failed: {e.message}")
     handle_failure()
@@ -147,6 +180,9 @@ except TaskFail as e:
 ```python
 try:
     result = complex_task(data)
+except TaskClarify as e:
+    # Handle the agent's request for more information
+    handle_clarification(e.message)
 except TaskFail:
     # Task logic determined it couldn't complete - this is expected
     handle_task_failure()

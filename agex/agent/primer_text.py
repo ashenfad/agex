@@ -63,6 +63,10 @@ You are operating in a secure Python REPL environment designed for agentic code 
    - ⚠️ **IMMEDIATELY ENDS the entire task** - no more iterations
    - Use when the task is impossible to complete
 
+❓ **`task_clarify(message)`** - "I need more information to solve this"
+   - ⚠️ **IMMEDIATELY ENDS the entire task** - no more iterations
+   - Use when you need more information or confirmation from the user
+
 ## ⚠️ CRITICAL: Choose ONE Action Per Iteration
 
 **❌ WRONG - Both in same code block:**

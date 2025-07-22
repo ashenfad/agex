@@ -13,6 +13,7 @@ from agex.agent.conversation import (
     conversation_log,
 )
 from agex.agent.datatypes import (
+    TaskClarify,
     TaskContinue,
     TaskFail,
     TaskSuccess,
@@ -20,6 +21,7 @@ from agex.agent.datatypes import (
 )
 from agex.agent.events import (
     ActionEvent,
+    ClarifyEvent,
     FailEvent,
     OutputEvent,
     SuccessEvent,
@@ -174,6 +176,20 @@ class TaskLoopMixin(BaseAgent):
 
                 # Agent wants to continue to next iteration - just continue the loop
                 continue
+            except TaskClarify as task_clarify:
+                # Before handling clarification, yield any evaluation events first
+                events_yielded = yield from self._yield_new_events(
+                    exec_state, events_yielded, on_event
+                )
+
+                # Log clarification event and then re-raise
+                clarify_event = ClarifyEvent(
+                    agent_name=self.name,
+                    message=task_clarify.message,
+                )
+                add_event_to_log(exec_state, clarify_event, on_event=on_event)
+                yield clarify_event
+                raise
             except TaskFail as task_fail:
                 # Before handling failure, yield any evaluation events first
                 events_yielded = yield from self._yield_new_events(
@@ -292,8 +308,8 @@ class TaskLoopMixin(BaseAgent):
                 next(generator)
         except StopIteration as e:
             return e.value  # Generator's return value
-        except TaskFail:
-            raise  # Let TaskFail propagate normally
+        except (TaskFail, TaskClarify):
+            raise  # Let TaskFail and TaskClarify propagate normally
 
     def _build_system_message(self) -> str:
         """Build the system message with builtin primer, registered resources, and agent primer."""

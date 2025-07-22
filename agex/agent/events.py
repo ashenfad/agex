@@ -35,6 +35,7 @@ class BaseEvent(BaseModel):
             "OutputEvent": "📤",
             "SuccessEvent": "✅",
             "FailEvent": "❌",
+            "ClarifyEvent": "❓",
             "ErrorEvent": "⚠️",
         }
         emoji = emoji_map.get(class_name, "📋")
@@ -281,8 +282,34 @@ class FailEvent(BaseEvent):
 ```"""
 
 
+class ClarifyEvent(BaseEvent):
+    """Fired when the agent needs more information to complete the task."""
+
+    message: str
+
+    def __str__(self) -> str:
+        """Detailed string with clarification message."""
+        base = super().__str__()
+        return f"{base}\n  Message: {self.message}"
+
+    def _repr_markdown_(self) -> str:
+        """Rich markdown with clarification details."""
+        base = super()._repr_markdown_()
+        return f"""{base}  
+**Clarification Request:**
+```
+{self.message}
+```"""
+
+
 Event = (
-    TaskStartEvent | ActionEvent | OutputEvent | ErrorEvent | SuccessEvent | FailEvent
+    TaskStartEvent
+    | ActionEvent
+    | OutputEvent
+    | ErrorEvent
+    | SuccessEvent
+    | FailEvent
+    | ClarifyEvent
 )
 
 

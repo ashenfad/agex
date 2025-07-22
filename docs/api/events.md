@@ -123,6 +123,19 @@ event = FailEvent(
 )
 ```
 
+#### `ClarifyEvent`
+Generated when a task is interrupted because the agent needs more information.
+
+```python
+from agex.agent.events import ClarifyEvent
+
+# Event structure
+event = ClarifyEvent(
+    agent_name="my_agent",
+    message="Do you want to proceed with deleting the files?"
+)
+```
+
 ### Event Properties
 
 All events share these common properties from `BaseEvent`:

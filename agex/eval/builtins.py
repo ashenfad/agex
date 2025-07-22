@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
 from agex.agent.datatypes import (
+    TaskClarify,
     TaskContinue,
     TaskFail,
     TaskSuccess,
@@ -496,4 +497,5 @@ BUILTINS = {
     # Task control functions
     "task_success": TaskSuccess,
     "task_fail": TaskFail,
+    "task_clarify": TaskClarify,
 }
