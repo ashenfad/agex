@@ -1,7 +1,7 @@
 # The Big Picture: Agents That Think in Code
 
 > This document originally served placeholder of design goals. Many (but not all) have become
-> real. Its still useful as a record of the vision and architectural principles behind `agex`. 
+> real. It's still useful as a record of the vision and architectural principles behind `agex`. 
 
 Most agentic frameworks make you work against the grain of Python - wrapping functions in JSON schemas, serializing objects, and learning framework-specific abstractions. `agex` takes a different approach: **agents work directly with your Python runtime**. Agents should consume fns
 (the tools they have to work with) and are themselves functions (the tasks they are assigned).
