@@ -41,7 +41,6 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements-docs.txt
-        pip install build  # For building wheels
         pip install -e ".[dev,test,all-providers]"
 
     - name: Setup Pages
@@ -54,14 +53,10 @@ jobs:
 
     - name: Build JupyterLite
       run: |
-        # Build agex wheel for JupyterLite
-        python -m build --wheel
-        
-        # Create JupyterLite environment with agex examples
+        # Create basic JupyterLite environment
         jupyter lite build \
           --contents examples/notebook \
-          --output-dir _site/lite \
-          --pyodide dist/*.whl
+          --output-dir _site/lite
 
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
