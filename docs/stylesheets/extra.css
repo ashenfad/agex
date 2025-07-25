@@ -56,68 +56,147 @@
     font-size: 0.75rem;
 }
 
-/* Fix pandas DataFrame styling in notebooks */
-.jp-OutputArea table.dataframe {
-    border-collapse: collapse;
-    margin: 1em 0;
-    border: 1px solid #ddd;
-    font-size: 0.9em;
-}
+/* Fix pandas DataFrame styling in notebooks - AGGRESSIVE OVERRIDE */
 
-.jp-OutputArea table.dataframe th,
-.jp-OutputArea table.dataframe td {
-    border: 1px solid #ddd !important;
-    padding: 8px 12px !important;
-    text-align: left !important;
-    background: transparent !important;
-    color: var(--md-default-fg-color) !important;
-}
-
-.jp-OutputArea table.dataframe th {
-    background-color: #f8f9fa !important;
-    font-weight: 600 !important;
-    color: #333 !important;
-}
-
-.jp-OutputArea table.dataframe tbody tr:nth-child(even) {
-    background-color: #f8f9fa !important;
-}
-
-.jp-OutputArea table.dataframe tbody tr:nth-child(odd) {
-    background-color: white !important;
-}
-
-/* Alternative selector for pandas tables */
-.highlight table,
-.jp-Cell table {
+/* Target ALL tables in notebook content */
+.md-content table,
+.md-content__inner table,
+article table,
+.md-typeset table {
     border-collapse: collapse !important;
     margin: 1em 0 !important;
-    border: 1px solid #ddd !important;
+    border: none;
+    font-size: 0.9em !important;
+    width: auto !important;
 }
 
-.highlight table th,
-.highlight table td,
-.jp-Cell table th,
-.jp-Cell table td {
+.md-content table th,
+.md-content table td,
+.md-content__inner table th,
+.md-content__inner table td,
+article table th,
+article table td,
+.md-typeset table th,
+.md-typeset table td {
     border: 1px solid #ddd !important;
     padding: 8px 12px !important;
     text-align: left !important;
     background: white !important;
     color: #333 !important;
+    font-weight: normal !important;
 }
 
-.highlight table th,
-.jp-Cell table th {
+.md-content table th,
+.md-content__inner table th,
+article table th,
+.md-typeset table th {
+    background-color: #f8f9fa !important;
+    font-weight: 600 !important;
+    color: #333 !important;
+}
+
+/* Zebra striping for data tables */
+.md-content table tbody tr:nth-child(even),
+.md-content__inner table tbody tr:nth-child(even),
+article table tbody tr:nth-child(even),
+.md-typeset table tbody tr:nth-child(even) {
+    background-color: #f8f9fa !important;
+}
+
+.md-content table tbody tr:nth-child(odd),
+.md-content__inner table tbody tr:nth-child(odd),
+article table tbody tr:nth-child(odd),
+.md-typeset table tbody tr:nth-child(odd) {
+    background-color: white !important;
+}
+
+/* Override any dark/highlighted styling */
+.md-content table tbody tr,
+.md-content__inner table tbody tr,
+article table tbody tr,
+.md-typeset table tbody tr {
+    background: none !important;
+}
+
+.md-content table tbody tr:hover,
+.md-content__inner table tbody tr:hover,
+article table tbody tr:hover,
+.md-typeset table tbody tr:hover {
+    background-color: #e8f4fd !important;
+}
+
+/* NUCLEAR OPTION - Disable ALL Material table styling */
+[data-md-color-scheme="default"] table * {
+    background: white !important;
+    color: #333 !important;
+    border-color: #ddd !important;
+}
+
+/* Force pandas-style table appearance */
+table {
+    all: revert !important;
+    border-collapse: collapse !important;
+    border: none !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    font-size: 14px !important;
+    line-height: 1.4 !important;
+}
+
+table th, table td {
+    all: revert !important;
+    border: 1px solid #ddd !important;
+    padding: 6px 8px !important;
+    text-align: left !important;
+    background: white !important;
+    color: #333 !important;
+    white-space: nowrap !important;
+    max-width: 200px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+table th {
     background-color: #f8f9fa !important;
     font-weight: 600 !important;
 }
 
-.highlight table tbody tr:nth-child(even),
-.jp-Cell table tbody tr:nth-child(even) {
+table tbody tr:nth-child(even) {
     background-color: #f8f9fa !important;
 }
 
-.highlight table tbody tr:nth-child(odd),
-.jp-Cell table tbody tr:nth-child(odd) {
+table tbody tr:nth-child(odd) {
     background-color: white !important;
+}
+
+/* Responsive table container */
+.md-content table,
+article table,
+.md-typeset table {
+    display: block !important;
+    width: 100% !important;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+}
+
+/* Ensure table doesn't break layout */
+.md-content,
+article,
+.md-typeset {
+    overflow-x: auto !important;
+}
+
+/* Hide Jupyter input prompts */
+.jp-InputPrompt,
+.jp-InputArea .jp-InputPrompt,
+.jp-Cell-inputWrapper .jp-InputPrompt,
+.jp-Cell-inputWrapper .jp-InputArea .jp-InputPrompt {
+    display: none !important;
+}
+
+/* Hide Jupyter output prompts */
+.jp-OutputPrompt,
+.jp-OutputArea .jp-OutputPrompt,
+.jp-Cell-outputWrapper .jp-OutputPrompt {
+    display: none !important;
 } 

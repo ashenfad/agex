@@ -95,6 +95,8 @@ plugins:
   - mkdocs-jupyter:
       execute: false
       allow_errors: false
+      include_source: true
+      ignore_h1_titles: true
 
 extra:
   social:
