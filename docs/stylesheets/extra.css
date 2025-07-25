@@ -1,0 +1,57 @@
+/* Custom styles for agex documentation */
+
+/* Grid layout for feature cards */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.grid.cards {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+/* Feature card styling */
+.grid.cards > * {
+    border: 1px solid var(--md-default-fg-color--lighter);
+    border-radius: 0.2rem;
+    padding: 1rem;
+    transition: box-shadow 0.2s;
+}
+
+.grid.cards > *:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Code block enhancements */
+.highlight pre {
+    border-radius: 0.3rem;
+}
+
+/* Button spacing */
+.md-button + .md-button {
+    margin-left: 0.5rem;
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 76.25em) {
+    .grid.cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Custom admonition for pre-release warning */
+.md-typeset .admonition.warning {
+    border-color: rgb(255, 145, 0);
+}
+
+/* Enhanced navigation */
+.md-nav__title {
+    font-weight: 600;
+}
+
+/* Code annotation improvements */
+.md-annotation {
+    font-size: 0.75rem;
+} 

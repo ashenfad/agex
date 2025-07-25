@@ -1,6 +1,6 @@
 # agex
 
-`agex` (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to think and act using real Python code. It provides a sandboxed execution environment enabling easy access to your existing codebase. Libraries can integrate directly without intermediate tooling logic.
+`agex` (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to work directly with your existing libraries and codebase. It provides a sandboxed execution environment enabling easy access to your Python ecosystem. Libraries can integrate directly without intermediate tooling logic.
 
 ## 30-Second Example
 
