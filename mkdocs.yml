@@ -34,6 +34,7 @@ theme:
     - content.code.copy
     - content.code.annotate
   icon:
+    logo: material/code-braces
     repo: fontawesome/brands/github
 
 nav:
