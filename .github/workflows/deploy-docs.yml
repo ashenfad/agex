@@ -53,10 +53,11 @@ jobs:
 
     - name: Build JupyterLite
       run: |
-        # Create basic JupyterLite environment
+        # Create JupyterLite environment with Python kernel
         jupyter lite build \
           --contents examples/notebook \
-          --output-dir _site/lite
+          --output-dir _site/lite \
+          --config jupyter-lite.json
 
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
