@@ -56,8 +56,7 @@ jobs:
         # Create JupyterLite environment with agex examples
         jupyter lite build \
           --contents examples/notebook \
-          --output-dir _site/lite \
-          --debug
+          --output-dir _site/lite
 
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
