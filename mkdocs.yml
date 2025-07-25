@@ -90,8 +90,6 @@ markdown_extensions:
 plugins:
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
-  - minify:
-      minify_html: true
 
 extra:
   social:
