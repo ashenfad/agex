@@ -1,12 +1,10 @@
-# Interactive Demo
+# Notebook Demos
 
-Experience agex directly in your browser with our interactive notebooks. No installation, API keys, or setup required!
+Explore agex through complete, runnable examples that demonstrate core capabilities with real code, outputs, and explanations.
 
-[**🚀 Launch Interactive Environment**](../lite/lab/index.html){ .md-button .md-button--primary }
+## Featured Demonstrations
 
-## Two Learning Experiences
-
-### 📊 Demo 1: Runtime Interoperability
+### 📊 [Runtime Interoperability](demos/runtime-interoperability.ipynb)
 **Human-orchestrated workflow**
 
 Learn how agex agents work with real Python objects:
@@ -16,8 +14,8 @@ Learn how agex agents work with real Python objects:
 - Complex data visualization with `plotly.Figure` objects
 - Object passing between your code and agent environments
 
-### 🤖 Demo 2: Multi-Agent Orchestration
-**Agent-orchestrated workflow**
+### 🤖 Multi-Agent Orchestration
+**Agent-orchestrated workflow** *(Coming soon)*
 
 See sophisticated agent coordination in action:
 
@@ -26,30 +24,26 @@ See sophisticated agent coordination in action:
 - Complete event introspection and debugging capabilities
 - Time-travel debugging with execution history
 
-## How It Works
+## About These Demos
 
-These demos use:
+These demonstrations use:
 
-- **JupyterLite**: Full Python environment running in your browser via WebAssembly
-- **Dummy LLM**: Pre-recorded responses for instant, reproducible execution
-- **Real agex**: Complete framework capabilities without compromises
+- **Real agex code**: Complete framework capabilities and authentic examples
+- **Pre-recorded LLM responses**: For reproducible results and fast viewing
+- **Actual outputs**: See real DataFrames, plots, and agent execution events
 
-!!! info "About the Responses"
+!!! info "About the LLM Responses"
     The LLM responses in these demos are real outputs captured from actual model interactions, ensuring authentic examples while providing reproducible results.
 
 ## What You'll Learn
 
-By the end of these demos, you'll understand:
+By exploring these notebooks, you'll understand:
 
 1. **Why runtime interoperability matters** - See the difference between JSON tools and real object passing
 2. **How to build multi-agent systems** - Learn orchestration patterns that scale
 3. **How to debug agent behavior** - Use the events system for complete visibility
 4. **When to choose agex** - Understand the framework's strengths and use cases
 
-## Alternative Formats
+## Additional Examples
 
-Prefer to read the code? Check out our [static examples](../examples/overview.md) with detailed explanations.
-
----
-
-[**🚀 Start the Interactive Demo**](../lite/lab/index.html){ .md-button .md-button--primary } 
+For more code examples and patterns, see our [examples overview](../examples/overview.md) with detailed explanations of various agex capabilities. 

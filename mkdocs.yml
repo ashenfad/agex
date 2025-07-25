@@ -41,8 +41,7 @@ nav:
   - Quick Start: quick-start.md
   - The Big Picture: big-picture.md
   - Demos:
-    - Runtime Interoperability: examples/notebook/demo.ipynb
-    - Multi-Agent Orchestration: examples/notebook/orchestration.ipynb
+    - Runtime Interoperability: demos/runtime-interoperability.ipynb
   - API Reference:
     - Overview: api/overview.md
     - Agent: api/agent.md

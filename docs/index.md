@@ -2,9 +2,6 @@
 
 **`agex`** (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to work directly with your existing libraries and codebase. It provides a sandboxed execution environment with seamless access to the Python ecosystem.
 
-!!! tip "Interactive Demo Available"
-    **[🚀 Try agex in your browser](demo.md)** - No installation required!
-
 ## 30-Second Example
 
 ```python
@@ -79,11 +76,11 @@ my_data.sort(key=prime_finder)  # Works with existing Python code
 
     Understand the core philosophy and architectural principles behind agex.
 
--   **[🚀 Interactive Demo](demo.md)**
+-   **[📓 Notebook Demos](demo.md)**
 
     ---
 
-    Try agex directly in your browser with our JupyterLite-powered demos.
+    See complete agex workflows with code, outputs, and explanations.
 
 -   **[📖 API Reference](api/overview.md)**
 
@@ -130,4 +127,4 @@ For teams looking for a more battle-tested library built on the same "agents-tha
 
 ---
 
-*Ready to build something amazing? Start with our **[Quick Start Guide](quick-start.md)** or try the **[Interactive Demo](demo.md)**!* 
+*Ready to build something amazing? Start with our **[Quick Start Guide](quick-start.md)** or explore the **[Notebook Demos](demo.md)**!* 
