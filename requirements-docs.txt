@@ -1,9 +1,6 @@
 # Documentation and demo requirements
 mkdocs-material>=9.4.0
-mkdocs-minify-plugin>=0.7.0
-jupyterlite-core>=0.2.0
-jupyterlite-pyodide-kernel>=0.2.0
-jupyter-server>=2.0.0
+mkdocs-jupyter>=0.24.0
 
 # Optional enhancements
 mkdocs-git-revision-date-localized-plugin>=1.2.0

@@ -40,7 +40,9 @@ nav:
   - Home: index.md
   - Quick Start: quick-start.md
   - The Big Picture: big-picture.md
-  - Interactive Demo: demo.md
+  - Demos:
+    - Runtime Interoperability: examples/notebook/demo.ipynb
+    - Multi-Agent Orchestration: examples/notebook/orchestration.ipynb
   - API Reference:
     - Overview: api/overview.md
     - Agent: api/agent.md
@@ -90,6 +92,9 @@ markdown_extensions:
 plugins:
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - mkdocs-jupyter:
+      execute: false
+      allow_errors: false
 
 extra:
   social:

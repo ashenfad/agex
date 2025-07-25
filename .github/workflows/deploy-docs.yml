@@ -47,17 +47,9 @@ jobs:
       id: pages
       uses: actions/configure-pages@v4
 
-    - name: Build MkDocs site
+    - name: Build MkDocs site with notebooks
       run: |
         mkdocs build --clean --site-dir _site
-
-    - name: Build JupyterLite
-      run: |
-        # Create JupyterLite environment with Python kernel
-        jupyter lite build \
-          --contents examples/notebook \
-          --output-dir _site/lite \
-          --config jupyter-lite.json
 
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
