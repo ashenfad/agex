@@ -54,4 +54,70 @@
 /* Code annotation improvements */
 .md-annotation {
     font-size: 0.75rem;
+}
+
+/* Fix pandas DataFrame styling in notebooks */
+.jp-OutputArea table.dataframe {
+    border-collapse: collapse;
+    margin: 1em 0;
+    border: 1px solid #ddd;
+    font-size: 0.9em;
+}
+
+.jp-OutputArea table.dataframe th,
+.jp-OutputArea table.dataframe td {
+    border: 1px solid #ddd !important;
+    padding: 8px 12px !important;
+    text-align: left !important;
+    background: transparent !important;
+    color: var(--md-default-fg-color) !important;
+}
+
+.jp-OutputArea table.dataframe th {
+    background-color: #f8f9fa !important;
+    font-weight: 600 !important;
+    color: #333 !important;
+}
+
+.jp-OutputArea table.dataframe tbody tr:nth-child(even) {
+    background-color: #f8f9fa !important;
+}
+
+.jp-OutputArea table.dataframe tbody tr:nth-child(odd) {
+    background-color: white !important;
+}
+
+/* Alternative selector for pandas tables */
+.highlight table,
+.jp-Cell table {
+    border-collapse: collapse !important;
+    margin: 1em 0 !important;
+    border: 1px solid #ddd !important;
+}
+
+.highlight table th,
+.highlight table td,
+.jp-Cell table th,
+.jp-Cell table td {
+    border: 1px solid #ddd !important;
+    padding: 8px 12px !important;
+    text-align: left !important;
+    background: white !important;
+    color: #333 !important;
+}
+
+.highlight table th,
+.jp-Cell table th {
+    background-color: #f8f9fa !important;
+    font-weight: 600 !important;
+}
+
+.highlight table tbody tr:nth-child(even),
+.jp-Cell table tbody tr:nth-child(even) {
+    background-color: #f8f9fa !important;
+}
+
+.highlight table tbody tr:nth-child(odd),
+.jp-Cell table tbody tr:nth-child(odd) {
+    background-color: white !important;
 } 
