@@ -3,7 +3,7 @@ Helper functions for registering popular libraries with agents.
 """
 
 try:
-    from .pandas import register_pandas
+    from .pandas_registry import register_pandas
 except ImportError:
     # pandas not installed
     pass

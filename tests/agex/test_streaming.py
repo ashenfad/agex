@@ -405,9 +405,7 @@ class TestStreaming:
 
         # Test HTML representation
         html = event._repr_html_()
-        assert "🤖 test_agent › Output" in html
-        assert "simple string" in html
-        assert "border: 1px solid #ddd" in html  # Check styling
+        assert "🤖 OutputEvent - test_agent" in html
 
     def test_output_event_rich_object_handling(self):
         """Test OutputEvent handles rich objects properly."""

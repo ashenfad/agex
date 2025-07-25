@@ -52,7 +52,7 @@ def main():
     # share that bulk data with another agent to create a plot
     plot = plot_data(viz_request, data)
 
-    # there's a cool plot with some abberations... really!
+    # there's a cool plot with some aberrations... really!
     plot.write_image("examples/process.png")
     # see examples/process.png
 

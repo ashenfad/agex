@@ -41,13 +41,17 @@ def test_versioned_history():
     store = kv.Memory()
     state = Versioned(store)
 
+    # Capture the initial commit hash
+    h0 = state.current_commit
+
     state.set("a", 1)
     h1 = state.snapshot().commit_hash
     state.set("b", 2)
     h2 = state.snapshot().commit_hash
 
     history = list(state.history())
-    assert history == [h2, h1]
+    # History now includes the initial commit
+    assert history == [h2, h1, h0]
 
 
 def test_snapshot_creates_diff_keys():
@@ -94,15 +98,23 @@ def test_diffs():
     assert store.get("__event_log__") == ["event2"]
 
 
-def test_snapshot_on_empty_ephemeral_does_not_create_commit():
+def test_snapshot_on_empty_ephemeral_preserves_initial_commit():
     store = Versioned(kv.Memory())
-    commit1 = store.snapshot().commit_hash
-    assert commit1 is None
+    # Versioned now always has an initial commit hash (like Git's empty state)
+    initial_commit = store.current_commit
+    assert initial_commit is not None
 
+    # Snapshot on empty state returns the same initial commit
+    commit1 = store.snapshot().commit_hash
+    assert commit1 == initial_commit
+
+    # Adding data creates a new commit
     store.set("a", 1)
     commit2 = store.snapshot().commit_hash
     assert commit2 is not None
+    assert commit2 != initial_commit
 
+    # Snapshot without changes returns the same commit
     commit3 = store.snapshot().commit_hash
     assert commit2 == commit3
 

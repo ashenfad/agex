@@ -16,9 +16,10 @@ def add_event_to_log(
     state: State, event: BaseEvent, on_event: Callable[[BaseEvent], None] | None = None
 ) -> None:
     """Add an event to the log using references for O(1) storage per event."""
-    # If the state is versioned, stamp the current commit hash on the event
-    if isinstance(state, Versioned) and state.current_commit:
-        event.commit_hash = state.current_commit
+    # If the root state is versioned, stamp the current commit hash on the event
+    root_state = state.base_store
+    if isinstance(root_state, Versioned) and root_state.current_commit:
+        event.commit_hash = root_state.current_commit
 
     # Call the event handler first, if provided
     if on_event:

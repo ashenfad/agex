@@ -35,6 +35,21 @@ class Versioned(State):
         self.ephemeral = Ephemeral()
         self.removed = set()
         self.long_term = store
+
+        # If no commit hash provided, generate an initial commit hash (like Git's empty state)
+        if commit_hash is None:
+            commit_hash = _get_commit_hash()
+            # Store the initial empty commit metadata so it can be checked out
+            initial_metadata = {
+                COMMIT_KEYSET % commit_hash: pickle.dumps(
+                    {}, protocol=pickle.HIGHEST_PROTOCOL
+                ),
+                PARENT_COMMIT % commit_hash: pickle.dumps(
+                    None, protocol=pickle.HIGHEST_PROTOCOL
+                ),
+            }
+            store.set_many(**initial_metadata)
+
         self.current_commit = commit_hash
 
         # Track accessed objects for mutation detection
