@@ -6,6 +6,7 @@ for agent tasks, including LLM communication and code evaluation.
 """
 
 import inspect
+from copy import deepcopy
 from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
@@ -108,7 +109,7 @@ class TaskLoopMixin(BaseAgent):
             agent_name=self.name,
             task_name=task_name,
             inputs={
-                f.name: getattr(inputs_instance, f.name)
+                f.name: deepcopy(getattr(inputs_instance, f.name))
                 for f in inputs_dataclass.__dataclass_fields__.values()
             },
             message=initial_task_message,

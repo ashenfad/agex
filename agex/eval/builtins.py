@@ -74,25 +74,9 @@ def _print_stateful(*args: Any, state: State, agent_name: str, on_event=None):
     `__event_log__` list in the agent's state as a single `OutputEvent`.
     This function is "store-aware" to ensure the event log is immutable.
     """
-    # "Snapshot" the arguments to ensure immutability in the log
-    is_ephemeral = isinstance(state.base_store, Ephemeral)
     snapped_args: tuple
     try:
-        if is_ephemeral:
-            # In ephemeral mode, deepcopy to protect against mutable objects
-            # changing after being printed.
-            snapped_args = copy.deepcopy(args)
-        else:
-            # In Versioned mode, try to store raw references first.
-            # The versioning system handles serialization and immutability.
-            snapped_args = args
-
-            # Test if this would be serializable to avoid breaking the event log
-            import pickle
-
-            test_event = OutputEvent(agent_name=agent_name, parts=list(snapped_args))
-            pickle.dumps(test_event)  # This will raise if unpicklable
-
+        snapped_args = copy.deepcopy(args)
     except Exception:
         # Fall back to smart rendering for both state types
         snapped_args = tuple(_smart_render_for_snapshot(arg) for arg in args)
