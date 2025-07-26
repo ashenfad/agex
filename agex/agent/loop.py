@@ -30,13 +30,12 @@ from agex.agent.events import (
     TaskStartEvent,
 )
 from agex.agent.primer_text import BUILTIN_PRIMER
+from agex.eval.core import evaluate_program
 from agex.eval.objects import PrintAction
 from agex.render.definitions import render_definitions
 from agex.render.value import ValueRenderer
+from agex.state import Ephemeral, Namespaced, Versioned, events
 from agex.state.log import add_event_to_log
-
-from ..eval.core import evaluate_program
-from ..state import Ephemeral, Namespaced, Versioned
 
 
 class TaskLoopMixin(BaseAgent):
@@ -64,6 +63,7 @@ class TaskLoopMixin(BaseAgent):
         return_type: type,
         state: Versioned | Namespaced | None,
         on_event: Callable[[Any], None] | None = None,
+        setup: str | None = None,
     ):
         """
         Generator that yields events as they happen during task execution.
@@ -92,9 +92,6 @@ class TaskLoopMixin(BaseAgent):
         if "__event_log__" not in exec_state:
             exec_state.set("__event_log__", [])
 
-        # Track events already in the log (important for persistent state)
-        from agex.state import events
-
         events_yielded = len(events(exec_state))
 
         # Build system message (always static, never stored in state)
@@ -118,6 +115,32 @@ class TaskLoopMixin(BaseAgent):
         add_event_to_log(exec_state, task_start_event, on_event=on_event)
         yield task_start_event
         events_yielded += 1
+
+        # Execute setup code if provided (doesn't count against iteration limit)
+        if setup:
+            # Create ActionEvent for setup
+            setup_action_event = ActionEvent(
+                agent_name=self.name,
+                thinking="This code was automatically run to provide context for the task.",
+                code=setup,
+            )
+            add_event_to_log(exec_state, setup_action_event, on_event=on_event)
+            yield setup_action_event
+            events_yielded += 1
+
+            # Execute the setup code
+            try:
+                evaluate_program(
+                    setup,
+                    self,  # type: ignore
+                    exec_state,
+                    self.timeout_seconds,
+                    on_event=on_event,
+                )
+            except Exception:
+                # Setup errors are handled normally - they become ErrorEvents
+                # and the agent can see them in their context
+                pass
 
         # Main task loop
         for iteration in range(self.max_iterations):
@@ -266,6 +289,7 @@ class TaskLoopMixin(BaseAgent):
         return_type: type,
         state: Versioned | Namespaced | None,
         on_event: Callable[[Any], None] | None = None,
+        setup: str | None = None,
     ):
         """
         Execute the agent task loop.
@@ -292,7 +316,8 @@ class TaskLoopMixin(BaseAgent):
             inputs_instance,
             return_type,
             state,
-            on_event,
+            on_event=on_event,
+            setup=setup,
         )
 
         try:

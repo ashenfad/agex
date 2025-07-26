@@ -32,12 +32,25 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         """Keyword decorator: @agent.task(primer="...")"""
         ...
 
+    @overload
+    def task(self, *, setup: str) -> Callable[[Callable[..., T]], Callable[..., T]]:
+        """Setup decorator: @agent.task(setup="...")"""
+        ...
+
+    @overload
+    def task(
+        self, *, primer: str, setup: str
+    ) -> Callable[[Callable[..., T]], Callable[..., T]]:
+        """Primer and setup decorator: @agent.task(primer="...", setup="...")"""
+        ...
+
     def task(
         self,
         primer_or_func: Union[str, Callable[..., T], None] = None,
         /,
         *,
         primer: str | None = None,
+        setup: str | None = None,
     ) -> Union[Callable[..., T], Callable[[Callable[..., T]], Callable[..., T]]]:
         """
         Decorator to mark a function as an agent task.

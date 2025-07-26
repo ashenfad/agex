@@ -30,7 +30,14 @@ def clear_dynamic_dataclass_registry() -> None:
 
 
 class TaskMixin(TaskLoopMixin, BaseAgent):
-    def task(self, primer_or_func=None, /, *, primer: str | None = None) -> Callable:
+    def task(
+        self,
+        primer_or_func=None,
+        /,
+        *,
+        primer: str | None = None,
+        setup: str | None = None,
+    ) -> Callable:
         """
         Decorator to mark a function as an agent task.
 
@@ -56,9 +63,17 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 '''Public API documentation for callers.'''
                 pass
 
+            # With setup code for context discovery
+            @agent.task(setup="schema = db.execute('PRAGMA table_info(sales)').fetchall()")
+            def query_database():
+                '''Query the database and return results.'''
+                pass
+
         Args:
             primer_or_func: Either the primer string or the function being decorated
             primer: Keyword-only primer argument (alternative to positional)
+            setup: Optional code string to execute before the task for context discovery.
+                   This runs automatically and doesn't count against iteration limits.
 
         Returns:
             Either the decorated function (naked) or a decorator function (parameterized)
@@ -106,7 +121,9 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 if effective_primer is None and not callable(primer_or_func):
                     effective_primer = primer_or_func
 
-                return self._create_task_wrapper(func, primer=effective_primer)
+                return self._create_task_wrapper(
+                    func, primer=effective_primer, setup=setup
+                )
 
         # If the decorator is used without parentheses (@agent.task), the function
         # is passed directly as primer_or_func. In this case, we call the decorator
@@ -139,7 +156,9 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 f"def {func.__name__}(): ..."
             )
 
-    def _create_task_wrapper(self, func: Callable, primer: str | None) -> Callable:
+    def _create_task_wrapper(
+        self, func: Callable, primer: str | None, setup: str | None = None
+    ) -> Callable:
         """
         Creates the actual task wrapper function.
 
@@ -248,6 +267,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 return_type=return_type,
                 state=state,
                 on_event=on_event,
+                setup=setup,
             )
 
         def stream(*args, **kwargs):
@@ -286,6 +306,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 return_type=return_type,
                 state=state,
                 on_event=on_event,
+                setup=setup,
             )
 
         # Preserve metadata

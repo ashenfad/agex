@@ -8,11 +8,10 @@ import pytest
 from agex import events
 from agex.agent import Agent, MemberSpec, RegisteredClass
 from agex.agent.base import clear_agent_registry
-from agex.agent.events import OutputEvent
+from agex.agent.events import ActionEvent, OutputEvent
 from agex.llm import DummyLLMClient
 from agex.llm.core import LLMResponse
 from agex.state import Namespaced, Versioned
-from agex.state.kv import Memory
 from tests.agex import test_module
 
 
@@ -549,7 +548,7 @@ def test_dual_decorator_namespace_setting():
 def test_namespaced_state_isolation():
     """Test that Namespaced state provides proper isolation."""
     # Create shared state
-    main_state = Versioned(Memory())
+    main_state = Versioned()
 
     # Create namespaced views
     namespace_a = Namespaced(main_state, "agent_a")
@@ -596,7 +595,7 @@ def test_task_input_dataclass_pickling():
         pass
 
     # Create a versioned state and call the task to put inputs in state
-    state = Versioned(Memory())
+    state = Versioned()
 
     # This will trigger creation and storage of the input dataclass
     result = test_task(message="hello", value=42, state=state)  # type: ignore
@@ -656,7 +655,7 @@ def test_unserializable_object_in_state_is_handled_gracefully():
         pass
 
     # Use a Versioned state so that snapshotting is triggered
-    state = Versioned(Memory())
+    state = Versioned()
 
     # Pre-populate the state with a serializable object.
     # We must snapshot it once so it's in the long-term store and tracked
@@ -769,7 +768,7 @@ def test_shallow_validation_on_agent_output():
     def produce_large_dict() -> dict[str, int]:  # type: ignore
         pass
 
-    state = Versioned(Memory())
+    state = Versioned()
     # Pre-populate state to avoid parsing large literals in the agent's code
     state.set("test_agent/invalid_dict", large_invalid_dict)
     state.set("test_agent/valid_dict", large_valid_dict)
@@ -813,3 +812,141 @@ def test_shallow_validation_on_agent_output():
     assert "Output validation failed" in error_message
     assert "dict[str, int]" in error_message
     assert "..." not in error_message
+
+
+def test_task_setup_functionality():
+    """Test that task setup parameter works correctly."""
+    clear_agent_registry()
+
+    # Create agent
+    agent = Agent(name="setup_test_agent")
+    agent.llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="I can see the setup variable and will complete the task",
+                code='task_success(f"Setup value: {setup_var}")',
+            )
+        ]
+    )
+
+    # Define task with setup
+    @agent.task("Test task with setup", setup='setup_var = "Hello from setup!"')
+    def test_task() -> str:  # type: ignore[return-value]
+        """Test task with setup"""
+        ...
+
+    # Execute task
+    state = Versioned()
+    result = test_task(state=state)
+
+    # Verify result includes setup data
+    assert "Setup value: Hello from setup!" in result
+
+    # Verify events
+    event_list = events(state)
+
+    # Should have: TaskStart, Setup ActionEvent, Agent ActionEvent, SuccessEvent
+    assert len(event_list) == 4
+
+    # Check setup event
+    setup_event = event_list[1]
+    assert isinstance(setup_event, ActionEvent)
+    assert (
+        setup_event.thinking
+        == "This code was automatically run to provide context for the task."
+    )
+    assert setup_event.code == 'setup_var = "Hello from setup!"'
+
+    # Check that setup variable is available in state
+    setup_value = state.get("setup_test_agent/setup_var")
+    assert setup_value == "Hello from setup!"
+
+
+def test_task_setup_error_handling():
+    """Test that setup errors are handled gracefully."""
+    clear_agent_registry()
+
+    # Create agent
+    agent = Agent(name="setup_error_agent")
+    agent.llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="I see there was an error in setup, but I can still complete the task",
+                code='task_success("completed despite setup error")',
+            )
+        ]
+    )
+
+    # Define task with setup that will error
+    @agent.task(
+        "Test task with setup error", setup="invalid_variable = undefined_function()"
+    )
+    def test_task() -> str:  # type: ignore[return-value]
+        """Test task with setup that errors"""
+        ...
+
+    # Execute task
+    state = Versioned()
+    result = test_task(state=state)
+
+    # Task should still complete
+    assert "completed despite setup error" in result
+
+    # Verify events include error
+    event_list = events(state)
+
+    # Should have: TaskStart, Setup ActionEvent, Agent ActionEvent, SuccessEvent
+    # (Setup errors might not create separate ErrorEvents)
+    assert len(event_list) == 4
+
+    # Check that there's setup and agent action events
+    action_events = [e for e in event_list if isinstance(e, ActionEvent)]
+    assert len(action_events) == 2  # Setup action + agent action
+
+    # First ActionEvent should be the setup
+    setup_event = action_events[0]
+    assert (
+        setup_event.thinking
+        == "This code was automatically run to provide context for the task."
+    )
+    assert setup_event.code == "invalid_variable = undefined_function()"
+
+
+def test_task_without_setup():
+    """Test that tasks without setup still work normally."""
+    clear_agent_registry()
+
+    # Create agent
+    agent = Agent(name="no_setup_agent")
+    agent.llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="Simple task completion",
+                code='task_success("completed without setup")',
+            )
+        ]
+    )
+
+    # Define task without setup
+    @agent.task("Test task without setup")
+    def test_task() -> str:  # type: ignore[return-value]
+        """Test task without setup"""
+        ...
+
+    # Execute task
+    state = Versioned()
+    result = test_task(state=state)
+
+    # Verify result
+    assert "completed without setup" in result
+
+    # Verify events - should NOT have setup event
+    event_list = events(state)
+
+    # Should have: TaskStart, Agent ActionEvent, SuccessEvent
+    assert len(event_list) == 3
+
+    # No setup ActionEvent should be present
+    action_events = [e for e in event_list if isinstance(e, ActionEvent)]
+    assert len(action_events) == 1  # Only the agent's own action
+    assert action_events[0].thinking == "Simple task completion"
