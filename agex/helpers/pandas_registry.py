@@ -7,6 +7,8 @@ and methods with agents, including internal accessor classes.
 
 import warnings
 
+from pandas.core.window.rolling import Rolling
+
 from agex.agent import Agent
 
 PANDAS_EXCLUDE = [
@@ -53,6 +55,7 @@ def register_pandas(agent: Agent) -> None:
         agent.cls(PeriodProperties, visibility="low")
         agent.cls(StringMethods, visibility="low")
         agent.cls(CategoricalAccessor, visibility="low")
+        agent.cls(Rolling, visibility="low")
 
     except ImportError:
         warnings.warn(
