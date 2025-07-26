@@ -12,8 +12,7 @@ These tests verify that all components work together correctly:
 
 import pytest
 
-from agex.agent import Agent, TaskFail
-from agex.agent.datatypes import TaskClarify
+from agex import Agent, TaskClarify, TaskFail, TaskTimeout
 from agex.llm import DummyLLMClient
 from agex.llm.core import LLMResponse
 
@@ -200,7 +199,7 @@ def test_task_timeout_after_max_iterations():
         pass
 
     # Should timeout after max_iterations
-    with pytest.raises(TimeoutError, match="exceeded maximum iterations"):
+    with pytest.raises(TaskTimeout, match="exceeded maximum iterations"):
         never_ending_task()
 
 
