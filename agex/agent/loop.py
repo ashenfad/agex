@@ -18,6 +18,7 @@ from agex.agent.datatypes import (
     TaskContinue,
     TaskFail,
     TaskSuccess,
+    TaskTimeout,
     _AgentExit,
 )
 from agex.agent.events import (
@@ -252,7 +253,7 @@ class TaskLoopMixin(BaseAgent):
                         events_yielded += 1
 
         # If we get here, we hit max iterations
-        raise TimeoutError(
+        raise TaskTimeout(
             f"Task '{task_name}' exceeded maximum iterations ({self.max_iterations})"
         )
 

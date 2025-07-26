@@ -8,7 +8,7 @@ RESERVED_NAMES = {"dataclass", "dataclasses"}
 
 
 class _AgentExit(Exception):
-    """Base class for agent exit signals. Should not be caught by user code."""
+    """Base class for agent exit signals. Should not be caught by agent code."""
 
     pass
 
@@ -40,6 +40,13 @@ class TaskContinue(_AgentExit):
     """Signal that the agent wants to continue to the next iteration."""
 
     observations: tuple[Any, ...] = field(default_factory=tuple)
+
+
+@dataclass
+class TaskTimeout(_AgentExit):
+    """Signal that task could not be completed within limits."""
+
+    message: str
 
 
 @dataclass

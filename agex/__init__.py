@@ -1,5 +1,5 @@
-# Main tic functionality
-from .agent import Agent, TaskFail, clear_agent_registry
+from .agent import Agent, clear_agent_registry
+from .agent.datatypes import TaskClarify, TaskFail, TaskTimeout
 from .eval.core import evaluate_program as evaluate
 from .llm.config import configure_llm
 from .render.view import view
@@ -19,6 +19,8 @@ __all__ = [
     "evaluate",
     "view",
     "TaskFail",
+    "TaskClarify",
+    "TaskTimeout",
     "clear_agent_registry",
     "events",
 ]
