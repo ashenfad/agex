@@ -21,6 +21,39 @@ from .validation import validate_with_sampling
 class CallEvaluator(BaseEvaluator):
     """A mixin for evaluating function call nodes."""
 
+    def _unwrap_bound_objects(
+        self, args: list[Any], kwargs: dict[str, Any]
+    ) -> tuple[list[Any], dict[str, Any]]:
+        """
+        Unwrap BoundInstanceObject arguments for external function calls.
+
+        When agents pass registered live objects to external libraries (like pandas),
+        the libraries expect the actual underlying object, not our wrapper.
+        """
+        from .objects import BoundInstanceObject
+
+        # Unwrap args
+        unwrapped_args = []
+        for arg in args:
+            if isinstance(arg, BoundInstanceObject):
+                # Get the actual live object from the host registry
+                live_instance = arg.host_registry[arg.reg_object.name]
+                unwrapped_args.append(live_instance)
+            else:
+                unwrapped_args.append(arg)
+
+        # Unwrap kwargs
+        unwrapped_kwargs = {}
+        for key, value in kwargs.items():
+            if isinstance(value, BoundInstanceObject):
+                # Get the actual live object from the host registry
+                live_instance = value.host_registry[value.reg_object.name]
+                unwrapped_kwargs[key] = live_instance
+            else:
+                unwrapped_kwargs[key] = value
+
+        return unwrapped_args, unwrapped_kwargs
+
     def _handle_secure_format(
         self,
         format_str: str,
@@ -189,7 +222,11 @@ class CallEvaluator(BaseEvaluator):
                     self.add_sub_agent_time(sub_agent_duration)
             else:
                 # Regular function call - no timer changes needed
-                result = fn(*args, **kwargs)
+                # For external functions, unwrap BoundInstanceObject arguments
+                unwrapped_args, unwrapped_kwargs = self._unwrap_bound_objects(
+                    args, kwargs
+                )
+                result = fn(*unwrapped_args, **unwrapped_kwargs)
 
             # Special handling for agent exit signals
             if isinstance(result, _AgentExit):
