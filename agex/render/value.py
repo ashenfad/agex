@@ -147,157 +147,231 @@ class ValueRenderer:
     def _render_opaque(self, value: Any, compact: bool) -> str:
         type_name = type(value).__name__
 
-        # In compact mode, prefer structural information over full string representations
         if compact:
-            # For objects with shape (like numpy arrays, pandas DataFrames), show shape info
-            if hasattr(value, "shape"):
-                try:
-                    shape_value = getattr(value, "shape", None)
-                    if shape_value is not None:
-                        # For DataFrames, also include column info if available
-                        if hasattr(value, "columns"):
-                            try:
-                                columns = getattr(value, "columns", None)
-                                if columns is not None:
-                                    column_list = list(columns)
-                                    if len(column_list) <= 10:
-                                        # Show all columns if there aren't too many
-                                        columns_str = str(column_list)
-                                    else:
-                                        # Show first 8 columns with ellipsis for larger sets
-                                        columns_str = (
-                                            str(column_list[:8])
-                                            + f" + {len(column_list) - 8} more"
-                                        )
-                                    return f"<{type_name} shape={shape_value} columns={columns_str}>"
-                            except Exception:
-                                pass
-                        return f"<{type_name} shape={shape_value}>"
-                except Exception:
-                    pass
+            return self._render_compact_metadata(value, type_name)
 
-            # For objects with length, show length info
-            if hasattr(value, "__len__") and not isinstance(value, (str, bytes)):
-                try:
-                    length = len(value)
-                    return f"<{type_name} len={length}>"
-                except Exception:
-                    pass
-
-            # For other objects in compact mode, use generic representation
-            return f"<{type_name} object>"
-
-        # Non-compact mode: try to get a useful string representation first
+        # Try to get natural string representation
         try:
             str_repr = str(value)
-
-            # Check if the string representation is actually informative
-            # (not just the default object representation like "<object at 0x...>")
-            is_default_repr = (
-                (str_repr.startswith(f"<{type_name.lower()}") and "at 0x" in str_repr)
-                or (
-                    str_repr.startswith(f"<__main__.{type_name}")
-                    and "at 0x" in str_repr
-                )
-                or (
-                    # Handle nested class names like <test_module.test_function.<locals>.MyClass object at 0x...>
-                    ".<locals>." in str_repr
-                    and f".{type_name} object at 0x" in str_repr
-                )
-                or (
-                    # Handle other module-qualified names with memory addresses
-                    f"{type_name} object at 0x" in str_repr
-                )
-            )
-
-            if str_repr and not is_default_repr:
-                # For pandas objects and other types with useful __str__, be more permissive
-                is_pandas_like = any(
-                    word in type_name.lower()
-                    for word in ["index", "series", "dataframe", "array"]
-                )
-
-                # Clean up multiline representations by taking first meaningful line
-                if "\n" in str_repr:
-                    # For pandas Index objects, join lines to preserve column names
-                    if is_pandas_like and "Index([" in str_repr:
-                        # Remove extra whitespace and join lines to get something like:
-                        # "Index(['col1', 'col2', 'col3'], dtype='object')"
-                        clean_str = " ".join(
-                            line.strip()
-                            for line in str_repr.split("\n")
-                            if line.strip()
-                        )
-                        str_repr = clean_str
-                    else:
-                        # For other multiline objects, take first meaningful line
-                        lines = str_repr.split("\n")
-                        for line in lines:
-                            line = line.strip()
-                            if (
-                                line
-                                and not line.startswith("Name:")
-                                and not line.startswith("dtype:")
-                                and not line.startswith("Length:")
-                            ):
-                                str_repr = line
-                                break
-                        else:
-                            # If no good line found, use the first non-empty line
-                            str_repr = next(
-                                (line.strip() for line in lines if line.strip()),
-                                str_repr,
-                            )
-
-                # For short enough representations, return as-is
-                if len(str_repr) <= self.max_len:
-                    return str_repr
-
-                # For longer but still useful representations, truncate intelligently
-                if len(str_repr) > self.max_len:
-                    # For pandas-like objects, try to preserve the structure
-                    if is_pandas_like and ("[" in str_repr or "(" in str_repr):
-                        # Try to truncate while preserving structure like "Index(['col1', 'col2', ...])"
-                        if str_repr.endswith(")") and "(" in str_repr:
-                            prefix = str_repr[: str_repr.find("(") + 1]
-                            if (
-                                len(prefix) < self.max_len - 10
-                            ):  # Leave room for "...])"
-                                return prefix + "...])"
-                        elif str_repr.endswith("]") and "[" in str_repr:
-                            prefix = str_repr[: str_repr.find("[") + 1]
-                            if len(prefix) < self.max_len - 10:  # Leave room for "...]"
-                                return prefix + "...]"
-
-                    # For other long useful representations, truncate with ellipsis
-                    return str_repr[: self.max_len - 3] + "..."
-
-            # Fall back to informative representation without memory addresses
-            # Check if the object has a useful __len__ method
-            if hasattr(value, "__len__") and not isinstance(value, (str, bytes)):
-                try:
-                    length = len(value)
-                    return f"<{type_name} len={length}>"
-                except Exception:
-                    # If len() fails, continue to other checks
-                    pass
-
-            # Check if the object has a useful shape attribute
-            if hasattr(value, "shape"):
-                try:
-                    shape_value = getattr(value, "shape", None)
-                    if shape_value is not None:
-                        return f"<{type_name} shape={shape_value}>"
-                except Exception:
-                    # If shape access fails, continue to generic fallback
-                    pass
-
-            # Generic fallback
-            return f"<{type_name} object>"
-
         except Exception:
-            # If str() fails, fall back to generic representation
-            return f"<{type_name} object>"
+            return self._render_metadata_fallback(value, type_name)
+
+        # Check if it's actually informative (not default object repr)
+        if self._is_default_object_repr(str_repr, type_name):
+            return self._render_metadata_fallback(value, type_name)
+
+        # Apply intelligent truncation if needed
+        if len(str_repr) <= self.max_len:
+            return str_repr
+
+        return self._truncate_intelligently(str_repr)
+
+    def _render_compact_metadata(self, value: Any, type_name: str) -> str:
+        """Render compact metadata using introspection."""
+        metadata = []
+
+        # Check for shape (arrays, dataframes, etc.)
+        if hasattr(value, "shape"):
+            try:
+                shape = getattr(value, "shape")
+                if shape is not None:
+                    metadata.append(f"shape={shape}")
+            except Exception:
+                pass
+
+        # Check for length
+        if hasattr(value, "__len__") and not isinstance(value, (str, bytes)):
+            try:
+                length = len(value)
+                metadata.append(f"len={length}")
+            except Exception:
+                pass
+
+        # Check for columns (dataframes, etc.)
+        if hasattr(value, "columns"):
+            try:
+                columns = list(getattr(value, "columns"))
+                if len(columns) <= 5:
+                    metadata.append(f"columns={columns}")
+                else:
+                    metadata.append(f"columns=[{len(columns)} cols]")
+            except Exception:
+                pass
+
+        if metadata:
+            return f"<{type_name} {' '.join(metadata)}>"
+        return f"<{type_name} object>"
+
+    def _is_default_object_repr(self, str_repr: str, type_name: str) -> bool:
+        """Check if string representation is the default object repr."""
+        import re
+
+        # Pattern: <ClassName object at 0x...> or similar
+        default_patterns = [
+            rf"<{re.escape(type_name.lower())}.*at 0x",
+            rf"<.*\.{re.escape(type_name)}.*at 0x",
+            rf"<.*{re.escape(type_name)} object at 0x",
+        ]
+
+        for pattern in default_patterns:
+            if re.search(pattern, str_repr, re.IGNORECASE):
+                return True
+        return False
+
+    def _render_metadata_fallback(self, value: Any, type_name: str) -> str:
+        """Fallback when string repr is not informative."""
+        return self._render_compact_metadata(value, type_name)
+
+    def _truncate_intelligently(self, str_repr: str) -> str:
+        """Apply intelligent truncation based on content patterns."""
+
+        # For multiline content, try to preserve structure
+        if "\n" in str_repr:
+            return self._truncate_multiline(str_repr)
+
+        # For single line, simple truncation with ellipsis
+        return str_repr[: self.max_len - 3] + "..."
+
+    def _truncate_multiline(self, str_repr: str) -> str:
+        """Intelligently truncate multiline content."""
+        lines = str_repr.split("\n")
+
+        # If it's short enough, keep as-is
+        if len(str_repr) <= self.max_len:
+            return str_repr
+
+        # Detect if it looks like tabular data (aligned columns)
+        if self._looks_like_table(lines):
+            return self._truncate_table(lines)
+
+        # Detect if it looks like a list/array
+        if self._looks_like_list(str_repr):
+            return self._truncate_list_like(str_repr)
+
+        # For other multiline content, try to keep first few meaningful lines
+        return self._truncate_generic_multiline(lines)
+
+    def _looks_like_table(self, lines: list[str]) -> bool:
+        """Detect if content looks like tabular data."""
+        if len(lines) < 2:
+            return False
+
+        # Look for consistent spacing/alignment patterns
+        # Tables often have headers followed by data rows with similar structure
+        non_empty_lines = [line for line in lines if line.strip()]
+        if len(non_empty_lines) < 2:
+            return False
+
+        # Check if lines have similar lengths (suggesting columns)
+        lengths = [len(line.rstrip()) for line in non_empty_lines[:5]]
+        if len(set(lengths)) <= 2:  # Similar lengths suggest table structure
+            return True
+
+        # Check for numeric patterns that suggest data rows
+        import re
+
+        data_line_pattern = re.compile(r"^\s*\d+\s+.*\d+")
+        data_lines = [
+            line for line in non_empty_lines[1:6] if data_line_pattern.match(line)
+        ]
+        return len(data_lines) >= 2
+
+    def _looks_like_list(self, str_repr: str) -> bool:
+        """Detect if content looks like a list or array."""
+        import re
+
+        # Look for list-like patterns: [...], array([...]), etc.
+        list_patterns = [
+            r"^\s*\[.*\]\s*$",  # [item1, item2, ...]
+            r"^\s*array\(\[.*\]\)\s*$",  # array([...])
+            r"^\s*{\s*.*\s*}\s*$",  # {item1, item2, ...}
+        ]
+
+        for pattern in list_patterns:
+            if re.match(pattern, str_repr, re.DOTALL):
+                return True
+        return False
+
+    def _truncate_table(self, lines: list[str]) -> str:
+        """Truncate table-like content, preserving headers and some data."""
+        budget = self.max_len
+        result_lines = []
+        current_len = 0
+
+        # Always try to include the first line (likely headers)
+        if lines and lines[0].strip():
+            first_line = lines[0] + "\n"
+            if len(first_line) < budget:
+                result_lines.append(lines[0])
+                current_len += len(first_line)
+
+        # Add data lines until we run out of budget
+        for line in lines[1:]:
+            line_with_newline = line + "\n"
+            if (
+                current_len + len(line_with_newline) > budget - 10
+            ):  # Leave room for "..."
+                break
+            result_lines.append(line)
+            current_len += len(line_with_newline)
+
+        # Add ellipsis if we truncated
+        if len(result_lines) < len(lines):
+            result_lines.append("...")
+
+        return "\n".join(result_lines)
+
+    def _truncate_list_like(self, str_repr: str) -> str:
+        """Truncate list-like content, preserving structure."""
+        # Try to preserve opening and closing brackets/parens
+        if len(str_repr) <= self.max_len:
+            return str_repr
+
+        # Find the opening structure
+        for i, char in enumerate(str_repr):
+            if char in "([{":
+                # Find a good breaking point
+                truncate_point = self.max_len - 10  # Leave room for "...]" or similar
+                if truncate_point > i:
+                    prefix = str_repr[:truncate_point]
+                    # Try to end at a reasonable boundary (comma, space)
+                    for boundary in [", ", " ", ","]:
+                        if boundary in prefix[i:]:
+                            last_boundary = prefix.rfind(boundary)
+                            if last_boundary > i:
+                                prefix = prefix[:last_boundary]
+                                break
+
+                    # Add appropriate closing
+                    closing = {"(": "...)", "[": "...]", "{": "...}"}
+                    return prefix + closing.get(char, "...")
+
+        # Fallback to simple truncation
+        return str_repr[: self.max_len - 3] + "..."
+
+    def _truncate_generic_multiline(self, lines: list[str]) -> str:
+        """Truncate generic multiline content."""
+        budget = self.max_len
+        result_lines = []
+        current_len = 0
+
+        for line in lines:
+            line_with_newline = line + "\n"
+            if current_len + len(line_with_newline) > budget - 10:
+                break
+
+            # Skip metadata-like lines for generic content
+            if line.strip() and not any(
+                line.strip().startswith(prefix)
+                for prefix in ["Name:", "dtype:", "Length:", "Type:"]
+            ):
+                result_lines.append(line)
+                current_len += len(line_with_newline)
+
+        if len(result_lines) < len(lines):
+            result_lines.append("...")
+
+        return "\n".join(result_lines)
 
     def _render_dataclass(self, value: Any, depth: int) -> str:
         items = []
