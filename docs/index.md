@@ -38,7 +38,7 @@ my_data.sort(key=prime_finder)  # Works with existing Python code
 
     ---
 
-    Agents work with real Python objects like `numpy` arrays, `pandas` DataFrames, and custom classes without serialization overhead.
+    Agents work with real Python objects like `numpy` arrays, `pandas` DataFrames, and custom classes without JSON serialization overhead.
 
 -   :material-account-group: **Multi-Agent Orchestration**
 
@@ -124,7 +124,3 @@ Install agex with your preferred LLM provider:
     `agex` is a new framework in active development. While the core concepts are stabilizing, the API should be considered experimental and is subject to change.
 
 For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project.
-
----
-
-*Ready to build something amazing? Start with our **[Quick Start Guide](quick-start.md)** or explore the **[Notebook Demos](demo.md)**!* 

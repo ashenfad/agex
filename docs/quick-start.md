@@ -63,6 +63,7 @@ print(result)  # 50.26548245743669
 ```
 
 **Key concepts:**
+
 - **`Agent(primer=...)`**: Creates an agent with behavioral instructions
 - **`agent.module()`**: Exposes existing Python modules to the agent
 - **`@agent.task`**: Defines what you want accomplished (agent provides implementation)
@@ -142,6 +143,7 @@ Create specialized agents that work together using the dual-decorator pattern:
 
 ```python
 import numpy as np
+import plotly.express as px
 from plotly.graph_objects import Figure
 from agex import Agent
 
@@ -152,8 +154,7 @@ orchestrator = Agent(name="orchestrator", primer="You coordinate other agents.")
 
 # Give agents their required capabilities
 data_generator.module(np, visibility="low")
-visualizer.module(np, visibility="low")
-# visualizer would also need plotly modules registered
+visualizer.module(px, visibility="low")
 
 # Dual-decorator pattern: orchestrator can call specialist tasks
 @orchestrator.fn
@@ -179,6 +180,7 @@ plot.show()
 ```
 
 **Key concept:**
+
 - **Dual decorators**: `@orchestrator.fn` + `@specialist.task` creates hierarchical agent flows where orchestrator agents can call specialist agents as functions
 
 ## 6. Other Agent Collaboration Patterns
@@ -189,16 +191,18 @@ Beyond hierarchical flows, agents can collaborate as peers. For example, iterati
 from dataclasses import dataclass
 from typing import Literal
 
+optimizer = Agent(name="optimizer", primer="You create and hone content.")
+evaluator = Agent(name="evaluator", primer="You critique and suggest improvements.")
+
 @dataclass
 class Review:
     quality: Literal["good", "average", "bad"]
     feedback: str
 
-optimizer = Agent(name="optimizer", primer="You create and hone content.")
-evaluator = Agent(name="evaluator", primer="You critique and suggest improvements.")
-
 # Only the evaluator needs to create Review objects
 evaluator.cls(Review)
+optimizer.cls(Review, constructable=False)
+
 
 @optimizer.task
 def create_content(topic: str) -> str:  # type: ignore[return-value]
@@ -217,10 +221,7 @@ def review_content(content: str) -> Review:  # type: ignore[return-value]
 
 # Iterative improvement loop with regular Python control flow
 content = create_content("python decorators")
-while True:
-    review = review_content(content)
-    if review.quality == "good":
-        break
+while (review := review_content(content)).quality != "good":
     content = improve_content(content, review.feedback)
 
 print(f"Final content: {content}")
@@ -253,7 +254,7 @@ result = analyze_data([1, 5, 3, 9, 2, 7], state=state)
 print(f"Result: {result}")
 
 # Get all events from this agent execution
-agent_events = events(state, "debug_agent")
+agent_events = events(state)
 print(f"Generated {len(agent_events)} events")
 
 # Events include TaskStartEvent, ActionEvent, OutputEvent, SuccessEvent, and FailEvent
@@ -262,34 +263,19 @@ from agex.agent.events import ActionEvent
 
 for event in agent_events:
     if isinstance(event, ActionEvent):
-        print(f"Agent was thinking: {event.thinking[:80]}...")
-        print(f"Agent executed: {event.code[:80]}...")
+        print(f"Agent was thinking: {event.thinking}")
+        print(f"Agent executed: {event.code}")
 ```
 
-Events are incredibly useful for inspecting and debugging agent behavior. You can see exactly what agents were thinking, what code they executed, and where failures occurred. This makes troubleshooting agent issues straightforward.
+The events system makes debugging agent behavior straightforward. For comprehensive event monitoring patterns, see the **[Events API](./api/events.md)**.
 
-### Multi-Agent Timeline Analysis
+## Task Errors
 
-For complex workflows, see the execution timeline across all agents:
-
-```python
-# Get events from all agents and see the timeline
-all_events = events(state)
-print("Execution Timeline:")
-for event in all_events[-10:]:  # Last 10 events
-    time_str = event.timestamp.strftime('%H:%M:%S.%f')[:-3]
-    event_type = type(event).__name__
-    print(f"{time_str} - {event.agent_name}: {event_type}")
-```
-
-The events system makes debugging agent behavior straightforward and provides complete visibility into multi-agent coordination. For comprehensive event monitoring patterns, see the **[Events API](./api/events.md)**.
-
-## Error Handling
-
-Agent tasks can raise specific exceptions you should handle:
+Agents may refuse tasks by raising a TaskFail or a TaskClarify. A task
+may also fail if it exceeds an iteration limit:
 
 ```python
-from agex import Agent, TaskFail
+from agex import Agent, TaskFail, TaskClarify, TaskTimeout
 
 agent = Agent()
 
@@ -303,14 +289,15 @@ try:
     print(f"Success: {result}")
 except TaskFail as e:
     print(f"Task failed: {e.message}")
-# Note: Successful completion is handled internally and returns the result directly
+except TaskClarify as e:
+    print(f"Task needs clarification: {e.message}")
+except TaskTimeout as e:
+    print(f"Task exceeded max interations": {e.message})
 ```
 
 ## Next Steps
 
 - **[API Reference](./api/overview.md)** - Complete documentation for all agex APIs
 - **[Events API](./api/events.md)** - Comprehensive guide to event monitoring and debugging
-- **[Examples](../examples/)** - Real-world examples showing advanced patterns
+- **[Examples](./examples/overview.md)** - Real-world examples showing advanced patterns
 - **[The Big Picture](./big-picture.md)** - Framework philosophy and design principles
-
-Ready to build something amazing? Check out the examples directory for inspiration!

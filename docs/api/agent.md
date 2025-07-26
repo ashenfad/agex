@@ -140,12 +140,12 @@ print(agent.primer)  # "You are concise and direct."
 ### `.timeout_seconds`
 **Type:** `float`
 
-Maximum execution time for any single task. Tasks that exceed this limit will raise a `TimeoutError`.
+Maximum execution time for any single task. Tasks that exceed this limit will raise an error to the agent, giving them a chance to adapt their code.
 
 ### `.max_iterations`
 **Type:** `int`
 
-Maximum number of think-act cycles per task. If an agent doesn't complete a task within this limit, it will raise a `TimeoutError`.
+Maximum number of think-act cycles per task. If an agent doesn't complete a task within this limit, it will raise a `TaskTimeout`.
 
 ### `.max_tokens`
 **Type:** `int`

@@ -67,7 +67,7 @@ except TaskFail as e:
     # Handle the failure appropriately
 ```
 
-### `TimeoutError`
+### `TaskTimeout`
 
 Raised when an agent exceeds its maximum iterations without completing the task.
 
@@ -86,7 +86,7 @@ def problematic_task() -> int:  # type: ignore[return-value]
 
 try:
     result = problematic_task()
-except TimeoutError as e:
+except TaskTimeout as e:
     print(f"Agent timed out: {e}")
     # This suggests a problem with the agent's implementation
     # or the task complexity exceeds the iteration limit
@@ -115,7 +115,7 @@ try:
     print(f"Success: {result}")
 except TaskFail as e:
     print(f"Operation failed: {e.message}")
-except TimeoutError as e:
+except TaskTimeout as e:
     print(f"Agent timed out: {e}")
 ```
 
@@ -186,7 +186,7 @@ except TaskClarify as e:
 except TaskFail:
     # Task logic determined it couldn't complete - this is expected
     handle_task_failure()
-except TimeoutError:
+except TaskTimeout:
     # Framework issue - agent didn't finish within iteration limit
     log_framework_issue()
     # Consider increasing max_iterations or simplifying the task

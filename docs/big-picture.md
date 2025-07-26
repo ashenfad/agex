@@ -1,10 +1,7 @@
 # The Big Picture: Agents That Think in Code
 
-> This document originally served placeholder of design goals. Many (but not all) have become
-> real. It's still useful as a record of the vision and architectural principles behind `agex`. 
-
-Most agentic frameworks make you work against the grain of Python - wrapping functions in JSON schemas, serializing objects, and learning framework-specific abstractions. `agex` takes a different approach: **agents work directly with your Python runtime**. Agents should consume fns
-(the tools they have to work with) and are themselves functions (the tasks they are assigned).
+Many agentic frameworks adopt JSON tooling as the communication medium to the LLM. This
+choice means designing tool-friendly hi-level abstractions when sharing pre-existing codebases with agents. `agex` takes a different approach: **agents work directly with your Python runtime**. Agents can consume fns and are themselves functions (the tasks they are assigned).
 
 ## Core Philosophy: Code as the Language of Reasoning
 

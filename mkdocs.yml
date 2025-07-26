@@ -7,6 +7,8 @@ repo_url: https://github.com/ashenfad/agex
 
 theme:
   name: material
+  favicon: assets/code-braces.svg
+  logo: assets/code-braces.svg
   palette:
     # Light mode
     - media: "(prefers-color-scheme: light)"
@@ -33,10 +35,6 @@ theme:
     - search.suggest
     - content.code.copy
     - content.code.annotate
-  icon:
-    logo: material/code-braces
-    favicon: material/code-braces
-    repo: fontawesome/brands/github
 
 nav:
   - Home: index.md
@@ -108,6 +106,3 @@ extra:
 
 extra_css:
   - stylesheets/extra.css
-
-extra_javascript:
-  - javascripts/extra.js 

@@ -6,26 +6,26 @@ Welcome to the agex API documentation. agex is a Python agentic framework that e
 
 ## Core APIs
 
-### [Agent](agent.md)
+- **[Agent](agent.md)** -
 Create and configure agents with LLM providers, timeouts, and custom primers.
 
-### [Registration](registration.md) 
+- **[Registration](registration.md)** -
 Register functions, classes, and modules to make them available to agents. Control visibility and configure per-member settings.
 
-### [Task](task.md)
+- **[Task](task.md)** -
 Define agent tasks using the `@agent.task` decorator. Support for standalone tasks and multi-agent workflows.
 
-### [State](state.md)
+- **[State](state.md)** -
 Manage persistent state across agent executions with automatic checkpointing and rollback capabilities.
 
-### [Events](events.md)
+- **[Events](events.md)** -
 Access comprehensive agent execution events for debugging, monitoring, and multi-agent coordination. Real-time introspection into agent thinking and actions.
 
-### [Error Handling](errors.md)
-Understand agent task control functions (`task_success`, `task_fail`, `task_continue`) and exception handling (`TaskFail`, `TimeoutError`).
+- **[Error Handling](errors.md)** -
+Understand agent task control functions and exception handling (`TaskFail`, `TaskClarify`, `TaskTimeout`).
 
-### [View](view.md) ⚠️ *Experimental*
-Inspect agents and their execution state for debugging. API subject to frequent changes.
+- **[View](view.md)** -
+Inspect agents and their execution state for debugging.
 
 ## Import Patterns
 
