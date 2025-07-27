@@ -40,7 +40,6 @@ def register_pandas(agent: Agent) -> None:
         agent.module(pd, visibility="low", exclude=PANDAS_EXCLUDE)
         agent.module(pd.api.types, visibility="low")
 
-        pd.Series
         # Register accessor classes for .dt, .str, .cat
         from pandas.core.arrays.categorical import CategoricalAccessor
         from pandas.core.indexes.accessors import (
