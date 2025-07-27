@@ -165,17 +165,51 @@ print(f"The agent took {len(action_events)} actions.")
 ```
 This is the primary method for debugging and detailed inspection of an agent's behavior.
 
-### 2. Real-time Streaming with `.stream()`
+### 2. Real-time Display with `on_event`
 
-For interactive use cases, like in a Jupyter notebook, you can use the `.stream()` method on a task. It returns a generator that yields events as they happen.
+For interactive use cases where you want to see agent thinking in real-time, the most elegant approach is using `on_event` with a display function. This provides immediate visual feedback while still returning the final result.
 
-See the **[Streaming Execution Guide in the Task API Docs](task.md#2-streaming-execution-with-stream)** for full details.
+**In Jupyter notebooks:**
+```python
+from IPython.display import display
 
-### 3. Real-time Handlers with `on_event`
+# See events pop up in real-time while getting the final result
+result = my_task("analyze this data", data=dataset, on_event=display)
+print(f"Final result: {result}")
+```
 
-For production monitoring and integration with observability platforms, you can pass an `on_event` handler to a task. This provides a "fire-and-forget" callback that receives every event in real time for the entire execution, including all sub-agent events.
+**In regular Python scripts:**
+```python
+# Print events to console as they happen
+result = my_task("process files", file_list=files, on_event=print)
+print(f"Processing completed: {result}")
+```
 
-See the **[Real-time Handlers Guide in the Task API Docs](task.md#3-real-time-handlers-with-on_event)** for full details.
+### 3. Advanced Real-time Processing
+
+For cases requiring fine-grained control over event handling, you have two additional options:
+
+**Streaming with `.stream()`:**
+```python
+# Manual iteration over event stream
+for event in my_task.stream("process data", data=dataset):
+    if isinstance(event, ActionEvent):
+        print(f"Agent thinking: {event.thinking[:100]}...")
+# Note: This approach doesn't easily provide the final result
+```
+
+**Custom event handlers:**
+```python
+def custom_handler(event):
+    # Custom processing logic for production monitoring
+    if isinstance(event, FailEvent):
+        send_alert(event.message)
+    log_to_observability_platform(event)
+
+result = my_task("important task", on_event=custom_handler)
+```
+
+For complete details on streaming and custom handlers, see the **[Task API Documentation](task.md)**.
 
 ## Usage Patterns
 
