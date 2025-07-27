@@ -3,8 +3,6 @@ import sqlite3
 import numpy as np
 import pandas as pd
 
-from agex.llm.core import LLMResponse
-
 
 def create_in_memory_db():
     """
@@ -63,39 +61,3 @@ def create_in_memory_db():
     sales_df.to_sql("sales", conn, if_exists="replace", index=False)
 
     return conn
-
-
-# Canned LLM responses for demo reproducibility
-# These are actual responses captured from real LLM calls, used here for fast, reliable demos
-
-DB_CODE = """
-import pandas as pd
-query = "SELECT date, product_name, quantity_sold, price_per_unit FROM sales WHERE product_name = 'Umbrellas' ORDER BY date"
-with db.execute(query) as cursor:
-    df = pd.DataFrame(cursor.fetchall(), columns=[desc[0] for desc in cursor.description])
-task_success(df)
-"""
-
-DB_QUERY_RESPONSE = LLMResponse(
-    thinking="I need to execute the SQL query and convert the results to a pandas DataFrame.",
-    code=DB_CODE,
-)
-
-VIZ_CODE = """
-import pandas as pd
-import plotly.express as px
-# Extract year and day-of-year for overlaying cycles
-inputs.df['date'] = pd.to_datetime(inputs.df['date'])
-inputs.df['year'] = inputs.df['date'].dt.year
-inputs.df['day_of_year'] = inputs.df['date'].dt.dayofyear
-
-fig = px.line(inputs.df, x='day_of_year', y='quantity_sold', color='year', 
-              title="Yearly Sales Cycles Overlayed",
-              labels={'day_of_year': 'Day of Year', 'quantity_sold': 'Quantity Sold'})
-task_success(fig)
-"""
-
-VISUALIZATION_RESPONSE = LLMResponse(
-    thinking="I need to create a line plot showing the quantity sold over time.",
-    code=VIZ_CODE,
-)
