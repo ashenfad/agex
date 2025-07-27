@@ -142,6 +142,11 @@ class TaskLoopMixin(BaseAgent):
                 # and the agent can see them in their context
                 pass
 
+            # Yield any OutputEvents created during setup execution
+            events_yielded = yield from self._yield_new_events(
+                exec_state, events_yielded, on_event
+            )
+
         # Main task loop
         for iteration in range(self.max_iterations):
             # Reconstruct conversation from state

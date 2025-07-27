@@ -355,22 +355,15 @@ class OutputEvent(BaseEvent):
         """Rich markdown with output display."""
         base = super()._repr_markdown_()
         output_md = "\n**Output:**\n"
-        for i, part in enumerate(self.parts):
+        for part in self.parts:
             output_md += f"```\n{part}\n```\n"
-            if i >= 2:  # Limit display to first 3 parts
-                output_md += f"... and {len(self.parts) - 3} more parts\n"
-                break
         return base + output_md
 
     def _repr_html_(self) -> str:
         """Rich HTML representation for IPython/Jupyter environments."""
         # Add each output part using the helper function
         parts_html = ""
-        for i, part in enumerate(self.parts):
-            if i >= 3:  # Limit to first 3 parts
-                parts_html += f"<div style='color: #6a737d; font-style: italic; padding: 8px;'>... and {len(self.parts) - 3} more parts</div>"
-                break
-
+        for part in self.parts:
             parts_html += _render_object_as_html(part)
 
         content = _event_section("📤 Output:", parts_html, "#6f42c1")

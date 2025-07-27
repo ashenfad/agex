@@ -8,7 +8,7 @@ import pytest
 from agex import events
 from agex.agent import Agent, MemberSpec, RegisteredClass
 from agex.agent.base import clear_agent_registry
-from agex.agent.events import ActionEvent, OutputEvent
+from agex.agent.events import ActionEvent, OutputEvent, SuccessEvent, TaskStartEvent
 from agex.llm import DummyLLMClient
 from agex.llm.core import LLMResponse
 from agex.state import Namespaced, Versioned
@@ -950,3 +950,114 @@ def test_task_without_setup():
     action_events = [e for e in event_list if isinstance(e, ActionEvent)]
     assert len(action_events) == 1  # Only the agent's own action
     assert action_events[0].thinking == "Simple task completion"
+
+
+def test_batch_vs_streaming_event_consistency():
+    """Test that batch and streaming execution produce identical event sequences."""
+    clear_agent_registry()
+
+    # Setup code that produces output to test event ordering
+    SETUP_CODE = """
+print("Setup is running")
+setup_var = "Hello from setup!"
+print(f"Setup complete: {setup_var}")
+"""
+
+    # Create identical agents for batch and streaming tests
+    def create_agent(name: str) -> Agent:
+        agent = Agent(name=name)
+        agent.llm_client = DummyLLMClient(
+            responses=[
+                LLMResponse(
+                    thinking="I will complete immediately", code='task_success("done")'
+                ),
+            ]
+        )
+        return agent
+
+    # Test 1: Batch execution
+    batch_agent = create_agent("batch_agent")
+
+    @batch_agent.task("Test task", setup=SETUP_CODE)
+    def batch_task(prompt: str) -> str:  # type: ignore[return-value]
+        """Test task for batch execution"""
+        ...
+
+    batch_state = Versioned()
+    batch_result = batch_task("test", state=batch_state)
+    batch_events = events(batch_state)
+
+    # Test 2: Streaming execution
+    streaming_agent = create_agent("streaming_agent")
+
+    @streaming_agent.task("Test task", setup=SETUP_CODE)
+    def streaming_task(prompt: str) -> str:  # type: ignore[return-value]
+        """Test task for streaming execution"""
+        ...
+
+    streaming_events = list(streaming_task.stream("test"))
+
+    # Verify both results are identical
+    assert batch_result == "done"
+    assert len(streaming_events) > 0  # Streaming should yield events
+
+    # Verify event counts match
+    assert (
+        len(batch_events) == len(streaming_events)
+    ), f"Event count mismatch: batch={len(batch_events)}, streaming={len(streaming_events)}"
+
+    # Verify event types match in sequence
+    for i, (batch_event, streaming_event) in enumerate(
+        zip(batch_events, streaming_events)
+    ):
+        batch_type = type(batch_event).__name__
+        streaming_type = type(streaming_event).__name__
+
+        assert (
+            batch_type == streaming_type
+        ), f"Event {i} type mismatch: batch={batch_type}, streaming={streaming_type}"
+
+    # Verify expected event sequence
+    expected_sequence = [
+        TaskStartEvent,  # Task starts
+        ActionEvent,  # Setup action
+        OutputEvent,  # Setup output 1: "Setup is running"
+        OutputEvent,  # Setup output 2: "Setup complete: Hello from setup!"
+        ActionEvent,  # Agent action
+        SuccessEvent,  # Task completion
+    ]
+
+    assert len(batch_events) == len(
+        expected_sequence
+    ), f"Expected {len(expected_sequence)} events, got {len(batch_events)}"
+
+    for i, (event, expected_type) in enumerate(zip(batch_events, expected_sequence)):
+        assert isinstance(
+            event, expected_type
+        ), f"Event {i} should be {expected_type.__name__}, got {type(event).__name__}"
+
+    # Verify setup ActionEvent is immediately followed by its OutputEvents
+    setup_action = batch_events[1]
+    assert isinstance(setup_action, ActionEvent)
+    assert (
+        setup_action.thinking
+        == "This code was automatically run to provide context for the task."
+    )
+
+    # Next events should be OutputEvents from setup
+    setup_output_1 = batch_events[2]
+    setup_output_2 = batch_events[3]
+    assert isinstance(setup_output_1, OutputEvent)
+    assert isinstance(setup_output_2, OutputEvent)
+
+    # Verify output content
+    output_1_text = str(setup_output_1.parts[0])
+    output_2_text = str(setup_output_2.parts[0])
+    assert "Setup is running" in output_1_text
+    assert "Setup complete: Hello from setup!" in output_2_text
+
+    # Verify the last ActionEvent is the agent's actual response
+    agent_action = batch_events[4]
+    assert isinstance(agent_action, ActionEvent)
+    assert agent_action.thinking == "I will complete immediately"
+    assert agent_action.code == 'task_success("done")'
