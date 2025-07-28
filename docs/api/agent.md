@@ -21,13 +21,13 @@ Agent(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `primer` | `str \| None` | `None` | Instructions that guide the agent's behavior and personality |
+| `primer` | `str | None` | `None` | Instructions that guide the agent's behavior and personality |
 | `timeout_seconds` | `float` | `5.0` | Maximum time in seconds for task execution |
 | `max_iterations` | `int` | `10` | Maximum number of think-act cycles per task |
 | `max_tokens` | `int` | `65536` | Maximum tokens for context rendering |
-| `name` | `str \| None` | `None` | Unique identifier for the agent (auto-generated if not provided) |
-| `llm_provider` | `str \| None` | `None` | LLM provider override (falls back to environment config) |
-| `llm_model` | `str \| None` | `None` | LLM model override (falls back to environment config) |
+| `name` | `str | None` | `None` | Unique identifier for the agent (auto-generated if not provided) |
+| `llm_provider` | `str | None` | `None` | LLM provider override (falls back to environment config) |
+| `llm_model` | `str | None` | `None` | LLM model override (falls back to environment config) |
 | `**llm_kwargs` | | | Additional LLM parameters (temperature, etc.) |
 
 ### Examples

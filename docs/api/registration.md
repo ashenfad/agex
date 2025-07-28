@@ -22,10 +22,10 @@ agent.fn(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `func` | `Callable \| None` | `None` | Function to register (filled automatically when used as decorator) |
-| `name` | `str \| None` | `None` | Override the function name in the agent environment |
+| `func` | `Callable | None` | `None` | Function to register (filled automatically when used as decorator) |
+| `name` | `str | None` | `None` | Override the function name in the agent environment |
 | `visibility` | `Literal["high", "medium", "low"]` | `"high"` | How prominently to show this function in agent context |
-| `docstring` | `str \| None` | `None` | Override the function's docstring for the agent |
+| `docstring` | `str | None` | `None` | Override the function's docstring for the agent |
 
 ### Visibility Levels
 
@@ -110,7 +110,7 @@ agent.cls(
 | `exclude` | `Pattern` | `"_*"` | Pattern for members to exclude |
 | `visibility` | `Literal["high", "medium", "low"]` | `"high"` | How prominently to show this class |
 | `constructable` | `bool` | `True` | Whether agents can create instances |
-| `configure` | `dict[str, MemberSpec] \| None` | `None` | Per-member configuration overrides |
+| `configure` | `dict[str, MemberSpec] | None` | `None` | Per-member configuration overrides |
 
 ### Include/Exclude Patterns
 
@@ -216,11 +216,11 @@ agent.module(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `module` | `ModuleType` | | Module or object to register |
-| `name` | `str \| None` | `None` | Name in agent environment (required for non-modules) |
+| `name` | `str | None` | `None` | Name in agent environment (required for non-modules) |
 | `include` | `Pattern` | `"*"` | Pattern for members to include |
 | `exclude` | `Pattern` | `["_*", "*._*"]` | Pattern for members to exclude |
 | `visibility` | `Literal["high", "medium", "low"]` | `"medium"` | Default visibility for registered items |
-| `configure` | `dict[str, MemberSpec] \| None` | `None` | Per-member configuration overrides |
+| `configure` | `dict[str, MemberSpec] | None` | `None` | Per-member configuration overrides |
 
 
 
