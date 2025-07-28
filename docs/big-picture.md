@@ -80,6 +80,34 @@ insights = clean_and_analyze(messy_dataframe)
 # insights is a real dict in your session - no serialization needed
 ```
 
+### Multi-modal Reasoning
+
+Because agents execute code, they can tap into the full multi-modal capabilities of the underlying LLM. Rather than being limited to text or JSON, agents can directly "see" and reason about images generated within their environment.
+
+This is enabled by a built-in `view_image()` function. When an agent generates a plot, chart, or any other image, it can pass that image to `view_image()` to have it included in the context for its next reasoning step.
+
+**Example: Self-Correcting Visualization**
+
+```python
+# Agent generates a plot using a library like matplotlib
+plt.figure()
+plt.plot(data)
+plt.title("Initial Sales Data")
+
+# Agent "views" the plot to analyze it
+view_image(plt.gcf())
+
+# Based on what it sees, the agent might think:
+# "The title is not descriptive enough. I will add a better title and a y-axis label."
+
+# Agent then generates corrected code:
+plt.title("Quarterly Sales Performance (2023)")
+plt.ylabel("Revenue (USD)")
+view_image(plt.gcf()) # Views the improved plot to confirm
+```
+
+This creates a powerful feedback loop where an agent can generate visual information, critique its own work, and iteratively improve it—all within a single task. This capability emerges naturally from the code-centric design of `agex`, avoiding the need for specialized "vision tools" and allowing agents to work with information in a more human-like way.
+
 ### Natural Agent Orchestration
 
 Because agents return real Python objects, complex multi-agent workflows become simple Python control flow:

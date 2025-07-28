@@ -40,7 +40,7 @@ my_data.sort(key=prime_finder)  # Works with existing Python code
 
     Agents work with real Python objects like `numpy` arrays, `pandas` DataFrames, and custom classes without JSON serialization overhead.
 
--   :material-account-group: **Multi-Agent Orchestration**
+-   :material-account-group: **Multi-Agent Support**
 
     ---
 

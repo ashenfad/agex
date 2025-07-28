@@ -17,11 +17,15 @@ def make_function(description: str) -> Callable:  # type: ignore[return-value]
     """Generate a Python function from a text description."""
     pass  # Empty body - the agent implements this function
 
-# Agent returns an actual Python callable you can use immediately
-prime_finder = make_function("find the next prime larger than a given number")
+# Agent uses the 'math' module to build the requested function
+distance_fn = make_function(
+    "takes a 2D point (x, y) and returns distance from the origin"
+)
 
-print(prime_finder(100))  # 101
-my_data.sort(key=prime_finder)  # Works with existing Python code
+# Agent returns an actual Python callable you can use immediately
+points = [(4, 3), (1, 1), (0, 5)] 
+points.sort(key=distance_fn)  # Works with existing Python code
+print(f"Sorted points: {points}") # [(1, 1), (4, 3), (0, 5)]
 ```
 
 **This works because** `agex` provides easy runtime interoperability - agents don't just return JSON, they create real Python objects that live directly in your runtime environment.
@@ -45,25 +49,55 @@ detail as an agent is tasked with building a `Callable` function from a text pro
 
 ### **Fns vs Tools**
 
-Most frameworks need low-level operations bundled together as higher-level tools. This means anticipating what combinations and variations you'll need, either as stand-alone tools or complex param space:
+Most frameworks require you to anticipate how users will combine capabilities by bundling low-level operations into high-level "tools." This leads to either an explosion of specific tools or inefficient, multi-step interactions.
+
+**The Traditional Approach: Inflexible Tools**
+
+Imagine giving an agent a few simple statistical tools:
+```python
+@tool
+def calculate_mean(data: list[float]) -> float:
+  """Calculates the mean of a list of numbers."""
+  ...
+
+@tool
+def calculate_median(data: list[float]) -> float:
+  """Calculates the median of a list of numbers."""
+  ...
+```
+If a user asks for "the mean and the median," the agent must make **two separate tool calls**, increasing latency and cost. To be efficient, you would need to write a *new*, very specific tool that does both. This is not scalable.
+
+**The `agex` Approach: Composing Primitives**
+
+With `agex`, you just provide the fundamental building blocks. The agent itself writes the code to combine them efficiently for any request.
 
 ```python
-# Traditional approach: Custom tools for every combination
-@tool
-def convert_degrees_to_radians_list(degrees): ...
-@tool  
-def convert_and_filter_positive_degrees(degrees): ...
-@tool
-def convert_filter_and_sort_degrees(degrees): ...
+import statistics
+from agex import Agent
 
-# agex: Agent composes from primitives
-agent.module(math)  # Just give them math.radians()
-nums = transform("convert degrees to radians", list(range(360)))
+# Create an agent and give it access to the primitives.
+agent = Agent()
+agent.module(statistics)
+
+@agent.task
+def analyze(data: list[float], request: str) -> dict: # type: ignore[return-value]
+    """Analyzes the data to fulfill the user's request."""
+    pass
+
+# The agent can now handle a more complex, multi-step request in a single pass.
+my_data = [1, 2, 3, 4, 5, 6, 100]
+result = analyze(
+    my_data, 
+    "What are the mean and median for only the positive numbers?"
+)
+
+# The agent generated code to filter the list, then call
+# statistics.mean() and statistics.median(), returning the
+# result in one shot.
+print(result) # {'mean': 17.28, 'median': 4}
 ```
 
-Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This shifts the work of writing composite operations from humans to agents.
-
-This distinction is key to enabling agents that don't just *use* tools, but truly *program* with them.
+Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This shifts the work of writing composite operations from you to the agent.
 
 See [`examples/mathy.py`](./examples/mathy.py) for agents handling complex mathematical transformations without custom tools.
 
