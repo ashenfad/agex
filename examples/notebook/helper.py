@@ -61,3 +61,16 @@ def create_in_memory_db():
     sales_df.to_sql("sales", conn, if_exists="replace", index=False)
 
     return conn
+
+
+SETUP_ACTION = """
+# find columns in the sales table
+columns_info = db.execute("PRAGMA table_info(sales)").fetchall()
+columns = [col[1] for col in columns_info]
+
+# find distinct product names
+distinct_products = db.execute("SELECT DISTINCT product_name FROM sales").fetchall()
+product_names = [row[0] for row in distinct_products]
+
+task_continue("Columns in 'sales' table:", columns, "Distinct product_names:", product_names)
+"""
