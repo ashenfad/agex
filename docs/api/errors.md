@@ -71,6 +71,8 @@ except TaskFail as e:
 
 Raised when an agent exceeds its maximum iterations without completing the task.
 
+Think of this less as a recoverable error and more as a **signal to the developer** that something is wrong. An agent should ideally complete its task or fail gracefully (`TaskFail`) well within the iteration limit. A timeout suggests the agent is stuck in a loop, the task is too complex for the current `max_iterations` setting, or there is an issue in the framework itself.
+
 **When it occurs:**
 - Agent reaches `max_iterations` without finishing
 - Usually indicates a framework issue or infinite loop in agent logic

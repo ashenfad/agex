@@ -63,24 +63,24 @@ from agex.agent.events import TaskStartEvent
 
 # Event structure
 event = TaskStartEvent(
-    agent_name="my_agent",
-    task_name="process_data", 
-    inputs={"data": "value"},
-    message="Process the input data and return results."
+    agent_name="my_agent",    # str
+    task_name="process_data", # str
+    inputs={"data": "value"}, # dict[str, Any]
+    message="...",            # str
 )
 ```
 
-#### `ActionEvent` 
+#### `ActionEvent`
 Generated when an agent takes an action (thinks + executes code).
 
 ```python
 from agex.agent.events import ActionEvent
 
-# Event structure  
+# Event structure
 event = ActionEvent(
-    agent_name="my_agent",
-    thinking="I need to calculate the sum of these numbers.",
-    code="result = sum([1, 2, 3, 4, 5])\nprint(f'Sum: {result}')"
+    agent_name="my_agent",    # str
+    thinking="...",           # str
+    code="..."                # str
 )
 ```
 
@@ -92,12 +92,12 @@ from agex.agent.events import OutputEvent
 
 # Event structure
 event = OutputEvent(
-    agent_name="my_agent",
-    parts=[PrintAction(["Hello, world!"])]  # Raw objects stored
+    agent_name="my_agent",    # str
+    parts=[...]               # list of raw output objects
 )
 ```
 
-#### `SuccessEvent` 
+#### `SuccessEvent`
 Generated when a task completes successfully.
 
 ```python
@@ -105,8 +105,8 @@ from agex.agent.events import SuccessEvent
 
 # Event structure
 event = SuccessEvent(
-    agent_name="my_agent",
-    result="Processing completed successfully!"
+    agent_name="my_agent",    # str
+    result="Completed!"       # Any (the actual return value of the task)
 )
 ```
 
@@ -118,8 +118,8 @@ from agex.agent.events import FailEvent
 
 # Event structure
 event = FailEvent(
-    agent_name="my_agent", 
-    message="Could not process input: invalid format"
+    agent_name="my_agent",    # str
+    message="...",            # str
 )
 ```
 
@@ -131,8 +131,8 @@ from agex.agent.events import ClarifyEvent
 
 # Event structure
 event = ClarifyEvent(
-    agent_name="my_agent",
-    message="Do you want to proceed with deleting the files?"
+    agent_name="my_agent",    # str
+    message="...",            # str
 )
 ```
 
@@ -140,9 +140,9 @@ event = ClarifyEvent(
 
 All events share these common properties from `BaseEvent`:
 
-- **`timestamp`**: UTC timestamp (datetime) when the event occurred
-- **`agent_name`**: Name of the agent that generated the event
-- **`commit_hash`**: If using `Versioned` state, the commit hash of the agent's state before this event occurred. See [Inspecting Historical State](../api/state.md#inspecting-historical-state) for how to use this for debugging.
+- **`timestamp`**: `datetime` - UTC timestamp when the event occurred.
+- **`agent_name`**: `str` - Name of the agent that generated the event.
+- **`commit_hash`**: `str | None` - If using `Versioned` state, the commit hash of the agent's state before this event occurred. See [Inspecting Historical State](../api/state.md#inspecting-historical-state) for how to use this for debugging.
 
 ## Consuming Events
 
@@ -164,6 +164,42 @@ action_events = [e for e in all_events if isinstance(e, ActionEvent)]
 print(f"The agent took {len(action_events)} actions.")
 ```
 This is the primary method for debugging and detailed inspection of an agent's behavior.
+
+### Choosing a Real-time Consumption Pattern: `on_event` vs. `.stream()`
+
+For handling events in real-time, `agex` offers two patterns. Your choice depends on whether you need the task's final result and how you want to handle events from nested, multi-agent workflows.
+
+#### Use `on_event`: The Recommended Approach
+
+The `on_event` parameter is the recommended approach for most use cases. It provides a true, real-time stream of events as they happen—even from sub-agents—while preserving the natural flow of a standard function call.
+
+```python
+# You get the final result AND see events from all agents immediately.
+result = orchestrator_task("run pipeline", on_event=print)
+print(f"Task complete. Result: {result}")
+```
+
+**Choose `on_event` if:**
+*   You need the final return value of the task.
+*   You want a simple "fire-and-forget" callback for logging or display.
+*   You require immediate, non-batched events from hierarchical agent workflows.
+
+#### Use `.stream()`: For Event-Focused Workflows
+
+The `.stream()` method is best for situations where your primary goal is to process the stream of events itself, and the final return value of the task is not needed.
+
+```python
+# You get a generator of events, but not the final result.
+for event in my_task.stream("process data"):
+    if isinstance(event, ActionEvent):
+        log_agent_action(event)
+```
+
+**Choose `.stream()` if:**
+*   You only care about the events and not the final result.
+*   You want to use generator-based control flow (e.g., with `itertools`).
+
+**Known Limitation:** In hierarchical agent workflows, events from a sub-agent are currently yielded as a **single batch** after the sub-agent task completes, rather than being streamed one-by-one. This is a result of the current AST evaluation architecture and may change in the future. For true real-time streaming in multi-agent setups, prefer `on_event`.
 
 ### 2. Real-time Display with `on_event`
 
@@ -303,7 +339,7 @@ from agex import Agent, TaskFail, events
 
 agent = Agent(name="error_prone")
 
-@agent.task  
+@agent.task
 def might_fail() -> str:
     """Task that might fail."""
     pass
@@ -319,8 +355,8 @@ except TaskFail:
 ## Related APIs
 
 - **[State Management](state.md)**: Understanding state containers and persistence
-- **[Agent](agent.md)**: Creating agents that generate events  
+- **[Agent](agent.md)**: Creating agents that generate events
 - **[Task](task.md)**: Defining tasks that create TaskStartEvent and completion events
 - **[View](view.md)**: Experimental APIs for agent introspection
 
-The events system forms the foundation for agent introspection and is essential for debugging, monitoring, and building sophisticated multi-agent systems. 
+The events system forms the foundation for agent introspection and is essential for debugging, monitoring, and building sophisticated multi-agent systems.

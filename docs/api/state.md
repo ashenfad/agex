@@ -208,11 +208,17 @@ def build_analysis(data: list[float]) -> dict:  # type: ignore[return-value]
 shared_state = Versioned()
 result1 = build_analysis([1, 2, 3], state=shared_state)
 result2 = build_analysis([4, 5, 6], state=shared_state)  # Remembers result1
-
-# ⚠️ Objects must be picklable for persistence
-# Database cursors, file handles, etc. cannot be assigned to variables
-# but can still be used via direct method chaining
 ```
+
+### Working with Unpicklable Objects in Versioned State
+
+A key constraint of `Versioned` state is that all stored objects must be serializable (picklable). This has a direct implication for working with common resources like database connections, file handles, or network sockets, as these objects cannot be pickled.
+
+Therefore, an agent using `Versioned` state **cannot assign these live objects to variables.**
+
+The correct pattern is to use these resources and consume their results within a single, chained operation. Because the agent is the one writing the code, it's crucial to instruct it on this pattern in your primer.
+
+For a complete, practical example of how to do this, see the `db.py` example and its associated `db_primer.py`. The primer coaches the agent on how to correctly chain database calls (e.g., `db.execute(...).fetchall()`) to work within the constraints of `Versioned` state.
 
 ### Choosing Between Approaches
 

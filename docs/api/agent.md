@@ -140,7 +140,14 @@ print(agent.primer)  # "You are concise and direct."
 ### `.timeout_seconds`
 **Type:** `float`
 
-Maximum execution time for any single task. Tasks that exceed this limit will raise an error to the agent, giving them a chance to adapt their code.
+The maximum time in seconds allowed for a **single block of agent-generated code to execute**.
+
+This is a critical safety mechanism designed to prevent runaway code, such as an infinite `while True:` loop. If a single code evaluation cycle exceeds this duration, the execution is stopped, and an `EvalError` is injected into the agent's environment with a descriptive message. The agent can see this error, understand that its previous code was too slow or stuck, and attempt a different approach.
+
+**Scope of the Timeout:**
+
+*   **It applies strictly to code execution.** Time spent waiting for an LLM provider to respond with a new action does **not** count towards this timeout.
+*   **It is per-evaluation.** In multi-agent workflows, time spent by a sub-agent executing its task does not count against the parent agent's timeout for a separate evaluation cycle. Each agent's execution is timed independently.
 
 ### `.max_iterations`
 **Type:** `int`

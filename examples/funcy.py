@@ -4,8 +4,9 @@ Function Generation
 Agent generates executable Python functions that can be called directly in your
 program. Demonstrates runtime interoperability beyond JSON serialization.
 
-Note: This example was tested with gpt-4.1-nano to demonstrate that
-even smaller LLMs can effectively use the agex framework.
+Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
+"micro-DSL" approach—providing a focused set of capabilities—can guide even
+smaller models to success on complex tasks.
 """
 
 import math

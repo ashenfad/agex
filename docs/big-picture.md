@@ -144,6 +144,18 @@ view_image(plt.gcf())
 
 This creates natural feedback loops where agents can critique and improve their own visual outputs within a single task.
 
+### The Middle Road: Guidance Through a Curated Environment
+
+Agentic frameworks often present a stark choice: provide agents with rigid, pre-defined tools, or grant them access to a full, open-ended compute environment. The former offers guidance at the cost of flexibility, while the latter provides power at the cost of reliability and focus.
+
+`agex` is designed to be the middle road.
+
+The whitelist registration system is more than just a security feature; it is a tool for **guidance**. By carefully selecting which functions, classes, and modules you expose, you are effectively designing a **"micro-DSL" (Domain-Specific Language)** for your agent.
+
+This curated environment helps guide the agent toward a correct solution by limiting its scope of action to only the most relevant capabilities. It prevents the agent from getting lost in the vastness of a full compute environment and encourages it to compose the building blocks you provide. This "micro-DSL" can be as small or as large as you need, from a handful of functions to broad access to a library, giving you fine-grained control over the balance of guidance and freedom.
+
+This philosophy of providing guidance through a curated environment is the primary design principle. A powerful and welcome side-effect of this approach is a robust security model. By limiting the agent's world to only the capabilities you provide, you inherently prevent it from accessing unintended, and potentially unsafe, parts of your system. Security becomes a natural outcome of thoughtful agent design.
+
 ### Hierarchical Agent Architecture
 
 The dual-decorator pattern enables elegant specialist architectures:

@@ -5,8 +5,9 @@ Agent generates complex NumPy arrays representing synthetic datasets.
 Creates bulk data (1000 arrays) that flows to user or other agents
 without special handling.
 
-Note: This example was tested with gpt-4.1-nano to demonstrate that
-even smaller LLMs can effectively use the agex framework.
+Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
+"micro-DSL" approach—providing a focused set of capabilities—can guide even
+smaller models to success on complex tasks.
 """
 
 import random

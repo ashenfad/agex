@@ -7,8 +7,9 @@ an agent build a brand-new agent on demand.
 Note: This example works within a single process. For persistence across
 process boundaries, see docs/todo-local-registries-for-dynamic-agents.md
 
-Note: This example was tested with gpt-4.1-nano to demonstrate that
-even smaller LLMs can effectively use the agex framework.
+Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
+"micro-DSL" approach—providing a focused set of capabilities—can guide even
+smaller models to success on complex tasks.
 """
 
 import math

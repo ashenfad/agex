@@ -8,14 +8,15 @@ For more details:
 - https://github.com/lastmile-ai/mcp-agent?tab=readme-ov-file#evaluator-optimizer
 - https://www.anthropic.com/engineering/building-effective-agents
 
-Note: This example was tested with gpt-4.1-nano to demonstrate that
-even smaller LLMs can effectively use the agex framework.
+Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
+"micro-DSL" approach—providing a focused set of capabilities—can guide even
+smaller models to success on complex tasks.
 """
 
 from dataclasses import dataclass
 from typing import Literal
 
-from agex import Agent, Versioned
+from agex import Agent
 
 optimizer = Agent(name="optimizer", primer="You create and hone jokes.")
 evaluator = Agent(name="evaluator", primer="You critique jokes & suggest improvements.")

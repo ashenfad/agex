@@ -112,6 +112,37 @@ agent.cls(
 | `constructable` | `bool` | `True` | Whether agents can create instances |
 | `configure` | `dict[str, MemberSpec] | None` | `None` | Per-member configuration overrides |
 
+### Usage Patterns
+
+#### As a Decorator
+
+Use the decorator pattern for classes you are defining in your own code. This is the most common pattern for exposing your application's data structures to an agent.
+
+```python
+from dataclasses import dataclass
+
+@agent.cls
+@dataclass
+class User:
+    name: str
+    email: str
+```
+
+#### Direct Registration
+
+Use the direct call pattern to register classes that are imported from external libraries, such as `pandas` or even the Python standard library.
+
+```python
+import pandas as pd
+
+# Register the pandas DataFrame class with specific methods
+agent.cls(
+    pd.DataFrame,
+    include=["head", "tail", "describe", "info"],
+    visibility="medium"
+)
+```
+
 ### Include/Exclude Patterns
 
 Pattern types work the same for both `.cls()` and `.module()` registration:
@@ -119,17 +150,6 @@ Pattern types work the same for both `.cls()` and `.module()` registration:
 - **String (Glob)**: `"get_*"`, `"*"` - matches names using shell-style wildcards
 - **List of Strings**: `["name", "email"]` - explicit member names or glob patterns  
 - **Predicate Function**: `lambda name: not name.startswith('_')` - custom logic
-
-```python
-# Glob patterns
-agent.cls(MyClass, include="get_*", exclude=["delete", "remove_*"])
-
-# Explicit lists  
-agent.cls(User, include=["name", "email", "get_profile"])
-
-# Custom logic
-agent.cls(MyClass, include=lambda n: not n.startswith('_') and 'delete' not in n.lower())
-```
 
 ## Per-Member Configuration (`configure` parameter)
 
@@ -163,38 +183,6 @@ agent.module(
 - `docstring`: Custom docstring for the agent (for functions/methods)  
 - `constructable`: Whether class can be instantiated (for classes in modules)
 
-### Usage Examples
-
-```python
-from dataclasses import dataclass
-import pandas as pd
-
-# Decorator pattern for classes you're defining
-@agent.cls
-@dataclass
-class User:
-    name: str
-    email: str
-
-
-# Custom registration with options
-@agent.cls(include=["name", "email"])
-@dataclass
-class RestrictedUser:
-    name: str
-    email: str
-    _id: int
-    admin_token: str  # Not exposed to agent
-
-# Direct call pattern for external libraries
-agent.cls(
-    pd.DataFrame, 
-    include=["head", "tail", "describe", "info"],
-    exclude=["to_*"],
-    visibility="medium"
-)
-```
-
 ## `.module()` - Module Registration
 
 Register functions, classes, and constants from entire modules.
@@ -222,7 +210,22 @@ agent.module(
 | `visibility` | `Literal["high", "medium", "low"]` | `"medium"` | Default visibility for registered items |
 | `configure` | `dict[str, MemberSpec] | None` | `None` | Per-member configuration overrides |
 
+### A Note on Instance Registration
 
+While `.module()` is typically used for Python modules, it can also register the methods of a class *instance*. This is done to maintain a consistent API based on a key design principle:
+
+*   `agent.fn()` registers a single callable.
+*   `agent.module()` registers a namespace containing multiple callables.
+
+From this perspective, an instance (a collection of methods) is treated similarly to a module (a collection of functions).
+
+However, because instances do not have an intrinsic `__name__` attribute like modules do, you **must** provide the `name` parameter when registering an instance. This gives the agent a handle to refer to the object in its code.
+
+```python
+# Registering an instance requires the 'name' parameter
+db_connection = sqlite3.connect(":memory:")
+agent.module(db_connection, name="db", include=["execute", "commit"])
+```
 
 ### Usage Examples
 

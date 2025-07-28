@@ -10,8 +10,9 @@ persistence, which requires method chaining for unpickleable objects like cursor
 The agent is coached via detailed primer instructions on how to work within these
 constraints effectively.
 
-Note: This example was tested with gpt-4.1-nano to demonstrate that
-even smaller LLMs can effectively use the agex framework.
+Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
+"micro-DSL" approach—providing a focused set of capabilities—can guide even
+smaller models to success on complex tasks.
 """
 
 import sqlite3

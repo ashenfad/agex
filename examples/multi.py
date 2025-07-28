@@ -2,10 +2,18 @@
 Hierarchical Agent Orchestration
 
 An orchestrator agent delegates to specialist sub-agents for data generation
-and visualization. Bulk data flows between sub-agents without special handling.
+and visualization.
 
-Note: This example was tested with gpt-4.1-nano to demonstrate that
-even smaller LLMs can effectively use the agex framework.
+This example demonstrates how to build a multi-agent system by composing
+agent tasks from different modules. It imports and uses the `make_data` task
+from `data.py` and the `plot_data` task from `viz.py`, treating them as
+callable functions for the orchestrator agent.
+
+Bulk data flows between sub-agents without special handling.
+
+Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
+"micro-DSL" approach—providing a focused set of capabilities—can guide even
+smaller models to success on complex tasks.
 """
 
 from data import make_data
