@@ -31,12 +31,12 @@ from agex.eval.user_errors import (
     AgexZeroDivisionError,
 )
 from agex.eval.utils import get_allowed_attributes_for_instance
-from agex.state import Ephemeral, State
+from agex.state import Live, State
 
 
 def _smart_render_for_snapshot(value: Any) -> str:
     """
-    Smart rendering for snapshotting objects in ephemeral mode.
+    Smart rendering for snapshotting objects in live mode.
     Uses ValueRenderer with conservative limits to avoid huge strings.
     """
     from agex.render.value import ValueRenderer
@@ -98,10 +98,10 @@ def _view_image_stateful(
         raise AgexValueError("detail must be 'low' or 'high'")
 
     # "Snapshot" the arguments to ensure immutability in the log
-    is_ephemeral = isinstance(state.base_store, Ephemeral)
+    is_live = isinstance(state.base_store, Live)
     snapped_image: Any
     try:
-        if is_ephemeral:
+        if is_live:
             snapped_image = copy.deepcopy(image)
         else:
             snapped_image = image

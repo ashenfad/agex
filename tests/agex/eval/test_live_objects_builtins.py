@@ -12,7 +12,7 @@ from agex.agent.datatypes import MemberSpec
 from agex.agent.events import OutputEvent
 from agex.eval.core import evaluate_program
 from agex.eval.user_errors import AgexAttributeError
-from agex.state import Ephemeral
+from agex.state import Live
 
 
 class MockDatabaseConnection:
@@ -50,7 +50,7 @@ def test_dir_on_registered_object():
     )
 
     # Set up state for direct evaluation
-    exec_state = Ephemeral()
+    exec_state = Live()
 
     # Test dir() on the registered object
     code = "dir_result = dir(db)"
@@ -79,7 +79,7 @@ def test_hasattr_on_registered_object():
     )  # Exclude connect method and private methods
 
     # Set up state for direct evaluation
-    exec_state = Ephemeral()
+    exec_state = Live()
 
     # Test hasattr() on the registered object
     code = """
@@ -118,7 +118,7 @@ def test_help_on_registered_object():
     )
 
     # Set up state for direct evaluation
-    exec_state = Ephemeral()
+    exec_state = Live()
 
     # Test help() on the registered object
     code = "help(db)"
@@ -158,7 +158,7 @@ def test_help_general_includes_objects():
     agent.module(db, name="db")
 
     # Set up state for direct evaluation
-    exec_state = Ephemeral()
+    exec_state = Live()
 
     # Test general help()
     code = "help()"
@@ -187,7 +187,7 @@ def test_dir_no_args_includes_object_names():
     agent.module(db, name="db")
 
     # Set up state for direct evaluation
-    exec_state = Ephemeral()
+    exec_state = Live()
 
     # Add the object to scope (this would normally happen via name resolution)
     exec_state.set("db", agent.object_registry["db"])
@@ -220,7 +220,7 @@ def test_help_on_object_with_no_docstrings():
     agent.module(db, name="db")
 
     # Set up state for direct evaluation
-    exec_state = Ephemeral()
+    exec_state = Live()
 
     # Test help() on the registered object
     code = "help(db)"
@@ -257,7 +257,7 @@ def test_object_behaves_like_module():
     agent.module(db, name="db")
 
     # Set up state for direct evaluation
-    exec_state = Ephemeral()
+    exec_state = Live()
 
     # Test that both can be introspected similarly
     code = """
@@ -343,7 +343,7 @@ def test_live_object_attribute_assignment():
     # Register with specific properties
     agent.module(test_obj, name="test_obj", include=["public_attr", "numeric_attr"])
 
-    state = Ephemeral()
+    state = Live()
 
     # Test setting allowed attribute
     evaluate_program('test_obj.public_attr = "modified"', agent, state)
@@ -369,7 +369,7 @@ def test_live_object_attribute_assignment_blocked():
     # Register with limited properties
     agent.module(test_obj, name="test_obj", include=["public_attr"])
 
-    state = Ephemeral()
+    state = Live()
 
     # Test that setting unregistered attribute is blocked
     with pytest.raises(AgexAttributeError) as exc_info:
@@ -388,7 +388,7 @@ def test_live_object_attribute_deletion():
     # Register with specific properties
     agent.module(test_obj, name="test_obj", include=["public_attr"])
 
-    state = Ephemeral()
+    state = Live()
 
     # Verify attribute exists initially
     assert hasattr(test_obj, "public_attr")
@@ -408,7 +408,7 @@ def test_live_object_attribute_deletion_blocked():
     # Register with limited properties
     agent.module(test_obj, name="test_obj", include=["public_attr"])
 
-    state = Ephemeral()
+    state = Live()
 
     # Test that deleting unregistered attribute is blocked
     with pytest.raises(AgexAttributeError) as exc_info:
@@ -460,7 +460,7 @@ def test_class_instance_respects_registration_limits():
     # Register class with limited attributes
     agent.cls(MockChildClass, include=["child_attr"])
 
-    state = Ephemeral()
+    state = Live()
 
     # Create instance
     evaluate_program('obj = MockChildClass("val1", "val2", "val3")', agent, state)
@@ -486,7 +486,7 @@ def test_agent_self_registration_works():
     # Register agent instance as live object
     agent.module(agent, name="agent")
 
-    state = Ephemeral()
+    state = Live()
 
     # Test assignment to primer
     evaluate_program('agent.primer = "modified_primer"', agent, state)
@@ -512,7 +512,7 @@ def test_live_object_security_vs_class_security():
     test_agent = Agent(primer="test")
     agent.module(test_agent, name="live_agent")
 
-    state = Ephemeral()
+    state = Live()
 
     # Live object should allow access to all registered properties
     evaluate_program("result1 = live_agent.timeout_seconds", agent, state)
@@ -542,7 +542,7 @@ def test_live_object_method_access_unchanged():
     # Register with methods and properties
     agent.module(test_obj, name="test_obj", include=["public_method", "public_attr"])
 
-    state = Ephemeral()
+    state = Live()
 
     # Test method call
     evaluate_program("result = test_obj.public_method()", agent, state)

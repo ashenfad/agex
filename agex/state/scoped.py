@@ -6,7 +6,7 @@ falling back to a parent scope for reads. Writes are always local.
 from typing import Any, Iterable
 
 from .core import State
-from .ephemeral import Ephemeral
+from .live import Live
 
 
 class Scoped(State):
@@ -21,7 +21,7 @@ class Scoped(State):
     """
 
     def __init__(self, parent_store: State):
-        self._local_store = Ephemeral()
+        self._local_store = Live()
         self._parent_store = parent_store
         super().__init__()
 

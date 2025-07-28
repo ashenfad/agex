@@ -1,20 +1,20 @@
 from typing import Any, Iterable
 
 from .core import State
-from .ephemeral import Ephemeral
+from .live import Live
 from .versioned import Versioned
 
 
 class Namespaced(State):
-    def __init__(self, state: "Versioned | Namespaced | Ephemeral", namespace: str):
+    def __init__(self, state: "Versioned | Namespaced | Live", namespace: str):
         if "/" in namespace:
             raise ValueError("Namespace names cannot contain '/'")
 
-        # Only allow wrapping base storage states (Versioned, Namespaced, Ephemeral)
+        # Only allow wrapping base storage states (Versioned, Namespaced, Live)
         # Reject transient evaluation states (Scoped, LiveClosureState, etc.)
-        if not isinstance(state, (Versioned, Namespaced, Ephemeral)):
+        if not isinstance(state, (Versioned, Namespaced, Live)):
             raise TypeError(
-                f"Namespaced can only wrap Versioned, Namespaced, or Ephemeral states, "
+                f"Namespaced can only wrap Versioned, Namespaced, or Live states, "
                 f"not {type(state).__name__}. Use state.base_store to get the underlying base state."
             )
 
@@ -25,7 +25,7 @@ class Namespaced(State):
             # Wrapping another Namespaced - extend its path
             self.namespace = f"{state.namespace}/{namespace}"
         else:
-            # Wrapping Versioned or Ephemeral (root level)
+            # Wrapping Versioned or Live (root level)
             self.namespace = namespace
 
     @property

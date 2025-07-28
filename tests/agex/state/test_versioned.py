@@ -98,7 +98,7 @@ def test_diffs():
     assert store.get("__event_log__") == ["event2"]
 
 
-def test_snapshot_on_empty_ephemeral_preserves_initial_commit():
+def test_snapshot_on_empty_live_preserves_initial_commit():
     store = Versioned(kv.Memory())
     # Versioned now always has an initial commit hash (like Git's empty state)
     initial_commit = store.current_commit

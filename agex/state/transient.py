@@ -8,7 +8,7 @@ intermediate values, bypassing pickle safety checks for variables marked as tran
 from typing import Any, Iterable
 
 from .core import State
-from .ephemeral import Ephemeral
+from .live import Live
 
 
 class TransientScope(State):
@@ -21,7 +21,7 @@ class TransientScope(State):
     """
 
     def __init__(self, parent_store: State, transient_vars: set[str] | None = None):
-        self._local_store = Ephemeral()
+        self._local_store = Live()
         self._transient_store = {}  # Raw dict for unpickleable objects
         self._parent_store = parent_store
         self._transient_vars = transient_vars or set()

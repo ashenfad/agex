@@ -193,12 +193,12 @@ class CallEvaluator(BaseEvaluator):
                 # Create hierarchical namespaced state for sub-agent
                 namespace = fn.__agex_task_namespace__
 
-                # If current state is a base storage type (Versioned, Namespaced, Ephemeral), use it directly
+                # If current state is a base storage type (Versioned, Namespaced, Live), use it directly
                 # If current state is transient (Scoped, LiveClosureState), find underlying base state
-                from ..state import Ephemeral, Versioned
+                from ..state import Live, Versioned
                 from ..state import Namespaced as NamespacedState
 
-                if isinstance(self.state, (Versioned, NamespacedState, Ephemeral)):
+                if isinstance(self.state, (Versioned, NamespacedState, Live)):
                     parent_state = self.state
                 else:
                     # Use base_store to find underlying base state

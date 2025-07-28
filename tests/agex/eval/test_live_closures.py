@@ -1,5 +1,5 @@
-from agex.state.ephemeral import Ephemeral
 from agex.state.kv import Memory
+from agex.state.live import Live
 from agex.state.versioned import Versioned
 from tests.agex.eval.helpers import eval_and_get_state
 
@@ -69,7 +69,7 @@ def get_x():
 
 def test_closure_on_non_versioned_state():
     """
-    Make sure closures still work fine on a simple Ephemeral state
+    Make sure closures still work fine on a simple Live state
     that doesn't get versioned.
     """
     program = """
@@ -85,7 +85,7 @@ res1 = fn()
 x = 5
 res2 = fn()
 """
-    state = Ephemeral()
+    state = Live()
     eval_and_get_state(program, state=state)
     assert state.get("res1") == 1
     assert state.get("res2") == 5

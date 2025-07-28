@@ -1,6 +1,6 @@
 from agex.agent import Agent
 from agex.eval.core import evaluate_program
-from agex.state import Ephemeral, State
+from agex.state import Live, State
 
 
 def eval_and_get_state(
@@ -16,6 +16,6 @@ def eval_and_get_state(
 
         agent.module(np)
     if state is None:
-        state = Ephemeral()
+        state = Live()
     evaluate_program(program, agent, state)
     return state

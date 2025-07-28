@@ -100,7 +100,7 @@ def my_function(x: int, y: str) -> bool:  # type: ignore[return-value]
 
 ### State Parameter
 - **Optional**: `state: Versioned | None = None`
-- **Ephemeral mode** (default): No memory between calls
+- **Live mode** (default): No memory between calls
 - **Persistent mode**: Pass a `Versioned` object for long-term memory
 
 ```python

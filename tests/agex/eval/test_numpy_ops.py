@@ -3,18 +3,18 @@ import numpy as np
 from agex.agent import Agent, clear_agent_registry
 from agex.eval.core import evaluate_program
 from agex.render.view import view
-from agex.state.ephemeral import Ephemeral
 from agex.state.kv import Memory
+from agex.state.live import Live
 from agex.state.versioned import Versioned
 
 
-def test_numpy_ephemeral_ops():
+def test_numpy_live_ops():
     """Tests that numpy operator overloading works with a simple state."""
     agent = Agent()
     agent.module(np, name="np")
 
     program = "import np\nresult = np.array([1, 2]) + np.array([3, 4])"
-    state = Ephemeral()
+    state = Live()
 
     evaluate_program(program, agent, state)
 

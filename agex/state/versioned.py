@@ -7,7 +7,7 @@ import xxhash
 
 from . import kv
 from .core import State
-from .ephemeral import Ephemeral
+from .live import Live
 
 PARENT_COMMIT = "__parent_commit__%s"
 COMMIT_KEYSET = "__commit_keyset__%s"
@@ -32,7 +32,7 @@ class Versioned(State):
     def __init__(self, store: kv.KVStore | None = None, commit_hash: str | None = None):
         if store is None:
             store = kv.Memory()
-        self.ephemeral = Ephemeral()
+        self.live = Live()
         self.removed = set()
         self.long_term = store
 
@@ -76,8 +76,8 @@ class Versioned(State):
         return f"{commit_hash or self.current_commit}:{key}"
 
     def get(self, key: str, default: Any = None) -> Any:
-        # First check ephemeral (in-memory changes)
-        if (value := self.ephemeral.get(key)) is not None:
+        # First check live (in-memory changes)
+        if (value := self.live.get(key)) is not None:
             return value
 
         # Then check committed state
@@ -104,7 +104,7 @@ class Versioned(State):
         return default
 
     def set(self, key: str, value: Any) -> None:
-        self.ephemeral.set(key, value)
+        self.live.set(key, value)
         self.removed.discard(key)
         # Remove from mutation tracking since we're explicitly setting
         self.accessed_objects.pop(key, None)
@@ -113,13 +113,13 @@ class Versioned(State):
         # Remove from mutation tracking
         self.accessed_objects.pop(key, None)
 
-        if not self.ephemeral.remove(key) and key in self.commit_keys:
+        if not self.live.remove(key) and key in self.commit_keys:
             self.removed.add(key)
             return True
         return False
 
     def keys(self) -> Iterable[str]:
-        return set(self.ephemeral.keys()) | set(self.commit_keys.keys()) - self.removed
+        return set(self.live.keys()) | set(self.commit_keys.keys()) - self.removed
 
     def values(self) -> Iterable[Any]:
         for key in self.keys():
@@ -130,9 +130,7 @@ class Versioned(State):
             yield key, self.get(key)
 
     def __contains__(self, key: str) -> bool:
-        return key in self.ephemeral or (
-            key not in self.removed and key in self.commit_keys
-        )
+        return key in self.live or (key not in self.removed and key in self.commit_keys)
 
     def history(self, commit_hash: str | None = None) -> Iterable[str]:
         """
@@ -166,16 +164,16 @@ class Versioned(State):
             except Exception:
                 # This object was mutated into an unserializable state.
                 # We can't get its bytes or hash, but we know it changed.
-                # We force it into ephemeral so snapshot() can deal with it.
-                if key not in self.ephemeral:
-                    self.ephemeral.set(key, obj_ref)
+                # We force it into live so snapshot() can deal with it.
+                if key not in self.live:
+                    self.live.set(key, obj_ref)
                 # It won't be in `mutations`, so snapshot() will try to serialize it.
                 continue
 
             if current_hash != original_hash:
                 # Mutation detected! Auto-save it (if not already explicitly set)
-                if key not in self.ephemeral:
-                    self.ephemeral.set(key, obj_ref)
+                if key not in self.live:
+                    self.live.set(key, obj_ref)
                 # Cache the serialized bytes to avoid re-serializing in snapshot()
                 mutations[key] = current_bytes
 
@@ -186,7 +184,7 @@ class Versioned(State):
         mutations = self._detect_mutations()
         unsaved_keys = []
 
-        if not self.ephemeral:
+        if not self.live:
             # If nothing happened, don't create an empty commit.
             # Just return the current commit hash.
             self.accessed_objects.clear()  # Clear tracking
@@ -197,8 +195,8 @@ class Versioned(State):
         new_commit_keys = {}
 
         # Store the order of changes for later diffing.
-        diff_keys = tuple(k for k in self.ephemeral.keys() if not k.startswith("__"))
-        self.ephemeral.set("__diff_keys__", diff_keys)
+        diff_keys = tuple(k for k in self.live.keys() if not k.startswith("__"))
+        self.live.set("__diff_keys__", diff_keys)
 
         # carry over existing keys that were not removed
         for key, value in self.commit_keys.items():
@@ -207,7 +205,7 @@ class Versioned(State):
             new_commit_keys[key] = value
 
         # layer recent writes on top of existing keys
-        for key, value in self.ephemeral.items():
+        for key, value in self.live.items():
             versioned_key = self._versioned_key(key, new_hash)
             # Check if we already have serialized bytes from mutation detection
             serialized_value = None
@@ -239,7 +237,7 @@ class Versioned(State):
         self.commit_keys = new_commit_keys
         self.current_commit = new_hash
         self.removed = set()
-        self.ephemeral = Ephemeral()
+        self.live = Live()
         self.accessed_objects.clear()  # Clear mutation tracking
 
         return SnapshotResult(new_hash, unsaved_keys)

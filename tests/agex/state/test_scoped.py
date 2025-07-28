@@ -1,8 +1,8 @@
-from agex.state import Ephemeral, Scoped
+from agex.state import Live, Scoped
 
 
 def test_scoped_state_read_through():
-    parent = Ephemeral()
+    parent = Live()
     parent.set("x", 10)
 
     scoped = Scoped(parent)
@@ -10,7 +10,7 @@ def test_scoped_state_read_through():
 
 
 def test_scoped_state_write_is_local():
-    parent = Ephemeral()
+    parent = Live()
     parent.set("x", 10)
 
     scoped = Scoped(parent)
@@ -28,7 +28,7 @@ def test_scoped_state_simulates_late_binding():
     This test proves that the Scoped state correctly simulates Python's
     late-binding closures by holding a reference to the parent scope, not a copy.
     """
-    parent = Ephemeral()
+    parent = Live()
     parent.set("x", 10)
 
     # The 'closure' is created, capturing a reference to the parent state

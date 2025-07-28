@@ -120,9 +120,9 @@ class TestUnifiedEventsAPI:
         orch_only_events = events(state, "root", "orchestrator", children=False)
         assert len(orch_only_events) == 1  # Only orchestrator events
 
-    def test_events_versioned_and_ephemeral_states(self):
-        """Test events() works correctly with Versioned and Ephemeral states."""
-        from agex.state import Ephemeral
+    def test_events_versioned_and_live_states(self):
+        """Test events() works correctly with Versioned and Live states."""
+        from agex.state import Live
 
         # Test with Versioned state
         versioned_state = Versioned(kv.Memory())
@@ -137,16 +137,16 @@ class TestUnifiedEventsAPI:
         assert len(result) == 1
         assert result[0].agent_name == "versioned"
 
-        # Test with Ephemeral state
-        ephemeral_state = Ephemeral()
+        # Test with Live state
+        live_state = Live()
         add_event_to_log(
-            ephemeral_state,
-            ActionEvent(agent_name="ephemeral", thinking="thinking", code="code()"),
+            live_state,
+            ActionEvent(agent_name="live", thinking="thinking", code="code()"),
         )
 
-        result = events(ephemeral_state)
+        result = events(live_state)
         assert len(result) == 1
-        assert result[0].agent_name == "ephemeral"
+        assert result[0].agent_name == "live"
 
     def test_events_hierarchical_collection(self):
         """Test events() correctly collects from complex namespace hierarchies."""

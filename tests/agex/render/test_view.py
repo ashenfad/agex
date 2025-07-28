@@ -105,7 +105,7 @@ def test_view_raises_on_hot_storage():
     store = Versioned(kv.Memory())
     store.set("x", 1)
 
-    with pytest.raises(ValueError, match="uncommitted ephemeral changes"):
+    with pytest.raises(ValueError, match="uncommitted live changes"):
         view(store, focus="recent")
 
 

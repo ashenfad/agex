@@ -35,7 +35,7 @@ isolated_events = events(state, "agent", children=False)  # Just that agent, no 
 **Function Signature:**
 ```python
 def events(
-    state: Versioned | Ephemeral | Namespaced, 
+    state: Versioned | Live | Namespaced, 
     *namespaces: str, 
     children: bool = True
 ) -> list[Event]

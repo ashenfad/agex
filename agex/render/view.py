@@ -56,7 +56,7 @@ def view(
         A string or dictionary depending on the view.
 
     Raises:
-        ValueError: If the state has uncommitted ephemeral changes.
+        ValueError: If the state has uncommitted live changes.
         TypeError: If an unsupported object type is provided.
     """
     if isinstance(obj, Agent):
@@ -64,8 +64,8 @@ def view(
 
     if isinstance(obj, Versioned):
         state = obj
-        if state.ephemeral:
-            raise ValueError("Cannot view state with uncommitted ephemeral changes.")
+        if state.live:
+            raise ValueError("Cannot view state with uncommitted live changes.")
 
         if focus == "full":
             return {k: v for k, v in state.items() if not k.startswith("__")}

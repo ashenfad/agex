@@ -23,7 +23,7 @@ This philosophy shapes how agex works:
 - **REPL-Like Environment** - Agents operate in familiar, persistent environments where they can introspect (`help`, `dir`), see their own output (`print`, `view_image`), and build solutions iteratively
 - **Natural Error Handling** - Validation errors and exceptions appear in the agent's stdout just like in a real Python environment, creating natural debugging loops
 - **Smart Context Management** - The framework automatically manages token budgets, keeping agents focused on relevant information without manual intervention
-- **Flexible State Management** - Tasks can run in ephemeral mode or with persistent state that captures the agent's entire workspace, enabling both simple single-shot tasks and complex multi-agent workflows where agents keep and re-use their own functions
+- **Flexible State Management** - Tasks can run in live mode or with persistent state that captures the agent's entire workspace, enabling both simple single-shot tasks and complex multi-agent workflows where agents keep and re-use their own functions
 
 ## The agex Advantage
 

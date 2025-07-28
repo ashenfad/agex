@@ -584,7 +584,7 @@ final_summary_short = final_report_func("summary")
     assert final_results["cross_phase_dependencies"] == "verified"
 
     # EXTREME TEST: Multiple rehydration cycles with different agents
-    print(f"Testing EXTREME rehydration with {len(state.ephemeral)} state variables...")
+    print(f"Testing EXTREME rehydration with {len(state.live)} state variables...")
 
     # Create multiple new agents and test rehydration robustness
     for cycle in range(3):  # 3 rehydration cycles
@@ -660,7 +660,7 @@ cycle_results['integration_sum'] = cycle_integration
         )  # Should have 1 error (division by zero)
 
     print("✅ EXTREME Comprehensive serialization stress test passed!")
-    print(f"   - Serialized and rehydrated {len(state.ephemeral)} state variables")
+    print(f"   - Serialized and rehydrated {len(state.live)} state variables")
     print(
         f"   - Tested 6 phases with {final_results['total_serialized_objects']} total objects"
     )

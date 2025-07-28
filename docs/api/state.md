@@ -1,18 +1,18 @@
 # State Management
 
-Agent state in agex gives you flexible control over memory and persistence across [agent tasks](task.md). You can choose between ephemeral execution (default) for maximum flexibility, or persistent state for complex multi-step workflows.
+Agent state in agex gives you flexible control over memory and persistence across [agent tasks](task.md). You can choose between live execution (default) for maximum flexibility, or persistent state for complex multi-step workflows.
 
 ## State Options Overview
 
 agex provides three approaches to state management:
 
-### **1. Ephemeral (Default) - No State Parameter**
+### **1. Live (Default) - No State Parameter**
 - **No persistence**: Variables don't survive between task calls
 - **Maximum flexibility**: Agents can work with any Python object, including unpicklable ones
 - **Simplicity**: No state management needed - just call your tasks
 - **Use for**: Simple, one-off tasks, prototyping, working with complex objects
 
-### **2. Ephemeral with Memory - `Ephemeral()` Object**
+### **2. Live with Memory - `Live()` Object**
 - **Process-bound memory**: Agents remember variables across calls within the same process
 - **Maximum flexibility**: Agents can work with any Python object, including unpicklable ones
 - **No checkpointing**: No rollback capabilities or automatic snapshots
@@ -29,15 +29,15 @@ agex provides three approaches to state management:
 
 ## State Containers
 
-### `Ephemeral` - Process-Bound Memory
+### `Live` - Process-Bound Memory
 
-`Ephemeral` provides memory within the current process without persistence or checkpointing:
+`Live` provides memory within the current process without persistence or checkpointing:
 
 ```python
-from agex import Ephemeral
+from agex import Live
 
-# Create ephemeral state container
-state = Ephemeral()
+# Create live state container
+state = Live()
 
 # Use with agent tasks  
 result = my_agent_task(data, state=state)
@@ -111,7 +111,7 @@ from agex import Versioned
 state = Versioned()
 ```
 
-**Use for:** Development, testing, ephemeral sessions
+**Use for:** Development, testing, live sessions
 
 ### Disk Storage
 
@@ -141,7 +141,7 @@ state = Versioned(Cache(disk_store, max_bytes=64*1024*1024))
 
 ## Using State with Agent Tasks
 
-### 1. Ephemeral (Default) - No State Parameter
+### 1. Live (Default) - No State Parameter
 
 When you don't pass a `state` parameter, each call is completely independent:
 
@@ -165,12 +165,12 @@ def process_db_data(query: str) -> dict:  # type: ignore[return-value]
 result = process_db_data("SELECT * FROM users")
 ```
 
-### 2. Ephemeral with Memory - `Ephemeral()` Object
+### 2. Live with Memory - `Live()` Object
 
-When you pass an `Ephemeral()` state object, agents remember variables across calls within the same process:
+When you pass an `Live()` state object, agents remember variables across calls within the same process:
 
 ```python
-from agex import Ephemeral
+from agex import Live
 
 @agent.task  
 def build_analysis(data: list[float]) -> dict:  # type: ignore[return-value]
@@ -178,7 +178,7 @@ def build_analysis(data: list[float]) -> dict:  # type: ignore[return-value]
     pass
 
 # State persists across calls within the same process
-shared_state = Ephemeral()
+shared_state = Live()
 result1 = build_analysis([1, 2, 3], state=shared_state)
 result2 = build_analysis([4, 5, 6], state=shared_state)  # Remembers result1
 
@@ -216,12 +216,12 @@ result2 = build_analysis([4, 5, 6], state=shared_state)  # Remembers result1
 
 ### Choosing Between Approaches
 
-**Use ephemeral (no state) when:**
+**Use live (no state) when:**
 - Building simple, one-off tasks
 - Prototyping or experimenting
 - You don't need memory between task calls
 
-**Use ephemeral with memory when:**
+**Use live with memory when:**
 - Building multi-step workflows that need memory
 - Working with complex objects (database connections, file handles)
 - You don't need persistence across process restarts
@@ -289,11 +289,11 @@ state = Versioned(RedisStore("redis://localhost:6379"))
 
 ## Quick Reference
 
-| Feature | Ephemeral (Default) | Ephemeral with Memory | Persistent State |
+| Feature | Live (Default) | Live with Memory | Persistent State |
 |---------|---------------------|----------------------|------------------|
 | **Memory** | No persistence between calls | Variables persist within process | Variables persist across processes |
 | **Object Support** | Any Python object | Any Python object | Only picklable objects |
-| **Usage** | `my_task(data)` | `my_task(data, state=Ephemeral())` | `my_task(data, state=Versioned())` |
+| **Usage** | `my_task(data)` | `my_task(data, state=Live())` | `my_task(data, state=Versioned())` |
 | **Checkpointing** | None | None | Automatic snapshots |
 | **Rollback** | Not available | Not available | Full rollback support |
 | **Process Restart** | N/A | Memory lost | Memory preserved |

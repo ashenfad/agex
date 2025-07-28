@@ -2,7 +2,7 @@
 
 agex agents generate and execute code in a secure sandbox that looks and feels like Python—but with some important differences. This guide helps you understand what constraints agents face when writing code, so you can design better integrations and understand agent behavior.
 
-**State Choice Affects Constraints**: Some limitations depend on whether you use ephemeral state (default, no persistence) or persistent state (remembers variables between task calls). Ephemeral state is more flexible but doesn't persist memory; persistent state has more constraints but enables complex multi-step workflows.
+**State Choice Affects Constraints**: Some limitations depend on whether you use live state (default, no persistence) or persistent state (remembers variables between task calls). Live state is more flexible but doesn't persist memory; persistent state has more constraints but enables complex multi-step workflows.
 
 ## What Works (Agent-Generated Code)
 
@@ -178,54 +178,53 @@ def increment_with_state():
 **Future**: Unlikely to change - would break the sandbox security model.
 
 ### Unpicklable Objects
-**Depends on your state choice**: Whether agents can assign unpicklable objects depends on whether you choose persistent or ephemeral state.
+**Your choice of state object determines whether agents can assign unpicklable objects to variables.**
 
-**With ephemeral state (default)**: Agents can freely assign unpicklable objects:
+This is a critical concept when working with stateful resources like database connections, file handles, or network sockets.
+
+#### Mode 1: No State (Default)
+When you call a task with no `state` parameter, the execution is self-contained. Agents can freely use unpicklable objects, but nothing is remembered between calls.
 
 ```python
-# ✅ With ephemeral state, agents can assign unpicklable objects
-cursor = db.execute("SELECT * FROM users")  # Works fine
+# ✅ Works perfectly fine
+def process_query(query: str):
+    cursor = db.execute(query) # Assigning cursor is okay
+    return cursor.fetchall()
+```
+**Use for:** Simple, single-shot tasks that don't require memory.
+
+#### Mode 2: Live State
+When you pass a `Live` state object (`state=Live()`), agents gain in-process memory and can still freely assign unpicklable objects to variables. This is the ideal mode for multi-step workflows involving live resources.
+
+```python
+# ✅ Live state allows assigning unpicklable objects
+def multi_step_db_work(queries: list[str], state: Live):
+    for query in queries:
+        cursor = db.execute(query) # Storing cursor in state is okay
+        # ... do more work ...
+```
+**Use for:** Multi-step workflows that need to remember stateful, unpicklable objects like database cursors or file handles.
+
+#### Mode 3: Versioned State
+When you pass a `Versioned` state object (`state=Versioned()`), state is persisted and versioned, which requires all stored objects to be picklable.
+
+```python
+# ❌ With Versioned state, agents cannot assign unpicklable objects
+cursor = db.execute("SELECT * FROM users")  # ERROR: Cannot assign cursor to a variable
 result = cursor.fetchall()
 
-# ✅ Database connections, file handles, iterators all work
-file_handle = open("data.txt")
-content = file_handle.read()
-```
-
-**With persistent state**: Agents cannot assign unpicklable objects and must chain operations:
-
-```python
-# Developer setup code using persistent state:
-from agex.state import Versioned
-
-# ❌ With persistent state, agents cannot assign unpicklable objects
-cursor = db.execute("SELECT * FROM users")  # Cannot assign cursor
-result = cursor.fetchall()
-
-# ✅ Must chain operations immediately  
+# ✅ Must chain operations immediately
 result = db.execute("SELECT * FROM users").fetchall()
 ```
+**Use for:** Production workflows requiring persistence, rollback capabilities, and multi-agent coordination.
 
-**Choosing between approaches**:
+### Summary of Approaches
 
-- **Ephemeral state**: Use for simple, one-off tasks where you don't need memory between calls
-- **Persistent state**: Use for complex workflows where agents need to remember variables across multiple task calls
-
-**Exposing stateful objects**: Regardless of state choice, you can register stateful objects directly:
-
-```python
-# Developer setup code:
-conn = sqlite3.connect(":memory:")
-agent.module(conn, name="db", include=["execute", "commit"])
-agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall"])
-
-# Now agents can generate code like:
-result = db.execute("SELECT * FROM users").fetchall()
-```
-
-**Impact**: Choose ephemeral state for maximum flexibility with objects, or persistent state for multi-step workflows. You can always expose stateful objects by registering them directly with the agent.
-
-**Future**: Unlikely to change - the persistent state behavior is tied to the serialization-based storage system.
+| State Mode | Unpicklable Objects | Memory Between Calls |
+| :--- | :--- | :--- |
+| **Default (No State)** | ✅ Allowed | No |
+| **`Live` State** | ✅ Allowed | Yes (in-process) |
+| **`Versioned` State** | ❌ Not Allowed | Yes (persistent) |
 
 ### Object Identity Between Executions
 **Objects are reconstructed**: Between eval cycles, objects are serialized and deserialized, breaking object identity and shared references.
@@ -282,4 +281,4 @@ These constraints exist for important reasons:
 - **Serialization**: Some constraints (like unpicklable objects) only apply when using persistent state to enable memory and rollback
 - **Sandboxing**: Ensures agent code cannot escape the execution environment
 
-**Note**: With ephemeral state (the default), serialization constraints don't apply since no state is persisted between task calls. Choose persistent state when you need agents to remember variables across multiple task executions.
+**Note**: With live state (the default), serialization constraints don't apply since no state is persisted between task calls. Choose persistent state when you need agents to remember variables across multiple task executions.

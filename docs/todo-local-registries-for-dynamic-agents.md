@@ -151,4 +151,4 @@ This approach:
 - **Environment adaptation:** Symbolic references resolve to whatever implementations are available in the target environment
 - **Security preservation:** All existing security boundaries and capabilities inheritance rules are maintained
 
-This design transforms dynamic agents from ephemeral, process-bound entities into persistent, portable units that can survive process boundaries. 
+This design transforms dynamic agents from live, process-bound entities into persistent, portable units that can survive process boundaries. 

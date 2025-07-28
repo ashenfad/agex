@@ -21,7 +21,7 @@ def pmap(func, iterable):
 When this is called from within the Tic environment, the `func` would be one of our `UserFunction` objects. Our existing design has some key advantages that make this feasible and safe:
 
 1.  **Isolated State:** Each function call executes in an isolated state scope. When `pmap` calls the `UserFunction` for each item in the iterable, each call will get its own sandboxed state, preventing race conditions or state corruption between concurrent executions.
-2.  **Thread-Safety:** The underlying state management (`Versioned`, `Scoped`, `Ephemeral`) is designed to be safe for this kind of concurrency, as each "thread" of execution operates on its own copy-on-write version of the state. The results are then collected back in the main thread.
+2.  **Thread-Safety:** The underlying state management (`Versioned`, `Scoped`, `Live`) is designed to be safe for this kind of concurrency, as each "thread" of execution operates on its own copy-on-write version of the state. The results are then collected back in the main thread.
 
 ## Usage Example
 

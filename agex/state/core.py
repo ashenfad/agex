@@ -38,24 +38,24 @@ class State(ABC):
         pass
 
 
-def is_ephemeral_root(state: State) -> bool:
+def is_live_root(state: State) -> bool:
     """
-    Determine if the root state is ephemeral (transient) or persistent.
+    Determine if the root state is live (transient) or persistent.
 
-    Follows the base_store chain to the root and checks if it's an Ephemeral state.
+    Follows the base_store chain to the root and checks if it's an Live state.
     This helps determine whether to enforce pickle safety and snapshotting.
 
     Args:
         state: Any state object (potentially wrapped)
 
     Returns:
-        True if the root state is ephemeral, False if it's persistent
+        True if the root state is live, False if it's persistent
     """
     # Import here to avoid circular imports
-    from .ephemeral import Ephemeral
+    from .live import Live
 
     # Follow base_store chain to the root
     root = state.base_store
 
-    # Check if the root is an Ephemeral state
-    return isinstance(root, Ephemeral)
+    # Check if the root is an Live state
+    return isinstance(root, Live)

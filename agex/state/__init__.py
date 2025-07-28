@@ -3,9 +3,9 @@ A state management system for tic agents.
 """
 
 from ..agent.events import Event
-from .core import State, is_ephemeral_root
-from .ephemeral import Ephemeral
+from .core import State, is_live_root
 from .kv import KVStore
+from .live import Live
 from .namespaced import Namespaced
 from .scoped import Scoped
 from .transient import TransientScope
@@ -13,8 +13,8 @@ from .versioned import Versioned
 
 __all__ = [
     "State",
-    "is_ephemeral_root",
-    "Ephemeral",
+    "is_live_root",
+    "Live",
     "KVStore",
     "Namespaced",
     "Scoped",
@@ -24,8 +24,8 @@ __all__ = [
 
 
 def _namespaced(
-    state: Versioned | Ephemeral | Namespaced, namespaces: list[str]
-) -> Namespaced | Versioned | Ephemeral:
+    state: Versioned | Live | Namespaced, namespaces: list[str]
+) -> Namespaced | Versioned | Live:
     if namespaces:
         state = Namespaced(state, namespaces[0])
         if namespaces[1:]:
@@ -34,7 +34,7 @@ def _namespaced(
 
 
 def events(
-    state: Versioned | Ephemeral | Namespaced, *namespaces: str, children: bool = True
+    state: Versioned | Live | Namespaced, *namespaces: str, children: bool = True
 ) -> list[Event]:
     """
     Retrieve events from state with flexible namespace navigation and hierarchical control.

@@ -1,9 +1,14 @@
 from typing import Any, Iterable
 
-from .core import State
+from agex.state.core import State
 
 
-class Ephemeral(State):
+class Live(State):
+    """
+    In-memory state that is not persisted. Good for multi-step workflows
+    that need to work with unpickleable objects like database connections.
+    """
+
     def __init__(self):
         self.store = {}
 

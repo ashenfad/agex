@@ -282,7 +282,7 @@ class StatementEvaluator(BaseEvaluator):
         """Resolves an expression node into a concrete AssignmentTarget."""
         if isinstance(node, ast.Name):
             # Check if we're in a transient scope and this is a transient variable
-            from agex.state import is_ephemeral_root
+            from agex.state import is_live_root
             from agex.state.transient import TransientScope
 
             if (
@@ -291,8 +291,8 @@ class StatementEvaluator(BaseEvaluator):
             ):
                 return TransientNameTarget(self, node.id)
 
-            # Use TransientNameTarget if the root state is ephemeral (skip pickle enforcement)
-            if is_ephemeral_root(self.state):
+            # Use TransientNameTarget if the root state is live (skip pickle enforcement)
+            if is_live_root(self.state):
                 return TransientNameTarget(self, node.id)
 
             return NameTarget(self, node.id)
