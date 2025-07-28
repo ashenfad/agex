@@ -30,9 +30,9 @@ print(f"Sorted points: {points}") # [(1, 1), (4, 3), (0, 5)]
 
 **This works because** `agex` provides easy runtime interoperability - agents don't just return JSON, they create real Python objects that live directly in your runtime environment.
 
-**📚 [Get a Quick Start](./docs/quick-start.md)** - Learn step-by-step with hands-on examples
+**📚 [Get a Quick Start](https://ashenfad.github.io/agex/quick-start/)** - Learn step-by-step with hands-on examples
 
-**🔭 [Get a Big Picture](./docs/big-picture.md)** - Learn about the core philosophy
+**🔭 [Get a Big Picture](https://ashenfad.github.io/agex/big-picture/)** - Learn about the core philosophy
 
 ## What Makes This Different
 
@@ -156,24 +156,24 @@ For teams looking for a more battle-tested library built on the same "agents-tha
 
 
 
-## API Documentation
+## Documentation
 
-Complete API reference documentation is available:
+Complete documentation is hosted at **[ashenfad.github.io/agex](https://ashenfad.github.io/agex/)**
 
-**📖 [API Reference](./docs/api/overview.md)** - Complete documentation for all agex APIs
+**📖 [API Reference](https://ashenfad.github.io/agex/api/overview/)** - Complete technical documentation for all agex APIs
 
 Key sections:
-- **[Agent](./docs/api/agent.md)** - Creating and configuring agents
-- **[Registration](./docs/api/registration.md)** - Exposing functions, classes, and modules to agents  
-- **[Task](./docs/api/task.md)** - Defining and executing agent tasks
-- **[State](./docs/api/state.md)** - Persistent memory with a git-like history that lets you `checkout` the agent's workspace at any point in time.
-- **[Events](./docs/api/events.md)** - A complete event log where every agent action is linked to a versioned state snapshot for powerful time-travel debugging.
-- **[View](./docs/api/view.md)** - Inspecting agents and execution state *(experimental)*
+- **[Agent](https://ashenfad.github.io/agex/api/agent/)** - Creating and configuring agents
+- **[Registration](https://ashenfad.github.io/agex/api/registration/)** - Exposing functions, classes, and modules to agents  
+- **[Task](https://ashenfad.github.io/agex/api/task/)** - Defining and executing agent tasks
+- **[State](https://ashenfad.github.io/agex/api/state/)** - Persistent memory with a git-like history that lets you `checkout` the agent's workspace at any point in time.
+- **[Events](https://ashenfad.github.io/agex/api/events/)** - A complete event log where every agent action is linked to a versioned state snapshot for powerful time-travel debugging.
+- **[View](https://ashenfad.github.io/agex/api/view/)** - Inspecting agents and execution state *(experimental)*
 
 For design concepts and higher-level documentation, see:
-- **[The Big Picture](./docs/big-picture.md)** - Framework philosophy, architecture, and multi-agent patterns
-- **[Security Model](./docs/security.md)** - Execution environment and safety guarantees
-- **[Sandbox Limitations](./docs/nearly-python.md)** - Understanding agent code constraints and Python compatibility
+- **[The Big Picture](https://ashenfad.github.io/agex/big-picture/)** - Framework philosophy, architecture, and multi-agent patterns
+- **[Security Model](https://ashenfad.github.io/agex/security/)** - Execution environment and safety guarantees
+- **[Sandbox Limitations](https://ashenfad.github.io/agex/development/nearly-python/)** - Understanding agent code constraints and Python compatibility
 
 ## Installation
 
@@ -189,20 +189,14 @@ pip install "agex[gemini]"        # For Google Gemini models
 pip install "agex[all-providers]"
 ```
 
-## Development Setup
+## Contributing
 
-This project uses `pyenv` to manage the Python version and `uv` for package management.
+We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for:
 
-1.  **Set up the Python version:**
-    If you have `pyenv` installed, it will automatically pick up the version from the `.python-version` file.
+- Development setup and workflow
+- Code style guidelines  
+- Testing requirements
+- How to submit pull requests
 
-2.  **Create a virtual environment and install dependencies:**
-    ```bash
-    uv venv
-    uv pip install -e ".[dev,test,all-providers]"
-    ```
+For bug reports and feature requests, please use [GitHub Issues](https://github.com/ashenfad/agex/issues).
 
-3.  **Set up pre-commit hooks:**
-    ```bash
-    pre-commit install
-    ```

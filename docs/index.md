@@ -17,11 +17,15 @@ def make_function(description: str) -> Callable:  # type: ignore[return-value]
     """Generate a Python function from a text description."""
     pass  # Empty body - the agent implements this function
 
-# Agent returns an actual Python callable you can use immediately
-prime_finder = make_function("find the next prime larger than a given number")
+# Agent uses the 'math' module to build the requested function
+distance_fn = make_function(
+    "takes a 2D point (x, y) and returns distance from the origin"
+)
 
-print(prime_finder(100))  # 101
-my_data.sort(key=prime_finder)  # Works with existing Python code
+# Agent returns an actual Python callable you can use immediately
+points = [(4, 3), (1, 1), (0, 5)] 
+points.sort(key=distance_fn)  # Works with existing Python code
+print(f"Sorted points: {points}") # [(1, 1), (4, 3), (0, 5)]
 ```
 
 **This works because** `agex` provides easy runtime interoperability - agents don't just return JSON, they create real Python objects that live directly in your runtime environment.
@@ -40,23 +44,23 @@ my_data.sort(key=prime_finder)  # Works with existing Python code
 
     Agents work with real Python objects like `numpy` arrays, `pandas` DataFrames, and custom classes without JSON serialization overhead.
 
--   :material-account-group: **Multi-Agent Support**
+-   :material-function: **Code-as-Action**
 
     ---
 
-    Simple hierarchical agent workflows using standard Python control flow. No YAML or complex DSLs required.
+    Agents compose primitives into solutions, not rigid pre-built tools.
 
--   :material-eye: **Comprehensive Events**
-
-    ---
-
-    Complete visibility into agent behavior with time-travel debugging and execution introspection.
-
--   :material-shield-check: **Secure Sandbox**
+-   :material-history: **Agent Workspace Persistence**
 
     ---
 
-    Whitelist-based execution environment with AST-level validation and controlled capability exposure.
+    Git-like versioning with automatic checkpointing and time-travel debugging.
+
+-   :material-account-group: **Multi-Agent Orchestration**
+
+    ---
+
+    Natural coordination through hierarchical delegation or simple Python control flow - no complex DSLs required.
 
 </div>
 
