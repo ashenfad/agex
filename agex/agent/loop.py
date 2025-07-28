@@ -31,6 +31,7 @@ from agex.agent.events import (
 )
 from agex.agent.primer_text import BUILTIN_PRIMER
 from agex.eval.core import evaluate_program
+from agex.eval.error import EvalError
 from agex.eval.objects import PrintAction
 from agex.render.definitions import render_definitions
 from agex.render.value import ValueRenderer
@@ -207,28 +208,43 @@ class TaskLoopMixin(BaseAgent):
                     exec_state, events_yielded, on_event
                 )
 
-                # Log clarification event and then re-raise
+                # Log clarification event
                 clarify_event = ClarifyEvent(
                     agent_name=self.name,
                     message=task_clarify.message,
                 )
                 add_event_to_log(exec_state, clarify_event, on_event=on_event)
                 yield clarify_event
-                raise
+
+                # If we're not top-level (have a Namespaced state), convert to EvalError
+                if isinstance(state, Namespaced):
+                    raise EvalError(
+                        f"Sub-agent needs clarification: {task_clarify.message}", None
+                    )
+                else:
+                    # We're top-level, re-raise the TaskClarify
+                    raise
+
             except TaskFail as task_fail:
                 # Before handling failure, yield any evaluation events first
                 events_yielded = yield from self._yield_new_events(
                     exec_state, events_yielded, on_event
                 )
 
-                # Log failure event and then re-raise
+                # Log failure event
                 fail_event = FailEvent(
                     agent_name=self.name,
                     message=task_fail.message,
                 )
                 add_event_to_log(exec_state, fail_event, on_event=on_event)
                 yield fail_event
-                raise
+
+                # If we're not top-level (have a Namespaced state), convert to EvalError
+                if isinstance(state, Namespaced):
+                    raise EvalError(f"Sub-agent failed: {task_fail.message}", None)
+                else:
+                    # We're top-level, re-raise the TaskFail
+                    raise
             except _AgentExit:
                 # Before handling exit, yield any evaluation events first
                 events_yielded = yield from self._yield_new_events(

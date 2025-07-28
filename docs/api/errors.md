@@ -121,29 +121,14 @@ except TaskTimeout as e:
 
 ### Parent Agent Callers
 
-In multi-agent workflows, child agent errors appear in the parent's stdout:
+In multi-agent workflows, child agent errors are automatically converted to evaluation errors that appear in the parent's stdout. This allows parent agents to see and respond to sub-agent failures naturally.
 
-```python
-# Create specialist agents
-data_processor = Agent(name="data_processor")
-orchestrator = Agent(name="orchestrator")
+**How it works:**
+- When a sub-agent calls `task_clarify()` or `task_fail()`, the framework converts these to `EvalError`s
+- The parent agent sees these errors in their stdout as: `💥 Evaluation error: Sub-agent needs clarification: <message>` or `💥 Evaluation error: Sub-agent failed: <message>`
+- The parent can then respond by retrying with different parameters, using alternative approaches, or escalating the error
 
-@orchestrator.fn(docstring="Process risky data")
-@data_processor.task("Process data with error handling")
-def process_risky_data(data: str) -> str:  # type: ignore[return-value]
-    pass
-
-@orchestrator.task("Coordinate data processing")
-def coordinate_processing(data: str) -> str:  # type: ignore[return-value]
-    """Main orchestrator that handles errors from sub-agents."""
-    pass
-
-# If the data_processor agent encounters an error, the error message
-# will appear in the orchestrator's stdout, allowing it to:
-# - Retry with different parameters
-# - Use alternative processing methods  
-# - Escalate the error by failing itself
-```
+This error conversion only happens for sub-agents. Top-level agents (called directly by user code) still raise `TaskClarify` and `TaskFail` exceptions normally.
 
 ## Background: How Agents Signal Completion
 
