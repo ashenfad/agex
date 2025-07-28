@@ -27,6 +27,9 @@ Understand agent task control functions and exception handling (`TaskFail`, `Tas
 - **[View](view.md)** -
 Inspect agents and their execution state for debugging.
 
+- **[Helpers](helpers.md)** -
+Convenience functions for registering common libraries like NumPy and pandas.
+
 ## Import Patterns
 
 Most agex functionality is available at the top level:

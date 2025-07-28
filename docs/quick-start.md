@@ -73,6 +73,10 @@ print(result)  # 50.26548245743669
 You can register your own functions as agent capabilities:
 
 ```python
+from agex import Agent
+
+agent = Agent()
+
 @agent.fn
 def calculate_compound_interest(principal: float, rate: float, years: int) -> float:
     """Calculate compound interest."""
@@ -292,7 +296,7 @@ except TaskFail as e:
 except TaskClarify as e:
     print(f"Task needs clarification: {e.message}")
 except TaskTimeout as e:
-    print(f"Task exceeded max interations": {e.message})
+    print(f"Task exceeded max iterations": {e.message})
 ```
 
 ## Next Steps

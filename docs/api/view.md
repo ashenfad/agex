@@ -1,7 +1,5 @@
 # View API
 
-⚠️ **Experimental API**: The `view()` function is an experimental interface that is subject to change.
-
 The `view()` function provides a human-readable inspection of an agent's static capabilities or its current memory state. It is a debugging utility designed for quick, interactive use.
 
 For programmatic access to an agent's full execution history, use the more powerful [`events()` API](events.md).
