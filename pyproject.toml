@@ -68,12 +68,3 @@ pythonpath = [
 ]
 
 [tool.setuptools]
-
-[tool.poetry.dependencies]
-python = "^3.11"
-litellm = "^1.39.2"
-tiktoken = "^0.6.0"
-pydantic = "^2.7.1"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.1.1"
