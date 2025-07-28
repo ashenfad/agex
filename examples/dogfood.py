@@ -4,8 +4,8 @@ Dogfooding Example: Agents Creating Agents
 This example demonstrates agex's ability to "eat its own dogfood" by having
 an agent build a brand-new agent on demand.
 
-Note: This example works within a single process. For persistence across
-process boundaries, see docs/todo-local-registries-for-dynamic-agents.md
+Note: This example works within a single process. Persistence of dynamically
+created agents across process boundaries is a planned roadmap item.
 
 Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
 "micro-DSL" approach—providing a focused set of capabilities—can guide even

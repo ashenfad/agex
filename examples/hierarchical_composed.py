@@ -27,7 +27,8 @@ orchestrator = Agent(
     primer="You orchestrate other agents to solve a problem.",
 )
 
-# add sub-agents as functions for orchestrator
+# Give the orchestrator access to the specialist tasks.
+# From the orchestrator's perspective, these are just functions it can call.
 orchestrator.fn(make_data)
 orchestrator.fn(plot_data)
 

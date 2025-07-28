@@ -62,6 +62,8 @@ result = solve_equation("What is the square root of 256, multiplied by pi?")
 print(result)  # 50.26548245743669
 ```
 
+> **A Note on `type: ignore`**: You'll notice `# type: ignore[return-value]` on tasks that have a return value. This is because we only define the function's *signature* and the agent provides the implementation (including the `return` statement) at runtime. This comment tells static type checkers like mypy that this is intentional.
+
 **Key concepts:**
 
 - **`Agent(primer=...)`**: Creates an agent with behavioral instructions
@@ -296,7 +298,7 @@ except TaskFail as e:
 except TaskClarify as e:
     print(f"Task needs clarification: {e.message}")
 except TaskTimeout as e:
-    print(f"Task exceeded max iterations": {e.message})
+    print(f"Task exceeded max iterations: {e.message}")
 ```
 
 ## Next Steps

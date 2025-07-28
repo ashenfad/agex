@@ -121,32 +121,21 @@ agent.module(conn, name="db", include=["execute", "commit"])
 
 Examples of multi-agent patterns:
 
-- **[`examples/multi.py`](./examples/multi.py)**: An `orchestrator` agent delegates data generation and plotting tasks to specialist sub-agents to solve high-level visualization ideas
+- **[`examples/hierarchical.py`](./examples/hierarchical.py)**: An `orchestrator` agent delegates data generation and plotting tasks to specialist sub-agents to solve high-level visualization ideas
 - **[`examples/evaluator_optimizer.py`](./examples/evaluator_optimizer.py)**: Iterative improvement through agent collaboration, where one agent creates content and another critiques it until quality criteria are met—all orchestrated with a simple Python `while` loop
 
 All orchestration is done with simple Python control flow—no YAML or complex DSLs required.
 
 ### **Agents Architecting Agents**
 
-Agents can design and spawn other agents at runtime. This enables dynamic AI systems where specialist agents can be born on-demand. They do this by using the regular agex API. 
+As the ultimate test of library-friendliness, agents can use the `agex` API itself to design and spawn other agents at runtime. This demonstrates how naturally agents can integrate with any Python library—even `agex`.
 
 ```python
 architect = Agent(name="architect", primer=PRIMER)
 architect.cls(Agent)  # Let the architect use agex!
-
-@architect.task  
-def create_specialist(prompt: str) -> Callable:
-    """Make a new specialist agent given the prompt & return the task fn."""
-    pass
-
-# Agent creates another agent that creates working code
-math_solver = create_specialist("solve mathematical equations step by step")
-result = math_solver("4x + 5 = 13")  # "Therefore, x = 2.0"
 ```
 
-**Why this matters:** While a bit mind-bending and certainly intriguing, the practical utility is very much unproven. The real takeaway, though, is how naturally agents can integrate with existing libraries—even `agex` itself.
-
-See [`examples/dogfood.py`](./examples/dogfood.py) for the complete implementation of agents creating agents.
+**Why this matters:** While a bit mind-bending, the real takeaway is how seamlessly agents can work with your existing code. See [`examples/dogfood.py`](./examples/dogfood.py) for the complete implementation.
 
 ## Project Status
 

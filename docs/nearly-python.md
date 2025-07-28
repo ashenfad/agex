@@ -86,6 +86,29 @@ my_function = my_decorator(my_function)  # Works fine
 
 **Future**: Likely to be added - the syntax is straightforward to implement.
 
+### `with` Statements for Temporary Scope
+**Special behavior for unpicklable objects**: The `with` statement has a special purpose in the `agex` sandbox: it allows you to assign an unpickleable object to a variable temporarily.
+
+When an agent is using `Versioned` state, any variable created inside a `with` block is scoped only to that block and is **not** persisted to the agent's permanent state. This provides a safe way to work with stateful, unpicklable resources like database connections or even other `agex` agents.
+
+```python
+# ✅ Correctly using `with` for temporary, unpickleable objects
+# This code is run by an agent that has Versioned state.
+with Agent() as temp_agent:
+    # `temp_agent` is an unpicklable Agent object.
+    # It can be used freely inside this block.
+    temp_agent.module(math)
+    task_fn = temp_agent.task(some_function)
+    
+# Outside the `with` block, `temp_agent` no longer exists
+# and was never saved to the persistent state.
+task_success(task_fn) # The created task function IS picklable and can be returned.
+```
+
+**Impact**: This is the primary pattern for dynamically creating and configuring unpicklable resources (like other agents) when using `Versioned` state. Without it, the agent would have to perform all configuration in a single, chained expression.
+
+**Future**: This is a core feature of the sandbox and is unlikely to change.
+
 ### Async/Await
 **Not supported**: Agents cannot generate async code; the sandbox is synchronous-only.
 
