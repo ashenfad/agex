@@ -97,7 +97,7 @@ result = analyze(
 print(result) # {'mean': 17.28, 'median': 4}
 ```
 
-Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This shifts the work of writing composite operations from you to the agent.
+Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This shifts the work of writing composite operations from you to the agent. For a deeper dive on how this code-native approach compares to industry tooling standards, see our [note on MCP and the `agex` philosophy](./docs/agex-and-mcp.md).
 
 See [`examples/mathy.py`](./examples/mathy.py) for agents handling complex mathematical transformations without custom tools.
 

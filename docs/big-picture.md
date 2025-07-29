@@ -156,6 +156,8 @@ This curated environment helps guide the agent toward a correct solution by limi
 
 This philosophy of providing guidance through a curated environment is the primary design principle. A powerful and welcome side-effect of this approach is a robust security model. By limiting the agent's world to only the capabilities you provide, you inherently prevent it from accessing unintended, and potentially unsafe, parts of your system. Security becomes a natural outcome of thoughtful agent design.
 
+For a more detailed comparison of this approach to industry-standard tooling models like MCP, see our full **[note on this philosophy](./agex-and-mcp.md)**.
+
 ### Hierarchical Agent Architecture
 
 The dual-decorator pattern enables elegant specialist architectures:
