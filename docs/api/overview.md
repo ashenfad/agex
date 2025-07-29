@@ -97,4 +97,4 @@ This allows agents to have access to extensive capabilities while keeping their 
 
 agex is pre-0.0.1 and under active development. APIs may change as the framework evolves toward its first release.
 
-For examples and higher-level documentation, see the main [docs/](../) directory. 
+For examples and higher-level documentation, see the main [docs/index.md](../index.md). 
