@@ -117,7 +117,8 @@ architect.cls(Agent)  # Let the architect use agex!
 
 ## Project Status
 
-`agex` is a new framework in active development. While the core concepts are stabilizing, the API should be considered experimental and is subject to change.
+> **⚠️ Pre-Release**  
+> `agex` is a new framework in active development. While the core concepts are stabilizing, the API should be considered experimental and is subject to change.
 
 For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project. `agex` explores a different architectural path centered on a secure-by-design execution environment and deep runtime interoperability.
 

@@ -56,3 +56,14 @@ export AGEX_LLM_PROVIDER=openai
 export AGEX_LLM_MODEL=gpt-4
 export OPENAI_API_KEY=your_key_here
 ```
+
+## Contribution Guidelines
+
+This project is in early development with informal contribution processes. Detailed guidelines are still being developed.
+
+For now:
+- **Bug reports**: Please use [GitHub Issues](https://github.com/ashenfad/agex/issues)
+- **Feature ideas**: Feel free to open an issue to discuss
+- **Code contributions**: Open an issue first to discuss your approach
+
+More formal contribution guidelines will be established as the project and community grow.

@@ -95,6 +95,7 @@ This allows agents to have access to extensive capabilities while keeping their 
 
 ## Framework Status
 
-agex is pre-0.0.1 and under active development. APIs may change as the framework evolves toward its first release.
+!!! warning "Pre-Release"
+    `agex` is a new framework in active development. While the core concepts are stabilizing, the API should be considered experimental and is subject to change.
 
 For examples and higher-level documentation, see the main [docs/index.md](../index.md). 
