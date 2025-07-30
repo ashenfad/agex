@@ -6,7 +6,7 @@
 
 ![agex demo gif](assets/teaser.gif)
 
-**This works because** `agex` provides easy runtime interoperability. The agent receives and returns real `pandas.DataFrame` and `plotly.Figure` objects, not just JSON. It works directly with your libraries.
+**This works because** `agex` provides easy runtime interoperability. The agent receives and returns real `pandas.DataFrame` and `plotly.Figure` objects, not just JSON. It works directly with your libraries. **Dive deeper with the full [`agex101.ipynb`](demos/agex101.ipynb) tutorial.**
 
 ## What Makes This Different
 
