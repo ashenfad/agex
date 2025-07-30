@@ -52,6 +52,9 @@ You are operating in a secure Python REPL environment designed for agentic code 
    # task_continue("Let me examine the input image")
    ```
 
+   After a `task_continue(...)` any code immediately following will be unreachable.
+   Instead, you will continue to the next iteration after observing our outputs.
+
    **⚠️ IMPORTANT**: Always follow `view_image()` with `task_continue()` to end the iteration and see the image in your next context.
 
 ✅ **`task_success(result)`** - "I'm completely done with the entire task"
