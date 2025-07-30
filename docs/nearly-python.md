@@ -87,25 +87,30 @@ my_function = my_decorator(my_function)  # Works fine
 **Future**: Likely to be added - the syntax is straightforward to implement.
 
 ### `with` Statements for Temporary Scope
-**Special behavior for unpicklable objects**: The `with` statement has a special purpose in the `agex` sandbox: it allows you to assign an unpickleable object to a variable temporarily.
+**Special behavior for unpicklable objects**: When using `Versioned` (persistent) state, the `with` statement has a special purpose: it allows an agent to temporarily work with an unpicklable object that will not be saved to the agent's permanent memory.
 
-When an agent is using `Versioned` state, any variable created inside a `with` block is scoped only to that block and is **not** persisted to the agent's permanent state. This provides a safe way to work with stateful, unpicklable resources like database connections or even other `agex` agents.
+Any variable created inside a `with` block is "ephemeral"—it exists only for the duration of that block and is discarded afterward. This provides a safe way to interact with stateful, unpicklable resources like database connections.
 
 ```python
-# ✅ Correctly using `with` for temporary, unpickleable objects
-# This code is run by an agent that has Versioned state.
-with Agent() as temp_agent:
-    # `temp_agent` is an unpicklable Agent object.
-    # It can be used freely inside this block.
-    temp_agent.module(math)
-    task_fn = temp_agent.task(some_function)
-    
-# Outside the `with` block, `temp_agent` no longer exists
-# and was never saved to the persistent state.
-task_success(task_fn) # The created task function IS picklable and can be returned.
+# Assume `db_connection` is an unpicklable database connection
+# object that has been registered with the agent.
+
+# ❌ This code will FAIL with Versioned state because `cursor` is unpicklable.
+# cursor = db_connection.cursor()
+# cursor.execute("SELECT * FROM users")
+# results = cursor.fetchall()
+
+# ✅ This is the correct pattern.
+# The cursor is used and discarded within the temporary scope.
+with db_connection.cursor() as cursor:
+    cursor.execute("SELECT * FROM users")
+    results = cursor.fetchall()
+
+# The `results` variable (a list of tuples) IS picklable and can be
+# stored in the agent's state or returned. The `cursor` object is gone.
 ```
 
-**Impact**: This is the primary pattern for dynamically creating and configuring unpicklable resources (like other agents) when using `Versioned` state. Without it, the agent would have to perform all configuration in a single, chained expression.
+**Impact**: This is the primary pattern for using context managers that yield unpicklable resources (like database cursors) when working with `Versioned` state. It allows agents to perform stateful operations without violating the pickling requirement for persistent memory.
 
 **Future**: This is a core feature of the sandbox and is unlikely to change.
 
@@ -221,7 +226,8 @@ When you pass a `Live` state object (`state=Live()`), agents gain in-process mem
 
 ```python
 # ✅ Live state allows assigning unpicklable objects
-def multi_step_db_work(queries: list[str], state: Live):
+def multi_step_db_work(queries: list[str]):
+    # The `state` parameter is added automatically by the @agent.task decorator
     for query in queries:
         cursor = db.execute(query) # Storing cursor in state is okay
         # ... do more work ...
@@ -250,58 +256,62 @@ result = db.execute("SELECT * FROM users").fetchall()
 | **`Versioned` State** | ❌ Not Allowed | Yes (persistent) |
 
 ### Object Identity Between Executions
-**Objects are reconstructed**: Between eval cycles, objects are serialized and deserialized, breaking object identity and shared references.
+**Objects are reconstructed**: Between task executions (when using `Versioned` state), objects are serialized and deserialized. This breaks object identity (`id()`) and shared references between separate task runs.
 
 ```python
-# During a single eval cycle:
+# During a single task execution, identity works normally:
 my_list = [1, 2, 3]
 shared_ref = my_list
 shared_ref.append(4)
-print(my_list)  # [1, 2, 3, 4] - shared reference works
+print(my_list)  # [1, 2, 3, 4]
 
-# Between eval cycles, identity breaks:
-# Eval cycle 1: my_list = [1, 2, 3]; id(my_list) = 140123456789
-# Eval cycle 2: my_list still = [1, 2, 3]; id(my_list) = 140987654321  # Different!
+# But identity is not preserved across task executions.
+# Task 1 creates my_list with id=1000. It is saved to state.
+# Task 2 loads my_list from state. It is now a new object with id=2000.
 ```
 
-**Impact**: Objects that rely on identity or shared references across multiple eval cycles may behave unexpectedly. Use explicit state management for persistence.
+**Impact**: Objects that rely on `is` checks or `id()` for identity across multiple task executions may behave unexpectedly. Use explicit state management and value-based comparisons instead.
 
-**Future**: Unlikely to change - side-effect of the serialization-based storage system.
+**Future**: This is an inherent aspect of serialization-based persistence and is unlikely to change.
 
 ### Function Closures
-**Variables freeze between eval cycles**: Closures work and persist, but captured variables get "frozen" when an eval cycle completes.
+**Captured variables are "frozen" on save**: When using `Versioned` state, closures work and persist, but any variables they capture from their enclosing scope are "frozen" with their current values when the task completes.
+
+A closure will not see subsequent changes to a captured variable in a later task execution.
 
 ```python
-# ✅ Works and persists across eval cycles
-def make_counter():
-    count = [0]  # Use mutable container instead of nonlocal
-    def counter():
-        count[0] += 1
-        return count[0]
-    return counter
+# This example demonstrates the "freezing" behavior across two task runs.
+# Assume the agent executes this code in its first task run:
+factor = 2
+def multiplier(x):
+    # This closure captures the `factor` variable
+    return x * factor
+    
+# The agent saves `multiplier` and `factor` to its state.
+# `multiplier` is now "frozen" with `factor=2`.
 
-my_counter = make_counter()
-print(my_counter())  # 1
-print(my_counter())  # 2
+# --- End of first task ---
 
-# ✅ Closure state persists to next eval cycle
-# But captured variables are "frozen" at eval completion
+# Now, assume the agent executes this code in a second task run:
+# It loads `multiplier` and `factor` from its state.
+factor = 10
+# Even though `factor` is now 10 in the agent's state, the
+# `multiplier` function is still using the value it was frozen with.
+result = multiplier(5) # This will return 10, not 50.
 ```
 
-**Key difference**: During an eval cycle, closures work like normal Python - variables are resolved when called. But when the eval cycle ends, the closure's captured variables get frozen at their current values.
+**No `nonlocal` support**: The `nonlocal` statement is not supported. To modify state, use mutable containers (like a single-element list `[0]`) or have functions return the new state.
 
-**No `nonlocal` support**: The `nonlocal` statement is not supported. Use mutable containers (lists, dicts) or return values to modify variables in the enclosing scope.
+**Impact**: This can lead to unexpected behavior if you assume closures will always see the latest version of their captured variables across different task runs.
 
-**Impact**: Libraries expecting normal Python closure behavior may behave differently. The closure will work but captured variables won't reflect later changes.
-
-**Future**: The freezing behavior is unlikely to change, but `nonlocal` support will likely be added - infrastructure is mostly in place.
+**Future**: The freezing behavior is inherent to the state model and is unlikely to change.
 
 ## Why These Limitations?
 
 These constraints exist for important reasons:
 
 - **Security**: Prevents agents from accessing dangerous Python features
-- **Serialization**: Some constraints (like unpicklable objects) only apply when using persistent state to enable memory and rollback
+- **Serialization**: Enables memory and rollback by ensuring all persistent state can be saved
 - **Sandboxing**: Ensures agent code cannot escape the execution environment
 
-**Note**: With live state (the default), serialization constraints don't apply since no state is persisted between task calls. Choose persistent state when you need agents to remember variables across multiple task executions.
+**Note**: With `Live` state, serialization constraints don't apply since no state is persisted between task calls. Choose `Versioned` state when you need agents to remember variables across multiple task executions.

@@ -1,5 +1,8 @@
 # View API
 
+!!! warning "Experimental"
+    The `view()` API is an experimental debugging utility. Its output format and parameters may change in future versions.
+
 The `view()` function provides a human-readable inspection of an agent's static capabilities or its current memory state. It is a debugging utility designed for quick, interactive use.
 
 For programmatic access to an agent's full execution history, use the more powerful [`events()` API](events.md).
@@ -12,23 +15,34 @@ from agex import view
 
 ## Agent Inspection: `view(agent)`
 
-View an agent's registered capabilities to see what functions, classes, and modules are available to it. This shows the "micro-DSL" you have defined for the agent.
+View an agent's registered capabilities to see what functions, classes, and modules are available to it. `view()` returns a formatted string.
 
 ```python
 from agex import Agent, view
+import math
 
-agent = Agent()
+agent = Agent(name="my_agent")
 
-@agent.fn
+@agent.fn(visibility="high")
 def calculate_sum(a: int, b: int) -> int:
+    """Calculates the sum of two integers."""
     return a + b
 
-# Inspect the agent's API
-api_view = view(agent)
-print(api_view)
+agent.module(math, visibility="low")
+
+# Inspect the agent's API (by default, shows high and medium visibility)
+print(view(agent))
 
 # The `full=True` flag shows all members, including low-visibility ones
-complete_view = view(agent, full=True)
+# print(view(agent, full=True))
+```
+
+**Example Output:**
+```text
+--- Agent API: my_agent ---
+fn: calculate_sum(a: int, b: int) -> int
+    Calculates the sum of two integers.
+---------------------------
 ```
 
 ## State Inspection: `view(state)`
@@ -46,28 +60,36 @@ def analyze_data(numbers: list[int], state: Versioned) -> dict:  # type: ignore[
 
 # Initialize and execute
 state = Versioned()
-result = analyze_data([1, 2, 3, 4, 5], state=state)
+result = analyze_data([1, 2, 3], state=state)
 
 # View a summary of the most recent state changes
-state_view = view(state)
-print(state_view)
+print(view(state))
+```
+
+**Example Output (`focus="recent"`):**
+```text
+--- State Diff (Commit: a1b2c3d) ---
++ ADDED: intermediate_result = [1, 4, 9]
++ ADDED: final_summary = {'sum_squares': 14}
+------------------------------------
 ```
 
 ### State Focus Options
 
 The `focus` parameter controls what part of the state to display:
 
-- **`focus="recent"`** (Default): Shows a summary of state changes from the most recent agent execution. This is like a "diff" of the agent's memory.
-- **`focus="full"`**: Shows the complete, raw key-value state at the current commit. This is a full snapshot of the agent's memory.
+- **`focus="recent"`** (Default): Returns a formatted **string** summarizing state changes from the most recent agent execution (like a "diff").
+- **`focus="full"`**: Returns a **dictionary** containing the complete, raw key-value state at the current commit.
 
 ```python
-# See what changed in the last step
-recent_changes = view(state, focus="recent")
+# See what changed in the last step (returns a string)
+recent_changes_view = view(state, focus="recent")
+print(recent_changes_view)
 
-# Get the entire state dictionary
-full_state = view(state, focus="full")
-if "result" in full_state:
-    print(f"Final result: {full_state['result']}")
+# Get the entire state dictionary (returns a dict)
+full_state_dict = view(state, focus="full")
+if "final_summary" in full_state_dict:
+    print(f"Final result: {full_state_dict['final_summary']}")
 ```
 
 You can also use `view()` to inspect a historical state snapshot retrieved using `state.checkout()`. See [Inspecting Historical State](state.md#inspecting-historical-state) for a complete example.
@@ -88,4 +110,4 @@ Use the right tool for the job:
 - See [Agent API](agent.md) for registering capabilities
 - See [State API](state.md) for state management
 - See [Events API](events.md) for programmatic event access
-- See [Task API](task.md) for creating agent tasks 
+- See [Task API](task.md) for creating agent tasks

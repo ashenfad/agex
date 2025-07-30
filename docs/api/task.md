@@ -206,7 +206,7 @@ def process_data(data: list[int]) -> dict:  # type: ignore[return-value]
     pass
 
 @agent.task  
-def update_database(records: list[dict]):  # type: ignore[return-value]
+def update_database(records: list[dict]) -> bool:  # type: ignore[return-value]
     """Update database with new records."""
     pass
 ```
@@ -265,8 +265,7 @@ result = process_numbers("invalid", 0.8)     # ❌ Raises validation error
 ## Complete Example
 
 ```python
-from agex import Agent
-from agex.state import Versioned
+from agex import Agent, Versioned
 
 # Create agents
 researcher = Agent(name="researcher")

@@ -6,7 +6,7 @@
 
 ![agex demo gif](docs/assets/teaser.gif)
 
-**This works because** `agex` provides easy runtime interoperability. The agent receives and returns real `pandas.DataFrame` and `plotly.Figure` objects, not just JSON. It works directly with your libraries. **Dive deeper with the full [`agex101.ipynb`](https://ashenfad.github.io/agex/demos/agex101/) tutorial.**
+**This works because** `agex` provides easy runtime interoperability. The agent receives and returns real `pandas.DataFrame` and `plotly.Figure` objects, not just JSON. It works directly with your libraries.
 
 **📚 [Get a Quick Start](https://ashenfad.github.io/agex/quick-start/)** - Learn step-by-step with hands-on examples
 
@@ -75,7 +75,7 @@ result = analyze(
 print(result) # {'mean': 17.28, 'median': 4}
 ```
 
-Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This shifts the work of writing composite operations from you to the agent. For a deeper dive on how this code-native approach compares to industry tooling standards, see our [note on MCP and the `agex` philosophy](./docs/agex-and-mcp.md).
+Because agents think in code, they can compose many low-level function calls into a complete program within a single execution step. This shifts the work of writing composite operations from you to the agent. For a deeper dive on how this code-native approach compares to industry tooling standards, see our [note on MCP and the agex philosophy](https://ashenfad.github.io/agex/agex-and-mcp/).
 
 See [`examples/mathy.py`](./examples/mathy.py) for agents handling complex mathematical transformations without custom tools.
 

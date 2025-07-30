@@ -9,7 +9,7 @@ When you call agent tasks, they may raise specific exceptions based on how the a
 Agent tasks can raise specific exceptions during execution:
 
 ```python
-from agex import Agent, TaskFail, TaskClarify
+from agex import Agent, TaskFail, TaskClarify, TaskTimeout
 # Note: TaskSuccess is handled internally and doesn't need to be imported
 ```
 
@@ -30,17 +30,22 @@ agent = Agent()
 def confirmable_action(action: str) -> str:  # type: ignore[return-value]
     pass
 
-try:
-    result = confirmable_action("delete all files")
-except TaskClarify as e:
-    # The agent is asking for confirmation
-    if input(f"{e.message} (y/n)? ").lower() == 'y':
-        # Provide confirmation and retry the task
-        # (In a real app, you might pass the confirmation in the prompt or state)
-        print("Retrying with confirmation...")
-    else:
-        print("Action cancelled.")
-
+prompt = "delete all files"
+while True:
+    try:
+        result = confirmable_action(prompt)
+        print(f"Success: {result}")
+        break
+    except TaskClarify as e:
+        # The agent is asking for confirmation.
+        response = input(f"{e.message} (y/n)? ").lower()
+        if response == 'y':
+            # Add the confirmation to the prompt and retry.
+            prompt += " -- user confirmed."
+            print("Retrying with confirmation...")
+        else:
+            print("Action cancelled.")
+            break
 ```
 
 ### `TaskFail`
@@ -123,11 +128,11 @@ except TaskTimeout as e:
 
 ### Parent Agent Callers
 
-In multi-agent workflows, child agent errors are automatically converted to evaluation errors that appear in the parent's stdout. This allows parent agents to see and respond to sub-agent failures naturally.
+In multi-agent workflows, child agent errors are automatically converted to evaluation errors that appear in the parent's execution log (its virtual `stdout`). This allows parent agents to see and respond to sub-agent failures naturally.
 
 **How it works:**
 - When a sub-agent calls `task_clarify()` or `task_fail()`, the framework converts these to `EvalError`s
-- The parent agent sees these errors in their stdout as: `💥 Evaluation error: Sub-agent needs clarification: <message>` or `💥 Evaluation error: Sub-agent failed: <message>`
+- The parent agent sees these errors in its execution log as: `💥 Evaluation error: Sub-agent needs clarification: <message>` or `💥 Evaluation error: Sub-agent failed: <message>`
 - The parent can then respond by retrying with different parameters, using alternative approaches, or escalating the error
 
 This error conversion only happens for sub-agents. Top-level agents (called directly by user code) still raise `TaskClarify` and `TaskFail` exceptions normally.
@@ -136,14 +141,13 @@ This error conversion only happens for sub-agents. Top-level agents (called dire
 
 *This section explains what happens internally when agents run. You don't need to call these functions - they're used by agents automatically.*
 
-Agents have three internal functions to signal different outcomes:
+Agents have internal functions to signal different outcomes:
+- **`task_success(result)`** - Agent completed successfully. Becomes the return value of the task.
+- **`task_fail(message)`** - Agent cannot complete the task. Raises a `TaskFail` exception.
+- **`task_clarify(message)`** - Agent needs more information. Raises a `TaskClarify` exception.
+- **`task_continue(*observations)`** - Agent wants to continue to the next think-act cycle. This is the default internal behavior and does not raise an exception.
 
-- **`task_success(result)`** - Agent completed successfully and returns the result
-- **`task_fail(message)`** - Agent cannot complete the task and provides an error message
-- **`task_clarify(message)`** - Agent needs more information and provides a clarification message
-- **`task_continue(*observations)`** - Agent wants to continue to the next iteration with optional observations
-
-These internal agent calls become the exceptions you handle in your code (except for `task_success` which returns the result directly).
+These internal agent calls become the exceptions you handle in your code.
 
 ## Best Practices
 
@@ -160,7 +164,6 @@ except TaskClarify as e:
 except TaskFail as e:
     log_error(f"Task failed: {e.message}")
     handle_failure()
-# Note: TaskSuccess is handled internally and returns the result directly
 ```
 
 **Distinguish timeout from task failure:**
@@ -200,4 +203,4 @@ def robust_pipeline(data: str) -> dict:  # type: ignore[return-value]
 - **Agent Creation**: See [Agent](agent.md) for configuring timeouts and iterations
 - **Task Definition**: See [Task](task.md) for implementing agent tasks  
 - **Multi-Agent Patterns**: See [Registration](registration.md) for dual-decorator workflows
-- **State Management**: See [State](state.md) for error persistence across executions 
+- **State Management**: See [State](state.md) for error persistence across executions

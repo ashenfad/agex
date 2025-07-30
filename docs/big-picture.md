@@ -87,7 +87,7 @@ Traditional frameworks require separate tool calls for mean and median. agex age
 Git-like versioning with automatic checkpointing enables powerful debugging:
 
 ```python
-from agex import Versioned, events
+from agex import ActionEvent, Versioned, events
 
 state = Versioned()
 result = my_agent_task("complex analysis", state=state)
@@ -104,22 +104,30 @@ This creates a complete audit trail where you can inspect the agent's workspace 
 
 ### 4. Multi-Agent Orchestration
 
-Natural coordination through hierarchical delegation or simple Python control flow:
+Natural coordination through hierarchical delegation or simple Python control flow. No workflow DSLs or configuration files needed - just Python.
+
+**Hierarchical Delegation**
+
+The dual-decorator pattern (`@orchestrator.fn` + `@specialist.task`) enables elegant specialist architectures where sub-agents become callable functions for an orchestrator. This allows for natural hierarchies where complex workflows feel like simple function composition.
 
 ```python
-# Hierarchical: Sub-agents as functions for orchestrators
+# Sub-agents as functions for orchestrators
 @orchestrator.fn(docstring="Process raw data") 
 @specialist.task("Clean and normalize data")
 def process_data(data: list) -> dict:  # type: ignore[return-value]
     pass
+```
 
-# Python control flow: Iterative improvement between agents  
+**Peer Collaboration**
+
+Agents can also collaborate as peers using standard Python control flow, such as in an iterative improvement loop:
+
+```python
+# Iterative improvement between agents  
 report = researcher("AI trends in 2024")
 while not (review := critic(report)).approved:
     report = writer(review.feedback, report)
 ```
-
-No workflow DSLs or configuration files needed - just Python.
 
 ## Why This Matters
 
@@ -157,23 +165,6 @@ This curated environment helps guide the agent toward a correct solution by limi
 This philosophy of providing guidance through a curated environment is the primary design principle. A powerful and welcome side-effect of this approach is a robust security model. By limiting the agent's world to only the capabilities you provide, you inherently prevent it from accessing unintended, and potentially unsafe, parts of your system. Security becomes a natural outcome of thoughtful agent design.
 
 For a more detailed comparison of this approach to industry-standard tooling models like MCP, see our full **[note on this philosophy](./agex-and-mcp.md)**.
-
-### Hierarchical Agent Architecture
-
-The dual-decorator pattern enables elegant specialist architectures:
-
-```python
-orchestrator = Agent(name="orchestrator")
-research_expert = Agent(name="research_expert")
-
-@orchestrator.fn(docstring="Conduct comprehensive research")
-@research_expert.task("Perform deep research with academic rigor")
-def deep_research(topic: str) -> ResearchReport:  # type: ignore[return-value]
-    """Research a topic thoroughly."""
-    pass
-```
-
-Specialist agents become callable functions for orchestrator agents, enabling natural hierarchies where complex workflows feel like simple function composition.
 
 ## Security Through Design
 

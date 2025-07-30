@@ -29,9 +29,29 @@ register_stdlib(data_analyst)
 
 # The agent now has access to these libraries
 @data_analyst.task
-def analyze(data: list) -> float:
+def analyze(data: list) -> float: # type: ignore[return-value]
     """Calculate the mean of the data using pandas."""
     pass
+```
+
+## Customizing Helper Defaults
+The helpers are a starting point, not a final configuration. You can easily override their defaults using the standard registration methods. This leverages the **Registration Override Principle**, where more specific registrations override more general ones.
+
+For example, `register_pandas()` excludes all `read_*` functions for security. If your use case requires the agent to read CSVs, you can "promote" the `read_csv` function after calling the helper:
+
+```python
+import pandas as pd
+from agex import Agent
+from agex.helpers import register_pandas
+
+agent = Agent()
+
+# Use the helper for 90% of the work
+register_pandas(agent)
+
+# Now, override the default exclusion for a specific use case
+# by registering `read_csv` with high visibility.
+agent.fn(pd.read_csv, visibility="high")
 ```
 
 ## Available Helpers
@@ -40,7 +60,7 @@ def analyze(data: list) -> float:
 
 Registers a curated list of safe and useful modules from the Python standard library.
 
--   **Mathematical**: `math`, `random` (with state-setting functions excluded), `statistics`, `decimal`, `fractions`.
+-   **Mathematical**: `math`, `random` (with state-setting functions like `seed()` excluded), `statistics`, `decimal`, `fractions`.
 -   **Utilities**: `collections`, `datetime` (including its classes), `uuid`.
 -   **Text Processing**: `re`, `string`, `textwrap`.
 -   **Data Encoding**: `json`, `base64`, `hashlib`.
@@ -72,4 +92,4 @@ Registers the `plotly` library for creating interactive visualizations.
 -   Registers `plotly.tools`, `plotly.colors`, and `plotly.figure_factory` for advanced plotting utilities.
 -   Specifically registers the `go.Figure` class to ensure methods like `add_scatter` and `update_layout` are available.
 -   Excludes functions related to writing files or showing plots directly (e.g., `write_image`, `show`), as these are side-effects that should be handled by the user's code, not the agent's.
--   All modules and classes are registered with `visibility="low"`. 
+-   All modules and classes are registered with `visibility="low"`.

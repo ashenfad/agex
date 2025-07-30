@@ -186,6 +186,7 @@ For **testing**, use `clear_agent_registry()` to prevent cross-contamination bet
 
 ```python
 from agex import clear_agent_registry
+import pytest
 
 # Typical pytest usage
 @pytest.fixture(autouse=True)

@@ -51,7 +51,7 @@ def events(
 
 ## Event Types
 
-All events inherit from `BaseEvent` and include automatic timestamps and agent attribution:
+All events inherit from `BaseEvent` and include automatic timestamps and agent attribution.
 
 ### Core Events
 
@@ -142,18 +142,20 @@ All events share these common properties from `BaseEvent`:
 
 - **`timestamp`**: `datetime` - UTC timestamp when the event occurred.
 - **`agent_name`**: `str` - Name of the agent that generated the event.
-- **`commit_hash`**: `str | None` - If using `Versioned` state, the commit hash of the agent's state before this event occurred. See [Inspecting Historical State](../api/state.md#inspecting-historical-state) for how to use this for debugging.
+- **`commit_hash`**: `str | None` - If using `Versioned` state, the commit hash of the agent's state before this event occurred. See [Inspecting Historical State](state.md#inspecting-historical-state) for how to use this for debugging.
 
 ## Consuming Events
 
-There are three primary ways to consume events from agent tasks, depending on whether you need real-time access or post-hoc analysis.
+There are three primary ways to consume events from agent tasks.
 
 ### 1. Post-Hoc Analysis with `events()`
+This is the ideal tool for analyzing a task **after it has completed**. You pass the `state` object used during the run, and it returns a complete, chronologically sorted list of all events that occurred, including those from sub-agents.
 
-The `events()` function is the ideal tool for analyzing a task after it has completed. You pass it the `state` object used during the run, and it returns a complete, chronologically sorted list of all events that occurred, including those from sub-agents.
+This is the primary method for debugging and detailed inspection of an agent's behavior.
 
 ```python
 from agex import events, Versioned
+from agex.agent.events import ActionEvent
 
 state = Versioned()
 result = my_task("run analysis", state=state)
@@ -163,79 +165,28 @@ all_events = events(state)
 action_events = [e for e in all_events if isinstance(e, ActionEvent)]
 print(f"The agent took {len(action_events)} actions.")
 ```
-This is the primary method for debugging and detailed inspection of an agent's behavior.
 
-### Choosing a Real-time Consumption Pattern: `on_event` vs. `.stream()`
-
-For handling events in real-time, `agex` offers two patterns. Your choice depends on whether you need the task's final result and how you want to handle events from nested, multi-agent workflows.
-
-#### Use `on_event`: The Recommended Approach
-
-The `on_event` parameter is the recommended approach for most use cases. It provides a true, real-time stream of events as they happen—even from sub-agents—while preserving the natural flow of a standard function call.
-
-```python
-# You get the final result AND see events from all agents immediately.
-result = orchestrator_task("run pipeline", on_event=print)
-print(f"Task complete. Result: {result}")
-```
+### 2. Real-time Callback with `on_event`
+The `on_event` parameter is the recommended approach for most real-time use cases. It provides a true, real-time stream of events as they happen—even from sub-agents—while preserving the natural flow of a standard function call.
 
 **Choose `on_event` if:**
 *   You need the final return value of the task.
 *   You want a simple "fire-and-forget" callback for logging or display.
 *   You require immediate, non-batched events from hierarchical agent workflows.
 
-#### Use `.stream()`: For Event-Focused Workflows
-
-The `.stream()` method is best for situations where your primary goal is to process the stream of events itself, and the final return value of the task is not needed.
-
-```python
-# You get a generator of events, but not the final result.
-for event in my_task.stream("process data"):
-    if isinstance(event, ActionEvent):
-        log_agent_action(event)
-```
-
-**Choose `.stream()` if:**
-*   You only care about the events and not the final result.
-*   You want to use generator-based control flow (e.g., with `itertools`).
-
-**Known Limitation:** In hierarchical agent workflows, events from a sub-agent are currently yielded as a **single batch** after the sub-agent task completes, rather than being streamed one-by-one. This is a result of the current AST evaluation architecture and may change in the future. For true real-time streaming in multi-agent setups, prefer `on_event`.
-
-### 2. Real-time Display with `on_event`
-
-For interactive use cases where you want to see agent thinking in real-time, the most elegant approach is using `on_event` with a display function. This provides immediate visual feedback while still returning the final result.
-
 **In Jupyter notebooks:**
 ```python
 from IPython.display import display
 
 # See events pop up in real-time while getting the final result
-result = my_task("analyze this data", data=dataset, on_event=display)
+result = my_task("analyze this data", on_event=display)
 print(f"Final result: {result}")
 ```
 
-**In regular Python scripts:**
+**For production monitoring:**
 ```python
-# Print events to console as they happen
-result = my_task("process files", file_list=files, on_event=print)
-print(f"Processing completed: {result}")
-```
+from agex.agent.events import FailEvent
 
-### 3. Advanced Real-time Processing
-
-For cases requiring fine-grained control over event handling, you have two additional options:
-
-**Streaming with `.stream()`:**
-```python
-# Manual iteration over event stream
-for event in my_task.stream("process data", data=dataset):
-    if isinstance(event, ActionEvent):
-        print(f"Agent thinking: {event.thinking[:100]}...")
-# Note: This approach doesn't easily provide the final result
-```
-
-**Custom event handlers:**
-```python
 def custom_handler(event):
     # Custom processing logic for production monitoring
     if isinstance(event, FailEvent):
@@ -245,35 +196,25 @@ def custom_handler(event):
 result = my_task("important task", on_event=custom_handler)
 ```
 
-For complete details on streaming and custom handlers, see the **[Task API Documentation](task.md)**.
+### 3. Real-time Generator with `.stream()`
+The `.stream()` method is best for situations where your primary goal is to process the stream of events itself, and the final return value of the task is **not** needed.
 
-## Usage Patterns
-
-### Basic Event Retrieval
+**Choose `.stream()` if:**
+*   You only care about the events and not the final result.
+*   You want to use generator-based control flow (e.g., with `itertools`).
 
 ```python
-from agex import Agent, Versioned, events
+from agex.agent.events import ActionEvent
 
-# Create agent and state
-agent = Agent(name="math_agent")
-state = Versioned()
-
-@agent.task
-def calculate(x: int, y: int) -> int:
-    """Calculate x + y."""
-    pass
-
-# Execute task
-result = calculate(x=5, y=3, state=state)
-
-# Get all events
-all_events = events(state)
-print(f"Generated {len(all_events)} events")
-
-# Get events from specific agent only (no children)
-agent_events = events(state, "math_agent", children=False)
-print(f"Math agent generated {len(agent_events)} events")
+# You get a generator of events, but not the final result.
+for event in my_task.stream("process data"):
+    if isinstance(event, ActionEvent):
+        log_agent_action(event)
 ```
+
+**Known Limitation:** In hierarchical agent workflows, events from a sub-agent are currently yielded as a **single batch** after the sub-agent task completes, rather than being streamed one-by-one. For true real-time streaming in multi-agent setups, prefer `on_event`.
+
+## Usage Patterns
 
 ### Event Type Filtering
 
@@ -281,7 +222,7 @@ print(f"Math agent generated {len(agent_events)} events")
 from agex.agent.events import ActionEvent, OutputEvent, SuccessEvent
 
 # Get all events
-all_events = events(state, "math_agent", children=False)
+all_events = events(state)
 
 # Filter by event type
 action_events = [e for e in all_events if isinstance(e, ActionEvent)]
@@ -296,67 +237,20 @@ print(f"Successes: {len(success_events)}")
 ### Multi-Agent Event Monitoring
 
 ```python
-from agex import Agent, Versioned, events
+# Assume orchestrator, worker_a, and worker_b agents are defined
+# and a multi-agent task has been run with a `state` object.
 
-# Create orchestrator and worker agents
-orchestrator = Agent(name="orchestrator")
-worker_a = Agent(name="worker_a") 
-worker_b = Agent(name="worker_b")
-
-state = Versioned()
-
-@orchestrator.task
-def coordinate_work(task_data: dict) -> dict:
-    """Coordinate work between multiple agents."""
-    pass
-
-@worker_a.task  
-def process_part_a(data) -> str:
-    """Process part A of the work."""
-    pass
-
-@worker_b.task
-def process_part_b(data) -> str:
-    """Process part B of the work."""
-    pass
-
-# Execute multi-agent workflow
-result = coordinate_work({"data": "sample"}, state=state)
-
-# Monitor different levels
+# Monitor different levels of the hierarchy
 all_events = events(state)                                    # Everything
 orch_events = events(state, "orchestrator", children=False)   # Just orchestrator
-worker_events = events(state, "orchestrator")                 # Orchestrator + workers
+worker_events = events(state, "orchestrator")                 # Orchestrator + its children
 worker_a_events = events(state, "orchestrator", "worker_a", children=False)  # Just worker A
-```
-
-## Error Handling
-
-Events are always safely retrievable, even when agents encounter errors:
-
-```python
-from agex import Agent, TaskFail, events
-
-agent = Agent(name="error_prone")
-
-@agent.task
-def might_fail() -> str:
-    """Task that might fail."""
-    pass
-
-try:
-    result = might_fail(state=state)
-except TaskFail:
-    # Even failed tasks generate events
-    failure_events = events(state, "error_prone", children=False)
-    print(f"Failure analysis: {len(failure_events)} events generated")
 ```
 
 ## Related APIs
 
 - **[State Management](state.md)**: Understanding state containers and persistence
-- **[Agent](agent.md)**: Creating agents that generate events
-- **[Task](task.md)**: Defining tasks that create TaskStartEvent and completion events
-- **[View](view.md)**: Experimental APIs for agent introspection
+- **[Task Definition](task.md)**: Defining tasks and using `on_event` or `.stream()`
+- **[View API](view.md)**: Experimental APIs for agent introspection
 
 The events system forms the foundation for agent introspection and is essential for debugging, monitoring, and building sophisticated multi-agent systems.

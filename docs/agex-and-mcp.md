@@ -1,12 +1,12 @@
 # A Note on Tooling (MCP) and the `agex` Philosophy
 
-You may have noticed that the `agex` documentation emphasizes direct integration with Python libraries rather than compatibility with emerging "tool use" standards like the Machine-Callable Pool (MCP). This is a deliberate and core design decision. This document explains the philosophy behind it.
+You may have noticed that the `agex` documentation emphasizes direct integration with Python libraries rather than compatibility with emerging "tool use" standards like the Machine-Callable Pool (MCP). This was a deliberate design choice, and this document explains the philosophy behind our code-native approach.
 
 ## The `agex` Premise: PyPI is the Ultimate Marketplace
 
 The industry's move toward standardizing agent tools via MCP is an important effort to create a common language for agents to discover and use external, stateless services. It aims to build a new marketplace of capabilities.
 
-`agex` is built on a different and, we believe, more powerful premise:
+`agex` is built on a different and more powerful premise:
 
 > The richest, most mature, and most capable ecosystem of "tools" for a Python agent already exists. **It's called the Python Package Index (PyPI).**
 
@@ -39,9 +39,9 @@ The agent's role fundamentally changes. It is no longer a "form-filler" limited 
 This "code-native" approach has several key advantages:
 
 *   **Power and Flexibility:** An agent can compose multiple low-level functions from a library (`get_historical_data`, `get_forecast`, `calculate_average`) in one turn to answer a complex question, something that would require multiple, high-latency round trips in a typical tool-based system.
-*   **No Boilerplate:** You don't need to write or maintain custom JSON schemas, wrapper functions, or tool definitions for libraries that already have a perfectly good Python interface.
+*   **No Boilerplate:** You don't need to write or maintain custom JSON schemas or tool definitions. Instead, you can focus on curating the *ideal subset* of a library's API to expose to the agent, providing guidance and security without unnecessary boilerplate.
 *   **Leverages the Entire Ecosystem:** It unlocks the long tail of the Python ecosystem, not just the small subset of libraries that have been explicitly wrapped as tools.
 
 While one could wrap a Python library and expose it as an MCP tool, this often diminishes the library's power. It forces you to choose a few high-level functions to expose, hiding the rich, low-level functionality that enables agents to solve novel problems creatively.
 
-`agex` makes a forward-looking bet: that agents are capable enough to work with the same powerful libraries that human developers do. Our goal is to provide the secure runtime environment that makes this powerful new paradigm possible. 
+The `agex` thesis is that agents are capable enough to work with the same powerful libraries that human developers do. Our goal is to provide the secure runtime environment that makes this powerful new paradigm possible.
