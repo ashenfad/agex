@@ -48,7 +48,7 @@ def get_llm_client(
         if AnthropicClient is None:
             raise ImportError(
                 "Anthropic provider requires the 'anthropic' package. "
-                "Install it with: pip install 'agex[anthropic]'"
+                'Install it with: pip install "agex[anthropic]"'
             )
         config = get_llm_config(**kwargs)
         return AnthropicClient(**config)
@@ -57,7 +57,7 @@ def get_llm_client(
         if GeminiClient is None:
             raise ImportError(
                 "Gemini provider requires the 'google-generativeai' package. "
-                "Install it with: pip install 'agex[gemini]'"
+                'Install it with: pip install "agex[gemini]"'
             )
         config = get_llm_config(**kwargs)
         return GeminiClient(**config)
@@ -66,7 +66,7 @@ def get_llm_client(
         if OpenAIClient is None:
             raise ImportError(
                 "OpenAI provider requires the 'openai' package. "
-                "Install it with: pip install 'agex[openai]'"
+                'Install it with: pip install "agex[openai]"'
             )
         config = get_llm_config(**kwargs)
         return OpenAIClient(**config)

@@ -80,18 +80,18 @@ def test_installation_instructions_in_error_messages():
             get_llm_client(provider="openai")
 
         error_message = str(exc_info.value)
-        assert "pip install 'agex[openai]'" in error_message
+        assert 'pip install "agex[openai]"' in error_message
 
     with patch("agex.llm.AnthropicClient", None):
         with pytest.raises(ImportError) as exc_info:
             get_llm_client(provider="anthropic")
 
         error_message = str(exc_info.value)
-        assert "pip install 'agex[anthropic]'" in error_message
+        assert 'pip install "agex[anthropic]"' in error_message
 
     with patch("agex.llm.GeminiClient", None):
         with pytest.raises(ImportError) as exc_info:
             get_llm_client(provider="gemini")
 
         error_message = str(exc_info.value)
-        assert "pip install 'agex[gemini]'" in error_message
+        assert 'pip install "agex[gemini]"' in error_message

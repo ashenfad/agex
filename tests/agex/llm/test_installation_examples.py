@@ -48,7 +48,7 @@ def test_openai_provider_installation():
 
     except ImportError as e:
         # This would happen if openai package isn't installed
-        assert "pip install 'agex[openai]'" in str(e)
+        assert 'pip install "agex[openai]"' in str(e)
         print("❌ OpenAI provider requires installation")
 
 
@@ -83,7 +83,7 @@ def test_anthropic_provider_installation():
 
     except ImportError as e:
         # This would happen if anthropic package isn't installed
-        assert "pip install 'agex[anthropic]'" in str(e)
+        assert 'pip install "agex[anthropic]"' in str(e)
         print("❌ Anthropic provider requires installation")
 
 
@@ -116,7 +116,7 @@ def test_gemini_provider_installation():
 
     except ImportError as e:
         # This would happen if google-generativeai package isn't installed
-        assert "pip install 'agex[gemini]'" in str(e)
+        assert 'pip install "agex[gemini]"' in str(e)
         print("❌ Gemini provider requires installation")
 
 
