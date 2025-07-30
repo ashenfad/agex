@@ -141,7 +141,7 @@ Key sections:
 For design concepts and higher-level documentation, see:
 - **[The Big Picture](https://ashenfad.github.io/agex/big-picture/)** - Framework philosophy, architecture, and multi-agent patterns
 - **[Security Model](https://ashenfad.github.io/agex/security/)** - Execution environment and safety guarantees
-- **[Sandbox Limitations](https://ashenfad.github.io/agex/development/nearly-python/)** - Understanding agent code constraints and Python compatibility
+- **[Sandbox Limitations](https://ashenfad.github.io/agex/nearly-python/)** - Understanding agent code constraints and Python compatibility
 
 ## Installation
 
