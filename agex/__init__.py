@@ -1,5 +1,15 @@
 from .agent import Agent, clear_agent_registry
 from .agent.datatypes import TaskClarify, TaskFail, TaskTimeout
+from .agent.events import (
+    ActionEvent,
+    ClarifyEvent,
+    ErrorEvent,
+    Event,
+    FailEvent,
+    OutputEvent,
+    SuccessEvent,
+    TaskStartEvent,
+)
 from .eval.core import evaluate_program as evaluate
 from .llm.config import configure_llm
 from .render.view import view
@@ -23,4 +33,12 @@ __all__ = [
     "TaskTimeout",
     "clear_agent_registry",
     "events",
+    "Event",
+    "TaskStartEvent",
+    "ActionEvent",
+    "OutputEvent",
+    "ErrorEvent",
+    "SuccessEvent",
+    "FailEvent",
+    "ClarifyEvent",
 ]
