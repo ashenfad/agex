@@ -2,33 +2,11 @@
 
 **`agex`** (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to work directly with your existing libraries and codebase. It provides a sandboxed execution environment with seamless access to the Python ecosystem.
 
-## 30-Second Example
+## 25-Second Demo
 
-```python
-import math
-from typing import Callable
-from agex import Agent
+![agex demo gif](assets/teaser.gif)
 
-agent = Agent()
-agent.module(math)  # Share capabilities with the agent 
-
-@agent.task
-def make_function(description: str) -> Callable:  # type: ignore[return-value]
-    """Generate a Python function from a text description."""
-    pass  # Empty body - the agent implements this function
-
-# Agent uses the 'math' module to build the requested function
-distance_fn = make_function(
-    "takes a 2D point (x, y) and returns distance from the origin"
-)
-
-# Agent returns an actual Python callable you can use immediately
-points = [(4, 3), (1, 1), (0, 5)] 
-points.sort(key=distance_fn)  # Works with existing Python code
-print(f"Sorted points: {points}") # [(1, 1), (4, 3), (0, 5)]
-```
-
-**This works because** `agex` provides easy runtime interoperability - agents don't just return JSON, they create real Python objects that live directly in your runtime environment.
+**This works because** `agex` provides easy runtime interoperability. The agent receives and returns real `pandas.DataFrame` and `plotly.Figure` objects, not just JSON. It works directly with your libraries.
 
 ## What Makes This Different
 
