@@ -124,15 +124,15 @@ math_solver = create_specialist("solve mathematical equations step by step")
 
 Jupyter notebooks demonstrating agex concepts with rich output and explanations.
 
-### [`docs/demos/runtime-interoperability.ipynb`](../demos/runtime-interoperability.ipynb) - Complete Walkthrough
+### [`agex101.ipynb`](../demos/agex101.ipynb) - Your First AI Data Assistant
 **Complexity**: ⭐⭐ (Beginner+)  
-**What it shows**: Step-by-step introduction to agex concepts with rich outputs and explanations.
+**What it shows**: A complete, step-by-step walkthrough of a data science task.
 
 Interactive exploration of:
-- Agent creation and configuration
-- Function and module registration  
-- Event monitoring and debugging
-- Multi-agent workflows
+- Reshaping raw data with an agent
+- Passing `DataFrame` objects
+- Inspecting agent "thinking" with `on_event`
+- Creating a final visualization
 
 ## 📁 Supporting Files
 
@@ -150,7 +150,7 @@ Several examples depend on supporting files:
 1. **Start simple**: `mathy.py` → `funcy.py` 
 2. **Add complexity**: `data.py` → `viz.py`
 3. **Try multi-agent**: `hierarchical.py` → `hierarchical_composed.py` → `evaluator_optimizer.py`
-4. **Go interactive**: `runtime-interoperability.ipynb`
+4. **Go interactive**: `agex101.ipynb`
 5. **Explore advanced**: `db.py` → `dogfood.py`
 
 ## 🏃‍♂️ Quick Start

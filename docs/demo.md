@@ -2,27 +2,16 @@
 
 Explore agex through complete, runnable examples that demonstrate core capabilities with real code, outputs, and explanations.
 
-## Featured Demonstrations
+## Featured Demonstration
 
-### 📊 [Runtime Interoperability](demos/runtime-interoperability.ipynb)
-**Human-orchestrated workflow**
+### 🚀 [agex 101: Your First AI Data Assistant](demos/agex101.ipynb)
 
-Learn how agex agents work with real Python objects:
+A complete, hands-on walkthrough of `agex`'s core concepts:
 
-- Database integration without wrapper classes
-- Agents returning live `pandas.DataFrame` objects  
-- Complex data visualization with `plotly.Figure` objects
-- Object passing between your code and agent environments
-
-### 🤖 Multi-Agent Orchestration
-**Agent-orchestrated workflow** *(Coming soon)*
-
-See sophisticated agent coordination in action:
-
-- Orchestrator agents delegating to specialist sub-agents
-- Hierarchical agent workflows with natural Python control flow
-- Complete event introspection and debugging capabilities
-- Time-travel debugging with execution history
+- **Code-Native Workflow**: See an agent use `pandas` and `plotly` directly.
+- **Live Object Passing**: Watch the agent receive and return real `DataFrame` objects.
+- **Agent Observability**: Learn how to inspect the agent's thought process with `on_event` handlers.
+- **Zero-to-Insight**: Go from a raw, messy dataset to a final plot in a single notebook.
 
 ## About These Demos
 
