@@ -2,6 +2,14 @@
 
 `agex` provides a secure Python execution environment for AI agents through a comprehensive multi-layer security strategy.
 
+### Philosophy: A Walled Garden, Not a Fortress
+
+The security model of `agex` is best understood as a **"walled garden,"** not an impenetrable fortress. Its primary goal is to provide a robust safety net that prevents common and foreseeable errors—both accidental and malicious—within its intended use case. It is designed to stop an agent from inadvertently deleting files, accessing sensitive data, or otherwise impacting the host system in unintended ways.
+
+This approach is a deliberate trade-off. While a fully isolated Virtual Machine (VM) offers a higher degree of theoretical security, it comes at a cost to ease of integration.
+
+`agex` is significantly safer than frameworks that rely on direct `exec()` calls but is not intended to be a substitute for a VM when running fully untrusted code from unknown sources.
+
 ## Core Security Strategy
 
 The `agex` sandbox uses a **whitelist-based security model** with these key components:
