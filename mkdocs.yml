@@ -111,5 +111,4 @@ extra_css:
   - stylesheets/extra.css
 
 extra_javascript:
-  - https://cdn.plot.ly/plotly-latest.min.js
-  - assets/plotly-init.js
+  - https://cdn.jsdelivr.net/npm/plotly.js@2.35.2/dist/plotly.min.js
