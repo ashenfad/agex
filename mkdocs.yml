@@ -41,7 +41,7 @@ nav:
   - Quick Start: quick-start.md
   - The Big Picture: big-picture.md
   - Demos:
-    - Runtime Interoperability: demos/runtime-interoperability.ipynb
+    - Agex 101: demos/agex101.ipynb
   - API Reference:
     - Overview: api/overview.md
     - Agent: api/agent.md
