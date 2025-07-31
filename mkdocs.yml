@@ -106,3 +106,6 @@ extra:
 
 extra_css:
   - stylesheets/extra.css
+
+extra_javascript:
+  - https://cdn.plot.ly/plotly-latest.min.js
