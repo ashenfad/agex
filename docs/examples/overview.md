@@ -68,29 +68,8 @@ Examples demonstrating different approaches to agent coordination and collaborat
 
 ### [`hierarchical.py`](../../../examples/hierarchical.py) - Hierarchical Agents
 **Complexity**: ⭐⭐⭐ (Intermediate+)
-**What it shows**: The recommended dual-decorator pattern (`@orchestrator.fn` + `@specialist.task`) to build a self-contained hierarchical system where an orchestrator delegates to specialists.
-
-```python
-# Sub-agents become functions for orchestrators
-@orchestrator.fn
-@data_generator.task
-def make_data(description: str) -> np.ndarray:
-    pass
-```
-
+**What it shows**: Building a hierarchical system by reusing the `viz` and `data` agent tasks and registering them with an orchestrator agent.
 **Run it**: `python examples/hierarchical.py`
-
-### [`hierarchical_composed.py`](../../../examples/hierarchical_composed.py) - Composed Hierarchical Agents
-**Complexity**: ⭐⭐⭐ (Intermediate+)
-**What it shows**: Building a hierarchical system by importing tasks from other modules and registering them with `agent.fn()`, demonstrating how agent capabilities can be composed.
-
-```python
-# Register imported tasks as functions for the orchestrator
-from data import make_data
-orchestrator.fn(make_data)
-```
-
-**Run it**: `python examples/hierarchical_composed.py`
 
 ### [`evaluator_optimizer.py`](../../../examples/evaluator_optimizer.py) - Peer Collaboration
 **Complexity**: ⭐⭐⭐ (Intermediate+)  
@@ -149,7 +128,7 @@ Several examples depend on supporting files:
 
 1. **Start simple**: `mathy.py` → `funcy.py` 
 2. **Add complexity**: `data.py` → `viz.py`
-3. **Try multi-agent**: `hierarchical.py` → `hierarchical_composed.py` → `evaluator_optimizer.py`
+3. **Try multi-agent**: `hierarchical.py` → `evaluator_optimizer.py`
 4. **Go interactive**: `agex101.ipynb`
 5. **Explore advanced**: `db.py` → `dogfood.py`
 
@@ -177,9 +156,8 @@ These examples demonstrate key agex patterns:
 |---------|----------|-------------|
 | **Library Integration** | `mathy.py`, `data.py`, `viz.py` | `agent.module()` for existing libraries |
 | **Function Generation** | `funcy.py` | Agents creating real Python callables |
-| **Object Passing** | `viz.py`, `hierarchical_composed.py` | Complex data flowing between agents |
-| **Hierarchical Agents** | `hierarchical.py` | Dual-decorator pattern for specialist delegation |
-| **Agent Composition** | `hierarchical_composed.py` | Importing tasks to build a new agent |
+| **Object Passing** | `viz.py` | Complex data flowing between agents |
+| **Hierarchical Agents** | `hierarchical.py` | Dual-registration for specialist delegation |
 | **Peer Collaboration** | `evaluator_optimizer.py` | Independent agents with Python control flow |
 | **Live Objects** | `db.py` | Working with stateful APIs directly |
 | **State Persistence** | `funcy.py`, `db.py` | Using `Versioned` for memory across calls |
