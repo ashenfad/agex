@@ -96,6 +96,9 @@ plugins:
       allow_errors: false
       include_source: true
       ignore_h1_titles: true
+      include_requirejs: true
+      kernel_name: python3
+      theme: dark
 
 extra:
   social:
@@ -109,3 +112,4 @@ extra_css:
 
 extra_javascript:
   - https://cdn.plot.ly/plotly-latest.min.js
+  - assets/plotly-init.js
