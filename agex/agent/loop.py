@@ -5,7 +5,6 @@ This module provides the TaskLoopMixin that handles the core think→act loop
 for agent tasks, including LLM communication and code evaluation.
 """
 
-import inspect
 from copy import deepcopy
 from typing import Any, Callable
 
@@ -34,7 +33,6 @@ from agex.eval.core import evaluate_program
 from agex.eval.error import EvalError
 from agex.eval.objects import PrintAction
 from agex.render.definitions import render_definitions
-from agex.render.value import ValueRenderer
 from agex.state import Live, Namespaced, Versioned, events
 from agex.state.log import add_event_to_log
 
@@ -377,67 +375,11 @@ class TaskLoopMixin(BaseAgent):
         return_type: type,
     ) -> str:
         """Build the initial user message with task description."""
-        parts = []
+        from agex.agent.task_messages import build_task_message
 
-        # Add task description
-        if docstring:
-            parts.append(f"Task: {docstring}")
-        else:
-            parts.append("Please complete the assigned task.")
-
-        # Add note about inputs if they exist
-        if inputs_instance is not None:
-            # Use a ValueRenderer with a much longer limit for the initial display.
-            # This renderer is only used for this initial task message.
-            task_input_renderer = ValueRenderer(max_len=2048, max_depth=4)
-            rendered_inputs_value = task_input_renderer.render(inputs_instance)
-            rendered_inputs = f"inputs = {rendered_inputs_value}"
-
-            parts.append(
-                "Details for your task are available in the `inputs` variable. "
-                "Here is its structure and content:"
-            )
-            parts.append(f"```\n{rendered_inputs}\n```")
-            parts.append(
-                "\nAccess these values with patterns like `inputs.some_attr`\n"
-            )
-
-        # Add expected output format with clarification for function types
-        if return_type is inspect.Parameter.empty:
-            # No return type annotation - just call task_success() with no arguments
-            parts.append("When complete, call `task_success()` to indicate completion.")
-        elif "Callable" in str(return_type):
-            # Function return type - special instructions
-            # Clean up the type representation to remove confusing module references
-            return_type_str = str(return_type)
-            # Remove "typing." prefix but keep the useful type information
-            if return_type_str.startswith("typing."):
-                return_type_str = return_type_str[7:]  # Remove "typing." prefix
-
-            parts.append(
-                f"When complete, call `task_success(your_function)` where your_function is the {return_type_str} you created. "
-                "Pass the function object itself, not the result of calling the function.\n"
-            )
-        else:
-            # Regular return type - show the type annotation
-            # Use clean type names for all types when possible
-            if (
-                hasattr(return_type, "__module__")
-                and hasattr(return_type, "__name__")
-                and not hasattr(return_type, "__origin__")  # Not a generic type
-            ):
-                # Use the clean class name for simple types (str, int, custom classes)
-                return_type_name = return_type.__name__
-            else:
-                # For generic types (list[int], dict[str, int]) or complex types,
-                # use the full string representation to preserve type parameters
-                return_type_name = str(return_type)
-
-            parts.append(
-                f"When complete, call `task_success(result: {return_type_name})` with your result."
-            )
-
-        return "\n\n".join(parts)
+        return build_task_message(
+            docstring, inputs_dataclass, inputs_instance, return_type
+        )
 
     def _get_llm_response(self, messages):
         """Get structured response from the agent's configured LLM client."""
