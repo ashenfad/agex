@@ -5,6 +5,7 @@ site_url: https://ashenfad.github.io/agex
 repo_name: ashenfad/agex
 repo_url: https://github.com/ashenfad/agex
 
+
 theme:
   name: material
   favicon: assets/code-braces.svg
@@ -27,6 +28,7 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
+    - toc.integrate
     - navigation.tabs
     - navigation.sections
     - navigation.expand
@@ -96,7 +98,7 @@ plugins:
       allow_errors: false
       include_source: true
       ignore_h1_titles: true
-      include_requirejs: true
+      include_requirejs: false
       kernel_name: python3
       theme: dark
 
@@ -112,3 +114,4 @@ extra_css:
 
 extra_javascript:
   - https://cdn.jsdelivr.net/npm/plotly.js@2.35.2/dist/plotly.min.js
+  - assets/plotly-init.js
