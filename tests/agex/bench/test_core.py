@@ -68,8 +68,7 @@ class TestBenchmarkPassFail:
         ]
         client = DummyLLMClient(responses=dummy_responses)
 
-        agent = Agent(name="math_agent")
-        agent.llm_client = client
+        agent = Agent(name="math_agent", llm_client=client)
 
         @agent.task
         def solve_math(question: str) -> str:
@@ -109,8 +108,7 @@ class TestBenchmarkPassFail:
         ]
         client = DummyLLMClient(responses=dummy_responses)
 
-        agent = Agent(name="math_agent")
-        agent.llm_client = client
+        agent = Agent(name="math_agent", llm_client=client)
 
         @agent.task
         def solve_math(question: str) -> str:
@@ -151,11 +149,12 @@ class TestBenchmarkPassFail:
             LLMResponse(thinking="Bad at math", code="task_success('wrong')"),
         ]
 
-        good_agent = Agent(name="good_agent")
-        good_agent.llm_client = DummyLLMClient(responses=good_responses)
-
-        bad_agent = Agent(name="bad_agent")
-        bad_agent.llm_client = DummyLLMClient(responses=bad_responses)
+        good_agent = Agent(
+            name="good_agent", llm_client=DummyLLMClient(responses=good_responses)
+        )
+        bad_agent = Agent(
+            name="bad_agent", llm_client=DummyLLMClient(responses=bad_responses)
+        )
 
         @good_agent.task
         def good_task(question: str) -> str:
@@ -197,8 +196,7 @@ class TestBenchmarkNumeric:
         ]
         client = DummyLLMClient(responses=dummy_responses)
 
-        agent = Agent(name="writer_agent")
-        agent.llm_client = client
+        agent = Agent(name="writer_agent", llm_client=client)
 
         @agent.task
         def write_story(prompt: str) -> str:
@@ -253,8 +251,7 @@ class TestBenchmarkGeneric:
         ]
         client = DummyLLMClient(responses=dummy_responses)
 
-        agent = Agent(name="echo_agent")
-        agent.llm_client = client
+        agent = Agent(name="echo_agent", llm_client=client)
 
         @agent.task
         def echo_task(text: str) -> str:
@@ -293,8 +290,7 @@ class TestBenchmarkGeneric:
         dummy_responses = [LLMResponse(thinking="Test", code="task_success('result')")]
         client = DummyLLMClient(responses=dummy_responses)
 
-        agent = Agent(name="test_agent")
-        agent.llm_client = client
+        agent = Agent(name="test_agent", llm_client=client)
 
         @agent.task
         def test_task(input_val: str) -> str:
@@ -320,8 +316,7 @@ class TestBenchmarkGeneric:
         dummy_responses = [LLMResponse(thinking="Test", code="task_success('result')")]
         client = DummyLLMClient(responses=dummy_responses)
 
-        agent = Agent(name="test_agent")
-        agent.llm_client = client
+        agent = Agent(name="test_agent", llm_client=client)
 
         @agent.task
         def test_task(input_val: str) -> str:
@@ -353,8 +348,7 @@ class TestConcurrency:
         ]
         client = DummyLLMClient(responses=dummy_responses)
 
-        agent = Agent(name="test_agent")
-        agent.llm_client = client
+        agent = Agent(name="test_agent", llm_client=client)
 
         @agent.task
         def test_task(input_val: str) -> str:

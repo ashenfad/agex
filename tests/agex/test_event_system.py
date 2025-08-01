@@ -31,15 +31,8 @@ class TestEventSystem:
 
     def test_task_start_event_creation(self):
         """Test that TaskStartEvent is properly created with all required fields."""
-        agent = Agent(name="test_agent")
-
-        @agent.task
-        def test_task(name: str, count: int = 5):
-            """Test task with parameters."""
-            pass
-
         # Set up dummy LLM to complete the task
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="I'll complete this simple task.",
@@ -47,9 +40,15 @@ class TestEventSystem:
                 )
             ]
         )
+        agent = Agent(name="test_agent", llm_client=llm_client)
+
+        @agent.task
+        def test_task(name: str, count: int = 5):
+            """Test task with parameters."""
+            pass
 
         state = Versioned()
-        result = test_task("test_value", count=10, state=state)
+        test_task("test_value", count=10, state=state)
 
         # Get events from the agent's namespace
         event_list = events(state, "test_agent", children=False)
@@ -70,22 +69,20 @@ class TestEventSystem:
 
     def test_action_event_creation(self):
         """Test that ActionEvent captures agent thinking and code."""
-        agent = Agent(name="thinking_agent")
+        thinking_text = "I need to analyze this problem step by step."
+        code_text = 'result = "analyzed"\ntask_success(result)'
+        llm_client = DummyLLMClient(
+            [LLMResponse(thinking=thinking_text, code=code_text)]
+        )
+        agent = Agent(name="thinking_agent", llm_client=llm_client)
 
         @agent.task
         def think_task():
             """Task that requires thinking."""
             pass
 
-        thinking_text = "I need to analyze this problem step by step."
-        code_text = 'result = "analyzed"\ntask_success(result)'
-
-        agent.llm_client = DummyLLMClient(
-            [LLMResponse(thinking=thinking_text, code=code_text)]
-        )
-
         state = Versioned()
-        result = think_task(state=state)
+        think_task(state=state)
 
         # Get events from the agent's namespace
         event_list = events(state, "thinking_agent", children=False)
@@ -100,14 +97,7 @@ class TestEventSystem:
 
     def test_output_event_creation(self):
         """Test that OutputEvent is created for print(), help(), dir() calls."""
-        agent = Agent(name="output_agent")
-
-        @agent.task
-        def output_task():
-            """Task that produces various outputs."""
-            pass
-
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="I'll test various output functions and complete.",
@@ -115,9 +105,15 @@ class TestEventSystem:
                 )
             ]
         )
+        agent = Agent(name="output_agent", llm_client=llm_client)
+
+        @agent.task
+        def output_task():
+            """Task that produces various outputs."""
+            pass
 
         state = Versioned()
-        result = output_task(state=state)
+        output_task(state=state)
 
         # Get events from the agent's namespace
         event_list = events(state, "output_agent", children=False)
@@ -134,15 +130,8 @@ class TestEventSystem:
 
     def test_success_event_creation(self):
         """Test that SuccessEvent is created when task_success() is called."""
-        agent = Agent(name="success_agent")
-
-        @agent.task
-        def success_task():
-            """Task that succeeds with a result."""
-            pass
-
         expected_result = {"status": "completed", "value": 42}
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="I'll return a successful result.",
@@ -150,6 +139,12 @@ class TestEventSystem:
                 )
             ]
         )
+        agent = Agent(name="success_agent", llm_client=llm_client)
+
+        @agent.task
+        def success_task():
+            """Task that succeeds with a result."""
+            pass
 
         state = Versioned()
         result = success_task(state=state)
@@ -167,15 +162,8 @@ class TestEventSystem:
 
     def test_fail_event_creation(self):
         """Test that FailEvent is created when task_fail() is called."""
-        agent = Agent(name="fail_agent")
-
-        @agent.task
-        def fail_task():
-            """Task that fails."""
-            pass
-
         fail_message = "This task cannot be completed"
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="I cannot complete this task.",
@@ -183,11 +171,17 @@ class TestEventSystem:
                 )
             ]
         )
+        agent = Agent(name="fail_agent", llm_client=llm_client)
+
+        @agent.task
+        def fail_task():
+            """Task that fails."""
+            pass
 
         state = Versioned()
 
         # Task should raise TaskFail exception
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(Exception):
             fail_task(state=state)
 
         # Get events from the agent's namespace
@@ -205,9 +199,35 @@ class TestEventSystem:
         clear_agent_registry()
 
         # Create multiple agents
-        agent1 = Agent(name="agent_one")
-        agent2 = Agent(name="agent_two")
-        orchestrator = Agent(name="orchestrator")
+        llm_client1 = DummyLLMClient(
+            [
+                LLMResponse(
+                    thinking="Agent one processing",
+                    code="result = inputs.value * 2\ntask_success(result)",
+                )
+            ]
+        )
+        agent1 = Agent(name="agent_one", llm_client=llm_client1)
+
+        llm_client2 = DummyLLMClient(
+            [
+                LLMResponse(
+                    thinking="Agent two processing",
+                    code="result = inputs.value + 10\ntask_success(result)",
+                )
+            ]
+        )
+        agent2 = Agent(name="agent_two", llm_client=llm_client2)
+
+        orchestrator_llm_client = DummyLLMClient(
+            [
+                LLMResponse(
+                    thinking="I'll call both sub-agents and return results",
+                    code="r1 = task_one(inputs.input_value)\nr2 = task_two(inputs.input_value)\ntask_success({'r1': r1, 'r2': r2})",
+                )
+            ]
+        )
+        orchestrator = Agent(name="orchestrator", llm_client=orchestrator_llm_client)
 
         # Create dual-decorated functions
         @orchestrator.fn(docstring="Function handled by agent one")
@@ -223,34 +243,6 @@ class TestEventSystem:
         @orchestrator.task("Orchestrate both tasks")
         def orchestrate(input_value: int):
             pass
-
-        # Set up dummy responses
-        agent1.llm_client = DummyLLMClient(
-            [
-                LLMResponse(
-                    thinking="Agent one processing",
-                    code="result = inputs.value * 2\ntask_success(result)",
-                )
-            ]
-        )
-
-        agent2.llm_client = DummyLLMClient(
-            [
-                LLMResponse(
-                    thinking="Agent two processing",
-                    code="result = inputs.value + 10\ntask_success(result)",
-                )
-            ]
-        )
-
-        orchestrator.llm_client = DummyLLMClient(
-            [
-                LLMResponse(
-                    thinking="I'll call both sub-agents and return results",
-                    code="r1 = task_one(inputs.input_value)\nr2 = task_two(inputs.input_value)\ntask_success({'r1': r1, 'r2': r2})",
-                )
-            ]
-        )
 
         shared_state = Versioned()
         result = orchestrate(input_value=5, state=shared_state)
@@ -361,14 +353,7 @@ class TestEventSystem:
 
     def test_complete_task_lifecycle_events(self):
         """Test that a complete task generates all expected events in correct order."""
-        agent = Agent(name="lifecycle_agent")
-
-        @agent.task
-        def lifecycle_task(input_data: str):
-            """Complete lifecycle test task."""
-            pass
-
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="I'll process this input and return a result.",
@@ -376,6 +361,12 @@ class TestEventSystem:
                 )
             ]
         )
+        agent = Agent(name="lifecycle_agent", llm_client=llm_client)
+
+        @agent.task
+        def lifecycle_task(input_data: str):
+            """Complete lifecycle test task."""
+            pass
 
         state = Versioned()
         result = lifecycle_task("hello world", state=state)
@@ -410,23 +401,22 @@ class TestEventSystem:
 
     def test_event_persistence_in_versioned_state(self):
         """Test that events are properly persisted and can be retrieved after state snapshots."""
-        agent = Agent(name="persistence_agent")
-
-        @agent.task
-        def persistence_task():
-            """Test event persistence."""
-            pass
-
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="Testing persistence", code='task_success("persisted")'
                 )
             ]
         )
+        agent = Agent(name="persistence_agent", llm_client=llm_client)
+
+        @agent.task
+        def persistence_task():
+            """Test event persistence."""
+            pass
 
         state = Versioned()
-        result = persistence_task(state=state)
+        persistence_task(state=state)
 
         # Take a snapshot
         snapshot_result = state.snapshot()
@@ -456,8 +446,25 @@ class TestEventSystem:
         def faulty_handler(event):
             raise ValueError("Handler failed")
 
-        orchestrator = Agent(name="orchestrator")
-        specialist = Agent(name="specialist")
+        specialist_llm_client = DummyLLMClient(
+            [
+                LLMResponse(
+                    thinking="Specialist thinking",
+                    code='print(f"Specialist processed: {inputs.data}")\ntask_success(inputs.data.upper())',
+                )
+            ]
+        )
+        specialist = Agent(name="specialist", llm_client=specialist_llm_client)
+
+        orchestrator_llm_client = DummyLLMClient(
+            [
+                LLMResponse(
+                    thinking="Orchestrator thinking",
+                    code="result = specialist_task(inputs.data)\ntask_success(result)",
+                )
+            ]
+        )
+        orchestrator = Agent(name="orchestrator", llm_client=orchestrator_llm_client)
 
         @orchestrator.fn
         @specialist.task
@@ -469,23 +476,6 @@ class TestEventSystem:
         def main_task(data: str):
             """An orchestrator task that calls a specialist."""
             pass
-
-        specialist.llm_client = DummyLLMClient(
-            [
-                LLMResponse(
-                    thinking="Specialist thinking",
-                    code='print(f"Specialist processed: {inputs.data}")\ntask_success(inputs.data.upper())',
-                )
-            ]
-        )
-        orchestrator.llm_client = DummyLLMClient(
-            [
-                LLMResponse(
-                    thinking="Orchestrator thinking",
-                    code="result = specialist_task(inputs.data)\ntask_success(result)",
-                )
-            ]
-        )
 
         # --- Test Regular Execution ---
         event_log.clear()

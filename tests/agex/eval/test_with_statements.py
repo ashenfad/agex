@@ -78,13 +78,8 @@ def test_basic_with_statement():
             self.exited = True
             return False
 
-    # Create agent and register context manager
-    agent = Agent()
-    ctx = SimpleContext()
-    agent.module(ctx, name="ctx", include=["__enter__", "__exit__"])
-
     # Configure dummy LLM
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         [
             LLMResponse(
                 thinking="I'll use a with statement to test the context manager.",
@@ -99,6 +94,10 @@ task_success(result)
             )
         ]
     )
+    # Create agent and register context manager
+    agent = Agent(llm_client=llm_client)
+    ctx = SimpleContext()
+    agent.module(ctx, name="ctx", include=["__enter__", "__exit__"])
 
     @agent.task("Test basic with statement functionality")
     def test_task() -> str:  # type: ignore[return-value]
@@ -142,15 +141,8 @@ def test_database_with_statement():
         # Create database manager
         db_manager = DatabaseManager(str(db_path))
 
-        # Create agent and register database manager
-        agent = Agent()
-        agent.module(
-            db_manager, name="db", include=["execute", "__enter__", "__exit__"]
-        )
-        agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
-
         # Configure dummy LLM
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="I'll use a with statement for safe database operations.",
@@ -178,6 +170,12 @@ task_success(result)
                 )
             ]
         )
+        # Create agent and register database manager
+        agent = Agent(llm_client=llm_client)
+        agent.module(
+            db_manager, name="db", include=["execute", "__enter__", "__exit__"]
+        )
+        agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 
         @agent.task("Perform database operations using with statement")
         def db_task() -> dict:  # type: ignore[return-value]
@@ -229,18 +227,8 @@ def test_with_statement_exception_handling():
         # Create database manager
         db_manager = DatabaseManager(str(db_path))
 
-        # Create agent and register database manager
-        agent = Agent()
-        agent.module(
-            db_manager,
-            name="db",
-            include=["execute", "__enter__", "__exit__"],
-            exception_mappings={sqlite3.IntegrityError: AgexValueError},
-        )
-        agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
-
         # Configure dummy LLM
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="I'll test exception handling with database rollback using a simpler constraint violation.",
@@ -275,6 +263,15 @@ task_success(result)
                 )
             ]
         )
+        # Create agent and register database manager
+        agent = Agent(llm_client=llm_client)
+        agent.module(
+            db_manager,
+            name="db",
+            include=["execute", "__enter__", "__exit__"],
+            exception_mappings={sqlite3.IntegrityError: AgexValueError},
+        )
+        agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 
         @agent.task("Test exception handling with database rollback")
         def rollback_task() -> dict:  # type: ignore[return-value]
@@ -319,16 +316,8 @@ def test_nested_with_statements():
             self.released = True
             return False
 
-    # Create agent and register multiple resource managers
-    agent = Agent()
-    resource1 = ResourceManager("A")
-    resource2 = ResourceManager("B")
-
-    agent.module(resource1, name="res1", include=["__enter__", "__exit__"])
-    agent.module(resource2, name="res2", include=["__enter__", "__exit__"])
-
     # Configure dummy LLM
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         [
             LLMResponse(
                 thinking="I'll test nested with statements for resource management.",
@@ -350,6 +339,13 @@ task_success(results)
             )
         ]
     )
+    # Create agent and register multiple resource managers
+    agent = Agent(llm_client=llm_client)
+    resource1 = ResourceManager("A")
+    resource2 = ResourceManager("B")
+
+    agent.module(resource1, name="res1", include=["__enter__", "__exit__"])
+    agent.module(resource2, name="res2", include=["__enter__", "__exit__"])
 
     @agent.task("Test nested with statements")
     def nested_task() -> list:  # type: ignore[return-value]
@@ -389,17 +385,8 @@ def test_with_statement_raw_sqlite_connection():
         # Create new connection for the test
         conn = sqlite3.connect(str(db_path))
 
-        # Create agent and register raw connection
-        agent = Agent()
-        agent.module(
-            conn,
-            name="conn",
-            include=["execute", "commit", "rollback", "__enter__", "__exit__"],
-        )
-        agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
-
         # Configure dummy LLM
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="I'll use the raw SQLite connection with a with statement.",
@@ -435,6 +422,14 @@ task_success(result)
                 )
             ]
         )
+        # Create agent and register raw connection
+        agent = Agent(llm_client=llm_client)
+        agent.module(
+            conn,
+            name="conn",
+            include=["execute", "commit", "rollback", "__enter__", "__exit__"],
+        )
+        agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 
         @agent.task("Test raw SQLite connection with with statement")
         def raw_conn_task() -> dict:  # type: ignore[return-value]
@@ -476,13 +471,8 @@ def test_transient_variables():
         # Create new connection for test
         conn = sqlite3.connect(str(db_path))
 
-        # Create agent and register raw connection
-        agent = Agent()
-        agent.module(conn, name="conn", include=["execute"])
-        agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
-
         # Configure dummy LLM
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="I'll test the new transient variable system that allows unpickleable cursors.",
@@ -509,6 +499,10 @@ task_success(results)
                 )
             ]
         )
+        # Create agent and register raw connection
+        agent = Agent(llm_client=llm_client)
+        agent.module(conn, name="conn", include=["execute"])
+        agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 
         @agent.task("Test transient variables with unpickleable cursors")
         def transient_task() -> list:  # type: ignore[return-value]
@@ -540,17 +534,8 @@ def test_sqlite_context_manager_method_access():
     # Create in-memory database
     conn = sqlite3.connect(":memory:")
 
-    # Create agent and register connection (matching db_direct.py setup)
-    agent = Agent()
-    agent.module(
-        conn,
-        name="db",
-        include=["execute", "commit", "rollback", "close"],
-    )
-    agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
-
     # Configure agent to use the exact pattern that was failing
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         [
             LLMResponse(
                 thinking="I'll recreate the exact failing scenario from db_direct.py",
@@ -579,6 +564,14 @@ task_success("Created 'users' table with columns: id, name, email, age")
             )
         ]
     )
+    # Create agent and register connection (matching db_direct.py setup)
+    agent = Agent(llm_client=llm_client)
+    agent.module(
+        conn,
+        name="db",
+        include=["execute", "commit", "rollback", "close"],
+    )
+    agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 
     @agent.task("Recreate the exact failing scenario from db_direct.py")
     def failing_scenario_task():  # type: ignore[return-value]

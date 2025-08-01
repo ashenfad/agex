@@ -20,11 +20,9 @@ def test_error_appears_immediately_in_first_iteration():
     is logged immediately, and the agent can react to it in the next turn.
     """
     clear_agent_registry()
-    agent = Agent(name="test_agent", max_iterations=3)
-
     # First response has a syntax error
     # Second response should see the error from the first response
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         responses=[
             LLMResponse(
                 thinking="I'll try to compute something with a syntax error.",
@@ -36,6 +34,7 @@ def test_error_appears_immediately_in_first_iteration():
             ),
         ]
     )
+    agent = Agent(name="test_agent", max_iterations=3, llm_client=llm_client)
 
     @agent.task("Compute a simple result.")
     def compute_simple() -> int:  # type: ignore[return-value]
@@ -92,11 +91,9 @@ def test_validation_error_shows_full_type():
     and includes the full, un-truncated type hint.
     """
     clear_agent_registry()
-    agent = Agent(name="test_agent", max_iterations=3)
-
     # First response: Return the wrong type (list of strings instead of list of ints)
     # Second response: "See" the error and return the correct type.
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         responses=[
             LLMResponse(
                 thinking="I will try to return a list of strings.",
@@ -108,6 +105,7 @@ def test_validation_error_shows_full_type():
             ),
         ]
     )
+    agent = Agent(name="test_agent", max_iterations=3, llm_client=llm_client)
 
     @agent.task("A task that requires returning a list of integers.")
     def list_of_ints_task() -> list[int]:  # type: ignore[return-value]

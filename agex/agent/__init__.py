@@ -1,4 +1,5 @@
 # Main agent functionality
+from ..llm import LLMClient
 from .base import BaseAgent, clear_agent_registry, register_agent, resolve_agent
 
 # Data types and exceptions
@@ -59,6 +60,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         # LLM configuration (optional, uses smart defaults)
         llm_provider: str | None = None,
         llm_model: str | None = None,
+        llm_client: LLMClient | None = None,
         **llm_kwargs,
     ):
         """
@@ -72,6 +74,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             name: Unique identifier for this agent (for sub-agent namespacing).
             llm_provider: LLM provider override (falls back to global/env config).
             llm_model: LLM model override (falls back to global/env config).
+            llm_client: An instantiated LLMClient for the agent to use.
             **llm_kwargs: Additional LLM parameters (temperature, etc.).
         """
         super().__init__(
@@ -82,5 +85,6 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             name=name,
             llm_provider=llm_provider,
             llm_model=llm_model,
+            llm_client=llm_client,
             **llm_kwargs,
         )

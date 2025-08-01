@@ -99,11 +99,8 @@ def test_task_returning_list_of_numpy_arrays():
     from agex.llm.dummy_client import DummyLLMClient, LLMResponse
 
     clear_agent_registry()
-    agent = Agent(name="test_agent", max_iterations=2)
-    agent.module(np, name="np")
-
     # Simulate the agent creating and returning a list of numpy arrays
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         responses=[
             LLMResponse(
                 thinking="I will create and return a list of two numpy arrays.",
@@ -111,6 +108,8 @@ def test_task_returning_list_of_numpy_arrays():
             ),
         ]
     )
+    agent = Agent(name="test_agent", max_iterations=2, llm_client=llm_client)
+    agent.module(np, name="np")
 
     @agent.task("A task that must return a list of numpy arrays.")
     def list_of_arrays_task() -> list[np.ndarray]:  # type: ignore[return-value]

@@ -579,8 +579,7 @@ def test_task_input_dataclass_pickling():
     clear_agent_registry()
 
     # Create agent with dummy LLM client to avoid real API calls
-    agent = Agent(name="test_agent")
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         responses=[
             LLMResponse(
                 thinking="I will return the expected result",
@@ -588,6 +587,7 @@ def test_task_input_dataclass_pickling():
             )
         ]
     )
+    agent = Agent(name="test_agent", llm_client=llm_client)
 
     @agent.task("Test task with inputs")
     def test_task(message: str, value: int) -> str:  # type: ignore
@@ -628,15 +628,9 @@ def test_unserializable_object_in_state_is_handled_gracefully():
 
     clear_agent_registry()
 
-    agent = Agent(name="test_agent")
-
     # This fn mutates a dictionary to include a real Python lambda,
     # making the dictionary unserializable.
-    @agent.fn()
-    def make_object_unserializable(obj):
-        obj["bad_field"] = lambda: "I cannot be pickled"
-
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         responses=[
             LLMResponse(
                 thinking="Mutating an object to make it unserializable.",
@@ -648,6 +642,11 @@ def test_unserializable_object_in_state_is_handled_gracefully():
             ),
         ]
     )
+    agent = Agent(name="test_agent", llm_client=llm_client)
+
+    @agent.fn()
+    def make_object_unserializable(obj):
+        obj["bad_field"] = lambda: "I cannot be pickled"
 
     @agent.task("A task that creates bad state via mutation.")
     def task_with_unserializable_state() -> str:  # type: ignore
@@ -709,12 +708,12 @@ def test_shallow_validation_on_large_input_list():
     """
 
     clear_agent_registry()
-    agent = Agent(name="test_agent")
     # The non-failing path of this test will enter the task loop.
     # We provide a single dummy response for it to consume.
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         responses=[LLMResponse(thinking="Looks good.", code="task_success(1)")]
     )
+    agent = Agent(name="test_agent", llm_client=llm_client)
 
     @agent.task("A task that accepts a large list.")
     def process_large_list(items: list[int]) -> int:  # type: ignore
@@ -743,7 +742,6 @@ def test_shallow_validation_on_agent_output():
     """
 
     clear_agent_registry()
-    agent = Agent(name="test_agent")
 
     # Large, valid dictionary
     large_valid_dict = {f"key_{i}": i for i in range(150)}
@@ -751,7 +749,7 @@ def test_shallow_validation_on_agent_output():
     large_invalid_dict = large_valid_dict.copy()
     large_invalid_dict["key_145"] = "not an int"  # type: ignore
 
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         responses=[
             LLMResponse(
                 thinking="I will try to return an invalid dictionary.",
@@ -763,6 +761,7 @@ def test_shallow_validation_on_agent_output():
             ),
         ]
     )
+    agent = Agent(name="test_agent", llm_client=llm_client)
 
     @agent.task("A task that returns a large dictionary.")
     def produce_large_dict() -> dict[str, int]:  # type: ignore
@@ -819,8 +818,7 @@ def test_task_setup_functionality():
     clear_agent_registry()
 
     # Create agent
-    agent = Agent(name="setup_test_agent")
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         responses=[
             LLMResponse(
                 thinking="I can see the setup variable and will complete the task",
@@ -828,6 +826,7 @@ def test_task_setup_functionality():
             )
         ]
     )
+    agent = Agent(name="setup_test_agent", llm_client=llm_client)
 
     # Define task with setup
     @agent.task("Test task with setup", setup='setup_var = "Hello from setup!"')
@@ -867,8 +866,7 @@ def test_task_setup_error_handling():
     clear_agent_registry()
 
     # Create agent
-    agent = Agent(name="setup_error_agent")
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         responses=[
             LLMResponse(
                 thinking="I see there was an error in setup, but I can still complete the task",
@@ -876,6 +874,7 @@ def test_task_setup_error_handling():
             )
         ]
     )
+    agent = Agent(name="setup_error_agent", llm_client=llm_client)
 
     # Define task with setup that will error
     @agent.task(
@@ -917,8 +916,7 @@ def test_task_without_setup():
     clear_agent_registry()
 
     # Create agent
-    agent = Agent(name="no_setup_agent")
-    agent.llm_client = DummyLLMClient(
+    llm_client = DummyLLMClient(
         responses=[
             LLMResponse(
                 thinking="Simple task completion",
@@ -926,6 +924,7 @@ def test_task_without_setup():
             )
         ]
     )
+    agent = Agent(name="no_setup_agent", llm_client=llm_client)
 
     # Define task without setup
     @agent.task("Test task without setup")
@@ -965,15 +964,14 @@ print(f"Setup complete: {setup_var}")
 
     # Create identical agents for batch and streaming tests
     def create_agent(name: str) -> Agent:
-        agent = Agent(name=name)
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             responses=[
                 LLMResponse(
                     thinking="I will complete immediately", code='task_success("done")'
                 ),
             ]
         )
-        return agent
+        return Agent(name=name, llm_client=llm_client)
 
     # Test 1: Batch execution
     batch_agent = create_agent("batch_agent")

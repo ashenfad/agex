@@ -1,7 +1,7 @@
 import uuid
 from typing import Any, Callable, Dict, Literal
 
-from ..llm import get_llm_client
+from ..llm import LLMClient, get_llm_client
 from ..llm.config import get_llm_config
 from .datatypes import (
     MemberSpec,
@@ -81,8 +81,14 @@ class BaseAgent:
         # LLM configuration (optional, uses smart defaults)
         llm_provider: str | None = None,
         llm_model: str | None = None,
+        llm_client: LLMClient | None = None,
         **llm_kwargs,
     ):
+        if llm_client and (llm_provider or llm_model or llm_kwargs):
+            raise ValueError(
+                "Cannot specify both llm_client and other llm configurations."
+            )
+
         self.name = name or _random_name()
         self.primer = primer
         self.timeout_seconds = timeout_seconds
@@ -95,7 +101,7 @@ class BaseAgent:
         )
 
         # Create LLM client using the resolved configuration
-        self.llm_client = get_llm_client(**self.llm_config)
+        self.llm_client = llm_client or get_llm_client(**self.llm_config)
 
         # Agent registries
         self.fn_registry: dict[str, RegisteredFn] = {}

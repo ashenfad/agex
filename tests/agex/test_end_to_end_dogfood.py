@@ -24,10 +24,6 @@ def clear_registry():
 
 def test_basic_agent_creation_in_agent():
     """Test that an agent can create another agent and return a TaskUserFunction."""
-    # Create architect agent
-    architect = Agent(name="architect")
-    architect.cls(Agent, include=["__init__", "name", "task", "fingerprint"])
-
     # Set up LLM response
     responses = [
         LLMResponse(
@@ -47,7 +43,10 @@ with Agent() as new_agent:
 """,
         )
     ]
-    architect.llm_client = DummyLLMClient(responses=responses)
+    llm_client = DummyLLMClient(responses=responses)
+    # Create architect agent
+    architect = Agent(name="architect", llm_client=llm_client)
+    architect.cls(Agent, include=["__init__", "name", "task", "fingerprint"])
 
     @architect.task
     def create_greeter() -> object:  # type: ignore[return-value]
@@ -74,13 +73,6 @@ def test_user_function_registration():
         """Double a number."""
         pass  # Task functions must have empty bodies
 
-    # Create architect that can create agents and register functions
-    architect = Agent(name="architect")
-    architect.cls(Agent, include=["__init__", "name", "fn", "task", "fingerprint"])
-
-    # Register the parent's helper function
-    architect.fn(parent_helper, name="helper")
-
     responses = [
         LLMResponse(
             thinking="I need to create a new agent and register the helper function with it.",
@@ -98,7 +90,13 @@ task_success(fingerprint)
 """,
         )
     ]
-    architect.llm_client = DummyLLMClient(responses=responses)
+    llm_client = DummyLLMClient(responses=responses)
+    # Create architect that can create agents and register functions
+    architect = Agent(name="architect", llm_client=llm_client)
+    architect.cls(Agent, include=["__init__", "name", "fn", "task", "fingerprint"])
+
+    # Register the parent's helper function
+    architect.fn(parent_helper, name="helper")
 
     @architect.task
     def create_processor() -> str:  # type: ignore[return-value]
@@ -124,13 +122,6 @@ def test_module_security_inheritance():
     parent = Agent(name="parent")
     parent.module(math, include=["sin", "cos", "pi"], name="math")
 
-    # Create architect that can access the parent's math module
-    architect = Agent(name="architect")
-    architect.cls(Agent, include=["__init__", "name", "module", "task", "fingerprint"])
-    architect.module(
-        math, include=["sin", "cos", "pi"], name="math"
-    )  # Same permissions as parent
-
     responses = [
         LLMResponse(
             thinking="I need to create a new agent and give it limited math access.",
@@ -151,7 +142,13 @@ task_success(fingerprint)
 """,
         )
     ]
-    architect.llm_client = DummyLLMClient(responses=responses)
+    llm_client = DummyLLMClient(responses=responses)
+    # Create architect that can access the parent's math module
+    architect = Agent(name="architect", llm_client=llm_client)
+    architect.cls(Agent, include=["__init__", "name", "module", "task", "fingerprint"])
+    architect.module(
+        math, include=["sin", "cos", "pi"], name="math"
+    )  # Same permissions as parent
 
     @architect.task
     def create_math_agent() -> str:  # type: ignore[return-value]
@@ -193,14 +190,6 @@ def test_comprehensive_dogfood_workflow():
         """Calculate Euclidean distance."""
         pass  # Task functions must have empty bodies
 
-    # Create architect agent
-    architect = Agent(name="architect")
-    architect.cls(
-        Agent, include=["__init__", "name", "fn", "module", "task", "fingerprint"]
-    )
-    architect.fn(calculate_distance, name="distance_calc")
-    architect.module(math, include=["sin", "cos", "sqrt"], name="math")
-
     responses = [
         LLMResponse(
             thinking="I need to create a specialized geometry agent with inherited capabilities.",
@@ -233,7 +222,14 @@ with Agent() as geom_agent:
 """,
         )
     ]
-    architect.llm_client = DummyLLMClient(responses=responses)
+    llm_client = DummyLLMClient(responses=responses)
+    # Create architect agent
+    architect = Agent(name="architect", llm_client=llm_client)
+    architect.cls(
+        Agent, include=["__init__", "name", "fn", "module", "task", "fingerprint"]
+    )
+    architect.fn(calculate_distance, name="distance_calc")
+    architect.module(math, include=["sin", "cos", "sqrt"], name="math")
 
     @architect.task
     def create_geometry_specialist() -> dict:  # type: ignore[return-value]
@@ -278,9 +274,6 @@ with Agent() as geom_agent:
 
 def test_agex_module_fingerprinting():
     """Test that AgexModule objects get proper agent fingerprints."""
-    agent = Agent(name="test_agent")
-    agent.module(math, name="math")
-
     # Create a simple function that returns the math module
     responses = [
         LLMResponse(
@@ -291,7 +284,9 @@ task_success(math)
 """,
         )
     ]
-    agent.llm_client = DummyLLMClient(responses=responses)
+    llm_client = DummyLLMClient(responses=responses)
+    agent = Agent(name="test_agent", llm_client=llm_client)
+    agent.module(math, name="math")
 
     @agent.task
     def get_math_module() -> object:  # type: ignore[return-value]

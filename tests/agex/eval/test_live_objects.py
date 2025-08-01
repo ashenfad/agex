@@ -27,8 +27,6 @@ class DatabaseConnection:
 def test_register_and_use_live_object():
     """End-to-end test that a live object can be registered and its methods/properties used."""
     db = DatabaseConnection("test_db")
-    agent = Agent(primer="Test agent for live objects.", max_iterations=2)
-
     # Set up dummy LLM with the exact code we want to execute
     responses = [
         LLMResponse(
@@ -36,7 +34,10 @@ def test_register_and_use_live_object():
             code='user = db.query("users", inputs.user_id)\nconn_id = db.connection_id\ntask_success((user, conn_id))',
         )
     ]
-    agent.llm_client = DummyLLMClient(responses=responses)
+    llm_client = DummyLLMClient(responses=responses)
+    agent = Agent(
+        primer="Test agent for live objects.", max_iterations=2, llm_client=llm_client
+    )
 
     agent.module(
         db,
@@ -69,8 +70,6 @@ def test_register_and_use_live_object():
 def test_live_object_state_safety():
     """Tests that assigning a bound method to a variable does not cause a pickle error."""
     db = DatabaseConnection("test_db")
-    agent = Agent(primer="Test agent for state safety.", max_iterations=2)
-
     # Set up dummy LLM response
     responses = [
         LLMResponse(
@@ -78,7 +77,10 @@ def test_live_object_state_safety():
             code='query_method = db.query\nresult = query_method("users", inputs.user_id)\ntask_success(result)',
         )
     ]
-    agent.llm_client = DummyLLMClient(responses=responses)
+    llm_client = DummyLLMClient(responses=responses)
+    agent = Agent(
+        primer="Test agent for state safety.", max_iterations=2, llm_client=llm_client
+    )
 
     agent.module(db, name="db", configure={"query": MemberSpec(visibility="high")})
 

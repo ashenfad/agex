@@ -45,14 +45,7 @@ class TestEventsSimple:
         """Test that basic agent task execution generates expected events."""
         clear_agent_registry()
 
-        agent = Agent(name="simple_agent")
-
-        @agent.task
-        def simple_task():
-            """Simple task."""
-            pass
-
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="I'll complete this task.",
@@ -60,6 +53,12 @@ class TestEventsSimple:
                 )
             ]
         )
+        agent = Agent(name="simple_agent", llm_client=llm_client)
+
+        @agent.task
+        def simple_task():
+            """Simple task."""
+            pass
 
         state = Versioned()
         result = simple_task(state=state)
@@ -86,14 +85,7 @@ class TestEventsSimple:
 
     def test_simple_print_with_continue(self):
         """Test if print statements work when separated with task_continue."""
-        agent = Agent(name="print_agent")
-
-        @agent.task
-        def print_task():
-            """Task that prints."""
-            pass
-
-        agent.llm_client = DummyLLMClient(
+        llm_client = DummyLLMClient(
             [
                 LLMResponse(
                     thinking="I'll print something.",
@@ -102,6 +94,12 @@ class TestEventsSimple:
                 LLMResponse(thinking="Now I'll finish.", code='task_success("done")'),
             ]
         )
+        agent = Agent(name="print_agent", llm_client=llm_client)
+
+        @agent.task
+        def print_task():
+            """Task that prints."""
+            pass
 
         state = Versioned()
         result = print_task(state=state)
@@ -128,23 +126,21 @@ class TestEventsSimple:
 
     def test_investigate_stateful_builtins(self):
         """Test to investigate how stateful builtins are called during evaluation."""
-        agent = Agent(name="investigate_agent")
+        llm_client = DummyLLMClient(
+            [LLMResponse(thinking="I'll just print.", code='print("Debug print")')]
+        )
+        agent = Agent(name="investigate_agent", llm_client=llm_client)
 
         @agent.task
         def investigate_task():
             """Task to investigate builtin calling."""
             pass
 
-        # Simple print that should create an OutputEvent
-        agent.llm_client = DummyLLMClient(
-            [LLMResponse(thinking="I'll just print.", code='print("Debug print")')]
-        )
-
         state = Versioned()
 
         # This will timeout since no task_success, but let's see what events we get
         try:
-            result = investigate_task(state=state)
+            investigate_task(state=state)
         except Exception as e:
             print(f"Expected exception: {type(e).__name__}")
 

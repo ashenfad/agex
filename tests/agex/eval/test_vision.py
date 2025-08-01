@@ -27,8 +27,6 @@ def test_view_image_sends_multimodal_message():
         return
 
     clear_agent_registry()
-    agent = Agent(name="test_agent", max_iterations=3)
-
     # We need to capture the messages sent to the LLM client and provide a response.
     # The first response from the LLM will call view_image.
     # The second response will see the rendered image and finish the task.
@@ -44,7 +42,7 @@ def test_view_image_sends_multimodal_message():
             ),
         ]
     )
-    agent.llm_client = llm_client
+    agent = Agent(name="test_agent", max_iterations=3, llm_client=llm_client)
 
     # Create a simple black 10x10 image for the test
     test_image = Image.new("RGB", (10, 10), "black")
