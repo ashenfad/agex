@@ -115,6 +115,26 @@ architect.cls(Agent)  # Let the architect use agex!
 
 **Why this matters:** While a bit mind-bending, the real takeaway is how seamlessly agents can work with your existing code. See [`examples/dogfood.py`](./examples/dogfood.py) for the complete implementation.
 
+### **Empirical Agent Development**
+
+`agex` includes a built-in benchmarking framework (`agex.bench`) for data-driven agent improvement. A/B test different primers, regression-test agent behavior changes, and measure performance with judge functions that can themselves be agents.
+
+```python
+from agex.bench import Trial, benchmark_pass_fail, params
+import operator
+
+# Test agent performance empirically
+results = benchmark_pass_fail(
+    tasks=[my_agent.solve_problem],
+    trials=[
+        Trial(params("Calculate 2+2"), expected=4, judge=operator.eq),
+        Trial(params("What is 10*5?"), expected=50, judge=operator.eq),
+    ],
+)
+```
+
+This enables systematic agent optimization rather than guesswork-based development.
+
 ## Project Status
 
 > **⚠️ Pre-Release**  
@@ -136,6 +156,7 @@ Key sections:
 - **[Task](https://ashenfad.github.io/agex/api/task/)** - Defining and executing agent tasks
 - **[State](https://ashenfad.github.io/agex/api/state/)** - Persistent memory with a git-like history that lets you `checkout` the agent's workspace at any point in time.
 - **[Events](https://ashenfad.github.io/agex/api/events/)** - A complete event log where every agent action is linked to a versioned state snapshot for powerful time-travel debugging.
+- **[Benchmarking](https://ashenfad.github.io/agex/benchmarking/)** - Empirical evaluation framework for testing agent performance and primer effectiveness.
 - **[View](https://ashenfad.github.io/agex/api/view/)** - Inspecting agents and execution state *(experimental)*
 
 For design concepts and higher-level documentation, see:

@@ -30,6 +30,9 @@ Inspect agents and their execution state for debugging.
 - **[Helpers](helpers.md)** -
 Convenience functions for registering common libraries like NumPy and pandas.
 
+- **[Benchmarking](../benchmarking.md)** -
+Empirical evaluation framework for agent performance testing, A/B testing primers, and regression detection.
+
 ## Import Patterns
 
 Most agex functionality is available at the top level:
