@@ -51,10 +51,13 @@ With `agex`, you just provide the fundamental building blocks. The agent itself 
 
 ```python
 import statistics
-from agex import Agent
+from agex import Agent, connect_llm
 
-# Create an agent and give it access to the primitives.
-agent = Agent()
+# Configure the agent with a specific LLM
+llm_client = connect_llm(provider="openai", model="gpt-4.1-nano")
+agent = Agent(llm_client=llm_client)
+
+# Give the agent access to the primitives.
 agent.module(statistics)
 
 @agent.task
@@ -65,7 +68,7 @@ def analyze(data: list[float], request: str) -> dict: # type: ignore[return-valu
 # The agent can now handle a more complex, multi-step request in a single pass.
 my_data = [1, 2, 3, 4, 5, 6, 100]
 result = analyze(
-    my_data, 
+    my_data,
     "What are the mean and median for only the positive numbers?"
 )
 
@@ -87,7 +90,7 @@ Agents can work directly with complex, stateful APIs without requiring wrapper c
 
 ```python
 # connect to a database and share the instance methods to the agent
-conn = sqlite3.connect(...)  
+conn = sqlite3.connect(...)
 agent.module(conn, name="db", include=["execute", "commit"])
 ```
 
@@ -130,7 +133,7 @@ This enables systematic agent optimization rather than guesswork-based developme
 
 ## Project Status
 
-> **⚠️ Pre-Release**  
+> **⚠️ Pre-Release**
 > `agex` is a new framework in active development. While the core concepts are stabilizing, the API should be considered experimental and is subject to change.
 
 For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project. `agex` explores a different architectural path, focusing on deep runtime interoperability and a secure, sandboxed environment for direct integration with existing Python libraries.
@@ -145,7 +148,7 @@ Complete documentation is hosted at **[ashenfad.github.io/agex](https://ashenfad
 
 Key sections:
 - **[Agent](https://ashenfad.github.io/agex/api/agent/)** - Creating and configuring agents
-- **[Registration](https://ashenfad.github.io/agex/api/registration/)** - Exposing functions, classes, and modules to agents  
+- **[Registration](https://ashenfad.github.io/agex/api/registration/)** - Exposing functions, classes, and modules to agents
 - **[Task](https://ashenfad.github.io/agex/api/task/)** - Defining and executing agent tasks
 - **[State](https://ashenfad.github.io/agex/api/state/)** - Persistent memory with a git-like history that lets you `checkout` the agent's workspace at any point in time.
 - **[Events](https://ashenfad.github.io/agex/api/events/)** - A complete event log where every agent action is linked to a versioned state snapshot for powerful time-travel debugging.
@@ -164,7 +167,7 @@ Install agex with your preferred LLM provider:
 ```bash
 # Install with specific provider
 pip install "agex[openai]"        # For OpenAI models
-pip install "agex[anthropic]"     # For Anthropic Claude models  
+pip install "agex[anthropic]"     # For Anthropic Claude models
 pip install "agex[gemini]"        # For Google Gemini models
 
 # Or install with all providers
@@ -176,9 +179,8 @@ pip install "agex[all-providers]"
 We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for:
 
 - Development setup and workflow
-- Code style guidelines  
+- Code style guidelines
 - Testing requirements
 - How to submit pull requests
 
 For bug reports and feature requests, please use [GitHub Issues](https://github.com/ashenfad/agex/issues).
-

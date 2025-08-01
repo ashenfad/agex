@@ -1,97 +1,117 @@
+import os
 from unittest.mock import patch
 
-import pytest
-
-from agex.llm import get_llm_client
+from agex.llm import connect_llm
 
 
-def test_missing_openai_dependency():
-    """Test that missing OpenAI dependency raises helpful error message."""
+def test_openai_import_error():
+    # Test that calling get_llm_client with provider="openai" raises an ImportError
+    # if the 'openai' package is not installed.
     with patch("agex.llm.OpenAIClient", None):
-        with pytest.raises(
-            ImportError, match="OpenAI provider requires the 'openai' package"
-        ):
-            get_llm_client(provider="openai")
+        with patch.dict(os.environ, {"AGEX_LLM_PROVIDER": "openai"}, clear=True):
+            try:
+                connect_llm(provider="openai")
+                assert False, "Expected ImportError to be raised"
+            except ImportError as e:
+                assert 'pip install "agex[openai]"' in str(e)
 
 
-def test_missing_anthropic_dependency():
-    """Test that missing Anthropic dependency raises helpful error message."""
+def test_anthropic_import_error():
+    # Test that calling get_llm_client with provider="anthropic" raises an ImportError
+    # if the 'anthropic' package is not installed.
     with patch("agex.llm.AnthropicClient", None):
-        with pytest.raises(
-            ImportError, match="Anthropic provider requires the 'anthropic' package"
-        ):
-            get_llm_client(provider="anthropic")
+        with patch.dict(os.environ, {"AGEX_LLM_PROVIDER": "anthropic"}, clear=True):
+            try:
+                connect_llm(provider="anthropic")
+                assert False, "Expected ImportError to be raised"
+            except ImportError as e:
+                assert 'pip install "agex[anthropic]"' in str(e)
 
 
-def test_missing_gemini_dependency():
-    """Test that missing Gemini dependency raises helpful error message."""
+def test_gemini_import_error():
+    # Test that calling get_llm_client with provider="gemini" raises an ImportError
+    # if the 'google-generativeai' package is not installed.
     with patch("agex.llm.GeminiClient", None):
-        with pytest.raises(
-            ImportError,
-            match="Gemini provider requires the 'google-generativeai' package",
-        ):
-            get_llm_client(provider="gemini")
+        with patch.dict(os.environ, {"AGEX_LLM_PROVIDER": "gemini"}, clear=True):
+            try:
+                connect_llm(provider="gemini")
+                assert False, "Expected ImportError to be raised"
+            except ImportError as e:
+                assert 'pip install "agex[gemini]"' in str(e)
 
 
 def test_dummy_client_always_available():
-    """Test that dummy client is always available regardless of optional dependencies."""
-    # Should work even if we patch out all other clients
-    with (
-        patch("agex.llm.OpenAIClient", None),
-        patch("agex.llm.AnthropicClient", None),
-        patch("agex.llm.GeminiClient", None),
-    ):
-        client = get_llm_client(provider="dummy")
-        assert client is not None
-        assert client.model == "dummy"
-
-
-def test_available_providers_list_updates():
-    """Test that the error message shows only available providers."""
-    # Patch out OpenAI and Gemini, leave Anthropic
-    with patch("agex.llm.OpenAIClient", None), patch("agex.llm.GeminiClient", None):
-        with pytest.raises(ValueError) as exc_info:
-            get_llm_client(provider="invalid")  # type: ignore
-
-        error_message = str(exc_info.value)
-        assert "Available providers are: dummy, anthropic" in error_message
-        assert "openai" not in error_message
-        assert "gemini" not in error_message
-
-
-def test_all_providers_missing_except_dummy():
-    """Test behavior when all optional providers are missing."""
-    with (
-        patch("agex.llm.OpenAIClient", None),
-        patch("agex.llm.AnthropicClient", None),
-        patch("agex.llm.GeminiClient", None),
-    ):
-        with pytest.raises(ValueError) as exc_info:
-            get_llm_client(provider="invalid")  # type: ignore
-
-        error_message = str(exc_info.value)
-        assert "Available providers are: dummy" in error_message
-
-
-def test_installation_instructions_in_error_messages():
-    """Test that error messages include installation instructions."""
+    # Test that the dummy client is always available, even if other dependencies are not installed.
     with patch("agex.llm.OpenAIClient", None):
-        with pytest.raises(ImportError) as exc_info:
-            get_llm_client(provider="openai")
+        client = connect_llm(provider="dummy")
+        assert client is not None
+        assert client.__class__.__name__ == "DummyLLMClient"
 
-        error_message = str(exc_info.value)
-        assert 'pip install "agex[openai]"' in error_message
 
-    with patch("agex.llm.AnthropicClient", None):
-        with pytest.raises(ImportError) as exc_info:
-            get_llm_client(provider="anthropic")
+def test_unsupported_provider_error():
+    # Test that a ValueError is raised for an unsupported provider.
+    with patch.dict(os.environ, {}, clear=True):
+        try:
+            connect_llm(provider="invalid")  # type: ignore
+            assert False, "Expected ValueError to be raised"
+        except ValueError as e:
+            assert "Unsupported provider" in str(e)
+            assert "invalid" in str(e)
+            assert "dummy" in str(e)  # Assuming dummy is always available
 
-        error_message = str(exc_info.value)
-        assert 'pip install "agex[anthropic]"' in error_message
 
-    with patch("agex.llm.GeminiClient", None):
-        with pytest.raises(ImportError) as exc_info:
-            get_llm_client(provider="gemini")
+def test_available_providers_in_error_message():
+    # Test that the error message for an unsupported provider lists the currently available providers.
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "test"}, clear=True):
+        # Only dummy is available
+        with (
+            patch("agex.llm.OpenAIClient", None),
+            patch("agex.llm.AnthropicClient", None),
+            patch("agex.llm.GeminiClient", None),
+        ):
+            try:
+                connect_llm(provider="invalid")  # type: ignore
+                assert False, "Expected ValueError to be raised"
+            except ValueError as e:
+                error_str = str(e)
+                assert "dummy" in error_str
+                assert "openai" not in error_str
+                assert "anthropic" not in error_str
+                assert "gemini" not in error_str
 
-        error_message = str(exc_info.value)
-        assert 'pip install "agex[gemini]"' in error_message
+        # Test with OpenAI available
+        with (
+            patch("agex.llm.AnthropicClient", None),
+            patch("agex.llm.GeminiClient", None),
+        ):
+            try:
+                connect_llm(provider="invalid")  # type: ignore
+                assert False, "Expected ValueError to be raised"
+            except ValueError as e:
+                error_str = str(e)
+                assert "openai" in error_str
+                assert "anthropic" not in error_str
+                assert "gemini" not in error_str
+
+        # Test with Anthropic available
+        with patch("agex.llm.OpenAIClient", None), patch("agex.llm.GeminiClient", None):
+            try:
+                connect_llm(provider="invalid")  # type: ignore
+                assert False, "Expected ValueError to be raised"
+            except ValueError as e:
+                error_str = str(e)
+                assert "anthropic" in error_str
+                assert "openai" not in error_str
+
+        # Test with Gemini available
+        with (
+            patch("agex.llm.OpenAIClient", None),
+            patch("agex.llm.AnthropicClient", None),
+        ):
+            try:
+                connect_llm(provider="invalid")  # type: ignore
+                assert False, "Expected ValueError to be raised"
+            except ValueError as e:
+                error_str = str(e)
+                assert "gemini" in error_str
+                assert "openai" not in error_str

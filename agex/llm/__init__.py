@@ -21,7 +21,7 @@ except ImportError:
     GeminiClient = None
 
 # Build __all__ dynamically based on available clients
-__all__ = ["DummyLLMClient"]
+__all__ = ["DummyLLMClient", "connect_llm"]
 if OpenAIClient is not None:
     __all__.append("OpenAIClient")
 if AnthropicClient is not None:
@@ -30,48 +30,51 @@ if GeminiClient is not None:
     __all__.append("GeminiClient")
 
 
-def get_llm_client(
-    provider: Literal["openai", "anthropic", "gemini", "dummy"] | None = None, **kwargs
+def connect_llm(
+    provider: Literal["openai", "anthropic", "gemini", "dummy"] | None = None,
+    model: str | None = None,
+    **kwargs,
 ) -> LLMClient:
     """
     Factory function to get an LLM client.
-    """
-    # If no provider specified, get it from configuration
-    if provider is None:
-        config = get_llm_config(**kwargs)
-        provider = config["provider"]
 
-    if provider == "dummy":
+    Resolves configuration from function parameters, global settings, and
+    environment variables.
+    """
+    # Resolve the full configuration from all sources
+    config = get_llm_config(provider=provider, model=model, **kwargs)
+    final_provider = config.get("provider")
+
+    # The DummyLLMClient has a unique `responses` kwarg that other clients do not.
+    # We pass the original kwargs to it to preserve this behavior.
+    if final_provider == "dummy":
         return DummyLLMClient(**kwargs)
 
-    if provider == "anthropic":
+    if final_provider == "anthropic":
         if AnthropicClient is None:
             raise ImportError(
                 "Anthropic provider requires the 'anthropic' package. "
                 'Install it with: pip install "agex[anthropic]"'
             )
-        config = get_llm_config(**kwargs)
         return AnthropicClient(**config)
 
-    if provider == "gemini":
+    if final_provider == "gemini":
         if GeminiClient is None:
             raise ImportError(
                 "Gemini provider requires the 'google-generativeai' package. "
                 'Install it with: pip install "agex[gemini]"'
             )
-        config = get_llm_config(**kwargs)
         return GeminiClient(**config)
 
-    if provider == "openai":
+    if final_provider == "openai":
         if OpenAIClient is None:
             raise ImportError(
                 "OpenAI provider requires the 'openai' package. "
                 'Install it with: pip install "agex[openai]"'
             )
-        config = get_llm_config(**kwargs)
         return OpenAIClient(**config)
 
-    # Build list of available providers
+    # Build list of available providers for the error message
     available_providers = ["dummy"]
     if OpenAIClient is not None:
         available_providers.append("openai")
@@ -81,5 +84,5 @@ def get_llm_client(
         available_providers.append("gemini")
 
     raise ValueError(
-        f"Unsupported provider: {provider}. Available providers are: {', '.join(available_providers)}"
+        f"Unsupported provider: {final_provider}. Available providers are: {', '.join(available_providers)}"
     )

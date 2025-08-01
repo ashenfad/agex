@@ -38,7 +38,7 @@ def conversation_log(
     messages: list[Message] = [TextMessage(role="system", content=system_message)]
 
     # Render all events in chronological order
-    context_renderer = ContextRenderer(agent.llm_config["model"])
+    context_renderer = ContextRenderer(agent.llm_client.model)
 
     for event in event_log:
         if isinstance(event, TaskStartEvent):

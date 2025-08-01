@@ -11,10 +11,7 @@ Agent(
     max_iterations: int = 10,
     max_tokens: int = 2**16,
     name: str | None = None,
-    llm_provider: str | None = None,
-    llm_model: str | None = None,
-    llm_client: "LLMClient | None" = None,
-    **llm_kwargs
+    llm_client: LLMClient | None = None,
 )
 ```
 
@@ -27,52 +24,46 @@ Agent(
 | `max_iterations` | `int` | `10` | Maximum number of think-act cycles per task |
 | `max_tokens` | `int` | `65536` | Maximum tokens for context rendering |
 | `name` | `str | None` | `None` | Unique identifier for the agent (auto-generated if not provided) |
-| `llm_provider` | `str | None` | `None` | LLM provider override (e.g., "openai"). Used if `llm_client` is not provided. |
-| `llm_model` | `str | None` | `None` | LLM model override (e.g., "gpt-4"). Used if `llm_client` is not provided. |
-| `llm_client` | `LLMClient | None` | `None` | An instantiated LLMClient for the agent to use. Overrides all other LLM configuration. |
-| `**llm_kwargs` | | | Additional LLM parameters (temperature, etc.). Used if `llm_client` is not provided. |
+| `llm_client` | `LLMClient | None` | `None` | An instantiated `LLMClient` for the agent to use. If not provided, a default client will be created based on global configuration. |
 
 ### Examples
 
 ```python
-from agex import Agent
-from agex.llm.dummy_client import DummyLLMClient
+from agex import Agent, connect_llm
 
-# Basic agent
-agent = Agent(primer="You are a helpful math assistant.")
+# Simple agent using default LLM configuration
+agent = Agent(primer="You are a helpful assistant.")
 
-# Advanced configuration with provider strings
+# Agent configured with a specific client
+llm_client = connect_llm(provider="openai", model="gpt-4", temperature=0.1)
 agent = Agent(
     primer="You are an expert data analyst.",
-    timeout_seconds=30.0,
-    max_iterations=15,
-    name="data_analyst",
-    llm_model="gpt-4",
-    temperature=0.1
-)
-
-# Advanced configuration with a pre-configured client (preferred)
-from agex.llm import get_llm_client
-my_llm_client = get_llm_client(provider="openai", model="gpt-4", temperature=0.1)
-agent = Agent(
-    primer="You are an expert data analyst.",
-    llm_client=my_llm_client
+    llm_client=llm_client
 )
 ```
 
 ## LLM Configuration
 
-There are two primary ways to configure the LLM an agent uses: either by passing an instantiated `LLMClient` (preferred), or by passing configuration strings that the agent will use to create a client.
+The recommended way to configure an agent's LLM is to create an `LLMClient` instance using the top-level `connect_llm` function and pass it to the agent's constructor.
 
-### 1. By `LLMClient` Instance (Preferred)
-This is the recommended approach for flexibility and testability. You create an `LLMClient` instance first and pass it to the agent.
+### `connect_llm()`
 
 ```python
-from agex import Agent
-from agex.llm import get_llm_client, DummyLLMClient
+connect_llm(
+    provider: str | None = None,
+    model: str | None = None,
+    **kwargs
+) -> LLMClient
+```
+This factory function creates and returns an `LLMClient` instance.
+
+**Example:**
+```python
+from agex import connect_llm, Agent
+from agex.llm import DummyLLMClient
 
 # For production
-prod_client = get_llm_client(provider="openai", model="gpt-4", temperature=0.1)
+prod_client = connect_llm(provider="openai", model="gpt-4", temperature=0.1)
 prod_agent = Agent(primer="You are a production-ready assistant.", llm_client=prod_client)
 
 # For testing
@@ -80,13 +71,8 @@ test_client = DummyLLMClient(...)
 test_agent = Agent(primer="You are a test assistant.", llm_client=test_client)
 ```
 
-**Benefits:**
-- **Flexibility:** Use custom `LLMClient` subclasses for unsupported providers or to add custom logic (e.g., caching, logging).
-- **Resource Management:** Share a single client instance (with its network connections and authentication) across multiple agents.
-- **Testability:** Easily inject mock or dummy clients for testing without relying on environment variables.
-
-### 2. By Configuration Strings
-If no `llm_client` is provided, the agent will create one for you based on a fallback chain of configuration sources.
+### Default Client
+If no `llm_client` is provided to the `Agent` constructor, `agex` will automatically call `connect_llm()` with no arguments to create a default client. This client is configured based on a fallback chain of other configuration sources.
 
 #### Global Configuration with `configure_llm()`
 ```python
@@ -94,7 +80,7 @@ from agex import configure_llm
 
 configure_llm(provider="openai", model="gpt-4", temperature=0.7)
 ```
-Sets global LLM defaults that all agents will use.
+Sets global LLM defaults that all agents will use if no client is specified.
 
 #### Environment Variables
 Provider and model can also be set via environment variables:
@@ -103,14 +89,10 @@ export AGEX_LLM_PROVIDER=openai
 export AGEX_LLM_MODEL=gpt-4
 ```
 
-#### Per-Agent Constructor Arguments
-You can override global or environment settings by passing `llm_provider` and `llm_model` strings to the `Agent` constructor.
-
 #### Configuration Priority
-1. **`llm_client` instance** (highest priority - overrides all other settings)
-2. Agent constructor parameters (`llm_provider`, `llm_model`, etc.)
-3. `configure_llm()` settings
-4. Environment variables (lowest priority)
+1. **`llm_client` instance** passed to `Agent` constructor (highest priority)
+2. `configure_llm()` settings
+3. Environment variables (lowest priority)
 
 ## Properties
 

@@ -11,8 +11,8 @@ def get_llm_config(**overrides) -> Dict[str, Any]:
 
     Priority (highest to lowest):
     1. Function overrides (agent constructor args)
-    2. Global configuration (tic.configure_llm)
-    3. Environment variables (AGEX_LLM_*)
+    2. Environment variables (AGEX_LLM_*)
+    3. Global configuration (tic.configure_llm)
     4. Hard-coded defaults
 
     Args:
@@ -23,10 +23,13 @@ def get_llm_config(**overrides) -> Dict[str, Any]:
     """
     # Start with hard-coded defaults
     config = {
-        "provider": "openai",
-        "model": "gpt-4.1-nano",
+        "provider": "dummy",
+        "model": None,
         "temperature": 0.7,
     }
+
+    # Apply global configuration
+    config.update(_GLOBAL_LLM_CONFIG)
 
     # Apply environment variables
     env_mapping = {
@@ -47,9 +50,6 @@ def get_llm_config(**overrides) -> Dict[str, Any]:
                 config[config_key] = int(env_value)
             else:
                 config[config_key] = env_value
-
-    # Apply global configuration
-    config.update(_GLOBAL_LLM_CONFIG)
 
     # Apply overrides (highest priority)
     # Filter out None values to allow selective overrides

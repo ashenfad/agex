@@ -9,7 +9,7 @@ First, install agex with your preferred LLM provider:
 ```bash
 # Install with specific provider
 pip install "agex[openai]"      # For OpenAI models
-pip install "agex[anthropic]"   # For Anthropic Claude models  
+pip install "agex[anthropic]"   # For Anthropic Claude models
 pip install "agex[gemini]"      # For Google Gemini models
 
 # Or install with all providers
@@ -19,34 +19,35 @@ pip install "agex[all-providers]"
 pip install agex
 ```
 
-Configure your LLM either via environment variables:
-
-```bash
-export AGEX_LLM_PROVIDER=openai
-export AGEX_LLM_MODEL=gpt-4
-```
-
-Or programmatically:
+Next, configure your LLM client. While you can use environment variables, the recommended approach is to create a client explicitly with `connect_llm`:
 
 ```python
-from agex import configure_llm
+from agex import connect_llm
 
-# Configure your LLM (OpenAI, Anthropic, or Gemini)
-configure_llm(provider="openai", model="gpt-4")
-configure_llm(provider="anthropic", model="claude-3-sonnet-20240229")
-configure_llm(provider="gemini", model="gemini-1.5-flash")
+# Create a client for your preferred provider
+llm_client = connect_llm(provider="openai", model="gpt-4.1-nano")
+
+# If you have provider-specific environment variables set (e.g., OPENAI_API_KEY),
+# you can often omit the provider and model strings.
+# llm_client = connect_llm()
 ```
 
 ## 1. Your First Agent
 
-Let's start with a simple agent that can do math:
+Let's start with a simple agent that can do math. We'll pass it the `llm_client` we just created.
 
 ```python
 import math
-from agex import Agent
+from agex import Agent, connect_llm
+
+# It's best practice to create your LLM client once and reuse it
+llm_client = connect_llm(provider="openai", model="gpt-4.1-nano")
 
 # Create an agent
-agent = Agent(primer="You are great at solving math problems.")
+agent = Agent(
+    primer="You are great at solving math problems.",
+    llm_client=llm_client
+)
 
 # Give it access to math functions
 agent.module(math, visibility="medium")
@@ -66,9 +67,10 @@ print(result)  # 50.26548245743669
 
 **Key concepts:**
 
-- **`Agent(primer=...)`**: Creates an agent with behavioral instructions
-- **`agent.module()`**: Exposes existing Python modules to the agent
-- **`@agent.task`**: Defines what you want accomplished (agent provides implementation)
+- **`connect_llm()`**: Creates a configured client for interacting with an LLM.
+- **`Agent(llm_client=...)`**: Creates an agent using a specific LLM client.
+- **`agent.module()`**: Exposes existing Python modules to the agent.
+- **`@agent.task`**: Defines what you want accomplished (agent provides implementation).
 
 ## 2. Custom Functions
 
@@ -137,7 +139,7 @@ def workshop_joke(prompt: str, state: Versioned) -> str:  # type: ignore[return-
 # Agent builds an elaborate joke across multiple calls
 state = Versioned()
 setup = workshop_joke("Start a joke about a programmer and a fish", state=state)
-buildup = workshop_joke("Add more detail about their meeting", state=state)  
+buildup = workshop_joke("Add more detail about their meeting", state=state)
 punchline = workshop_joke("Deliver the punchline!", state=state)
 
 print(f"{setup}\n{buildup}\n{punchline}")
@@ -170,7 +172,7 @@ def generate_data(description: str) -> list[np.ndarray]:  # type: ignore[return-
     pass
 
 @orchestrator.fn
-@visualizer.task  
+@visualizer.task
 def create_plot(data: list[np.ndarray]) -> Figure:  # type: ignore[return-value]
     """Turn numpy arrays into an interactive plot."""
     pass
@@ -215,7 +217,7 @@ def create_content(topic: str) -> str:  # type: ignore[return-value]
     """Create initial content on the topic."""
     pass
 
-@optimizer.task  
+@optimizer.task
 def improve_content(content: str, feedback: str) -> str:  # type: ignore[return-value]
     """Improve content based on feedback."""
     pass

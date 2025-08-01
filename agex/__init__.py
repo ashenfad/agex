@@ -1,5 +1,12 @@
-from .agent import Agent, clear_agent_registry
-from .agent.datatypes import MemberSpec, TaskClarify, TaskFail, TaskTimeout
+from .agent import (
+    Agent,
+    MemberSpec,
+    TaskContinue,
+    TaskFail,
+    TaskSuccess,
+    clear_agent_registry,
+)
+from .agent.datatypes import TaskClarify, TaskTimeout
 from .agent.events import (
     ActionEvent,
     ClarifyEvent,
@@ -10,36 +17,37 @@ from .agent.events import (
     SuccessEvent,
     TaskStartEvent,
 )
-from .eval.core import evaluate_program as evaluate
-from .llm.config import configure_llm
-from .render.view import view
-from .state import events
-from .state.kv import Cache, Disk, Memory
-from .state.live import Live
-from .state.versioned import Versioned
+from .llm import LLMClient, connect_llm
+from .state import Live, Namespaced, Versioned, events
 
 __all__ = [
+    # Core Classes
     "Agent",
-    "Live",
+    "LLMClient",
+    # State Management
     "Versioned",
-    "Cache",
-    "Disk",
-    "Memory",
-    "configure_llm",
-    "evaluate",
-    "view",
+    "Live",
+    "Namespaced",
+    "events",
+    # Task Control Exceptions & Functions
+    "TaskSuccess",
     "TaskFail",
+    "TaskContinue",
     "TaskClarify",
     "TaskTimeout",
-    "clear_agent_registry",
-    "events",
+    # Registration
+    "MemberSpec",
+    # Events
     "Event",
     "TaskStartEvent",
     "ActionEvent",
     "OutputEvent",
-    "ErrorEvent",
     "SuccessEvent",
     "FailEvent",
     "ClarifyEvent",
-    "MemberSpec",
+    "ErrorEvent",
+    # Agent Registry
+    "clear_agent_registry",
+    # LLM Client Factory
+    "connect_llm",
 ]

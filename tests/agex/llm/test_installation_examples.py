@@ -1,179 +1,162 @@
-"""
-Installation examples and verification tests.
+import os
+from unittest.mock import patch
 
-This file documents the various ways users can install agex and verifies
-that the installation instructions in the docs work correctly.
-"""
-
-from agex.llm import get_llm_client
+from agex.llm import connect_llm
 
 
-def test_basic_installation_works():
-    """
-    Test that basic installation (core + dummy client) works.
-
-    This simulates: pip install agex
-    """
-    # Dummy client should always be available
-    client = get_llm_client(provider="dummy")
-    assert client.model == "dummy"
+def test_dummy_provider_example():
+    # Test the dummy provider example code from the documentation.
+    # This should always work as it has no external dependencies.
+    with patch.dict(os.environ, {}, clear=True):
+        client = connect_llm(provider="dummy")
+        assert client is not None
+        assert client.__class__.__name__ == "DummyLLMClient"
 
 
-def test_openai_provider_installation():
-    """
-    Test OpenAI provider installation.
-
-    This simulates: pip install "agex[openai]"
-    """
+def test_openai_provider_example():
+    # Test the OpenAI provider example code from the documentation.
+    # This test will pass if 'openai' is installed, and will be skipped otherwise.
     try:
-        # Set a dummy API key for testing client creation
-        import os
+        import openai  # noqa: F401
+    except ImportError:
+        # If openai is not installed, we can't test this, but that's expected.
+        # The library should raise an ImportError if the user tries this without installation.
+        return
 
-        original_key = os.environ.get("OPENAI_API_KEY")
-        os.environ["OPENAI_API_KEY"] = "test-key-for-installation-test"
+    with patch.dict(
+        os.environ,
+        {
+            "AGEX_LLM_PROVIDER": "openai",
+            "AGEX_LLM_MODEL": "gpt-4.1-nano",
+            "OPENAI_API_KEY": "test-key",
+        },
+        clear=True,
+    ):
+        client = connect_llm(provider="openai", model="gpt-4.1-nano")
+        assert client is not None
+        assert client.__class__.__name__ == "OpenAIClient"
+        assert client.model == "gpt-4.1-nano"
+
+
+def test_anthropic_provider_example():
+    # Test the Anthropic provider example code from the documentation.
+    # This test will pass if 'anthropic' is installed, and will be skipped otherwise.
+    try:
+        import anthropic  # noqa: F401
+    except ImportError:
+        return
+
+    with patch.dict(
+        os.environ,
+        {
+            "AGEX_LLM_PROVIDER": "anthropic",
+            "AGEX_LLM_MODEL": "claude-3-sonnet-20240229",
+            "ANTHROPIC_API_KEY": "test-key",
+        },
+        clear=True,
+    ):
+        client = connect_llm(provider="anthropic", model="claude-3-sonnet-20240229")
+        assert client is not None
+        assert client.__class__.__name__ == "AnthropicClient"
+        assert client.model == "claude-3-sonnet-20240229"
+
+
+def test_gemini_provider_example():
+    # Test the Gemini provider example code from the documentation.
+    # This test will pass if 'google-generativeai' is installed, and will be skipped otherwise.
+    try:
+        import google.generativeai  # noqa: F401
+    except ImportError:
+        return
+
+    with patch.dict(
+        os.environ,
+        {
+            "AGEX_LLM_PROVIDER": "gemini",
+            "AGEX_LLM_MODEL": "gemini-1.5-flash",
+            "GOOGLE_API_KEY": "test-key",
+        },
+        clear=True,
+    ):
+        client = connect_llm(provider="gemini", model="gemini-1.5-flash")
+        assert client is not None
+        assert client.__class__.__name__ == "GeminiClient"
+        assert client.model == "gemini-1.5-flash"
+
+
+def test_global_llm_config_example():
+    # Test the global LLM configuration example from the documentation.
+    from agex.llm.config import configure_llm, get_llm_config, reset_llm_config
+
+    with patch.dict(os.environ, {}, clear=True):
+        # Clear any existing global config
+        reset_llm_config()
 
         try:
-            # Explicitly pass configuration to avoid environment variable interference
-            client = get_llm_client(provider="openai", model="gpt-4.1-nano")
-            # If we get here, OpenAI is installed and working
-            assert client.model == "gpt-4.1-nano"
-            assert client.provider_name == "OpenAI"
-            print("✅ OpenAI provider is available")
+            # 1. Test with no config set (should default to dummy or raise error if env vars not set)
+            try:
+                config = get_llm_config()
+                assert config.get("provider") == "dummy"
+            except ValueError:
+                # This is also acceptable if no dummy provider is configured and no env vars are set.
+                pass
+
+            # 2. Set global config
+            configure_llm(provider="openai", model="gpt-4", temperature=0.5)
+            config = get_llm_config()
+            assert config["provider"] == "openai"
+            assert config["model"] == "gpt-4"
+            assert config["temperature"] == 0.5
+
+            # 3. Override with function arguments
+            config_override = get_llm_config(model="gpt-3.5-turbo", temperature=0.9)
+            assert config_override["provider"] == "openai"  # Inherited from global
+            assert config_override["model"] == "gpt-3.5-turbo"  # Overridden
+            assert config_override["temperature"] == 0.9  # Overridden
+
+            # 4. Override with environment variables
+            with patch.dict(os.environ, {"AGEX_LLM_MODEL": "gpt-4-turbo"}, clear=True):
+                config_env = get_llm_config()
+                assert config_env["provider"] == "openai"  # Inherited from global
+                assert config_env["model"] == "gpt-4-turbo"  # Overridden by env var
+
+                # Function args should still have highest priority
+                config_env_override = get_llm_config(model="claude-3-opus")
+                assert config_env_override["model"] == "claude-3-opus"
+
         finally:
-            # Restore original API key state
-            if original_key is None:
-                os.environ.pop("OPENAI_API_KEY", None)
-            else:
-                os.environ["OPENAI_API_KEY"] = original_key
-
-    except ImportError as e:
-        # This would happen if openai package isn't installed
-        assert 'pip install "agex[openai]"' in str(e)
-        print("❌ OpenAI provider requires installation")
+            # Clean up global config
+            reset_llm_config()
 
 
-def test_anthropic_provider_installation():
-    """
-    Test Anthropic provider installation.
+def test_llm_client_factory_example():
+    # Test the LLM client factory example from the documentation.
+    # This example shows how to create clients for different providers.
+    # We use a loop and patch to simulate different installation scenarios.
 
-    This simulates: pip install "agex[anthropic]"
-    """
-    try:
-        # Set a dummy API key for testing client creation
-        import os
-
-        original_key = os.environ.get("ANTHROPIC_API_KEY")
-        os.environ["ANTHROPIC_API_KEY"] = "test-key-for-installation-test"
-
-        try:
-            # Explicitly pass configuration to avoid environment variable interference
-            client = get_llm_client(
-                provider="anthropic", model="claude-3-sonnet-20240229"
-            )
-            # If we get here, Anthropic is installed and working
-            assert client.model == "claude-3-sonnet-20240229"
-            assert client.provider_name == "Anthropic"
-            print("✅ Anthropic provider is available")
-        finally:
-            # Restore original API key state
-            if original_key is None:
-                os.environ.pop("ANTHROPIC_API_KEY", None)
-            else:
-                os.environ["ANTHROPIC_API_KEY"] = original_key
-
-    except ImportError as e:
-        # This would happen if anthropic package isn't installed
-        assert 'pip install "agex[anthropic]"' in str(e)
-        print("❌ Anthropic provider requires installation")
-
-
-def test_gemini_provider_installation():
-    """
-    Test Gemini provider installation.
-
-    This simulates: pip install "agex[gemini]"
-    """
-    try:
-        # Set a dummy API key for testing client creation
-        import os
-
-        original_key = os.environ.get("GEMINI_API_KEY")
-        os.environ["GEMINI_API_KEY"] = "test-key-for-installation-test"
-
-        try:
-            # Explicitly pass configuration to avoid environment variable interference
-            client = get_llm_client(provider="gemini", model="gemini-1.5-flash")
-            # If we get here, Gemini is installed and working
-            assert client.model == "gemini-1.5-flash"
-            assert client.provider_name == "Google Gemini"
-            print("✅ Gemini provider is available")
-        finally:
-            # Restore original API key state
-            if original_key is None:
-                os.environ.pop("GEMINI_API_KEY", None)
-            else:
-                os.environ["GEMINI_API_KEY"] = original_key
-
-    except ImportError as e:
-        # This would happen if google-generativeai package isn't installed
-        assert 'pip install "agex[gemini]"' in str(e)
-        print("❌ Gemini provider requires installation")
-
-
-def test_all_providers_installation():
-    """
-    Test that all providers can be installed together.
-
-    This simulates: pip install "agex[all-providers]"
-    """
-    import os
-
-    # Set dummy API keys for testing client creation
-    api_keys_to_set = {
-        "OPENAI_API_KEY": "test-openai-key",
-        "ANTHROPIC_API_KEY": "test-anthropic-key",
-        "GEMINI_API_KEY": "test-gemini-key",
+    providers_to_test = {
+        "openai": {"model": "gpt-4.1-nano"},
+        "anthropic": {"model": "claude-3-sonnet-20240229"},
+        "gemini": {"model": "gemini-1.5-flash"},
     }
 
-    # Store original keys
-    original_keys = {}
-    for key in api_keys_to_set:
-        original_keys[key] = os.environ.get(key)
-        os.environ[key] = api_keys_to_set[key]
+    for provider, config in providers_to_test.items():
+        try:
+            # Simulate the required library being installed
+            if provider == "openai":
+                import openai  # noqa: F401
+            elif provider == "anthropic":
+                import anthropic  # noqa: F401
+            elif provider == "gemini":
+                import google.generativeai  # noqa: F401
 
-    try:
-        # Test each provider with explicit configuration to avoid environment variable interference
-        test_configs = [
-            ("dummy", {}),
-            ("openai", {"model": "gpt-4.1-nano"}),
-            ("anthropic", {"model": "claude-3-sonnet-20240229"}),
-            ("gemini", {"model": "gemini-1.5-flash"}),
-        ]
-        available_providers = []
+            # Patch environment variables to avoid real key requirements
+            with patch.dict(os.environ, {f"{provider.upper()}_API_KEY": "test-key"}):
+                client = connect_llm(provider=provider, **config)  # type: ignore
+                assert client is not None
+                assert client.model == config["model"]
 
-        for provider, config in test_configs:
-            try:
-                client = get_llm_client(provider=provider, **config)  # type: ignore
-                available_providers.append(provider)
-                print(f"✅ {provider} provider is available (model: {client.model})")
-            except ImportError:
-                print(f"❌ {provider} provider requires installation")
-
-        # Dummy should always be available
-        assert "dummy" in available_providers
-
-        # Print summary
-        print(f"\nAvailable providers: {available_providers}")
-        print(f"Total providers available: {len(available_providers)}/4")
-
-    finally:
-        # Restore original API key state
-        for key, original_value in original_keys.items():
-            if original_value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = original_value
-
-
-# Note: This file can be run as a pytest module but not directly due to import path issues
-# Use: python -m pytest tests/agex/llm/test_installation_examples.py -v
+        except ImportError:
+            # This is the expected outcome if the library is not installed.
+            # The test confirms that the factory function works when the library *is* available.
+            continue
