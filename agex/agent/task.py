@@ -231,7 +231,37 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
         new_sig = original_sig.replace(parameters=new_params)
 
-        # Create the replacement function
+        # Create a custom callable class with proper __repr__
+        class TaskWrapper:
+            def __init__(self, task_func, stream_func, agent_name, task_name):
+                self._task_func = task_func
+                self._stream_func = stream_func
+                self._agent_name = agent_name
+                self._task_name = task_name
+
+                # Copy function attributes
+                self.__name__ = func.__name__
+                self.__doc__ = func.__doc__
+                self.__annotations__ = func.__annotations__.copy()
+                self.__annotations__["state"] = "Versioned | None"
+                self.__annotations__["on_event"] = "Callable[[BaseEvent], None] | None"
+                self.__signature__ = new_sig
+
+                # Set namespace for dual-decorator pattern
+                namespace = self._agent_name
+                self.__agex_task_namespace__ = namespace
+
+            def __call__(self, *args, **kwargs):
+                return self._task_func(*args, **kwargs)
+
+            def __repr__(self):
+                return f"<agex.task {self._agent_name}/{self._task_name} at {hex(id(self))}>"
+
+            @property
+            def stream(self):
+                return self._stream_func
+
+        # Create the actual task function
         def task_wrapper(*args, **kwargs):
             # Bind to the new signature that includes the 'state' and 'on_event' parameters
             bound_args = new_sig.bind(*args, **kwargs)
@@ -309,22 +339,11 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 setup=setup,
             )
 
-        # Preserve metadata
-        task_wrapper.__name__ = func.__name__
-        task_wrapper.__doc__ = func.__doc__
-        task_wrapper.__annotations__ = func.__annotations__.copy()
-        task_wrapper.__annotations__["state"] = "Versioned | None"
-        task_wrapper.__annotations__["on_event"] = "Callable[[BaseEvent], None] | None"
-        task_wrapper.__signature__ = new_sig
+        # Create the custom wrapper with proper __repr__
+        agent_name = self.name if self.name is not None else self.__class__.__name__
+        wrapper = TaskWrapper(task_wrapper, stream, agent_name, task_name)
 
-        # Add streaming method to the task wrapper
-        task_wrapper.stream = stream
-
-        # Set namespace for dual-decorator pattern (also serves as task-decorated marker)
-        namespace = self.name if self.name is not None else self.__class__.__name__
-        task_wrapper.__agex_task_namespace__ = namespace
-
-        return task_wrapper
+        return wrapper
 
     def _create_inputs_dataclass(self, task_name: str, signature: inspect.Signature):
         """
