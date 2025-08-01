@@ -156,7 +156,7 @@ Pattern types work the same for both `.cls()` and `.module()` registration:
 Both `.cls()` and `.module()` support fine-grained per-member configuration using `MemberSpec`:
 
 ```python
-from agex.agent.datatypes import MemberSpec
+from agex import MemberSpec
 
 # For classes
 agent.cls(

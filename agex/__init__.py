@@ -1,5 +1,5 @@
 from .agent import Agent, clear_agent_registry
-from .agent.datatypes import TaskClarify, TaskFail, TaskTimeout
+from .agent.datatypes import MemberSpec, TaskClarify, TaskFail, TaskTimeout
 from .agent.events import (
     ActionEvent,
     ClarifyEvent,
@@ -41,4 +41,5 @@ __all__ = [
     "SuccessEvent",
     "FailEvent",
     "ClarifyEvent",
+    "MemberSpec",
 ]

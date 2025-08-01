@@ -54,5 +54,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # Run with: python examples/multi.py OR python -m examples.multi
+    # Run with: python examples/hierarchical.py OR python -m examples.hierarchical
     main()

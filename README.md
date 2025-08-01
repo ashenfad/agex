@@ -106,14 +106,7 @@ All orchestration is done with simple Python control flow—no YAML or complex D
 
 ### **Agents Architecting Agents**
 
-As the ultimate test of library-friendliness, agents can use the `agex` API itself to design and spawn other agents at runtime. This demonstrates how naturally agents can integrate with any Python library—even `agex`.
-
-```python
-architect = Agent(name="architect", primer=PRIMER)
-architect.cls(Agent)  # Let the architect use agex!
-```
-
-**Why this matters:** While a bit mind-bending, the real takeaway is how seamlessly agents can work with your existing code. See [`examples/dogfood.py`](./examples/dogfood.py) for the complete implementation.
+As the ultimate test of library-friendliness, agents can use the `agex` API itself to design and spawn other agents at runtime. This powerful "dogfooding" capability showcases the ultimate level of interoperability. See [`examples/dogfood.py`](./examples/dogfood.py) for the complete implementation.
 
 ### **Empirical Agent Development**
 
@@ -140,7 +133,7 @@ This enables systematic agent optimization rather than guesswork-based developme
 > **⚠️ Pre-Release**  
 > `agex` is a new framework in active development. While the core concepts are stabilizing, the API should be considered experimental and is subject to change.
 
-For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project. `agex` explores a different architectural path centered on a secure-by-design execution environment and deep runtime interoperability.
+For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project. `agex` explores a different architectural path, focusing on deep runtime interoperability and a secure, sandboxed environment for direct integration with existing Python libraries.
 
 
 

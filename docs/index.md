@@ -105,4 +105,4 @@ Install agex with your preferred LLM provider:
 !!! warning "Pre-Release"
     `agex` is a new framework in active development. While the core concepts are stabilizing, the API should be considered experimental and is subject to change.
 
-For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project.
+For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project. `agex` explores a different architectural path, focusing on deep runtime interoperability and a secure, sandboxed environment for direct integration with existing Python libraries.
