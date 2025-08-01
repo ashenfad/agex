@@ -270,6 +270,11 @@ def create_trials_with_state():
     ]
 ```
 
+!!! warning "Stateful Benchmarks and Concurrency"
+    When designing benchmarks that test stateful interactions (i.e., multiple trials that share the same `Versioned` state object), you **must** use `max_concurrency=1` (the default).
+
+    Using a `max_concurrency` greater than 1 for stateful benchmarks will lead to race conditions and unpredictable results, as concurrent trials will attempt to read from and write to the same state object simultaneously. For stateless trials, concurrency is safe and recommended for performance.
+
 ## Example: Complete Benchmark
 
 See `benchmarks/funcy_bench.py` for a complete example that tests function generation capabilities:
