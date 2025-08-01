@@ -41,7 +41,7 @@ Most agex functionality is available at the top level:
 from agex import Agent, Versioned, view
 from agex import Memory, Disk, Cache  # Storage backends
 from agex import TaskFail  # Error handling
-from agex import configure_llm, clear_agent_registry  # Utilities
+from agex import clear_agent_registry  # Utilities
 ```
 
 ## API Design Philosophy
@@ -101,4 +101,4 @@ This allows agents to have access to extensive capabilities while keeping their 
 !!! warning "Pre-Release"
     `agex` is a new framework in active development. While the core concepts are stabilizing, the API should be considered experimental and is subject to change.
 
-For examples and higher-level documentation, see the main [docs/index.md](../index.md). 
+For examples and higher-level documentation, see the main [docs/index.md](../index.md).

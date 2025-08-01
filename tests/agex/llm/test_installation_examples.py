@@ -84,51 +84,6 @@ def test_gemini_provider_example():
         assert client.model == "gemini-1.5-flash"
 
 
-def test_global_llm_config_example():
-    # Test the global LLM configuration example from the documentation.
-    from agex.llm.config import configure_llm, get_llm_config, reset_llm_config
-
-    with patch.dict(os.environ, {}, clear=True):
-        # Clear any existing global config
-        reset_llm_config()
-
-        try:
-            # 1. Test with no config set (should default to dummy or raise error if env vars not set)
-            try:
-                config = get_llm_config()
-                assert config.get("provider") == "dummy"
-            except ValueError:
-                # This is also acceptable if no dummy provider is configured and no env vars are set.
-                pass
-
-            # 2. Set global config
-            configure_llm(provider="openai", model="gpt-4", temperature=0.5)
-            config = get_llm_config()
-            assert config["provider"] == "openai"
-            assert config["model"] == "gpt-4"
-            assert config["temperature"] == 0.5
-
-            # 3. Override with function arguments
-            config_override = get_llm_config(model="gpt-3.5-turbo", temperature=0.9)
-            assert config_override["provider"] == "openai"  # Inherited from global
-            assert config_override["model"] == "gpt-3.5-turbo"  # Overridden
-            assert config_override["temperature"] == 0.9  # Overridden
-
-            # 4. Override with environment variables
-            with patch.dict(os.environ, {"AGEX_LLM_MODEL": "gpt-4-turbo"}, clear=True):
-                config_env = get_llm_config()
-                assert config_env["provider"] == "openai"  # Inherited from global
-                assert config_env["model"] == "gpt-4-turbo"  # Overridden by env var
-
-                # Function args should still have highest priority
-                config_env_override = get_llm_config(model="claude-3-opus")
-                assert config_env_override["model"] == "claude-3-opus"
-
-        finally:
-            # Clean up global config
-            reset_llm_config()
-
-
 def test_llm_client_factory_example():
     # Test the LLM client factory example from the documentation.
     # This example shows how to create clients for different providers.

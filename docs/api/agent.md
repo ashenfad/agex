@@ -24,19 +24,19 @@ Agent(
 | `max_iterations` | `int` | `10` | Maximum number of think-act cycles per task |
 | `max_tokens` | `int` | `65536` | Maximum tokens for context rendering |
 | `name` | `str | None` | `None` | Unique identifier for the agent (auto-generated if not provided) |
-| `llm_client` | `LLMClient | None` | `None` | An instantiated `LLMClient` for the agent to use. If not provided, a default client will be created based on global configuration. |
+| `llm_client` | `LLMClient | None` | `None` | An instantiated `LLMClient` for the agent to use. If `None`, a default client is created. |
 
 ### Examples
 
 ```python
-from agex import Agent, connect_llm
+from agex import Agent, connect_llm, LLMClient
 
-# Simple agent using default LLM configuration
+# Simple agent using the default LLM (dummy provider or from env vars)
 agent = Agent(primer="You are a helpful assistant.")
 
-# Agent configured with a specific client
-llm_client = connect_llm(provider="openai", model="gpt-4", temperature=0.1)
-agent = Agent(
+# Agent configured with a specific, explicitly created client
+llm_client = connect_llm(provider="openai", model="gpt-4-turbo", temperature=0.1)
+expert_agent = Agent(
     primer="You are an expert data analyst.",
     llm_client=llm_client
 )
@@ -44,55 +44,43 @@ agent = Agent(
 
 ## LLM Configuration
 
-The recommended way to configure an agent's LLM is to create an `LLMClient` instance using the top-level `connect_llm` function and pass it to the agent's constructor.
+An agent's connection to a Large Language Model is managed by an `LLMClient` instance. There are two primary ways to configure this.
 
-### `connect_llm()`
+### 1. Direct Instantiation (Recommended)
 
-```python
-connect_llm(
-    provider: str | None = None,
-    model: str | None = None,
-    **kwargs
-) -> LLMClient
-```
-This factory function creates and returns an `LLMClient` instance.
+The clearest and most explicit method is to create an `LLMClient` instance using the top-level `connect_llm()` factory function and pass it directly to the `Agent`'s constructor. This makes dependencies obvious and is ideal for production code and testing.
 
-**Example:**
 ```python
 from agex import connect_llm, Agent
-from agex.llm import DummyLLMClient
+from agex.llm.dummy_client import DummyLLMClient
 
-# For production
-prod_client = connect_llm(provider="openai", model="gpt-4", temperature=0.1)
-prod_agent = Agent(primer="You are a production-ready assistant.", llm_client=prod_client)
+# For production, create a client for a specific provider
+prod_client = connect_llm(provider="openai", model="gpt-4-turbo")
+prod_agent = Agent(llm_client=prod_client)
 
-# For testing
-test_client = DummyLLMClient(...)
-test_agent = Agent(primer="You are a test assistant.", llm_client=test_client)
+# For testing, you can inject a dummy client
+test_client = DummyLLMClient()
+test_agent = Agent(llm_client=test_client)
 ```
 
-### Default Client
-If no `llm_client` is provided to the `Agent` constructor, `agex` will automatically call `connect_llm()` with no arguments to create a default client. This client is configured based on a fallback chain of other configuration sources.
+### 2. Default Client (via Environment Variables)
 
-#### Global Configuration with `configure_llm()`
-```python
-from agex import configure_llm
+If you do not pass an `llm_client` to the `Agent` constructor, `agex` will automatically create a default one for you by calling `connect_llm()` with no arguments. This default client is configured using environment variables.
 
-configure_llm(provider="openai", model="gpt-4", temperature=0.7)
-```
-Sets global LLM defaults that all agents will use if no client is specified.
+The fallback chain is:
+1.  **Environment Variables**: `AGEX_LLM_PROVIDER`, `AGEX_LLM_MODEL`, etc. will be used if set. Provider-specific keys like `OPENAI_API_KEY` are also needed.
+2.  **Hard-coded Default**: If no environment variables are found, a `DummyLLMClient` is created, which produces placeholder responses and requires no API keys. This ensures `agex` works out-of-the-box for local testing.
 
-#### Environment Variables
-Provider and model can also be set via environment variables:
 ```bash
+# Example: Configure agent via environment variables
 export AGEX_LLM_PROVIDER=openai
-export AGEX_LLM_MODEL=gpt-4
+export AGEX_LLM_MODEL=gpt-4-turbo
+export OPENAI_API_KEY="your-key-here"
 ```
-
-#### Configuration Priority
-1. **`llm_client` instance** passed to `Agent` constructor (highest priority)
-2. `configure_llm()` settings
-3. Environment variables (lowest priority)
+```python
+# This agent will now use the client configured from the environment
+env_agent = Agent(primer="You are configured by the environment.")
+```
 
 ## Properties
 

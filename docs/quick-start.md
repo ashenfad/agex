@@ -19,16 +19,16 @@ pip install "agex[all-providers]"
 pip install agex
 ```
 
-Next, configure your LLM client. While you can use environment variables, the recommended approach is to create a client explicitly with `connect_llm`:
+Next, configure your LLM client. You can either pass arguments directly to `connect_llm` or set environment variables.
 
 ```python
 from agex import connect_llm
 
-# Create a client for your preferred provider
+# Option 1: Explicitly create a client
 llm_client = connect_llm(provider="openai", model="gpt-4.1-nano")
 
-# If you have provider-specific environment variables set (e.g., OPENAI_API_KEY),
-# you can often omit the provider and model strings.
+# Option 2: Rely on environment variables
+# Set OPENAI_API_KEY, AGEX_LLM_PROVIDER, AGEX_LLM_MODEL, etc.
 # llm_client = connect_llm()
 ```
 

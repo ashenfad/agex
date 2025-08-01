@@ -1,25 +1,21 @@
 import os
 from typing import Any, Dict
 
-# Global LLM configuration storage
-_GLOBAL_LLM_CONFIG: Dict[str, Any] = {}
-
 
 def get_llm_config(**overrides) -> Dict[str, Any]:
     """
-    Get LLM configuration with smart fallback chain.
+    Get LLM configuration with a smart fallback chain.
 
     Priority (highest to lowest):
-    1. Function overrides (agent constructor args)
+    1. Function overrides (e.g., in connect_llm)
     2. Environment variables (AGEX_LLM_*)
-    3. Global configuration (tic.configure_llm)
-    4. Hard-coded defaults
+    3. Hard-coded defaults
 
     Args:
-        **overrides: Direct configuration overrides
+        **overrides: Direct configuration overrides.
 
     Returns:
-        Complete LLM configuration dictionary
+        A complete LLM configuration dictionary.
     """
     # Start with hard-coded defaults
     config = {
@@ -27,9 +23,6 @@ def get_llm_config(**overrides) -> Dict[str, Any]:
         "model": None,
         "temperature": 0.7,
     }
-
-    # Apply global configuration
-    config.update(_GLOBAL_LLM_CONFIG)
 
     # Apply environment variables
     env_mapping = {
@@ -57,36 +50,3 @@ def get_llm_config(**overrides) -> Dict[str, Any]:
     config.update(filtered_overrides)
 
     return config
-
-
-def configure_llm(**kwargs):
-    """
-    Set global LLM defaults for all new agents.
-
-    Example:
-        configure_llm(provider="anthropic", model="claude-3-sonnet-20240229")
-
-    Args:
-        **kwargs: LLM configuration parameters
-    """
-    global _GLOBAL_LLM_CONFIG
-    _GLOBAL_LLM_CONFIG.update(kwargs)
-
-
-def get_global_llm_config() -> Dict[str, Any]:
-    """
-    Get the current global LLM configuration.
-
-    Returns:
-        Copy of the global configuration dictionary
-    """
-    return _GLOBAL_LLM_CONFIG.copy()
-
-
-def reset_llm_config():
-    """
-    Reset global LLM configuration to empty.
-    Useful for testing.
-    """
-    global _GLOBAL_LLM_CONFIG
-    _GLOBAL_LLM_CONFIG = {}
