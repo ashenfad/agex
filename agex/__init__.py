@@ -30,9 +30,7 @@ __all__ = [
     "Namespaced",
     "events",
     # Task Control Exceptions & Functions
-    "TaskSuccess",
     "TaskFail",
-    "TaskContinue",
     "TaskClarify",
     "TaskTimeout",
     # Registration
