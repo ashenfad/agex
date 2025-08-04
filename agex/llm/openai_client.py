@@ -38,13 +38,22 @@ def _format_message(message: Message) -> dict:
 class OpenAIClient(LLMClient):
     """Client for OpenAI's API with native structured outputs."""
 
-    def __init__(self, model: str = "gpt-4.1-nano", **kwargs):
+    def __init__(
+        self,
+        model: str = "gpt-4.1-nano",
+        base_url: str | None = None,
+        **kwargs,
+    ):
         kwargs = kwargs.copy()
         kwargs.pop("provider", None)
         self._model = model
         self._kwargs = kwargs
-        # Use the standard OpenAI client - no instructor patching needed
-        self.client = openai.OpenAI()
+
+        client_kwargs = {}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        self.client = openai.OpenAI(**client_kwargs)
+
         self.tokenizer = get_tokenizer(model)
         self._context_windows = {
             "gpt-4o": 128000,
@@ -62,7 +71,7 @@ class OpenAIClient(LLMClient):
 
         try:
             # Use OpenAI's native structured outputs with beta.chat.completions.parse
-            response = self.client.chat.completions.parse(
+            response = self.client.beta.chat.completions.parse(
                 model=self._model,
                 messages=[_format_message(msg) for msg in messages],  # type: ignore
                 response_format=LLMResponse,
