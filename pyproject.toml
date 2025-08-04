@@ -51,9 +51,9 @@ gemini = [
 ]
 # Convenience group for all providers
 all-providers = [
-    "openai",
-    "anthropic", 
-    "google-generativeai",
+    "agex[openai]",
+    "agex[anthropic]",
+    "agex[gemini]",
 ]
 
 [tool.ruff]
