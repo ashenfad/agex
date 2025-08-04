@@ -14,8 +14,9 @@ from .base import BaseEvaluator
 class _ReturnException(Exception):
     """Internal exception to signal a return statement, carrying the return value."""
 
-    def __init__(self, value: Any):
+    def __init__(self, value: Any, node: ast.Return):
         self.value = value
+        self.node = node
 
 
 @dataclass
@@ -294,4 +295,4 @@ class FunctionEvaluator(BaseEvaluator):
     def visit_Return(self, node: ast.Return) -> None:
         """Handles return statements."""
         value = self.visit(node.value) if node.value else None
-        raise _ReturnException(value)
+        raise _ReturnException(value, node)

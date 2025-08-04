@@ -8,8 +8,9 @@ from .base import BaseEvaluator
 from .binop import BinOpEvaluator
 from .call import CallEvaluator
 from .comprehension import ComprehensionEvaluator
+from .error import EvalError
 from .expressions import ExpressionEvaluator
-from .functions import FunctionEvaluator
+from .functions import FunctionEvaluator, _ReturnException
 from .loops import LoopEvaluator
 from .statements import StatementEvaluator
 
@@ -93,4 +94,13 @@ def evaluate_program(
         timeout_seconds=actual_timeout,
         on_event=on_event,
     )
-    evaluator.visit(tree)
+
+    try:
+        evaluator.visit(tree)
+    except _ReturnException as e:
+        # Convert return statement outside function to a helpful error
+        raise EvalError(
+            "'return' outside function. You're in an agent environment, not a regular Python function. "
+            "Use task_success(result) to complete your task, not return.",
+            e.node,
+        )
