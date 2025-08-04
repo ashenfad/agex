@@ -35,9 +35,6 @@ def pass_fail_aggregator(results: list[bool], event_stats: Stats) -> PassFailSta
             f"Found non-boolean types: {invalid_types}"
         )
 
-    if not results:
-        raise ValueError("Cannot aggregate empty results list")
-
     # results only contains results from completed trials (errored trials were skipped)
     pass_count = sum(results)
     fail_count = len(results) - pass_count
@@ -75,8 +72,22 @@ def numeric_aggregator(results: list[float], event_stats: Stats) -> NumericStats
             f"Found non-numeric types: {invalid_types}"
         )
 
+    # If no trials were successful, there are no results to aggregate
+    # Return zeroed-out stats in this case
     if not results:
-        raise ValueError("Cannot aggregate empty results list")
+        return NumericStats(
+            # Base stats from events
+            total_trials=event_stats.total_trials,
+            completed_trials=event_stats.completed_trials,
+            errored_trials=event_stats.errored_trials,
+            actions_per_trial=event_stats.actions_per_trial,
+            time_per_trial=event_stats.time_per_trial,
+            # Zeroed-out numeric aggregations
+            mean_score=0.0,
+            min_score=0.0,
+            max_score=0.0,
+            total_score=0.0,
+        )
 
     # Compute numeric aggregations
     mean_score = sum(results) / len(results)

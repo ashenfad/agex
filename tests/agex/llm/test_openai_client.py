@@ -32,7 +32,7 @@ def test_openai_client_message_handling():
     mock_response.choices[0].message.parsed = mock_parsed_response
 
     with patch.object(client, "client") as mock_client:
-        mock_client.chat.completions.parse.return_value = mock_response
+        mock_client.beta.chat.completions.parse.return_value = mock_response
 
         messages = [
             TextMessage(role="system", content="You are a helpful assistant."),
@@ -44,8 +44,8 @@ def test_openai_client_message_handling():
         response = client.complete(messages)  # type: ignore
 
         # Verify the call was made correctly
-        mock_client.chat.completions.parse.assert_called_once()
-        call_args = mock_client.chat.completions.parse.call_args
+        mock_client.beta.chat.completions.parse.assert_called_once()
+        call_args = mock_client.beta.chat.completions.parse.call_args
 
         # Check that all messages were passed correctly
         passed_messages = call_args[1]["messages"]
@@ -79,14 +79,14 @@ def test_openai_client_structured_output():
     mock_response.choices[0].message.parsed = mock_parsed_response
 
     with patch.object(client, "client") as mock_client:
-        mock_client.chat.completions.parse.return_value = mock_response
+        mock_client.beta.chat.completions.parse.return_value = mock_response
 
         messages = [TextMessage(role="user", content="Hello")]
 
         response = client.complete(messages)  # type: ignore
 
         # Verify structured output configuration
-        call_args = mock_client.chat.completions.parse.call_args
+        call_args = mock_client.beta.chat.completions.parse.call_args
         assert call_args[1]["response_format"] == LLMResponse
 
         # Check response
@@ -105,7 +105,7 @@ def test_openai_client_request_parameters():
     mock_response.choices[0].message.parsed = mock_parsed_response
 
     with patch.object(client, "client") as mock_client:
-        mock_client.chat.completions.parse.return_value = mock_response
+        mock_client.beta.chat.completions.parse.return_value = mock_response
 
         messages = [TextMessage(role="user", content="Hello")]
 
@@ -113,7 +113,7 @@ def test_openai_client_request_parameters():
         response = client.complete(messages, top_p=0.9)  # type: ignore
 
         # Verify parameters were passed
-        call_args = mock_client.chat.completions.parse.call_args
+        call_args = mock_client.beta.chat.completions.parse.call_args
         assert call_args[1]["temperature"] == 0.5  # From constructor
         assert call_args[1]["max_tokens"] == 1000  # From constructor
         assert call_args[1]["top_p"] == 0.9  # From method call
@@ -128,7 +128,7 @@ def test_openai_client_none_parsed_response():
     mock_response.choices[0].message.parsed = None
 
     with patch.object(client, "client") as mock_client:
-        mock_client.chat.completions.parse.return_value = mock_response
+        mock_client.beta.chat.completions.parse.return_value = mock_response
 
         messages = [TextMessage(role="user", content="Hello")]
 
@@ -143,7 +143,7 @@ def test_openai_client_api_error():
     client = OpenAIClient()
 
     with patch.object(client, "client") as mock_client:
-        mock_client.chat.completions.parse.side_effect = Exception("API Error")
+        mock_client.beta.chat.completions.parse.side_effect = Exception("API Error")
 
         messages = [TextMessage(role="user", content="Hello")]
 
@@ -202,7 +202,7 @@ def test_openai_client_message_dataclass_conversion():
     mock_response.choices[0].message.parsed = mock_parsed_response
 
     with patch.object(client, "client") as mock_client:
-        mock_client.chat.completions.parse.return_value = mock_response
+        mock_client.beta.chat.completions.parse.return_value = mock_response
 
         messages = [
             TextMessage(role="system", content="System message"),
@@ -212,7 +212,7 @@ def test_openai_client_message_dataclass_conversion():
         client.complete(messages)  # type: ignore
 
         # Verify messages were converted to dicts
-        call_args = mock_client.chat.completions.parse.call_args
+        call_args = mock_client.beta.chat.completions.parse.call_args
         passed_messages = call_args[1]["messages"]
 
         # Should be a list of dicts, not Message objects

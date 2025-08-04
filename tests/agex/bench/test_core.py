@@ -20,6 +20,7 @@ from agex.bench.core import (
 from agex.bench.types import NumericStats, PassFailStats, Stats, Trial, params
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import DummyLLMClient
+from typing import Callable
 
 
 class TestTrialResult:
@@ -27,7 +28,7 @@ class TestTrialResult:
 
     def test_trial_result_creation(self):
         """Test TrialResult creation and properties."""
-        trial = Trial(params("input"), expected="output", judge=operator.eq)
+        trial = Trial(params("input"), judge=lambda actual: actual == "output")
         events = []
 
         # Successful trial
@@ -77,8 +78,8 @@ class TestBenchmarkPassFail:
 
         # Create trials
         trials = [
-            Trial(params("What is 2+2?"), expected="4", judge=operator.eq),
-            Trial(params("What is 1+1?"), expected="2", judge=operator.eq),
+            Trial(params("What is 2+2?"), judge=lambda actual: actual == "4"),
+            Trial(params("What is 1+1?"), judge=lambda actual: actual == "2"),
         ]
 
         # Run benchmark
@@ -116,8 +117,10 @@ class TestBenchmarkPassFail:
             pass
 
         trials = [
-            Trial(params("What is 2+2?"), expected="4", judge=operator.eq),
-            Trial(params("What is 1+1?"), expected="2", judge=operator.eq),  # Will fail
+            Trial(params("What is 2+2?"), judge=lambda actual: actual == "4"),
+            Trial(
+                params("What is 1+1?"), judge=lambda actual: actual == "2"
+            ),  # Will fail
         ]
 
         results = benchmark_pass_fail([solve_math], trials)
@@ -167,8 +170,8 @@ class TestBenchmarkPassFail:
             pass
 
         trials = [
-            Trial(params("What is 2+2?"), expected="4", judge=operator.eq),
-            Trial(params("What is 1+1?"), expected="2", judge=operator.eq),
+            Trial(params("What is 2+2?"), judge=lambda actual: actual == "4"),
+            Trial(params("What is 1+1?"), judge=lambda actual: actual == "2"),
         ]
 
         results = benchmark_pass_fail([good_task, bad_task], trials)
@@ -204,12 +207,12 @@ class TestBenchmarkNumeric:
             pass
 
         # Judge based on length
-        def length_judge(expected: str, actual: str) -> float:
+        def length_judge(actual: str) -> float:
             return len(actual) / 10.0
 
         trials = [
-            Trial(params("Write short"), expected="story", judge=length_judge),
-            Trial(params("Write long"), expected="story", judge=length_judge),
+            Trial(params("Write short"), judge=length_judge),
+            Trial(params("Write long"), judge=length_judge),
         ]
 
         results = benchmark_numeric([write_story], trials)
@@ -259,12 +262,15 @@ class TestBenchmarkGeneric:
             pass
 
         # Custom judge that returns dict
-        def dict_judge(expected: str, actual: str) -> dict:
-            return {
-                "exact_match": expected == actual,
-                "length": len(actual),
-                "uppercase": actual.isupper(),
-            }
+        def dict_judge(expected: str) -> Callable[[str], dict]:
+            def judge(actual: str) -> dict:
+                return {
+                    "exact_match": expected == actual,
+                    "length": len(actual),
+                    "uppercase": actual.isupper(),
+                }
+
+            return judge
 
         # Custom aggregator
         def dict_aggregator(results: list[dict], event_stats: Stats) -> Stats:
@@ -272,8 +278,8 @@ class TestBenchmarkGeneric:
             return event_stats
 
         trials = [
-            Trial(params("hello"), expected="hello", judge=dict_judge),
-            Trial(params("WORLD"), expected="WORLD", judge=dict_judge),
+            Trial(params("hello"), judge=dict_judge("hello")),
+            Trial(params("WORLD"), judge=dict_judge("WORLD")),
         ]
 
         results = benchmark_generic([echo_task], trials, dict_aggregator)
@@ -298,13 +304,13 @@ class TestBenchmarkGeneric:
             pass
 
         # Judge that always fails
-        def failing_judge(expected, actual):
+        def failing_judge(actual):
             raise ValueError("Judge failed!")
 
         def simple_aggregator(results, event_stats):
             return event_stats
 
-        trials = [Trial(params("test"), expected="test", judge=failing_judge)]
+        trials = [Trial(params("test"), judge=failing_judge)]
 
         with pytest.raises(TypeError, match="Judge function failed"):
             benchmark_generic([test_task], trials, simple_aggregator)
@@ -327,7 +333,7 @@ class TestBenchmarkGeneric:
         def failing_aggregator(results, event_stats):
             raise ValueError("Aggregator failed!")
 
-        trials = [Trial(params("test"), expected="test", judge=operator.eq)]
+        trials = [Trial(params("test"), judge=lambda actual: actual == "test")]
 
         with pytest.raises(ValueError, match="Aggregation failed"):
             benchmark_generic([test_task], trials, failing_aggregator)
@@ -356,9 +362,9 @@ class TestConcurrency:
             pass
 
         trials = [
-            Trial(params("1"), expected="1", judge=operator.eq),
-            Trial(params("2"), expected="2", judge=operator.eq),
-            Trial(params("3"), expected="3", judge=operator.eq),
+            Trial(params("1"), judge=lambda actual: actual == "1"),
+            Trial(params("2"), judge=lambda actual: actual == "2"),
+            Trial(params("3"), judge=lambda actual: actual == "3"),
         ]
 
         # Test with different concurrency levels

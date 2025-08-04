@@ -8,12 +8,11 @@ The `agex.bench` module provides a framework for empirically evaluating agent pe
 
 A **Trial** represents a single test case with:
 - **Parameters**: Input arguments to the task function
-- **Expected Result**: Ground truth or reference implementation  
-- **Judge Function**: Evaluates actual vs expected results
+- **Judge Function**: Evaluates the actual result
 
 ### Judge Functions
 
-Judge functions take `(expected, actual)` and return a result for aggregation:
+Judge functions take the actual result from a task and return a new result for aggregation:
 - **Pass/Fail**: Return `bool` for success rate metrics
 - **Numeric**: Return `float` for average scores
 - **Custom**: Return any type with matching aggregator
@@ -39,13 +38,11 @@ import operator
 trials = [
     Trial(
         params=params("Calculate 2 + 2"),
-        expected=4,
-        judge=operator.eq,  # Simple equality check
+        judge=lambda actual: actual == 4,
     ),
     Trial(
         params=params("Calculate 10 * 5"),
-        expected=50,
-        judge=operator.eq,
+        judge=lambda actual: actual == 50,
     ),
 ]
 
@@ -67,23 +64,24 @@ for task, stats in results.items():
 ```python
 from agex.bench import Trial, benchmark_numeric, params
 
-def similarity_score(expected_text, actual_text):
+def similarity_scorer(expected_text):
     """Custom judge that returns similarity score."""
-    # Simple word overlap metric
-    expected_words = set(expected_text.lower().split())
-    actual_words = set(actual_text.lower().split())
-    
-    if not expected_words:
-        return 1.0 if not actual_words else 0.0
-    
-    overlap = expected_words & actual_words
-    return len(overlap) / len(expected_words)
+    def judge(actual_text):
+        # Simple word overlap metric
+        expected_words = set(expected_text.lower().split())
+        actual_words = set(actual_text.lower().split())
+        
+        if not expected_words:
+            return 1.0 if not actual_words else 0.0
+        
+        overlap = expected_words & actual_words
+        return len(overlap) / len(expected_words)
+    return judge
 
 trials = [
     Trial(
         params=params("Summarize: The quick brown fox jumps over the lazy dog."),
-        expected="A fox jumps over a dog",
-        judge=similarity_score,
+        judge=similarity_scorer("A fox jumps over a dog"),
     ),
 ]
 
@@ -152,8 +150,7 @@ Generic benchmark with custom aggregation logic.
 @dataclass
 class Trial[T, U]:
     params: Params              # Input parameters
-    expected: T                 # Expected output
-    judge: Callable[[T, T], U]  # Judge function
+    judge: Callable[[T], U]  # Judge function
 ```
 
 #### `Params`
@@ -259,13 +256,11 @@ def create_trials_with_state():
     return [
         Trial(
             params=params("What's the revenue?", state=base_state),
-            expected="revenue_data",
-            judge=contains_financial_terms,
+            judge=lambda actual: "revenue_data" in actual,
         ),
         Trial(
             params=params("Calculate the growth rate", state=base_state),
-            expected="growth_calculation", 
-            judge=contains_growth_metrics,
+            judge=lambda actual: "growth_calculation" in actual,
         ),
     ]
 ```
@@ -285,16 +280,17 @@ Benchmark for examples/funcy.py - Function Generation
 Tests agent's ability to generate working Python functions.
 """
 
-def _equivalent(expected_fn, actual_fn):
-    test_inputs = range(8)
-    return all(expected_fn(x) == actual_fn(x) for x in test_inputs)
+def equivalent(expected_fn):
+    def judge(actual_fn):
+        test_inputs = range(8)
+        return all(expected_fn(x) == actual_fn(x) for x in test_inputs)
+    return judge
 
 def main():
     trials = [
         Trial(
             params=params("a function that checks if a number is even"),
-            expected=lambda x: x % 2 == 0,
-            judge=_equivalent,
+            judge=equivalent(lambda x: x % 2 == 0),
         ),
         # ... more trials
     ]

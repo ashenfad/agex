@@ -34,7 +34,7 @@ def test_view_image_sends_multimodal_message():
         responses=[
             LLMResponse(
                 thinking="I will view the image provided in the inputs.",
-                code="view_image(inputs.img_to_view)",
+                code="view_image(inputs.img_to_view);task_continue();",
             ),
             LLMResponse(
                 thinking="I have now seen the image and will finish.",

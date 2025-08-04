@@ -45,22 +45,20 @@ def params(*args, **kwargs) -> Params:
 class Trial[T, U]:
     """A single benchmark trial definition.
 
-    Represents one test case with input parameters, expected output,
-    and a judge function to evaluate the actual result.
+    Represents one test case with input parameters and a judge function
+    to evaluate the actual result.
 
     Type Parameters:
-        T: Type of expected and actual values
+        T: Type of the actual value
         U: Type of judge function result
 
     Attributes:
         params: Input parameters to pass to task function
-        expected: Expected output to compare against
-        judge: Function that compares expected vs actual and returns result
+        judge: Function that evaluates the actual result and returns another value
     """
 
     params: Params
-    expected: T
-    judge: Callable[[T, T], U]
+    judge: Callable[[T], U]
 
 
 @dataclass

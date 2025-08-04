@@ -1,0 +1,8 @@
+Order_ID,Date,Category,Unit_Price,Quantity,Discount_Percent,Revenue
+ORD-0001,2023-04-15,Electronics,100.0,2,10.0,180.0
+ORD-0002,2023-05-20,Electronics,200.0,1,15.0,170.0
+ORD-0003,2023-06-10,Electronics,150.0,3,25.0,337.5
+ORD-0004,2023-06-25,Electronics,80.0,2,5.0,152.0
+ORD-0005,2023-04-01,Clothing,50.0,4,20.0,160.0
+ORD-0006,2023-05-15,Books,25.0,6,0.0,150.0
+ORD-0007,2023-07-01,Electronics,300.0,1,10.0,270.0

@@ -86,18 +86,13 @@ def benchmark_generic(
                 continue
 
             try:
-                judge_result = trial_result.trial.judge(
-                    trial_result.trial.expected, trial_result.result
-                )
+                judge_result = trial_result.trial.judge(trial_result.result)
                 judge_results.append(judge_result)
             except Exception as e:
                 raise TypeError(
-                    f"Judge function failed for trial with expected={trial_result.trial.expected}, "
+                    f"Judge function failed for trial. "
                     f"actual={trial_result.result}. Error: {e}"
                 ) from e
-
-        if not judge_results:
-            raise ValueError(f"No successful trials for task {task}")
 
         try:
             aggregated_stats = agg(judge_results, event_stats)
@@ -227,11 +222,21 @@ def _run_single_trial(task: Callable[..., T], trial: Trial[T, U]) -> TrialResult
     def event_collector(event: BaseEvent) -> None:
         events.append(event)
 
+    kwargs = trial.params.kwargs.copy()
+
     try:
         # Execute task with event collection
-        result = task(
-            *trial.params.args, on_event=event_collector, **trial.params.kwargs
-        )
+        if on_event := trial.params.kwargs.get("on_event"):
+
+            def handler(event: BaseEvent):
+                event_collector(event)
+                on_event(event)
+
+            del kwargs["on_event"]
+
+        else:
+            handler = event_collector
+        result = task(*trial.params.args, on_event=handler, **kwargs)
         return TrialResult(trial=trial, result=result, events=events, error=None)
     except Exception as e:
         return TrialResult(trial=trial, result=None, events=events, error=e)

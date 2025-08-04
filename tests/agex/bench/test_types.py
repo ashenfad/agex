@@ -41,27 +41,21 @@ def test_params_creation():
 def test_trial_creation():
     """Test Trial dataclass creation."""
     # Simple trial
-    trial = Trial(params=params("test"), expected="result", judge=operator.eq)
+    trial = Trial(params=params("test"), judge=lambda actual: actual == "result")
 
     assert trial.params.args == ("test",)
-    assert trial.expected == "result"
-    assert trial.judge == operator.eq
-
-    # Test judge function works
-    assert trial.judge("result", "result")
-    assert not trial.judge("result", "different")
+    assert trial.judge("result")
+    assert not trial.judge("different")
 
     # Trial with complex params
     trial2 = Trial(
         params=params("input", count=3, flag=True),
-        expected=42,
-        judge=lambda exp, act: exp == act,
+        judge=lambda actual: actual == 42,
     )
 
     assert trial2.params.args == ("input",)
     assert trial2.params.kwargs == {"count": 3, "flag": True}
-    assert trial2.expected == 42
-    assert trial2.judge(42, 42)
+    assert trial2.judge(42)
 
 
 def test_stats_dataclass():

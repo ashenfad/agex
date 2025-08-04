@@ -92,8 +92,10 @@ def test_pass_fail_aggregator_invalid_input():
         pass_fail_aggregator([1, 0], event_stats)
 
     # Test with empty results
-    with pytest.raises(ValueError, match="Cannot aggregate empty results list"):
-        pass_fail_aggregator([], event_stats)
+    empty_stats = pass_fail_aggregator([], event_stats)
+    assert empty_stats.pass_count == 0
+    assert empty_stats.fail_count == 0
+    assert empty_stats.pass_rate == 0.0
 
 
 def test_numeric_aggregator_basic():
@@ -193,8 +195,11 @@ def test_numeric_aggregator_invalid_input():
     assert bool_stats.mean_score == 0.5  # (1 + 0) / 2
 
     # Test with empty results
-    with pytest.raises(ValueError, match="Cannot aggregate empty results list"):
-        numeric_aggregator([], event_stats)
+    empty_stats = numeric_aggregator([], event_stats)
+    assert empty_stats.mean_score == 0.0
+    assert empty_stats.min_score == 0.0
+    assert empty_stats.max_score == 0.0
+    assert empty_stats.total_score == 0.0
 
 
 def test_aggregator_type_consistency():
