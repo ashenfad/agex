@@ -35,7 +35,7 @@ class ContextRenderer:
             return []
 
         # Render the collected items using the stream renderer
-        header = "Agent printed:\n"
+        header = "Agent stdout:\n"
         header_cost = self._stream_renderer.tokenizer.encode(header)
         item_budget = budget - len(header_cost)
 

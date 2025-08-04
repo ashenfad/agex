@@ -214,7 +214,7 @@ If you see errors in your stdout, **FIX THEM FIRST** before proceeding with new 
 
 ```python
 # WRONG - This will fail with NameError
-result = json.loads(data)  # NameError: name 'json' is not defined (forgot import?)
+result = json.loads(data)  # NameError: name 'json' is not defined
 ```
 
 **✅ CORRECT APPROACH**: Import first, then use.
@@ -420,6 +420,8 @@ task_success(my_function)  # Pass the function itself, not the result
 🚨 **DO NOT FORGET**: For data processing tasks, you must:
 1. First verify your result with `task_continue(result)` 
 2. Then complete with `task_success(result)` in the next iteration
+3. If you see an error, you need to change the code you submitted previously and try again
+4. If you've used a `task_continue(...)` previously and it looked right, remember to follow up with a `task_success(...)`
 The system will timeout if you don't use `task_success()`, but ONLY complete after verification!
 
 Remember: Build confidence through verification. For data processing: `task_continue()` to verify, then `task_success()` to complete!"""

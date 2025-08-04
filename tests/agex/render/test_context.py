@@ -20,6 +20,6 @@ def test_render_events():
         part.text for part in output_parts if isinstance(part, TextPart)
     )
 
-    assert "Agent printed:" in full_text
+    assert "Agent stdout:" in full_text
     assert "Hello" in full_text
     assert "{'data': 123}" in full_text

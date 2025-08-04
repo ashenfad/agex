@@ -255,7 +255,13 @@ class TaskLoopMixin(BaseAgent):
                 # Catch evaluation errors and put them in an OutputEvent so the agent can see them
                 error_output = OutputEvent(
                     agent_name=self.name,
-                    parts=[PrintAction([f"💥 Evaluation error: {e}"])],
+                    parts=[
+                        PrintAction(
+                            [
+                                f"💥 Evaluation error: {e}\nYou must adjust your code accordingly!"
+                            ]
+                        )
+                    ],
                 )
                 add_event_to_log(exec_state, error_output, on_event=on_event)
                 yield error_output
@@ -265,6 +271,40 @@ class TaskLoopMixin(BaseAgent):
                 events_yielded = yield from self._yield_new_events(
                     exec_state, events_yielded, on_event
                 )
+
+                # Check if the code executed successfully but didn't call any task_* functions
+                # This is a common issue with local models that forget to signal completion
+                if code_to_evaluate and code_to_evaluate.strip():
+                    # Look for task_* function calls in the executed code
+                    has_task_call = any(
+                        task_func in code_to_evaluate
+                        for task_func in [
+                            "task_success(",
+                            "task_fail(",
+                            "task_clarify(",
+                            "task_continue(",
+                        ]
+                    )
+
+                    if not has_task_call:
+                        # Provide helpful guidance to the agent
+                        guidance_message = (
+                            "💡 **Task Control Reminder**: Your code executed successfully, but you need to signal completion.\n\n"
+                            "**Next steps:**\n"
+                            "• `task_success(result)` - Complete the task with your final answer\n"
+                            "• `task_continue(result)` - Observe your work and continue to another REPL iteration\n"
+                            "• `task_fail(message)` - If you cannot complete the task\n"
+                            "• `task_clarify(message)` - If you need more information\n\n"
+                            "Your code ran without errors - now just add the appropriate task control function!"
+                        )
+
+                        guidance_output = OutputEvent(
+                            agent_name=self.name,
+                            parts=[PrintAction([guidance_message])],
+                        )
+                        add_event_to_log(exec_state, guidance_output, on_event=on_event)
+                        yield guidance_output
+                        events_yielded += 1
             finally:
                 # Always snapshot after each evaluation iteration (if we own the state)
                 from ..state import is_live_root

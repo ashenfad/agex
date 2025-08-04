@@ -35,15 +35,20 @@ def build_task_message(
 
         # Render each input field individually using smart rendering
         input_parts = []
+        example_field: str
         for field in inputs_dataclass.__dataclass_fields__.values():
             field_value = getattr(inputs_instance, field.name)
             smart_rendered = _smart_render_for_task_input(field_value)
-            input_parts.append(f"{field.name} = {smart_rendered}")
+            input_parts.append(f"inputs.{field.name} = {smart_rendered}")
+            example_field = field.name
 
         # Create the full inputs display
         inputs_content = "\n".join(input_parts)
         parts.append(f"```\n{inputs_content}\n```")
-        parts.append("\nAccess these values with patterns like `inputs.some_attr`\n")
+        if example_field:
+            parts.append(
+                f"\nAccess these values with patterns like `inputs.{example_field}`\n"
+            )
 
     # Add expected output format with clarification for function types
     if return_type is inspect.Parameter.empty:
@@ -77,7 +82,7 @@ def build_task_message(
             return_type_name = str(return_type)
 
         parts.append(
-            f"When complete, call `task_success(result: {return_type_name})` with your result."
+            f"When complete, call `task_success(result)` with your result. The result type should be `{return_type_name}`."
         )
 
     return "\n\n".join(parts)

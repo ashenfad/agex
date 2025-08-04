@@ -28,7 +28,7 @@ def format_context_as_markdown(context: str) -> str:
     current_header = None
 
     for line in lines:
-        # Detect section headers (like "Agent printed:")
+        # Detect section headers (like "Agent stdout:")
         if line.endswith(":") and not line.startswith(" ") and "=" not in line:
             # Save previous section if exists
             if current_section:
@@ -58,7 +58,7 @@ def format_context_as_markdown(context: str) -> str:
 def _format_section(header: str, lines: list[str]) -> str:
     """Format a section with header and Python code block."""
     # Clean up header formatting
-    if header == "Agent printed":
+    if header == "Agent stdout":
         header = "## Stdout (prints and errors)..."
     elif "=" in "".join(lines):  # Likely state changes
         header = "## State Changes"

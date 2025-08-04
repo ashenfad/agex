@@ -393,7 +393,8 @@ def test_task_with_custom_class_return_type():
     )
 
     # Verify that the task message contains clean type name "Review" not "<class '__main__.Review'>"
-    assert "task_success(result: Review)" in task_message
+    assert "task_success(result)" in task_message
+    assert "Review" in task_message
     assert "__main__" not in task_message
     assert "<class" not in task_message
 
@@ -416,7 +417,8 @@ def test_task_with_builtin_type_return_clean_display():
     )
 
     # Verify that the task message contains clean type name "str" not "<class 'str'>"
-    assert "task_success(result: str)" in task_message
+    assert "task_success(result)" in task_message
+    assert "str" in task_message
     assert "<class 'str'>" not in task_message
 
     # Test with int
@@ -428,7 +430,8 @@ def test_task_with_builtin_type_return_clean_display():
         return_type=int,
     )
 
-    assert "task_success(result: int)" in task_message
+    assert "task_success(result)" in task_message
+    assert "int" in task_message
     assert "<class 'int'>" not in task_message
 
     # Test with list
@@ -440,7 +443,8 @@ def test_task_with_builtin_type_return_clean_display():
         return_type=list,
     )
 
-    assert "task_success(result: list)" in task_message
+    assert "task_success(result)" in task_message
+    assert "list" in task_message
     assert "<class 'list'>" not in task_message
 
     # Test with generic type list[int] - should preserve type parameters
@@ -452,5 +456,6 @@ def test_task_with_builtin_type_return_clean_display():
         return_type=list[int],
     )
 
-    assert "task_success(result: list[int])" in task_message
+    assert "task_success(result)" in task_message
+    assert "list[int]" in task_message
     assert "<class" not in task_message
