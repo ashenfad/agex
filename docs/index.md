@@ -1,44 +1,45 @@
 # agex: Library-Friendly Agents
 
-**`agex`** (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to work directly with your existing libraries and codebase. It provides a sandboxed execution environment with seamless access to the Python ecosystem.
+**`agex`** (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to work directly with your existing libraries and codebase.
 
 ## 25-Second Demo
 
 ![agex demo gif](assets/teaser.gif)
 
-**This works because** `agex` provides easy runtime interoperability. The agent receives and returns real `pandas.DataFrame` and `plotly.Figure` objects, not just JSON. It works directly with your libraries. **Dive deeper with the full [`agex101.ipynb`](demos/agex101.ipynb) tutorial.**
+**This works because** `agex` agents can accept and return complex types like `pandas.DataFrame` and `plotly.Figure` objects without intermediate JSON serialization. **Dive deeper with the full [`agex101.ipynb`](demos/agex101.ipynb) tutorial.**
 
 ## What Makes This Different
 
-`agex` enables workflows without the accidental complexity of frameworks that rely on JSON or isolated execution environments. The key difference is **object passing** - `agex` transparently handles the passing of complex Python objects between your code and an agent's sandboxed environment.
+`agex` uses a subset of Python as the agent action space, executing actions in a sandboxed environment within your process. This approach avoids the complexity of JSON serialization and allows complex objects to flow directly between your code and the agent. You control exactly what functions, classes, and modules are available, creating a powerful yet secure environment.
 
 ## Key Features
 
 <div class="grid cards" markdown>
 
--   :material-code-braces: **Runtime Interoperability**
+-   :material-code-braces: **Code-as-Action**
 
     ---
 
-    Agents work with real Python objects like `numpy` arrays, `pandas` DataFrames, and custom classes without JSON serialization overhead.
-
--   :material-function: **Code-as-Action**
-
-    ---
-
-    Agents compose primitives into solutions, not rigid pre-built tools.
+    AST-based sandbox allows agents to take action through code but within limits.
 
 -   :material-history: **Agent Workspace Persistence**
 
     ---
 
-    Git-like versioning with automatic checkpointing and time-travel debugging.
+    Agents & their compute environments persist w/ git-like versioning.
+
+-   :material-function: **Library Integration**
+
+    ---
+
+    Agents integrate with existing Python libraries (not restricted to tools).
+
 
 -   :material-account-group: **Multi-Agent Orchestration**
 
     ---
 
-    Natural coordination through hierarchical delegation or simple Python control flow - no complex DSLs required.
+    Hierarchical agents or agent coordination via Python control flow.
 
 </div>
 
