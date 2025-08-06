@@ -32,33 +32,16 @@ PANDAS_EXCLUDE = [
 
 
 def register_pandas(agent: Agent) -> None:
-    """Register pandas core classes and accessor classes with the agent."""
+    """Register pandas and its submodules recursively."""
     try:
         import pandas as pd
-        import pandas.core.groupby as groupby
-        from pandas.core.series import Series
 
-        # Register core pandas classes
-        agent.module(pd, visibility="low", exclude=PANDAS_EXCLUDE)
-        agent.module(pd.api.types, visibility="low")
-        agent.module(groupby, visibility="low")
-
-        # Register accessor classes for .dt, .str, .cat
-        from pandas.core.arrays.categorical import CategoricalAccessor
-        from pandas.core.indexes.accessors import (
-            DatetimeProperties,
-            PeriodProperties,
-            TimedeltaProperties,
+        agent.module(
+            pd,
+            recursive=True,
+            visibility="low",
+            exclude=PANDAS_EXCLUDE,
         )
-        from pandas.core.strings.accessor import StringMethods
-
-        agent.cls(DatetimeProperties, visibility="low")
-        agent.cls(TimedeltaProperties, visibility="low")
-        agent.cls(PeriodProperties, visibility="low")
-        agent.cls(StringMethods, visibility="low")
-        agent.cls(CategoricalAccessor, visibility="low")
-        agent.cls(Rolling, visibility="low")
-        agent.cls(Series, visibility="low")
 
     except ImportError:
         warnings.warn(

@@ -10,32 +10,35 @@ import warnings
 from agex.agent import Agent
 
 NUMPY_EXCLUDE = [
+    # General private/internal members
     "_*",
     "*._*",
+    # File I/O
     "load*",
     "save*",
     "fromfile",
     "tofile",
+    # Memory-mapped files
     "memmap",
     "DataSource*",
+    # Unsafe random state manipulation from np.random
+    "seed",
+    "set_state",
+    "get_state",
 ]
 
 
 def register_numpy(agent: Agent) -> None:
-    """Register numpy core classes and useful submodules with the agent."""
+    """Register the entire numpy library recursively."""
     try:
         import numpy as np
 
-        # Register core numpy module
-        agent.module(np, visibility="low", exclude=NUMPY_EXCLUDE)
-
-        # Register useful submodules
         agent.module(
-            np.random, visibility="low", exclude=["seed", "set_state", "get_state"]
+            np,
+            recursive=True,
+            visibility="low",
+            exclude=NUMPY_EXCLUDE,
         )
-        agent.module(np.linalg, visibility="low")
-        agent.module(np.fft, visibility="low")
-        agent.module(np.ma, visibility="low")
 
     except ImportError:
         warnings.warn("numpy not installed - skipping numpy registration", UserWarning)

@@ -286,10 +286,26 @@ class RegistrationMixin(BaseAgent):
         exclude: Pattern | None = ["_*", "*._*"],
         configure: dict[str, MemberSpec] | None = None,
         exception_mappings: dict[type, type] | None = None,
+        recursive: bool = False,
     ):
         """
         Registers a module or instance object and its members with the agent.
         """
+        if recursive:
+            if not isinstance(obj, ModuleType):
+                raise TypeError(
+                    "The 'recursive' option is only supported for module registration, not for class instances."
+                )
+            self._recursively_register_module(
+                obj,
+                name=name,
+                visibility=visibility,
+                include=include,
+                exclude=exclude,
+                configure=configure,
+            )
+            return  # End execution here after recursion
+
         # Check if this is an AgexModule (agent registering module from another agent)
         from agex.eval.objects import AgexModule
 
@@ -533,6 +549,55 @@ class RegistrationMixin(BaseAgent):
         # Add it to the object registry
         self.object_registry[final_name] = reg_object
         self._update_fingerprint()
+
+    def _recursively_register_module(
+        self,
+        base_module: ModuleType,
+        *,
+        name: str | None,
+        visibility: Visibility,
+        include: Pattern | None,
+        exclude: Pattern | None,
+        configure: dict[str, MemberSpec] | None,
+    ):
+        """Recursively discover and register all sub-modules of a given base module."""
+        import importlib
+        import pkgutil
+
+        # Register the root module first
+        self._register_module(
+            base_module,
+            name=name,
+            visibility=visibility,
+            include=include,
+            exclude=exclude,
+            configure=configure,
+        )
+
+        # Walk the package to find all sub-modules
+        # We need at least one path to start walking
+        if not hasattr(base_module, "__path__"):
+            return  # Not a package, nothing to recurse
+
+        for module_info in pkgutil.walk_packages(
+            base_module.__path__, prefix=base_module.__name__ + "."
+        ):
+            if module_info.name.split(".")[-1].startswith("_"):
+                continue  # Skip private modules
+
+            try:
+                sub_module = importlib.import_module(module_info.name)
+                # Register each submodule using the same settings
+                self._register_module(
+                    sub_module,
+                    visibility=visibility,
+                    include=include,
+                    exclude=exclude,
+                    configure=configure,
+                )
+            except ImportError:
+                # Silently ignore modules that can't be imported
+                continue
 
     def _handle_agex_module_inheritance(
         self,

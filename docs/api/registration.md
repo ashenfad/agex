@@ -195,7 +195,8 @@ agent.module(
     include: Pattern = "*",
     exclude: Pattern = ["_*", "*._*"],
     visibility: Literal["high", "medium", "low"] = "medium",
-    configure: dict[str, MemberSpec] | None = None
+    configure: dict[str, MemberSpec] | None = None,
+    recursive: bool = False
 )
 ```
 
@@ -209,6 +210,7 @@ agent.module(
 | `exclude` | `Pattern` | `["_*", "*._*"]` | Pattern for members to exclude |
 | `visibility` | `Literal["high", "medium", "low"]` | `"medium"` | Default visibility for registered items |
 | `configure` | `dict[str, MemberSpec] | None` | `None` | Per-member configuration overrides |
+| `recursive` | `bool` | `False` | If `True`, recursively register all sub-modules of the given module. |
 
 ### A Note on Instance Registration
 
@@ -226,6 +228,26 @@ However, because instances do not have an intrinsic `__name__` attribute like mo
 db_connection = sqlite3.connect(":memory:")
 agent.module(db_connection, name="db", include=["execute", "commit"])
 ```
+
+### Recursive Registration
+
+For large libraries with many sub-modules (like `pandas` or `numpy`), registering each component individually is tedious. By setting `recursive=True`, `agex` will automatically discover and register all public sub-modules within a package.
+
+This is the recommended way to register large, trusted libraries. It uses the same `include`, `exclude`, and `visibility` settings for all discovered sub-modules.
+
+```python
+import pandas as pd
+
+# Automatically register all of pandas, excluding file I/O methods
+agent.module(
+    pd,
+    recursive=True,
+    visibility="low",
+    exclude=["_*", "*._*", "read_*", "*.to_*"]
+)
+```
+
+> **Note**: The `recursive` option is only valid for modules, not for class instances.
 
 ### Usage Examples
 
