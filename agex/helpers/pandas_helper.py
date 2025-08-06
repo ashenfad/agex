@@ -7,8 +7,6 @@ and methods with agents, including internal accessor classes.
 
 import warnings
 
-from pandas.core.window.rolling import Rolling
-
 from agex.agent import Agent
 
 PANDAS_EXCLUDE = [
