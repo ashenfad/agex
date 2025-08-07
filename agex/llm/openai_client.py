@@ -12,6 +12,9 @@ from agex.llm.core import (
 )
 from agex.tokenizers import get_tokenizer
 
+# Define keys for client setup vs. completion
+CLIENT_CONFIG_KEYS = {"api_key", "base_url", "organization", "timeout"}
+
 
 def _format_message(message: Message) -> dict:
     """Format a Message object into the dictionary structure OpenAI expects."""
@@ -41,26 +44,21 @@ class OpenAIClient(LLMClient):
     def __init__(
         self,
         model: str = "gpt-4.1-nano",
-        base_url: str | None = None,
         **kwargs,
     ):
-        kwargs = kwargs.copy()
         kwargs.pop("provider", None)
-        self._model = model
-        self._kwargs = kwargs
-
         client_kwargs = {}
-        if base_url:
-            client_kwargs["base_url"] = base_url
-        self.client = openai.OpenAI(**client_kwargs)
+        completion_kwargs = {}
+        for key, value in kwargs.items():
+            if key in CLIENT_CONFIG_KEYS:
+                client_kwargs[key] = value
+            else:
+                completion_kwargs[key] = value
 
+        self._model = model
+        self._kwargs = completion_kwargs
+        self.client = openai.OpenAI(**client_kwargs)
         self.tokenizer = get_tokenizer(model)
-        self._context_windows = {
-            "gpt-4o": 128000,
-            "gpt-4-turbo": 128000,
-            "gpt-4.1": 128000,
-            "gpt-4.1-nano": 128000,
-        }
 
     def complete(self, messages: List[Message], **kwargs) -> LLMResponse:
         """
@@ -86,13 +84,6 @@ class OpenAIClient(LLMClient):
 
         except Exception as e:
             raise RuntimeError(f"OpenAI completion failed: {e}") from e
-
-    def estimate_tokens(self, text: str) -> int:
-        return len(self.tokenizer.encode(text))
-
-    @property
-    def context_window(self) -> int:
-        return self._context_windows.get(self.model, 128000)
 
     @property
     def model(self) -> str:

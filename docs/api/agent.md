@@ -67,6 +67,48 @@ test_agent = Agent(llm_client=test_client)
 
 If you do not pass an `llm_client` to the `Agent` constructor, `agex` will automatically create a default one for you by calling `connect_llm()` with no arguments. This default client is configured using environment variables.
 
+### 3. Using OpenAI-Compatible Endpoints (e.g., Ollama)
+
+You can connect `agex` to any model provider that offers an OpenAI-compatible API endpoint, such as a local [Ollama](https://ollama.com/) server. This is done by specifying `provider="openai"` and passing the correct arguments to `connect_llm`.
+
+```python
+# Example for connecting to a local Ollama server
+local_client = connect_llm(
+    provider="openai",
+    model="qwen3-coder:30b",   # The specific model served by Ollama
+    base_url="http://localhost:11434/v1",
+    api_key="ollama",          # Placeholder key for local services
+)
+
+local_agent = Agent(llm_client=local_client)
+```
+
+> **Note on Model Compatibility:** `agex` relies on the model's ability to follow specific function-calling or "tool use" instructions. While many models are compatible, we have specifically tested and verified that the `qwen3` family of models works effectively when served via Ollama. Performance may vary with other models. We recommend `qwen3-coder:30b`.
+
+### 4. Advanced: Client vs. Completion Arguments
+
+The `connect_llm` function is designed to intelligently separate two types of arguments:
+-   **Client Arguments**: Used to configure the connection to the LLM provider (e.g., `api_key`, `base_url`, `timeout`).
+-   **Completion Arguments**: Used to control the behavior of the model for each request (e.g., `temperature`, `top_p`, `max_tokens`).
+
+You can pass both types of arguments directly to `connect_llm`. The underlying client for each provider (`OpenAIClient`, `AnthropicClient`, etc.) is responsible for correctly routing them.
+
+```python
+# Example with both client and completion arguments
+client = connect_llm(
+    provider="openai",
+    model="gpt-4-turbo",
+    # --- Client Arguments ---
+    api_key="sk-...",
+    timeout=30.0,
+    # --- Completion Arguments ---
+    temperature=0.7,
+    top_p=0.9,
+)
+```
+
+This separation ensures that connection details are configured once, while model parameters can be set as defaults and overridden on a per-call basis if needed.
+
 The fallback chain is:
 1.  **Environment Variables**: `AGEX_LLM_PROVIDER`, `AGEX_LLM_MODEL`, etc. will be used if set. Provider-specific keys like `OPENAI_API_KEY` are also needed.
 2.  **Hard-coded Default**: If no environment variables are found, a `DummyLLMClient` is created, which produces placeholder responses and requires no API keys. This ensures `agex` works out-of-the-box for local testing.

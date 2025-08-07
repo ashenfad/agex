@@ -12,6 +12,9 @@ from agex.llm.core import (
     TextPart,
 )
 
+# Define keys for client setup vs. completion
+CLIENT_CONFIG_KEYS = {"api_key", "base_url", "timeout"}
+
 
 def _format_content(message: Message) -> List[dict]:
     """Format a Message object's content into the list structure Anthropic expects."""
@@ -43,18 +46,18 @@ class AnthropicClient(LLMClient):
     """Client for Anthropic's API using tool calling for structured outputs."""
 
     def __init__(self, model: str = "claude-3-sonnet-20240229", **kwargs):
-        kwargs = kwargs.copy()
         kwargs.pop("provider", None)
+        client_kwargs = {}
+        completion_kwargs = {}
+        for key, value in kwargs.items():
+            if key in CLIENT_CONFIG_KEYS:
+                client_kwargs[key] = value
+            else:
+                completion_kwargs[key] = value
+
         self._model = model
-        self._kwargs = kwargs
-        self.client = anthropic.Anthropic()
-        self._context_windows = {
-            "claude-3-sonnet-20240229": 200000,
-            "claude-3-opus-20240229": 200000,
-            "claude-3-haiku-20240307": 200000,
-            "claude-3-5-sonnet-20240620": 200000,
-            "claude-3-5-haiku-20241022": 200000,
-        }
+        self._kwargs = completion_kwargs
+        self.client = anthropic.Anthropic(**client_kwargs)
 
     def complete(self, messages: List[Message], **kwargs) -> LLMResponse:
         """
@@ -146,14 +149,6 @@ class AnthropicClient(LLMClient):
 
         except Exception as e:
             raise RuntimeError(f"Anthropic completion failed: {e}") from e
-
-    def estimate_tokens(self, text: str) -> int:
-        # Anthropic's rough estimate: ~4 characters per token
-        return len(text) // 4
-
-    @property
-    def context_window(self) -> int:
-        return self._context_windows.get(self._model, 200000)
 
     @property
     def model(self) -> str:

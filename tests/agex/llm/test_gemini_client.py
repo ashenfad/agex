@@ -11,14 +11,12 @@ def test_gemini_client_initialization():
     client = GeminiClient()
     assert client.model == "gemini-1.5-flash"
     assert client.provider_name == "Google Gemini"
-    assert client.context_window == 1048576
 
 
 def test_gemini_client_custom_model():
     """Test that GeminiClient can be initialized with custom model."""
     client = GeminiClient(model="gemini-1.5-pro")
     assert client.model == "gemini-1.5-pro"
-    assert client.context_window == 2097152
 
 
 def test_gemini_client_message_conversion():
@@ -163,34 +161,3 @@ def test_gemini_client_empty_response():
 
         with pytest.raises(RuntimeError, match="Gemini returned empty response"):
             client.complete(messages)  # type: ignore
-
-
-def test_gemini_client_token_estimation():
-    """Test token estimation method."""
-    client = GeminiClient()
-
-    text = "Hello world, this is a test message."
-    estimated_tokens = client.estimate_tokens(text)
-
-    # Should be roughly text length / 4
-    expected_tokens = len(text) // 4
-    assert estimated_tokens == expected_tokens
-
-
-def test_gemini_client_context_window():
-    """Test context window values for different models."""
-    # Test default model
-    client = GeminiClient()
-    assert client.context_window == 1048576  # 1M tokens
-
-    # Test Pro model
-    client_pro = GeminiClient(model="gemini-1.5-pro")
-    assert client_pro.context_window == 2097152  # 2M tokens
-
-    # Test legacy model
-    client_legacy = GeminiClient(model="gemini-1.0-pro")
-    assert client_legacy.context_window == 32768  # 32K tokens
-
-    # Test unknown model (should default to 1M)
-    client_unknown = GeminiClient(model="gemini-unknown")
-    assert client_unknown.context_window == 1048576

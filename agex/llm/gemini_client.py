@@ -12,6 +12,9 @@ from agex.llm.core import (
     TextPart,
 )
 
+# Define keys for client setup vs. completion
+CLIENT_CONFIG_KEYS = {"api_key"}
+
 
 class GeminiClient(LLMClient):
     """Client for Google's Gemini API with structured outputs."""
@@ -19,17 +22,24 @@ class GeminiClient(LLMClient):
     def __init__(self, model: str = "gemini-1.5-flash", **kwargs):
         kwargs = kwargs.copy()
         kwargs.pop("provider", None)
+
+        client_kwargs = {}
+        completion_kwargs = {}
+
+        for key, value in kwargs.items():
+            if key in CLIENT_CONFIG_KEYS:
+                client_kwargs[key] = value
+            else:
+                completion_kwargs[key] = value
+
         self._model = model
-        self._kwargs = kwargs
+        self._kwargs = completion_kwargs
 
-        # Initialize the Gemini client
-        self.client = genai.GenerativeModel(model)  # type: ignore
+        # Configure API key if provided (note: this affects global state)
+        if "api_key" in client_kwargs:
+            genai.configure(api_key=client_kwargs["api_key"])
 
-        self._context_windows = {
-            "gemini-1.5-flash": 1048576,  # 1M tokens
-            "gemini-1.5-pro": 2097152,  # 2M tokens
-            "gemini-1.0-pro": 32768,  # 32K tokens
-        }
+        self.client = genai.GenerativeModel(model_name=model)
 
     def complete(self, messages: List[Message], **kwargs) -> LLMResponse:
         """
@@ -128,14 +138,6 @@ class GeminiClient(LLMClient):
                 gemini_messages.append({"role": role, "parts": parts})
 
         return gemini_messages
-
-    def estimate_tokens(self, text: str) -> int:
-        # Gemini's rough estimate: ~4 characters per token (similar to other models)
-        return len(text) // 4
-
-    @property
-    def context_window(self) -> int:
-        return self._context_windows.get(self._model, 1048576)
 
     @property
     def model(self) -> str:

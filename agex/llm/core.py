@@ -79,30 +79,6 @@ class LLMClient(ABC):
         """
         ...
 
-    @abstractmethod
-    def estimate_tokens(self, text: str) -> int:
-        """
-        Estimate the number of tokens in a text string.
-
-        Args:
-            text: The text to estimate tokens for
-
-        Returns:
-            Estimated token count
-        """
-        ...
-
-    @property
-    @abstractmethod
-    def context_window(self) -> int:
-        """
-        The maximum context window size for this model.
-
-        Returns:
-            Maximum number of tokens that can be sent in a single request
-        """
-        ...
-
     @property
     @abstractmethod
     def model(self) -> str:

@@ -62,10 +62,6 @@ class DummyLLMClient(LLMClient):
 
         return response
 
-    def estimate_tokens(self, text: str) -> int:
-        # A rough estimate for testing purposes
-        return len(text) // 4
-
     @property
     def context_window(self) -> int:
         return 8192

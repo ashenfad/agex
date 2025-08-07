@@ -11,14 +11,12 @@ def test_openai_client_initialization():
     client = OpenAIClient()
     assert client.model == "gpt-4.1-nano"
     assert client.provider_name == "OpenAI"
-    assert client.context_window == 128000
 
 
 def test_openai_client_custom_model():
     """Test that OpenAIClient can be initialized with custom model."""
     client = OpenAIClient(model="gpt-4.1")
     assert client.model == "gpt-4.1"
-    assert client.context_window == 128000
 
 
 def test_openai_client_message_handling():
@@ -149,37 +147,6 @@ def test_openai_client_api_error():
 
         with pytest.raises(RuntimeError, match="OpenAI completion failed: API Error"):
             client.complete(messages)  # type: ignore
-
-
-def test_openai_client_token_estimation():
-    """Test token estimation using tiktoken."""
-    client = OpenAIClient()
-
-    # Mock the tokenizer
-    with patch.object(client, "tokenizer") as mock_tokenizer:
-        mock_tokenizer.encode.return_value = [1, 2, 3, 4, 5]  # 5 tokens
-
-        text = "Hello world, this is a test message."
-        estimated_tokens = client.estimate_tokens(text)
-
-        # Should return the length of the encoded tokens
-        assert estimated_tokens == 5
-        mock_tokenizer.encode.assert_called_once_with(text)
-
-
-def test_openai_client_context_window():
-    """Test context window values for different models."""
-    # Test default model
-    client = OpenAIClient()
-    assert client.context_window == 128000  # Default for gpt-4.1-nano
-
-    # Test known model
-    client_gpt4 = OpenAIClient(model="gpt-4.1")
-    assert client_gpt4.context_window == 128000
-
-    # Test unknown model (should default to 128000)
-    client_unknown = OpenAIClient(model="gpt-unknown")
-    assert client_unknown.context_window == 128000
 
 
 def test_openai_client_kwargs_filtering():

@@ -9,7 +9,6 @@ def test_anthropic_client_initialization():
     client = AnthropicClient()
     assert client.model == "claude-3-sonnet-20240229"
     assert client.provider_name == "Anthropic"
-    assert client.context_window == 200000
 
 
 def test_anthropic_client_custom_model():
@@ -98,15 +97,3 @@ def test_anthropic_client_multiple_system_messages():
             "You are a helpful assistant.\n\nYou are also very knowledgeable."
         )
         assert call_args[1]["system"] == expected_system
-
-
-def test_anthropic_client_token_estimation():
-    """Test token estimation method."""
-    client = AnthropicClient()
-
-    text = "Hello world, this is a test message."
-    estimated_tokens = client.estimate_tokens(text)
-
-    # Should be roughly text length / 4
-    expected_tokens = len(text) // 4
-    assert estimated_tokens == expected_tokens
