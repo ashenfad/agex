@@ -1,6 +1,6 @@
 # The Big Picture: Agents That Think in Code
 
-Many agentic frameworks adopt JSON tooling as the communication medium between your code and AI agents. This choice forces you to design tool-friendly abstractions and handle complex serialization when working with existing codebases. 
+Many agentic frameworks adopt JSON tooling as the communication medium between your code and AI agents. This choice often mean designing new tool-friendly abstractions and serialization when working with existing codebases. 
 
 `agex` takes a different approach: **agents work directly with your Python runtime**. Instead of JSON interfaces, agents think in code and operate on real Python objects.
 
@@ -10,7 +10,7 @@ The key insight is that **code is language made formal enough to get stuff done*
 
 - **REPLs** for interactive exploration and step-by-step reasoning
 - **`dir()` and `help()`** for discovering capabilities  
-- **State inspection** for understanding what's available
+- **State inspection** like `print` for understanding structure
 - **Modular imports** for accessing functionality
 - **Function definitions** for building reusable tools
 
@@ -23,11 +23,35 @@ This philosophy shapes how agex works:
 - **REPL-Like Environment** - Agents operate in familiar, persistent environments where they can introspect (`help`, `dir`), see their own output (`print`, `view_image`), and build solutions iteratively
 - **Natural Error Handling** - Validation errors and exceptions appear in the agent's stdout just like in a real Python environment, creating natural debugging loops
 - **Smart Context Management** - The framework automatically manages token budgets, keeping agents focused on relevant information without manual intervention
-- **Flexible State Management** - Tasks can run in live mode or with persistent state that captures the agent's entire workspace, enabling both simple single-shot tasks and complex multi-agent workflows where agents keep and re-use their own functions
+- **Flexible State Management** - Tasks can run in live mode or with persistent state that captures the agent's entire workspace, enabling both simple single-shot tasks and complex workflows where agents keep and re-use their own functions
 
-## The agex Advantage
 
-This philosophy manifests in four core capabilities that distinguish agex from traditional frameworks:
+## The Middle Road: Guidance Through a Curated Environment
+
+Agentic frameworks often present a stark choice: provide agents with rigid, pre-defined tools, or grant them access to a full, open-ended compute environment. The former offers guidance at the cost of flexibility, while the latter provides power at the cost of reliability and focus.
+
+`agex` is designed to be the middle road.
+
+The whitelist registration system is more than just a security feature; it is a tool for **guidance**. By carefully selecting which functions, classes, and modules you expose, you are effectively designing a **"micro-DSL" (Domain-Specific Language)** for your agent.
+
+This curated environment helps guide the agent toward a correct solution by limiting its scope of action to only the most relevant capabilities. It prevents the agent from getting lost in the vastness of a full compute environment and encourages it to compose the building blocks you provide. This "micro-DSL" can be as small or as large as you need, from a handful of functions to broad access to a library, giving you fine-grained control over the balance of guidance and freedom.
+
+This philosophy of providing guidance through a curated environment is the primary design principle. A powerful and welcome side-effect of this approach is a robust security model. By limiting the agent's world to only the capabilities you provide, you inherently prevent it from accessing unintended, and potentially unsafe, parts of your system. Security becomes a natural outcome of thoughtful agent design.
+
+For a more detailed comparison of this approach to industry-standard tooling models like MCP, see our full **[note on this philosophy](./agex-and-mcp.md)**.
+
+## Security Through Design
+
+The registration system provides clean security boundaries:
+
+- **Explicit capability registration** - Agents can only access functions you explicitly expose
+- **Visibility controls** - Fine-grained control over what capabilities are prominent vs. hidden
+- **Namespace isolation** - Multiple agents work with shared state without interference
+- **Type validation** - Automatic validation ensures data integrity at agent boundaries
+
+## Tangibly Different
+
+This overall philosophy manifests in ways that distinguish agex from traditional frameworks:
 
 ### 1. Runtime Interoperability
 
@@ -70,17 +94,19 @@ agent = Agent()
 agent.module(statistics)  # Give building blocks
 
 @agent.task
-def analyze(data: list[float], request: str) -> dict:  # type: ignore[return-value]
+def analyze(data: list[float], request: str) -> dict[str, float]:  # type: ignore[return-value]
     """Analyze data to fulfill the user's request."""
     pass
 
 # Agent composes statistics.mean() and statistics.median() 
 # in a single execution to handle complex requests
-result = analyze([1, 2, 3, 4, 5, 6, 100], 
-                "What are the mean and median for only positive numbers?")
+result = analyze(
+    [1, 2, 3, 4, 5, 6, 100], 
+    "What are the mean and median for only positive numbers?"
+)
 ```
 
-Traditional frameworks require separate tool calls for mean and median. agex agents compose operations efficiently within single executions.
+Traditional frameworks would likely require separate tool calls for filtering and various aggregations (mean and median). agex agents compose operations efficiently within single executions.
 
 ### 3. Agent Workspace Persistence  
 
@@ -112,9 +138,10 @@ The dual-decorator pattern (`@orchestrator.fn` + `@specialist.task`) enables ele
 
 ```python
 # Sub-agents as functions for orchestrators
-@orchestrator.fn(docstring="Process raw data") 
-@specialist.task("Clean and normalize data")
+@orchestrator.fn
+@specialist.task
 def process_data(data: list) -> dict:  # type: ignore[return-value]
+    "Clean and normalize data"
     pass
 ```
 
@@ -124,59 +151,13 @@ Agents can also collaborate as peers using standard Python control flow, such as
 
 ```python
 # Iterative improvement between agents  
-report = researcher("AI trends in 2024")
-while not (review := critic(report)).approved:
-    report = writer(review.feedback, report)
+report = research("AI trends in 2024")
+while not (review := critque(report)).approved:
+    report = hone_report(review.feedback, report)
 ```
-
-## Why This Matters
-
-### Beyond Tool Isolation
-
-Most frameworks force a choice between limited JSON processing or complete VM isolation. agex provides a third option: **runtime integration** where agents participate directly in your existing codebase while maintaining security through controlled capability exposure.
-
-### Natural Multi-Modal Reasoning
-
-Because agents execute code, they can work with any Python library that generates visual content:
-
-```python
-# Agent generates a visualization
-plt.figure()
-plt.plot(data)
-plt.title("Sales Analysis")
-
-# Agent "sees" its own work and iterates
-view_image(plt.gcf())
-# Agent might think: "Title needs improvement"
-```
-
-This creates natural feedback loops where agents can critique and improve their own visual outputs within a single task.
-
-### The Middle Road: Guidance Through a Curated Environment
-
-Agentic frameworks often present a stark choice: provide agents with rigid, pre-defined tools, or grant them access to a full, open-ended compute environment. The former offers guidance at the cost of flexibility, while the latter provides power at the cost of reliability and focus.
-
-`agex` is designed to be the middle road.
-
-The whitelist registration system is more than just a security feature; it is a tool for **guidance**. By carefully selecting which functions, classes, and modules you expose, you are effectively designing a **"micro-DSL" (Domain-Specific Language)** for your agent.
-
-This curated environment helps guide the agent toward a correct solution by limiting its scope of action to only the most relevant capabilities. It prevents the agent from getting lost in the vastness of a full compute environment and encourages it to compose the building blocks you provide. This "micro-DSL" can be as small or as large as you need, from a handful of functions to broad access to a library, giving you fine-grained control over the balance of guidance and freedom.
-
-This philosophy of providing guidance through a curated environment is the primary design principle. A powerful and welcome side-effect of this approach is a robust security model. By limiting the agent's world to only the capabilities you provide, you inherently prevent it from accessing unintended, and potentially unsafe, parts of your system. Security becomes a natural outcome of thoughtful agent design.
-
-For a more detailed comparison of this approach to industry-standard tooling models like MCP, see our full **[note on this philosophy](./agex-and-mcp.md)**.
-
-## Security Through Design
-
-The registration system provides clean security boundaries:
-
-- **Explicit capability registration** - Agents can only access functions you explicitly expose
-- **Visibility controls** - Fine-grained control over what capabilities are prominent vs. hidden
-- **Namespace isolation** - Multiple agents work with shared state without interference
-- **Type validation** - Automatic validation ensures data integrity at agent boundaries
 
 ## The Result
 
 agex transforms agent development from framework-specific tooling into natural Python programming. Multi-agent workflows become simple control flow. Complex data handoffs become object passing. Agent capabilities become library registrations.
 
-The framework disappears into the background, leaving you with agents that think and work like experienced Python developers.
+The result is a more natural division of labor: developers provide curated access to powerful libraries, and agents take on the work of composing those libraries into novel solutions.
