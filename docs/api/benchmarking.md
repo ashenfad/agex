@@ -314,7 +314,7 @@ python -m benchmarks.funcy_bench
 
 ## Related Documentation
 
-- [Agent](api/agent.md) - Agent creation and configuration
-- [Task](api/task.md) - Task function decoration and execution  
-- [Events](api/events.md) - Event system for observability
-- [State](api/state.md) - Persistent state management
+- [Agent](agent.md) - Agent creation and configuration
+- [Task](task.md) - Task function decoration and execution  
+- [Events](events.md) - Event system for observability
+- [State](state.md) - Persistent state management

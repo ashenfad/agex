@@ -71,7 +71,13 @@
 
     Understand the core philosophy and architectural principles behind agex.
 
--   **[📓 Notebook Demos](demo.md)**
+-   **[:material-flask-outline: Code Examples](examples/overview.md)**
+
+    ---
+    
+    Explore advanced patterns and core concepts with runnable Python examples.
+
+-   **[📓 Notebook Demo](demo.md)**
 
     ---
 
