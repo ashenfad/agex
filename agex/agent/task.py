@@ -204,7 +204,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             "state",
             inspect.Parameter.KEYWORD_ONLY,
             default=None,
-            annotation="Versioned | None",
+            annotation="Versioned | Live | None",
         )
         on_event_param = inspect.Parameter(
             "on_event",
@@ -243,7 +243,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 self.__name__ = func.__name__
                 self.__doc__ = func.__doc__
                 self.__annotations__ = func.__annotations__.copy()
-                self.__annotations__["state"] = "Versioned | None"
+                self.__annotations__["state"] = "Versioned | Live | None"
                 self.__annotations__["on_event"] = "Callable[[BaseEvent], None] | None"
                 self.__signature__ = new_sig
 

@@ -39,7 +39,7 @@ Most agex functionality is available at the top level:
 
 ```python
 from agex import Agent, Versioned, view
-from agex import Memory, Disk, Cache  # Storage backends
+from agex import Memory, Disk  # Storage backends
 from agex import TaskFail  # Error handling
 from agex import clear_agent_registry  # Utilities
 ```
@@ -73,7 +73,7 @@ agent.module(pandas, visibility="low")
 
 ### Registration Override Principle
 
-**More specific registrations override more general ones.** This enables powerful workflows where you can bulk-register with low visibility, then "promote" specific important members:
+**More specific registrations override more general ones.** This enables workflows where you can bulk-register with low visibility, then "promote" specific important members:
 
 ```python
 # Bulk register with low visibility
@@ -90,9 +90,9 @@ This layered approach gives you both broad capability exposure and fine-grained 
 
 The three-tier visibility system (`high`/`medium`/`low`) addresses the core challenge of LLM context management:
 
-- **`high`**: Shows full signatures and documentation - for core capabilities
-- **`medium`**: Shows signatures only - for supporting functions  
-- **`low`**: Available but hidden - for broad library access without clutter
+- **`high`**: Shows full signatures and documentation
+- **`medium`**: Shows signatures only
+- **`low`**: Available but hidden (for popular libraries agents already know)
 
 This allows agents to have access to extensive capabilities while keeping their context focused on the most relevant tools.
 

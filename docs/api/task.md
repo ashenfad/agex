@@ -99,9 +99,9 @@ def my_function(x: int, y: str) -> bool:  # type: ignore[return-value]
 ```
 
 ### State Parameter
-- **Optional**: `state: Versioned | None = None`
-- **Live mode** (default): No memory between calls
-- **Persistent mode**: Pass a `Versioned` object for long-term memory
+- **Optional**: `state: Versioned | Live | None = None`
+- **One-shot mode** (default): No memory between calls
+- **Persistent mode**: Pass a `Versioned` or `Live` state for long-term memory
 
 ```python
 from agex import Versioned

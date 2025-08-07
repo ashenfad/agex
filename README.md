@@ -12,19 +12,19 @@
 
 -   **Code-as-Action**: AST-based sandbox allows agents to take action through code but within safe limits.
 -   **Library Integration**: Agents integrate with existing Python libraries, not just pre-defined "tools".
--   **Agent Workspace Persistence**: Agents and their compute environments persist with git-like versioning for state and history.
--   **Multi-Agent Orchestration**: Build hierarchical agent systems or coordinate agent collaboration using simple Python control flow.
+-   **Workspace Persistence**: Agent compute environments persist with git-like versioning.
+-   **Multi-Agent**: Build hierarchical agents or coordinate collaboration via simple Python control flow.
 -   **Event Streams**: Observe your agents through notebook-friendly events.
 -   **Benchmarking**: Benchmark agent outputs to understand & improve their performance.
 
 ## Documentation
 
-Complete documentation, including a Quick Start Guide, API reference, and examples, is hosted at **[ashenfad.github.io/agex](https://ashenfad.github.io/agex/)**.
+Complete documentation is hosted at **[ashenfad.github.io/agex](https://ashenfad.github.io/agex/)**.
 
 Key sections:
 - **[📚 Quick Start Guide](https://ashenfad.github.io/agex/quick-start/)**
 - **[🔭 The Big Picture](https://ashenfad.github.io/agex/big-picture/)**
-- **[💡 Examples Overview](https://ashenfad.github.io/agex/examples/overview/)** - See core concepts and advanced patterns in action.
+- **[💡 Examples](https://ashenfad.github.io/agex/examples/overview/)**
 - **[📖 API Reference](https://ashenfad.github.io/agex/api/overview/)**
 
 ## Installation

@@ -76,7 +76,6 @@ When you use `Versioned` state, you get powerful features automatically:
 - **Checkpointing**: Each agent execution creates a commit snapshot.
 - **Mutation Detection**: Side-effect changes to objects are automatically captured.
 - **Rollback Safety**: The framework can revert to any previous state for debugging.
-- **Namespace Isolation**: Multi-agent workflows get separate, isolated state spaces.
 
 ### Working with Unpicklable Objects in Versioned State
 A key constraint of `Versioned` state is that all stored objects must be serializable (picklable). Therefore, an agent **cannot assign unpicklable objects like database connections to variables.**
@@ -136,7 +135,7 @@ state = Versioned(Disk("/path/to/storage", size_limit=500*1024*1024))
 **Use for:** Production deployments, long-running workflows.
 
 ### Cached Disk Storage
-A high-performance option that uses an in-memory cache on top of disk persistence.
+A performant option that uses an in-memory cache on top of disk persistence.
 ```python
 from agex import Versioned, Cache, Disk
 
@@ -180,8 +179,7 @@ state = Versioned(RedisStore("redis://localhost:6379"))
 | **Object Support** | Any Python object | Any Python object | Only picklable objects |
 | **Usage** | `my_task(data)` | `my_task(data, state=Live())` | `my_task(data, state=Versioned())` |
 | **Checkpointing** | None | None | Automatic snapshots |
-| **Multi-Agent** | Not supported | Basic sharing | Automatic namespace isolation |
-| **Best For** | Simple tasks | Multi-step workflows | Production & coordination |
+| **Best For** | Simple tasks | Multi-step workflows | Production |
 
 
 ## Next Steps

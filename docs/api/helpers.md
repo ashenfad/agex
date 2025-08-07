@@ -25,7 +25,6 @@ data_analyst = Agent(name="data_analyst")
 # Register libraries with one line each
 register_numpy(data_analyst)
 register_pandas(data_analyst)
-register_stdlib(data_analyst)
 
 # The agent now has access to these libraries
 @data_analyst.task
@@ -34,25 +33,6 @@ def analyze(data: list) -> float: # type: ignore[return-value]
     pass
 ```
 
-## Customizing Helper Defaults
-The helpers are a starting point, not a final configuration. You can easily override their defaults using the standard registration methods. This leverages the **Registration Override Principle**, where more specific registrations override more general ones.
-
-For example, `register_pandas()` excludes all `read_*` functions for security. If your use case requires the agent to read CSVs, you can "promote" the `read_csv` function after calling the helper:
-
-```python
-import pandas as pd
-from agex import Agent
-from agex.helpers import register_pandas
-
-agent = Agent()
-
-# Use the helper for 90% of the work
-register_pandas(agent)
-
-# Now, override the default exclusion for a specific use case
-# by registering `read_csv` with high visibility.
-agent.fn(pd.read_csv, visibility="high")
-```
 
 ## Available Helpers
 
@@ -70,8 +50,7 @@ Registers a curated list of safe and useful modules from the Python standard lib
 
 Registers the `numpy` library for numerical computing.
 
--   Registers the core `numpy` module.
--   Registers useful sub-modules: `numpy.random`, `numpy.linalg`, `numpy.fft`, and `numpy.ma`.
+-   Registers the core `numpy` module and sub-modules.
 -   Excludes potentially unsafe functions like `load`, `save`, and file I/O operations.
 -   All modules are registered with `visibility="low"`.
 
@@ -79,17 +58,14 @@ Registers the `numpy` library for numerical computing.
 
 Registers the `pandas` library for data analysis.
 
--   Registers the core `pandas` module and the `pandas.api.types` submodule.
--   Explicitly registers accessor classes like `DatetimeProperties` (`.dt`), `StringMethods` (`.str`), and `Rolling` (`.rolling`) to ensure they are available to the agent.
--   Excludes all `read_*` and `to_*` functions to prevent file system access, aligning with a secure-by-default posture.
+-   Registers the core `pandas` module sub-modules.
+-   Excludes all `read_*` and `to_*` functions to prevent file system access.
 -   All modules and classes are registered with `visibility="low"`.
 
 ### `register_plotly(agent)`
 
 Registers the `plotly` library for creating interactive visualizations.
 
--   Registers `plotly.express` and `plotly.graph_objects` for creating plots.
--   Registers `plotly.tools`, `plotly.colors`, and `plotly.figure_factory` for advanced plotting utilities.
--   Specifically registers the `go.Figure` class to ensure methods like `add_scatter` and `update_layout` are available.
+-   Registers `plotly` and sub-modules.
 -   Excludes functions related to writing files or showing plots directly (e.g., `write_image`, `show`), as these are side-effects that should be handled by the user's code, not the agent's.
 -   All modules and classes are registered with `visibility="low"`.
