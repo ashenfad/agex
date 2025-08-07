@@ -2,8 +2,6 @@
 
 **`agex`** (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to work directly with your existing libraries and codebase.
 
-## 25-Second Demo
-
 ![agex demo gif](docs/assets/teaser.gif)
 
 **This works because** `agex` agents can accept and return complex types like `pandas.DataFrame` and `plotly.Figure` objects without intermediate JSON serialization. For a deeper dive, check out the full **[agex101.ipynb tutorial](https://ashenfad.github.io/agex/demos/agex101.ipynb/)**.
@@ -11,8 +9,6 @@
 ## What Makes This Different
 
 `agex` uses a subset of Python as the agent action space, executing actions in a sandboxed environment within your process. This approach avoids the complexity of JSON serialization and allows complex objects to flow directly between your code and the agent. You control exactly what functions, classes, and modules are available, creating a powerful yet secure environment.
-
-## Key Features
 
 -   **Code-as-Action**: AST-based sandbox allows agents to take action through code but within safe limits.
 -   **Library Integration**: Agents integrate with existing Python libraries, not just pre-defined "tools".
