@@ -109,7 +109,9 @@ def main():
     for task, stats in results.items():
         print(f"\nTask: {task}")
         print(f"Completed trials: {stats.completed_trials}/{stats.total_trials}")
-        print(f"Passed trials: {stats.pass_count}/{stats.pass_count+stats.fail_count}")
+        print(
+            f"Passed trials: {stats.pass_count}/{stats.pass_count + stats.fail_count}"
+        )
         print(f"Actions per trial: {stats.actions_per_trial:.1f}")
         print(f"Time per trial: {stats.time_per_trial:.2f} seconds")
 

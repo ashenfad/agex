@@ -285,14 +285,14 @@ def test_events_chronological_sorting():
     # Verify the specific order is correct
     expected_agent_order = ["agent1", "agent2", "agent3", "agent4"]
     actual_agent_order = [e.agent_name for e in all_events]
-    assert (
-        actual_agent_order == expected_agent_order
-    ), f"Expected {expected_agent_order}, got {actual_agent_order}"
+    assert actual_agent_order == expected_agent_order, (
+        f"Expected {expected_agent_order}, got {actual_agent_order}"
+    )
 
     # Test with children=False still maintains sorting
     ns1_events = events(state, "ns1", children=False)
     assert len(ns1_events) == 2
     ns1_timestamps = [e.timestamp for e in ns1_events]
-    assert ns1_timestamps == sorted(
-        ns1_timestamps
-    ), "Namespace events should be sorted chronologically"
+    assert ns1_timestamps == sorted(ns1_timestamps), (
+        "Namespace events should be sorted chronologically"
+    )

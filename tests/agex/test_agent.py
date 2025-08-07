@@ -1000,9 +1000,9 @@ print(f"Setup complete: {setup_var}")
     assert len(streaming_events) > 0  # Streaming should yield events
 
     # Verify event counts match
-    assert (
-        len(batch_events) == len(streaming_events)
-    ), f"Event count mismatch: batch={len(batch_events)}, streaming={len(streaming_events)}"
+    assert len(batch_events) == len(streaming_events), (
+        f"Event count mismatch: batch={len(batch_events)}, streaming={len(streaming_events)}"
+    )
 
     # Verify event types match in sequence
     for i, (batch_event, streaming_event) in enumerate(
@@ -1011,9 +1011,9 @@ print(f"Setup complete: {setup_var}")
         batch_type = type(batch_event).__name__
         streaming_type = type(streaming_event).__name__
 
-        assert (
-            batch_type == streaming_type
-        ), f"Event {i} type mismatch: batch={batch_type}, streaming={streaming_type}"
+        assert batch_type == streaming_type, (
+            f"Event {i} type mismatch: batch={batch_type}, streaming={streaming_type}"
+        )
 
     # Verify expected event sequence
     expected_sequence = [
@@ -1025,14 +1025,14 @@ print(f"Setup complete: {setup_var}")
         SuccessEvent,  # Task completion
     ]
 
-    assert len(batch_events) == len(
-        expected_sequence
-    ), f"Expected {len(expected_sequence)} events, got {len(batch_events)}"
+    assert len(batch_events) == len(expected_sequence), (
+        f"Expected {len(expected_sequence)} events, got {len(batch_events)}"
+    )
 
     for i, (event, expected_type) in enumerate(zip(batch_events, expected_sequence)):
-        assert isinstance(
-            event, expected_type
-        ), f"Event {i} should be {expected_type.__name__}, got {type(event).__name__}"
+        assert isinstance(event, expected_type), (
+            f"Event {i} should be {expected_type.__name__}, got {type(event).__name__}"
+        )
 
     # Verify setup ActionEvent is immediately followed by its OutputEvents
     setup_action = batch_events[1]

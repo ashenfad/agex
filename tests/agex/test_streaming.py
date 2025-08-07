@@ -336,9 +336,9 @@ class TestStreaming:
 
         # Verify chronological ordering by timestamp
         timestamps = [e.timestamp for e in events_list]
-        assert timestamps == sorted(
-            timestamps
-        ), "Events should be chronologically ordered"
+        assert timestamps == sorted(timestamps), (
+            "Events should be chronologically ordered"
+        )
 
         # Verify logical ordering
         event_types = [type(e).__name__ for e in events_list]

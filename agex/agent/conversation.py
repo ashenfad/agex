@@ -48,8 +48,7 @@ def conversation_log(
         elif isinstance(event, ActionEvent):
             # Agent action → assistant message
             assistant_content = (
-                f"# Thinking\n{event.thinking}\n\n"
-                f"# Code\n```python\n{event.code}\n```"
+                f"# Thinking\n{event.thinking}\n\n# Code\n```python\n{event.code}\n```"
             )
             messages.append(TextMessage(role="assistant", content=assistant_content))
 

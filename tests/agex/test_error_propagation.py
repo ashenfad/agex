@@ -122,7 +122,9 @@ def test_sub_agent_converts_task_clarify_to_eval_error():
             if found_eval_error:
                 break
 
-        assert found_eval_error, f"Expected to find EvalError message in OutputEvents. Events: {[str(e) for e in output_events]}"
+        assert found_eval_error, (
+            f"Expected to find EvalError message in OutputEvents. Events: {[str(e) for e in output_events]}"
+        )
 
 
 def test_top_level_agent_raises_task_fail():
@@ -226,4 +228,6 @@ def test_sub_agent_converts_task_fail_to_eval_error():
             if found_eval_error:
                 break
 
-        assert found_eval_error, f"Expected to find EvalError message in OutputEvents. Events: {[str(e) for e in output_events]}"
+        assert found_eval_error, (
+            f"Expected to find EvalError message in OutputEvents. Events: {[str(e) for e in output_events]}"
+        )

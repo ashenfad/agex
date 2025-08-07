@@ -44,10 +44,10 @@ def create_sample_data() -> pd.DataFrame:
 
         data.append(
             {
-                "Order_ID": f"ORD-{i+1:04d}",
+                "Order_ID": f"ORD-{i + 1:04d}",
                 "Date": date,
                 "Category": random.choice(categories),
-                "Product_Name": f"Product_{i+1}",
+                "Product_Name": f"Product_{i + 1}",
                 "Unit_Price": round(random.uniform(10, 500), 2),
                 "Quantity": random.randint(1, 10),
                 "Discount_Percent": round(random.uniform(0, 35), 1),

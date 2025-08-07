@@ -263,9 +263,9 @@ def test_hierarchical_namespace_state_is_correct():
 
     # 2. The worker's state should be under "orchestrator/worker/".
     worker_success_key = "orchestrator/worker/success"
-    assert (
-        shared_state.get(worker_success_key) is True
-    ), f"Key '{worker_success_key}' not found in state or has wrong value."
+    assert shared_state.get(worker_success_key) is True, (
+        f"Key '{worker_success_key}' not found in state or has wrong value."
+    )
 
     # 3. Verify the state was NOT written to the flat namespace.
     assert shared_state.get("worker/success") is None
