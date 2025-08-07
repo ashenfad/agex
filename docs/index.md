@@ -41,6 +41,18 @@
 
     Hierarchical agents or agent coordination via Python control flow.
 
+-   :material-camera-iris: **Event Streams**
+
+    ---
+    
+    Observe agents in real-time with notebook-friendly event streaming.
+
+-   :material-chart-bar: **Benchmarking**
+
+    ---
+
+    Test & evaluate agent performance with data-driven metrics.
+
 </div>
 
 ## Get Started

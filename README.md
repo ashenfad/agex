@@ -18,6 +18,8 @@
 -   **Library Integration**: Agents integrate with existing Python libraries, not just pre-defined "tools".
 -   **Agent Workspace Persistence**: Agents and their compute environments persist with git-like versioning for state and history.
 -   **Multi-Agent Orchestration**: Build hierarchical agent systems or coordinate agent collaboration using simple Python control flow.
+-   **Event Streams**: Observe your agents through notebook-friendly events.
+-   **Benchmarking**: Benchmark agent outputs to understand & improve their performance.
 
 ## Documentation
 
