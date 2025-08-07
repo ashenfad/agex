@@ -42,7 +42,7 @@ nav:
   - Home: index.md
   - Quick Start: quick-start.md
   - The Big Picture: big-picture.md
-  - Demos:
+  - Notebook Demo:
     - Agex 101: demos/agex101.ipynb
   - API Reference:
     - Overview: api/overview.md

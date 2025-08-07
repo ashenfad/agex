@@ -1,4 +1,4 @@
-# agex API Reference
+# API Reference
 
 Welcome to the agex API documentation. agex is a Python agentic framework that enables LLM agents to work with real Python objects through runtime interoperability.
 
