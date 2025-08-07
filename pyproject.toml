@@ -3,7 +3,7 @@ name = "agex"
 version = "0.1.0"
 description = "Library-friendly agents that work directly with your existing Python codebase."
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "ashenfad"},
 ]
@@ -11,19 +11,13 @@ keywords = ["agents", "ai", "llm", "python", "runtime", "sandbox"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 requires-python = ">=3.12"
-
-[project.urls]
-Homepage = "https://ashenfad.github.io/agex/"
-Documentation = "https://ashenfad.github.io/agex/"
-Repository = "https://github.com/ashenfad/agex"
-Issues = "https://github.com/ashenfad/agex/issues"
 
 dependencies = [
     "tiktoken",
@@ -32,6 +26,12 @@ dependencies = [
     "pydantic",
     "pygments",
 ]
+
+[project.urls]
+Homepage = "https://ashenfad.github.io/agex/"
+Documentation = "https://ashenfad.github.io/agex/"
+Repository = "https://github.com/ashenfad/agex"
+Issues = "https://github.com/ashenfad/agex/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -89,4 +89,12 @@ pythonpath = [
   "."
 ]
 
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools]
+packages = {find = {where = ["./"], exclude = ["tests*", "examples*", "benchmarks*", "build*", "docs*"]}}  # Discover packages, exclude tests/examples
+
+[tool.setuptools.package-data]
+agex = ["py.typed"]

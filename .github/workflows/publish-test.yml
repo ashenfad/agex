@@ -1,0 +1,48 @@
+name: Publish to TestPyPI
+
+on:
+  # Manual trigger for testing
+  workflow_dispatch:
+  # Or trigger on pre-releases
+  release:
+    types: [prereleased]
+
+jobs:
+  build-and-test-publish:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: Build package
+      run: python -m build
+
+    - name: Check package
+      run: twine check dist/*
+
+    - name: Publish to TestPyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+      run: twine upload --repository testpypi dist/*
+
+    - name: Test installation from TestPyPI
+      run: |
+        # Wait a moment for TestPyPI to process
+        sleep 30
+        
+        # Install from TestPyPI with main PyPI as fallback for dependencies
+        pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agex
+        
+        # Test basic import
+        python -c "import agex; print('✅ agex imported successfully from TestPyPI')"
+        python -c "from agex import Agent; print('✅ Agent class imported successfully')"
