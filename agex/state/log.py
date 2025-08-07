@@ -21,6 +21,16 @@ def add_event_to_log(
     if isinstance(root_state, Versioned) and root_state.current_commit:
         event.commit_hash = root_state.current_commit
 
+    # Set the full_namespace based on the state context
+    from agex.state.namespaced import Namespaced
+
+    if isinstance(state, Namespaced):
+        # Use the full namespace path from the Namespaced state
+        event.full_namespace = state.namespace
+    else:
+        # For root-level states (Versioned, Live), full_namespace equals agent_name
+        event.full_namespace = event.agent_name
+
     # Call the event handler first, if provided
     if on_event:
         try:

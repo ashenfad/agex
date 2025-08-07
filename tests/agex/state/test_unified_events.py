@@ -70,8 +70,9 @@ class TestUnifiedEventsAPI:
         )
         add_event_to_log(ns_worker, SuccessEvent(agent_name="worker", result="done"))
 
-        # Test: events() with children=False should only show root events
-        root_only_events = events(ns_root, children=False)
+        # Test: Filter for root events only using full_namespace
+        all_events = events(ns_root)
+        root_only_events = [e for e in all_events if e.full_namespace == "root"]
         assert len(root_only_events) == 2  # Only root events
 
         # Verify we only got root events
@@ -106,18 +107,23 @@ class TestUnifiedEventsAPI:
             ns_worker, SuccessEvent(agent_name="worker", result="completed")
         )
 
-        # Test: Navigate directly to orchestrator namespace
-        orch_events_result = events(state, "root", "orchestrator")
-        assert (
-            len(orch_events_result) == 2
-        )  # orchestrator + worker (children=True default)
+        # Test: Filter by orchestrator namespace (include children)
+        all_events = events(state)
+        orch_events_result = [
+            e for e in all_events if e.full_namespace.startswith("root/orchestrator")
+        ]
+        assert len(orch_events_result) == 2  # orchestrator + worker events
 
-        # Test: Navigate directly to worker namespace
-        worker_events_result = events(state, "root", "orchestrator", "worker")
+        # Test: Filter directly for worker namespace
+        worker_events_result = [
+            e for e in all_events if e.full_namespace == "root/orchestrator/worker"
+        ]
         assert len(worker_events_result) == 1  # Only worker events
 
-        # Test: Navigate to orchestrator without children
-        orch_only_events = events(state, "root", "orchestrator", children=False)
+        # Test: Filter for orchestrator only (no children)
+        orch_only_events = [
+            e for e in all_events if e.full_namespace == "root/orchestrator"
+        ]
         assert len(orch_only_events) == 1  # Only orchestrator events
 
     def test_events_versioned_and_live_states(self):
@@ -178,16 +184,19 @@ class TestUnifiedEventsAPI:
         )
         add_event_to_log(ns_cache, OutputEvent(agent_name="cache", parts=["cached"]))
 
-        # Test: Get all events from app (should include all descendants)
-        all_app_events = events(state, "app")
+        # Test: Get all events from app hierarchy
+        all_events = events(state)
+        all_app_events = [e for e in all_events if e.full_namespace.startswith("app")]
         assert len(all_app_events) == 5  # All events from entire hierarchy
 
-        # Test: Get events from workers namespace (should include worker1 and worker2)
-        workers_events_result = events(state, "app", "workers")
+        # Test: Get events from workers namespace hierarchy
+        workers_events_result = [
+            e for e in all_events if e.full_namespace.startswith("app/workers")
+        ]
         assert len(workers_events_result) == 3  # workers + worker1 + worker2
 
-        # Test: Get events from workers without children
-        workers_only = events(state, "app", "workers", children=False)
+        # Test: Get events from workers only (no children)
+        workers_only = [e for e in all_events if e.full_namespace == "app/workers"]
         assert len(workers_only) == 1  # Only workers events
 
     def test_events_empty_namespaces(self):
@@ -203,8 +212,11 @@ class TestUnifiedEventsAPI:
         empty_ns_events = events(ns_empty)
         assert empty_ns_events == []
 
-        # Test navigation to non-existent namespace
-        nonexistent_events = events(state, "nonexistent", "path")
+        # Test filtering for non-existent namespace
+        all_events = events(state)
+        nonexistent_events = [
+            e for e in all_events if e.full_namespace.startswith("nonexistent")
+        ]
         assert nonexistent_events == []
 
     def test_events_key_filtering(self):
@@ -285,14 +297,14 @@ def test_events_chronological_sorting():
     # Verify the specific order is correct
     expected_agent_order = ["agent1", "agent2", "agent3", "agent4"]
     actual_agent_order = [e.agent_name for e in all_events]
-    assert actual_agent_order == expected_agent_order, (
-        f"Expected {expected_agent_order}, got {actual_agent_order}"
-    )
+    assert (
+        actual_agent_order == expected_agent_order
+    ), f"Expected {expected_agent_order}, got {actual_agent_order}"
 
-    # Test with children=False still maintains sorting
-    ns1_events = events(state, "ns1", children=False)
+    # Test filtering for specific namespace still maintains sorting
+    ns1_events = [e for e in all_events if e.full_namespace == "ns1"]
     assert len(ns1_events) == 2
     ns1_timestamps = [e.timestamp for e in ns1_events]
-    assert ns1_timestamps == sorted(ns1_timestamps), (
-        "Namespace events should be sorted chronologically"
-    )
+    assert ns1_timestamps == sorted(
+        ns1_timestamps
+    ), "Namespace events should be sorted chronologically"

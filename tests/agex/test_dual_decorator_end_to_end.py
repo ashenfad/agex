@@ -88,7 +88,9 @@ def test_dual_decorator_math_workflow():
     # Verify that the sub-agent's events are properly logged
     from agex.state import events
 
-    validator_events = events(shared_state, "orchestrator", "validator", children=False)
+    validator_events = [
+        e for e in events(shared_state) if e.full_namespace == "orchestrator/validator"
+    ]
     assert len(validator_events) > 0
 
     # Verify that completion events are properly created
@@ -179,7 +181,9 @@ def test_dual_decorator_state_sharing():
     from agex.state import events
 
     # Verify that the orchestrator's completion event is in its own event log
-    coordinator_events = events(shared_state, "coordinator", children=False)
+    coordinator_events = [
+        e for e in events(shared_state) if e.full_namespace == "coordinator"
+    ]
     assert len(coordinator_events) > 0
 
     # Check for SuccessEvent instead of OutputEvents (print statements don't execute when task_success is in same block)
@@ -190,13 +194,17 @@ def test_dual_decorator_state_sharing():
 
     # Verify that the sub-agents shared state properly through namespaces
     # Check processor state (agent name is "data_processor")
-    processor_events = events(
-        shared_state, "coordinator", "data_processor", children=False
-    )
+    processor_events = [
+        e
+        for e in events(shared_state)
+        if e.full_namespace == "coordinator/data_processor"
+    ]
     assert len(processor_events) > 0
 
     # Check analyzer state
-    analyzer_events = events(shared_state, "coordinator", "analyzer", children=False)
+    analyzer_events = [
+        e for e in events(shared_state) if e.full_namespace == "coordinator/analyzer"
+    ]
     assert len(analyzer_events) > 0
 
     # Verify completion events are properly created for both sub-agents
@@ -263,9 +271,9 @@ def test_hierarchical_namespace_state_is_correct():
 
     # 2. The worker's state should be under "orchestrator/worker/".
     worker_success_key = "orchestrator/worker/success"
-    assert shared_state.get(worker_success_key) is True, (
-        f"Key '{worker_success_key}' not found in state or has wrong value."
-    )
+    assert (
+        shared_state.get(worker_success_key) is True
+    ), f"Key '{worker_success_key}' not found in state or has wrong value."
 
     # 3. Verify the state was NOT written to the flat namespace.
     assert shared_state.get("worker/success") is None

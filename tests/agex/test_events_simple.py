@@ -64,7 +64,7 @@ class TestEventsSimple:
         result = simple_task(state=state)
 
         # Get events from the agent's namespace
-        event_list = events(state, "simple_agent", children=False)
+        event_list = [e for e in events(state) if e.full_namespace == "simple_agent"]
 
         # Should have TaskStart, Action, and Success events
         assert len(event_list) == 3
@@ -105,7 +105,7 @@ class TestEventsSimple:
         result = print_task(state=state)
 
         # Get events from the agent's namespace
-        event_list = events(state, "print_agent", children=False)
+        event_list = [e for e in events(state) if e.full_namespace == "print_agent"]
 
         print("=== EVENTS DEBUG ===")
         for i, event in enumerate(event_list):
@@ -145,7 +145,9 @@ class TestEventsSimple:
             print(f"Expected exception: {type(e).__name__}")
 
         # Get events from the agent's namespace
-        event_list = events(state, "investigate_agent", children=False)
+        event_list = [
+            e for e in events(state) if e.full_namespace == "investigate_agent"
+        ]
 
         print("=== INVESTIGATION EVENTS ===")
         for i, event in enumerate(event_list):

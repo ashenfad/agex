@@ -48,7 +48,7 @@ def test_error_appears_immediately_in_first_iteration():
     assert result == 2
 
     # Check that an OutputEvent with error content was logged, followed by the corrective ActionEvent
-    all_events = events(state, "test_agent", children=False)
+    all_events = [e for e in events(state) if e.full_namespace == "test_agent"]
     output_events = [e for e in all_events if isinstance(e, OutputEvent)]
     action_events = [e for e in all_events if isinstance(e, ActionEvent)]
 
@@ -118,7 +118,7 @@ def test_validation_error_shows_full_type():
     assert result == [1, 2]
 
     # Check that a validation error OutputEvent was logged
-    all_events = events(state, "test_agent", children=False)
+    all_events = [e for e in events(state) if e.full_namespace == "test_agent"]
     output_events = [e for e in all_events if isinstance(e, OutputEvent)]
 
     # Find output events that contain validation error messages

@@ -51,7 +51,7 @@ class TestEventSystem:
         test_task("test_value", count=10, state=state)
 
         # Get events from the agent's namespace
-        event_list = events(state, "test_agent", children=False)
+        event_list = [e for e in events(state) if e.full_namespace == "test_agent"]
         task_start_events = [e for e in event_list if isinstance(e, TaskStartEvent)]
 
         assert len(task_start_events) == 1
@@ -85,7 +85,7 @@ class TestEventSystem:
         think_task(state=state)
 
         # Get events from the agent's namespace
-        event_list = events(state, "thinking_agent", children=False)
+        event_list = [e for e in events(state) if e.full_namespace == "thinking_agent"]
         action_events = [e for e in event_list if isinstance(e, ActionEvent)]
 
         assert len(action_events) == 1
@@ -116,7 +116,7 @@ class TestEventSystem:
         output_task(state=state)
 
         # Get events from the agent's namespace
-        event_list = events(state, "output_agent", children=False)
+        event_list = [e for e in events(state) if e.full_namespace == "output_agent"]
         output_events = [e for e in event_list if isinstance(e, OutputEvent)]
 
         # Should have events for print(), help(), and dir()
@@ -150,7 +150,7 @@ class TestEventSystem:
         result = success_task(state=state)
 
         # Get events from the agent's namespace
-        event_list = events(state, "success_agent", children=False)
+        event_list = [e for e in events(state) if e.full_namespace == "success_agent"]
         success_events = [e for e in event_list if isinstance(e, SuccessEvent)]
 
         assert len(success_events) == 1
@@ -185,7 +185,7 @@ class TestEventSystem:
             fail_task(state=state)
 
         # Get events from the agent's namespace
-        event_list = events(state, "fail_agent", children=False)
+        event_list = [e for e in events(state) if e.full_namespace == "fail_agent"]
         fail_events = [e for e in event_list if isinstance(e, FailEvent)]
 
         assert len(fail_events) == 1
@@ -251,7 +251,9 @@ class TestEventSystem:
         assert result == {"r1": 10, "r2": 15}
 
         # Check orchestrator events in its namespaced state
-        orchestrator_events = events(shared_state, "orchestrator", children=False)
+        orchestrator_events = [
+            e for e in events(shared_state) if e.full_namespace == "orchestrator"
+        ]
         orchestrator_agent_names = {
             e.agent_name for e in orchestrator_events if hasattr(e, "agent_name")
         }
@@ -267,9 +269,11 @@ class TestEventSystem:
         assert has_success, "Orchestrator missing SuccessEvent"
 
         # Check agent1 events in its namespaced state
-        agent1_events = events(
-            shared_state, "orchestrator", "agent_one", children=False
-        )
+        agent1_events = [
+            e
+            for e in events(shared_state)
+            if e.full_namespace == "orchestrator/agent_one"
+        ]
         agent1_agent_names = {
             e.agent_name for e in agent1_events if hasattr(e, "agent_name")
         }
@@ -285,9 +289,11 @@ class TestEventSystem:
         assert has_success, "Agent1 missing SuccessEvent"
 
         # Check agent2 events in its namespaced state
-        agent2_events = events(
-            shared_state, "orchestrator", "agent_two", children=False
-        )
+        agent2_events = [
+            e
+            for e in events(shared_state)
+            if e.full_namespace == "orchestrator/agent_two"
+        ]
         agent2_agent_names = {
             e.agent_name for e in agent2_events if hasattr(e, "agent_name")
         }
@@ -372,7 +378,7 @@ class TestEventSystem:
         result = lifecycle_task("hello world", state=state)
 
         # Get events from the agent's namespace
-        event_list = events(state, "lifecycle_agent", children=False)
+        event_list = [e for e in events(state) if e.full_namespace == "lifecycle_agent"]
 
         # Verify event sequence and types
         event_types = [type(event).__name__ for event in event_list]
@@ -423,7 +429,9 @@ class TestEventSystem:
         assert len(snapshot_result.unsaved_keys) == 0  # All should be saved
 
         # Get events from the agent's namespace
-        event_list = events(state, "persistence_agent", children=False)
+        event_list = [
+            e for e in events(state) if e.full_namespace == "persistence_agent"
+        ]
 
         # Should have persistent events
         assert len(event_list) > 0

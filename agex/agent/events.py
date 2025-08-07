@@ -49,7 +49,7 @@ def _render_object_as_html(obj: Any) -> str:
 def _event_html_container(
     emoji: str,
     event_type: str,
-    agent_name: str,
+    full_namespace: str,
     timestamp: datetime,
     content: str,
     commit_hash: str | None = None,
@@ -85,7 +85,7 @@ def _event_html_container(
     return f"""
     <div style="border: 1px solid #e1e4e8; border-radius: 8px; padding: 16px; margin: 8px 0; background: #f6f8fa;">
         <div style="font-weight: 600; color: #24292e; margin-bottom: 8px; font-size: 14px;">
-            {emoji} {event_type} - {agent_name}
+            {emoji} {event_type} - {full_namespace}
         </div>
         <div style="font-size: 12px; color: #6a737d; margin-bottom: 12px;">
             {metadata_line}
@@ -173,19 +173,20 @@ class BaseEvent(BaseModel):
 
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     agent_name: str
+    full_namespace: str = ""  # Will be set by add_event_to_log
     commit_hash: str | None = None
 
     def __repr_args__(self):
         """Override Pydantic's repr args to customize the display."""
         time_str = self.timestamp.strftime("%H:%M:%S")
         class_name = self.__class__.__name__
-        return [("event", f"{class_name}[{self.agent_name}] @ {time_str}")]
+        return [("event", f"{class_name}[{self.full_namespace}] @ {time_str}")]
 
     def __repr_str__(self, join_str: str) -> str:
         """Override Pydantic's repr string to use our custom format."""
         time_str = self.timestamp.strftime("%H:%M:%S")
         class_name = self.__class__.__name__
-        return f"{class_name}[{self.agent_name}] @ {time_str}"
+        return f"{class_name}[{self.full_namespace}] @ {time_str}"
 
     def _repr_markdown_(self) -> str:
         """Rich markdown representation for notebook display."""
@@ -204,7 +205,7 @@ class BaseEvent(BaseModel):
         }
         emoji = emoji_map.get(class_name, "📋")
 
-        return f"## {emoji} {class_name} - {self.agent_name}\n**Time:** {time_str}"
+        return f"## {emoji} {class_name} - {self.full_namespace}\n**Time:** {time_str}"
 
     def as_markdown(self) -> str:
         """Get the markdown representation for use outside notebooks."""
@@ -214,7 +215,7 @@ class BaseEvent(BaseModel):
         """Detailed string representation for debugging."""
         time_str = self.timestamp.strftime("%H:%M:%S.%f")[:-3]  # Include milliseconds
         class_name = self.__class__.__name__
-        return f"{class_name}[{self.agent_name}] @ {time_str}"
+        return f"{class_name}[{self.full_namespace}] @ {time_str}"
 
     def __format__(self, format_spec: str) -> str:
         """Custom formatting support.
@@ -280,7 +281,7 @@ class TaskStartEvent(BaseEvent):
         return _event_html_container(
             "🚀",
             "TaskStartEvent",
-            self.agent_name,
+            self.full_namespace,
             self.timestamp,
             content,
             self.commit_hash,
@@ -328,7 +329,7 @@ class ActionEvent(BaseEvent):
         return _event_html_container(
             "🧠",
             "ActionEvent",
-            self.agent_name,
+            self.full_namespace,
             self.timestamp,
             content,
             self.commit_hash,
@@ -371,7 +372,7 @@ class OutputEvent(BaseEvent):
         return _event_html_container(
             "🤖",
             "OutputEvent",
-            self.agent_name,
+            self.full_namespace,
             self.timestamp,
             content,
             self.commit_hash,
@@ -439,7 +440,7 @@ class ErrorEvent(BaseEvent):
         return _event_html_container(
             "🚨",
             "ErrorEvent",
-            self.agent_name,
+            self.full_namespace,
             self.timestamp,
             content,
             self.commit_hash,
@@ -479,7 +480,7 @@ class SuccessEvent(BaseEvent):
         return _event_html_container(
             "✅",
             "SuccessEvent",
-            self.agent_name,
+            self.full_namespace,
             self.timestamp,
             content,
             self.commit_hash,
@@ -516,7 +517,7 @@ class FailEvent(BaseEvent):
         return _event_html_container(
             "❌",
             "FailEvent",
-            self.agent_name,
+            self.full_namespace,
             self.timestamp,
             content,
             self.commit_hash,
@@ -553,7 +554,7 @@ class ClarifyEvent(BaseEvent):
         return _event_html_container(
             "🤔",
             "ClarifyEvent",
-            self.agent_name,
+            self.full_namespace,
             self.timestamp,
             content,
             self.commit_hash,

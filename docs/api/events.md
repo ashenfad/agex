@@ -22,32 +22,27 @@ The `events()` function is the primary interface for retrieving events from agen
 ```python
 from agex import events
 
-# Basic usage
-all_events = events(state)                          # Current namespace + children (default)
-direct_events = events(state, children=False)      # Current namespace only
+# Get all events from state
+all_events = events(state)
 
-# Namespace navigation  
-agent_events = events(state, "agent_name")         # Navigate to agent + children
-worker_events = events(state, "orch", "worker")    # Navigate to nested path + children
-isolated_events = events(state, "agent", children=False)  # Just that agent, no sub-agents
+# Filter by specific agent using full_namespace
+agent_events = [e for e in all_events if e.full_namespace == "agent_name"]
+worker_events = [e for e in all_events if e.full_namespace == "orchestrator/worker"]
+
+# Filter by namespace hierarchy
+orchestrator_tree = [e for e in all_events if e.full_namespace.startswith("orchestrator")]
 ```
 
 **Function Signature:**
 ```python
-def events(
-    state: Versioned | Live | Namespaced, 
-    *namespaces: str, 
-    children: bool = True
-) -> list[Event]
+def events(state: Versioned | Live | Namespaced) -> list[Event]
 ```
 
 **Parameters:**
 - `state`: The state object to retrieve events from
-- `*namespaces`: Variable number of namespace path components to navigate to
-- `children`: Whether to include events from child namespaces (default: `True`)
 
 **Returns:**
-- `list[Event]`: Events sorted chronologically by timestamp
+- `list[Event]`: All events sorted chronologically by timestamp. Use `full_namespace` field to filter by agent paths.
 
 ## Event Types
 
@@ -142,6 +137,7 @@ All events share these common properties from `BaseEvent`:
 
 - **`timestamp`**: `datetime` - UTC timestamp when the event occurred.
 - **`agent_name`**: `str` - Name of the agent that generated the event.
+- **`full_namespace`**: `str` - Complete namespace path (e.g., `"orchestrator/worker_a"`). For root-level agents, equals `agent_name`.
 - **`commit_hash`**: `str | None` - If using `Versioned` state, the commit hash of the agent's state before this event occurred. See [Inspecting Historical State](state.md#inspecting-historical-state) for how to use this for debugging.
 
 ## Consuming Events
@@ -240,11 +236,21 @@ print(f"Successes: {len(success_events)}")
 # Assume orchestrator, worker_a, and worker_b agents are defined
 # and a multi-agent task has been run with a `state` object.
 
-# Monitor different levels of the hierarchy
-all_events = events(state)                                    # Everything
-orch_events = events(state, "orchestrator", children=False)   # Just orchestrator
-worker_events = events(state, "orchestrator")                 # Orchestrator + its children
-worker_a_events = events(state, "orchestrator", "worker_a", children=False)  # Just worker A
+# Get all events and filter by namespace
+all_events = events(state)
+
+# Filter different levels of the hierarchy
+orch_events = [
+    e for e in all_events if e.full_namespace == "orchestrator"
+]  # Just orchestrator
+
+worker_events = [
+    e for e in all_events if e.full_namespace.startswith("orchestrator")
+]  # Orchestrator + its children
+
+worker_a_events = [
+    e for e in all_events if e.full_namespace == "orchestrator/worker_a"
+]  # Just worker A
 ```
 
 ## Related APIs

@@ -668,7 +668,7 @@ def test_unserializable_object_in_state_is_handled_gracefully():
     assert result == "done"
 
     # After task completion, check that warning was shown to agent as output
-    all_events = events(state, "test_agent", children=False)
+    all_events = [e for e in events(state) if e.full_namespace == "test_agent"]
 
     output_events = [e for e in all_events if isinstance(e, OutputEvent)]
 
@@ -779,7 +779,7 @@ def test_shallow_validation_on_agent_output():
 
     # Check that validation error was shown to agent as output
     # The agent DID see the validation error (as evidenced by the fact that it then provided valid output)
-    all_events = events(state, "test_agent", children=False)
+    all_events = [e for e in events(state) if e.full_namespace == "test_agent"]
     output_events = [e for e in all_events if isinstance(e, OutputEvent)]
 
     # Find output events that contain validation error messages
@@ -1000,9 +1000,9 @@ print(f"Setup complete: {setup_var}")
     assert len(streaming_events) > 0  # Streaming should yield events
 
     # Verify event counts match
-    assert len(batch_events) == len(streaming_events), (
-        f"Event count mismatch: batch={len(batch_events)}, streaming={len(streaming_events)}"
-    )
+    assert len(batch_events) == len(
+        streaming_events
+    ), f"Event count mismatch: batch={len(batch_events)}, streaming={len(streaming_events)}"
 
     # Verify event types match in sequence
     for i, (batch_event, streaming_event) in enumerate(
@@ -1011,9 +1011,9 @@ print(f"Setup complete: {setup_var}")
         batch_type = type(batch_event).__name__
         streaming_type = type(streaming_event).__name__
 
-        assert batch_type == streaming_type, (
-            f"Event {i} type mismatch: batch={batch_type}, streaming={streaming_type}"
-        )
+        assert (
+            batch_type == streaming_type
+        ), f"Event {i} type mismatch: batch={batch_type}, streaming={streaming_type}"
 
     # Verify expected event sequence
     expected_sequence = [
@@ -1025,14 +1025,14 @@ print(f"Setup complete: {setup_var}")
         SuccessEvent,  # Task completion
     ]
 
-    assert len(batch_events) == len(expected_sequence), (
-        f"Expected {len(expected_sequence)} events, got {len(batch_events)}"
-    )
+    assert len(batch_events) == len(
+        expected_sequence
+    ), f"Expected {len(expected_sequence)} events, got {len(batch_events)}"
 
     for i, (event, expected_type) in enumerate(zip(batch_events, expected_sequence)):
-        assert isinstance(event, expected_type), (
-            f"Event {i} should be {expected_type.__name__}, got {type(event).__name__}"
-        )
+        assert isinstance(
+            event, expected_type
+        ), f"Event {i} should be {expected_type.__name__}, got {type(event).__name__}"
 
     # Verify setup ActionEvent is immediately followed by its OutputEvents
     setup_action = batch_events[1]

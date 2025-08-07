@@ -33,56 +33,41 @@ def _namespaced(
     return state
 
 
-def events(
-    state: Versioned | Live | Namespaced, *namespaces: str, children: bool = True
-) -> list[Event]:
+def events(state: Versioned | Live | Namespaced) -> list[Event]:
     """
-    Retrieve events from state with flexible namespace navigation and hierarchical control.
+    Retrieve all events from state.
 
     Args:
         state: The state object to retrieve events from
-        *namespaces: Variable number of namespace path components to navigate to
-                    e.g., events(state, "orchestrator", "sub_agent")
-        children: Whether to include events from child namespaces (default: True)
 
     Returns:
-        A list of event objects from the specified namespace(s), sorted chronologically.
+        A list of all event objects, sorted chronologically.
+        Use full_namespace field to filter by agent paths.
 
     Examples:
-        events(state)                          # Current namespace + children
-        events(state, children=False)          # Current namespace only
-        events(state, "agent_name")            # Navigate to agent + children
-        events(state, "orchestrator", "sub")   # Navigate to nested path + children
-        events(state, "agent", children=False) # Just that agent, no sub-agents
+        all_events = events(state)
+        worker_a_events = [e for e in all_events if e.full_namespace == "orchestrator/worker_a"]
+        orchestrator_tree = [e for e in all_events if e.full_namespace.startswith("orchestrator")]
     """
-    # Navigate to target namespace if specified
-    if namespaces:
-        target_state = _namespaced(state, list(namespaces))
-    else:
-        target_state = state
+    # Get root state to traverse all event logs
+    root_state = state.base_store
 
-    # Choose key traversal method based on children parameter and state type
-    if children and isinstance(target_state, Namespaced):
-        # Use hierarchical traversal for Namespaced when children=True
-        keys_to_check = target_state.descendant_keys()
-    else:
-        # Use direct traversal for all other cases
-        keys_to_check = target_state.keys()
-
-    # Collect events from relevant keys
+    # Collect events from all event logs in the state
     from agex.state.log import get_events_from_log
 
     all_events: list[Event] = []
-    for key in keys_to_check:
+
+    # Traverse all keys in the root state to find event logs
+    for key in root_state.keys():
         if key.endswith("__event_log__"):
-            # Navigate to the state that contains this event log
-            if "/" in key:
-                # This is a child namespace event log
-                namespace_path = key.replace("/__event_log__", "").split("/")
-                log_state = _namespaced(target_state, namespace_path)
+            # Extract the namespace path from the key
+            if key == "__event_log__":
+                # Root-level event log
+                log_state = root_state
             else:
-                # This is the current namespace event log
-                log_state = target_state
+                # Namespaced event log - key format is "namespace/path/__event_log__"
+                namespace_path = key.replace("/__event_log__", "").split("/")
+                log_state = _namespaced(root_state, namespace_path)
 
             # Get events using the helper that resolves references
             events_list: list[Event] = get_events_from_log(log_state)
