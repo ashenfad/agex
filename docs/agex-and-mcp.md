@@ -1,6 +1,6 @@
 # A Note on Tooling (MCP) and the `agex` Philosophy
 
-You may have noticed that the `agex` documentation emphasizes direct integration with Python libraries rather than compatibility with emerging "tool use" standards like the Machine-Callable Pool (MCP). This was a deliberate design choice, and this document explains the philosophy behind our code-native approach.
+You may have noticed that the `agex` documentation emphasizes direct integration with Python libraries rather than compatibility with emerging "tool use" standards like the Model Context Protocol (MCP). This was a deliberate design choice, and this document explains the philosophy behind our code-native approach.
 
 ## The `agex` Premise: PyPI as the Ultimate Toolset
 

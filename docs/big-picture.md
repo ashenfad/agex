@@ -152,7 +152,7 @@ Agents can also collaborate as peers using standard Python control flow, such as
 ```python
 # Iterative improvement between agents  
 report = research("AI trends in 2024")
-while not (review := critque(report)).approved:
+while not (review := critique(report)).approved:
     report = hone_report(review.feedback, report)
 ```
 
