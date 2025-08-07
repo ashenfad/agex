@@ -8,20 +8,20 @@ from agex.llm.openai_client import OpenAIClient
 
 def test_openai_client_initialization():
     """Test that OpenAIClient can be initialized with default parameters."""
-    client = OpenAIClient()
+    client = OpenAIClient(api_key="test")
     assert client.model == "gpt-4.1-nano"
     assert client.provider_name == "OpenAI"
 
 
 def test_openai_client_custom_model():
     """Test that OpenAIClient can be initialized with custom model."""
-    client = OpenAIClient(model="gpt-4.1")
+    client = OpenAIClient(model="gpt-4.1", api_key="test")
     assert client.model == "gpt-4.1"
 
 
 def test_openai_client_message_handling():
     """Test that messages are properly handled by OpenAI API."""
-    client = OpenAIClient()
+    client = OpenAIClient(api_key="test")
 
     # Mock the OpenAI response
     mock_response = MagicMock()
@@ -69,7 +69,7 @@ def test_openai_client_message_handling():
 
 def test_openai_client_structured_output():
     """Test that structured output configuration is properly set."""
-    client = OpenAIClient()
+    client = OpenAIClient(api_key="test")
 
     mock_response = MagicMock()
     mock_parsed_response = LLMResponse(thinking="Test thinking", code="print('hello')")
@@ -95,7 +95,7 @@ def test_openai_client_structured_output():
 
 def test_openai_client_request_parameters():
     """Test that additional request parameters are properly passed."""
-    client = OpenAIClient(temperature=0.5, max_tokens=1000)
+    client = OpenAIClient(temperature=0.5, max_tokens=1000, api_key="test")
 
     mock_response = MagicMock()
     mock_parsed_response = LLMResponse(thinking="Test thinking", code="print('hello')")
@@ -119,7 +119,7 @@ def test_openai_client_request_parameters():
 
 def test_openai_client_none_parsed_response():
     """Test proper error handling when OpenAI returns None for parsed response."""
-    client = OpenAIClient()
+    client = OpenAIClient(api_key="test")
 
     mock_response = MagicMock()
     mock_response.choices = [MagicMock()]
@@ -138,7 +138,7 @@ def test_openai_client_none_parsed_response():
 
 def test_openai_client_api_error():
     """Test proper error handling for OpenAI API errors."""
-    client = OpenAIClient()
+    client = OpenAIClient(api_key="test")
 
     with patch.object(client, "client") as mock_client:
         mock_client.beta.chat.completions.parse.side_effect = Exception("API Error")
@@ -151,7 +151,9 @@ def test_openai_client_api_error():
 
 def test_openai_client_kwargs_filtering():
     """Test that provider-specific kwargs are properly filtered."""
-    client = OpenAIClient(provider="openai", model="gpt-4.1", temperature=0.3)
+    client = OpenAIClient(
+        provider="openai", model="gpt-4.1", temperature=0.3, api_key="test"
+    )
 
     # provider should be filtered out, others should remain
     assert client._model == "gpt-4.1"
@@ -161,7 +163,7 @@ def test_openai_client_kwargs_filtering():
 
 def test_openai_client_message_dataclass_conversion():
     """Test that Message dataclasses are properly converted to dicts."""
-    client = OpenAIClient()
+    client = OpenAIClient(api_key="test")
 
     mock_response = MagicMock()
     mock_parsed_response = LLMResponse(thinking="Test thinking", code="print('hello')")
