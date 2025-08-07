@@ -50,10 +50,6 @@ test = [
     "tiktoken",
     "matplotlib"
 ]
-vision = [
-    "Pillow",
-    "matplotlib",
-]
 examples = [
     "plotly[express]",
     "kaleido",  # for exporting plotly figures
