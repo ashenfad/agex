@@ -33,7 +33,7 @@ def _namespaced(
     return state
 
 
-def events(state: Versioned | Live | Namespaced) -> list[Event]:
+def events(state: Versioned | Live) -> list[Event]:
     """
     Retrieve all events from state.
 

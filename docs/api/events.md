@@ -35,7 +35,7 @@ orchestrator_tree = [e for e in all_events if e.full_namespace.startswith("orche
 
 **Function Signature:**
 ```python
-def events(state: Versioned | Live | Namespaced) -> list[Event]
+def events(state: Versioned | Live) -> list[Event]
 ```
 
 **Parameters:**
@@ -46,7 +46,7 @@ def events(state: Versioned | Live | Namespaced) -> list[Event]
 
 ## Event Types
 
-All events inherit from `BaseEvent` and include automatic timestamps and agent attribution.
+All events inherit from `BaseEvent` and include timestamps, agent name, and full namespace.
 
 ### Core Events
 
@@ -58,8 +58,6 @@ from agex.agent.events import TaskStartEvent
 
 # Event structure
 event = TaskStartEvent(
-    agent_name="my_agent",    # str
-    task_name="process_data", # str
     inputs={"data": "value"}, # dict[str, Any]
     message="...",            # str
 )
@@ -73,7 +71,6 @@ from agex.agent.events import ActionEvent
 
 # Event structure
 event = ActionEvent(
-    agent_name="my_agent",    # str
     thinking="...",           # str
     code="..."                # str
 )
@@ -87,7 +84,6 @@ from agex.agent.events import OutputEvent
 
 # Event structure
 event = OutputEvent(
-    agent_name="my_agent",    # str
     parts=[...]               # list of raw output objects
 )
 ```
@@ -100,7 +96,6 @@ from agex.agent.events import SuccessEvent
 
 # Event structure
 event = SuccessEvent(
-    agent_name="my_agent",    # str
     result="Completed!"       # Any (the actual return value of the task)
 )
 ```
@@ -113,7 +108,6 @@ from agex.agent.events import FailEvent
 
 # Event structure
 event = FailEvent(
-    agent_name="my_agent",    # str
     message="...",            # str
 )
 ```
@@ -126,7 +120,6 @@ from agex.agent.events import ClarifyEvent
 
 # Event structure
 event = ClarifyEvent(
-    agent_name="my_agent",    # str
     message="...",            # str
 )
 ```
