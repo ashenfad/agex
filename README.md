@@ -13,7 +13,7 @@
 -   **Code-as-Action**: AST-based sandbox allows agents to take action through code but within safe limits.
 -   **Library Integration**: Agents integrate with existing Python libraries, not just pre-defined "tools".
 -   **Workspace Persistence**: Agent compute environments persist with git-like versioning.
--   **Multi-Agent**: Build hierarchical agents or coordinate collaboration via simple Python control flow.
+-   **Multi-Agent**: Build hierarchical agents or coordinate via simple Python control flow.
 -   **Event Streams**: Observe your agents through notebook-friendly events.
 -   **Benchmarking**: Benchmark agent outputs to understand & improve their performance.
 
