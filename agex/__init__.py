@@ -1,9 +1,7 @@
 from .agent import (
     Agent,
     MemberSpec,
-    TaskContinue,
     TaskFail,
-    TaskSuccess,
     clear_agent_registry,
 )
 from .agent.datatypes import TaskClarify, TaskTimeout
@@ -19,6 +17,8 @@ from .agent.events import (
 )
 from .llm import LLMClient, connect_llm
 from .state import Live, Namespaced, Versioned, events
+from .state.kv import Memory, Disk, Cache
+from .render.view import view
 
 __all__ = [
     # Core Classes
@@ -48,4 +48,10 @@ __all__ = [
     "clear_agent_registry",
     # LLM Client Factory
     "connect_llm",
+    # View
+    "view",
+    # KV backends
+    "Memory",
+    "Disk",
+    "Cache",
 ]
