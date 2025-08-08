@@ -1,4 +1,4 @@
-# Quick Start Guide
+# Quick Start
 
 This guide walks you through the core concepts of agex with hands-on examples. By the end, you'll understand how to create agents, register capabilities, and build multi-agent workflows.
 
@@ -308,4 +308,4 @@ except TaskTimeout as e:
 - **[API Reference](./api/overview.md)** - Complete documentation for all agex APIs
 - **[Events API](./api/events.md)** - Comprehensive guide to event monitoring and debugging
 - **[Examples](./examples/overview.md)** - Real-world examples showing advanced patterns
-- **[The Big Picture](./big-picture.md)** - Framework philosophy and design principles
+- **[The Big Picture](./concepts/big-picture.md)** - Framework philosophy and design principles

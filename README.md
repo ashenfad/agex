@@ -4,7 +4,7 @@
 
 ![agex demo gif](docs/assets/teaser.gif)
 
-**This works because** `agex` agents can accept and return complex types like `pandas.DataFrame` and `plotly.Figure` objects without intermediate JSON serialization. For a deeper dive, check out the full **[agex101.ipynb tutorial](https://ashenfad.github.io/agex/demos/agex101/)**.
+**This works because** `agex` agents can accept and return complex types like `pandas.DataFrame` and `plotly.Figure` objects without intermediate JSON serialization. For a deeper dive, check out the full **[agex101.ipynb tutorial](https://ashenfad.github.io/agex/examples/agex101/)**.
 
 ## What Makes This Different
 
@@ -23,7 +23,7 @@ Complete documentation is hosted at **[ashenfad.github.io/agex](https://ashenfad
 
 Key sections:
 - **[📚 Quick Start Guide](https://ashenfad.github.io/agex/quick-start/)**
-- **[🔭 The Big Picture](https://ashenfad.github.io/agex/big-picture/)**
+- **[🔭 The Big Picture](https://ashenfad.github.io/agex/concepts/big-picture/)**
 - **[💡 Examples](https://ashenfad.github.io/agex/examples/overview/)**
 - **[📖 API Reference](https://ashenfad.github.io/agex/api/overview/)**
 

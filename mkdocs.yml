@@ -41,9 +41,21 @@ theme:
 nav:
   - Home: index.md
   - Quick Start: quick-start.md
-  - The Big Picture: big-picture.md
-  - Notebook Demo:
-    - Agex 101: demos/agex101.ipynb
+  - Concepts:
+    - Overview: concepts/overview.md
+    - The Big Picture: concepts/big-picture.md
+    - A Note on MCP: concepts/agex-and-mcp.md
+    - Security: concepts/security.md
+    - Nearly Python: concepts/nearly-python.md
+  - Examples:
+    - Overview: examples/overview.md
+    - Agex 101 (notebook): examples/agex101.ipynb
+    - Mathy: examples/mathy.md
+    - Funcy: examples/funcy.md
+    - DB (SQLite): examples/db.md
+    - Hierarchical: examples/hierarchical.md
+    - Evaluator–Optimizer: examples/evaluator_optimizer.md
+    - Dogfood (agents creating agents): examples/dogfood.md
   - API Reference:
     - Overview: api/overview.md
     - Agent: api/agent.md
@@ -53,11 +65,8 @@ nav:
     - Events: api/events.md
     - Errors: api/errors.md
     - View: api/view.md
-  - Examples:
-    - Overview: examples/overview.md
-  - Security: security.md
-  - Development:
-    - Nearly Python: nearly-python.md
+  - Blog:
+    - Posts: blog/index.md
 
 markdown_extensions:
   - pymdownx.highlight:
@@ -93,6 +102,14 @@ markdown_extensions:
 plugins:
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - blog:
+      blog_dir: blog
+      post_dir: blog/posts
+      blog_toc: True
+      archive: false
+      categories: false
+      pagination: false
+      post_readtime: false
   - mkdocs-jupyter:
       execute: false
       allow_errors: false
@@ -108,6 +125,10 @@ extra:
       link: https://github.com/ashenfad/agex
   version:
     provider: mike
+  authors:
+    - slug: ashenfad
+      name: ashenfad
+      link: https://github.com/ashenfad
 
 extra_css:
   - stylesheets/extra.css

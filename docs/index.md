@@ -4,7 +4,7 @@
 
 ![agex demo gif](assets/teaser.gif)
 
-**This works because** `agex` agents can accept and return complex types like `pandas.DataFrame` and `plotly.Figure` objects without intermediate JSON serialization. **Dive deeper with the full [`agex101.ipynb`](demos/agex101.ipynb) tutorial.**
+**This works because** `agex` agents can accept and return complex types like `pandas.DataFrame` and `plotly.Figure` objects without intermediate JSON serialization. **Dive deeper with the full [`agex101.ipynb`](examples/agex101.ipynb) tutorial.**
 
 ## What Makes This Different
 
@@ -61,7 +61,7 @@
 
     Learn step-by-step with hands-on examples - from basic agents to multi-agent workflows.
 
--   **[🔭 The Big Picture](big-picture.md)**
+-   **[🔭 The Big Picture](concepts/big-picture.md)**
 
     ---
 
@@ -73,11 +73,6 @@
     
     Explore advanced patterns and core concepts with runnable Python examples.
 
--   **[📓 Notebook Demo](demo.md)**
-
-    ---
-
-    See complete agex workflows with code, outputs, and explanations.
 
 -   **[📖 API Reference](api/overview.md)**
 

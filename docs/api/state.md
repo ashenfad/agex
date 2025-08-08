@@ -80,7 +80,7 @@ When you use `Versioned` state, you get powerful features automatically:
 ### Working with Unpicklable Objects in Versioned State
 A key constraint of `Versioned` state is that all stored objects must be serializable (picklable). Therefore, an agent **cannot assign unpicklable objects like database connections to variables.**
 
-The correct pattern is to use these resources and consume their results in a single, chained operation. For a complete example, see [`db.py`](../../examples/db.py) and its associated primer, which coaches the agent on the correct `db.execute(...).fetchall()` pattern.
+The correct pattern is to use these resources and consume their results in a single, chained operation. For a complete example, see [`examples/db.py`](https://github.com/ashenfad/agex/blob/main/examples/db.py) and its associated primer, which coaches the agent on the correct `db.execute(...).fetchall()` pattern.
 
 ## Inspecting Historical State
 

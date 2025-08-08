@@ -1,6 +1,7 @@
 # Documentation and demo requirements
 mkdocs-material>=9.4.0
 mkdocs-jupyter>=0.24.0
+mkdocs-blog-plugin>=0.25.0
 
 # Optional enhancements
 mkdocs-git-revision-date-localized-plugin>=1.2.0
