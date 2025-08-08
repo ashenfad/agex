@@ -65,6 +65,8 @@ nav:
     - Events: api/events.md
     - Errors: api/errors.md
     - View: api/view.md
+    - Helpers: api/helpers.md
+    - Benchmarking: api/benchmarking.md
   - Blog:
     - Posts: blog/index.md
 
