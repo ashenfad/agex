@@ -67,6 +67,13 @@ nav:
     - View: api/view.md
     - Helpers: api/helpers.md
     - Benchmarking: api/benchmarking.md
+  - Roadmap:
+    - Overview: roadmap/overview.md
+    - Contextual Primers: roadmap/primers.md
+    - System Token Counting: roadmap/token_counting.md
+    - MIME Bundles for Events: roadmap/mime_bundles.md
+    - Local Registries: roadmap/local_registries.md
+    - Faded Memory: roadmap/faded_memory.md
   - Blog:
     - Posts: blog/index.md
 
