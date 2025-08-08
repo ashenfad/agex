@@ -267,7 +267,7 @@ print(f"Generated {len(agent_events)} events")
 
 # Events include TaskStartEvent, ActionEvent, OutputEvent, SuccessEvent, and FailEvent
 # See what the agent was thinking during execution
-from agex.agent.events import ActionEvent
+from agex import ActionEvent
 
 for event in agent_events:
     if isinstance(event, ActionEvent):

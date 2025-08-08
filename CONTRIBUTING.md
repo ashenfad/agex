@@ -53,7 +53,7 @@ This project uses `pyenv` to manage the Python version and `uv` for package mana
 
 ```bash
 export AGEX_LLM_PROVIDER=openai
-export AGEX_LLM_MODEL=gpt-4
+export AGEX_LLM_MODEL=gpt-4.1-nano
 export OPENAI_API_KEY=your_key_here
 ```
 

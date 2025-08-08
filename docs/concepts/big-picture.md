@@ -80,7 +80,7 @@ points = [(4, 3), (1, 1), (0, 5)]
 points.sort(key=distance_fn)  # Works with existing Python code
 ```
 
-No serialization overhead. No wrapper classes. Just real Python objects flowing between your code and agents.
+No JSON serialization overhead. No wrapper classes. Just real Python objects flowing between your code and agents.
 
 ### 2. Code-as-Action
 

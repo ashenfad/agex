@@ -16,7 +16,7 @@ The `agex` sandbox uses a **whitelist-based security model** with these key comp
 
 - **AST-level validation**: All Python code is parsed and validated before execution to block dangerous language features.
 - **Attribute access control**: Only explicitly whitelisted attributes and methods are accessible.
-- **Data Isolation**: All data is serialized at the boundary of an agent task. Agents never get a direct reference to host objects, preventing accidental or malicious mutation.
+- **Data Isolation**: When using `Versioned` state, all data is serialized at the boundary of an agent task. Agents never get a direct reference to host objects, preventing accidental or malicious mutation.
 - **Type system isolation**: Safe type placeholders prevent access to dangerous methods on type objects.
 - **Import restrictions**: Module imports are controlled through explicit registration.
 
