@@ -554,7 +554,7 @@ class StatementEvaluator(BaseEvaluator):
         for alias in node.names:
             module_name_to_find = alias.name
             try:
-                tic_module = self._create_agex_module(module_name_to_find)
+                tic_module = self.resolver.resolve_module(module_name_to_find, node)
             except EvalError as e:
                 e.node = node  # Add location info to the error
                 raise
@@ -579,27 +579,14 @@ class StatementEvaluator(BaseEvaluator):
             if is_just_dataclass_import:
                 return  # Silently ignore and succeed.
 
-        reg_module = self.agent.importable_modules.get(module_name_to_find)
-        if not reg_module:
-            raise EvalError(
-                f"No module named '{module_name_to_find}' is registered.", node
-            )
-
         for alias in node.names:
             name_to_import = alias.name
             target_name = alias.asname or name_to_import
 
-            # This is a simplified import model. We don't build a full AgexModule
-            # instance here, we just grab the member directly from the host module.
-            # A more robust version would handle AgexModule sub-members.
-            if hasattr(reg_module.module, name_to_import):
-                member = getattr(reg_module.module, name_to_import)
-                self.state.set(target_name, member)
-            else:
-                raise EvalError(
-                    f"Cannot import name '{name_to_import}' from module '{module_name_to_find}'.",
-                    node,
-                )
+            member = self.resolver.import_from(
+                module_name_to_find, name_to_import, node
+            )
+            self.state.set(target_name, member)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """

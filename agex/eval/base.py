@@ -6,7 +6,7 @@ from agex.agent.base import BaseAgent
 from agex.state.core import State
 
 from .error import EvalError
-from .objects import AgexModule
+from .resolver import Resolver
 
 
 class BaseEvaluator(ast.NodeVisitor):
@@ -27,19 +27,7 @@ class BaseEvaluator(ast.NodeVisitor):
         self._start_time = start_time if start_time is not None else time.time()
         self._timeout_seconds = timeout_seconds
         self._sub_agent_time = sub_agent_time  # Total time spent in sub-agent calls
-
-    def _create_agex_module(self, module_name: str) -> AgexModule:
-        """Creates a sandboxed AgexModule from the agent's registry."""
-        reg_module = self.agent.importable_modules.get(module_name)
-
-        if not reg_module:
-            raise EvalError(
-                f"Module '{module_name}' is not registered or whitelisted.", node=None
-            )
-
-        # Create AgexModule with agent fingerprint for security inheritance
-        # JIT resolution happens in expressions.py when attributes are accessed
-        return AgexModule(name=module_name, agent_fingerprint=self.agent.fingerprint)
+        self.resolver = Resolver(agent)  # Unified resolver for all lookups
 
     def _handle_destructuring_assignment(self, target_node: ast.AST, value: Any):
         """

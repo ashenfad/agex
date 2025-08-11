@@ -30,6 +30,42 @@ def clear_dynamic_dataclass_registry() -> None:
 
 
 class TaskMixin(TaskLoopMixin, BaseAgent):
+    def run_task(
+        self,
+        task_callable: Callable,
+        args: list,
+        kwargs: dict,
+        parent_state,
+        on_event: Callable[[Any], None] | None = None,
+    ) -> Any:
+        """
+        Execute a task callable within a namespaced child context of the parent state.
+
+        This centralizes sub-task state management and event propagation.
+
+        Args:
+            task_callable: The callable produced by @agent.task
+            args: Positional arguments to pass to the task
+            kwargs: Keyword arguments to pass to the task
+            parent_state: The parent's execution state (Versioned/Namespaced/Live)
+            on_event: Optional event handler to propagate
+
+        Returns:
+            The task result produced by the task loop
+        """
+        from agex.state import Namespaced
+
+        namespace = getattr(task_callable, "__agex_task_namespace__", self.name)
+        child_state = Namespaced(parent_state, namespace)
+
+        # Prepare kwargs safely
+        call_kwargs = dict(kwargs) if kwargs is not None else {}
+        call_kwargs["state"] = child_state
+        if on_event is not None:
+            call_kwargs["on_event"] = on_event
+
+        return task_callable(*args, **call_kwargs)
+
     def task(
         self,
         primer_or_func=None,

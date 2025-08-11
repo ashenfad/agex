@@ -5,6 +5,7 @@ from agex.agent.base import BaseAgent
 from agex.state.core import State
 
 from .base import BaseEvaluator
+from .resolver import Resolver
 from .binop import BinOpEvaluator
 from .call import CallEvaluator
 from .comprehension import ComprehensionEvaluator
@@ -50,6 +51,7 @@ class Evaluator(
             sub_agent_time=sub_agent_time,
         )
         self.source_code = source_code
+        self.resolver = Resolver(agent)
         self.on_event = on_event
 
     def visit_Module(self, node: ast.Module):

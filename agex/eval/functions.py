@@ -30,6 +30,10 @@ class NativeFunction:
         # Directly call the wrapped native function.
         return self.fn(*args, **kwargs)
 
+    # New unified execution hook used by the evaluator
+    def execute(self, args: list[Any], kwargs: dict[str, Any]) -> Any:
+        return self.fn(*args, **kwargs)
+
     def __getattr__(self, name: str) -> Any:
         # Preserve important attributes from the wrapped function
         # This is especially important for dual-decorated functions
@@ -177,35 +181,61 @@ class TaskUserFunction(UserFunction):
     def execute(
         self, args: list, kwargs: dict, source_code: str | None, parent_evaluator=None
     ):
-        """Override execute to run task loop instead of function body."""
+        """Override execute to run task loop instead of function body via agent.run_task."""
         # Resolve the task-executing agent
         task_agent = resolve_agent(self.task_agent_fingerprint)
 
-        # Extract state parameter (injected by task calling convention)
-        state = kwargs.pop("state", None)
+        # Agent.run_task expects the wrapper callable which embeds loop invocation
+        # We synthesize an adapter that validates args and calls the loop
+        def _task_wrapper_adapter(*_args, **_kwargs):
+            # Extract state and on_event if present (run_task will set them already)
+            _kwargs.pop("state", None)
+            _kwargs.pop("on_event", None)
 
-        # Create generic inputs dataclass using shared utility
-        inputs_dataclass = create_inputs_dataclass_from_ast_args(
-            self.name, self.args, use_generic_types=True
-        )
-        inputs_instance = self._create_inputs_instance(args, kwargs, inputs_dataclass)
-
-        # Trigger the task loop
-        from agex.agent import Agent
-
-        if isinstance(task_agent, Agent):
-            return task_agent._run_task_loop(
-                task_name=self.name,
-                docstring=self.task_docstring,
-                inputs_dataclass=inputs_dataclass,
-                inputs_instance=inputs_instance,
-                return_type=self.task_return_type,
-                state=state,
+            inputs_dataclass = create_inputs_dataclass_from_ast_args(
+                self.name, self.args, use_generic_types=True
             )
-        else:
+            inputs_instance = self._create_inputs_instance(
+                list(_args), _kwargs, inputs_dataclass
+            )
+
+            from agex.agent import Agent
+
+            if isinstance(task_agent, Agent):
+                return task_agent._run_task_loop(
+                    task_name=self.name,
+                    docstring=self.task_docstring,
+                    inputs_dataclass=inputs_dataclass,
+                    inputs_instance=inputs_instance,
+                    return_type=self.task_return_type,
+                    state=_kwargs.get("state"),
+                    on_event=_kwargs.get("on_event"),
+                )
             raise RuntimeError(
                 f"Task agent {self.task_agent_fingerprint} is not a valid Agent instance"
             )
+
+        # Delegate through agent.run_task for consistent state management
+        parent_state = None
+        if parent_evaluator is not None:
+            parent_state = parent_evaluator.state
+        else:
+            # When executed directly, no parent evaluator means no parent state; pass through provided state
+            parent_state = kwargs.pop("state", None)
+
+        on_event = None
+        if parent_evaluator is not None:
+            on_event = getattr(parent_evaluator, "on_event", None)
+        else:
+            on_event = kwargs.pop("on_event", None)
+
+        return task_agent.run_task(
+            _task_wrapper_adapter,
+            args,
+            kwargs,
+            parent_state,
+            on_event=on_event,
+        )
 
     def _create_inputs_instance(self, args: list, kwargs: dict, inputs_dataclass: type):
         """Create an instance of the inputs dataclass with the provided arguments."""
@@ -227,6 +257,57 @@ class TaskUserFunction(UserFunction):
                 bound_args[name] = value
 
         return inputs_dataclass(**bound_args) if bound_args else None
+
+
+class TaskProxy:
+    """
+    Execution proxy for dual-decorated task callables (wrappers created by @agent.task).
+
+    This moves the execution-time logic (state namespacing, event propagation,
+    timeout accounting) out of the evaluator and into a dedicated class.
+    """
+
+    def __init__(self, evaluator: "BaseEvaluator", task_callable: Any):
+        from agex.eval.base import (
+            BaseEvaluator as _BaseEvaluator,
+        )  # local import to avoid cycles
+
+        if not isinstance(evaluator, _BaseEvaluator):
+            raise TypeError("TaskProxy requires a BaseEvaluator instance")
+        self.evaluator = evaluator
+        self.task_callable = task_callable
+
+    def execute(self, args: list[Any], kwargs: dict[str, Any]) -> Any:
+        # Measure sub-agent call time to deduct from parent timeout; execution is delegated to the agent
+        import time
+
+        sub_agent_start = time.time()
+        try:
+            # Determine parent state
+            from ..state import Live, Versioned
+            from ..state import Namespaced as NamespacedState
+
+            if isinstance(self.evaluator.state, (Versioned, NamespacedState, Live)):
+                parent_state = self.evaluator.state
+            else:
+                parent_state = self.evaluator.state.base_store
+
+            # Delegate execution and state management to the agent
+            agent = self.evaluator.agent
+            return agent.run_task(
+                self.task_callable,
+                args,
+                kwargs,
+                parent_state,
+                on_event=getattr(self.evaluator, "on_event", None),
+            )
+        finally:
+            sub_agent_duration = time.time() - sub_agent_start
+            # Inform evaluator so it can adjust time budget
+            try:
+                self.evaluator.add_sub_agent_time(sub_agent_duration)
+            except Exception:
+                pass
 
 
 class FunctionEvaluator(BaseEvaluator):

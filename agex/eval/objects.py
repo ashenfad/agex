@@ -246,6 +246,12 @@ class BoundInstanceMethod:
         method = getattr(live_instance, self.method_name)
         return method(*args, **kwargs)
 
+    # New unified execution hook used by the evaluator
+    def execute(self, args: list[Any], kwargs: dict[str, Any]) -> Any:
+        live_instance = self.host_registry[self.reg_object.name]
+        method = getattr(live_instance, self.method_name)
+        return method(*args, **kwargs)
+
 
 @dataclass
 class AgexModule:

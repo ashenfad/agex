@@ -11,8 +11,6 @@ from agex.agent.datatypes import (
     TaskSuccess,
 )
 from agex.agent.events import OutputEvent
-from agex.eval.base import BaseEvaluator
-from agex.eval.functions import UserFunction
 from agex.eval.objects import (
     AgexClass,
     AgexDataClass,
@@ -188,7 +186,7 @@ def _agex_type(obj: Any) -> _AgexTypePlaceholder:
     return _AgexTypePlaceholder(type(obj))
 
 
-def _dir(evaluator: BaseEvaluator, *args, **kwargs) -> list[str]:
+def _dir(evaluator, *args, **kwargs) -> list[str]:
     """
     Implementation of the dir() builtin.
     NOTE: This is not like Python's dir(). It always prints to stdout and
@@ -248,7 +246,7 @@ def _dir(evaluator: BaseEvaluator, *args, **kwargs) -> list[str]:
     return attrs
 
 
-def _hasattr(evaluator: BaseEvaluator, *args, **kwargs) -> bool:
+def _hasattr(evaluator, *args, **kwargs) -> bool:
     """Implementation of the hasattr() builtin."""
     if kwargs:
         raise AgexError("hasattr() does not take keyword arguments.")
@@ -317,7 +315,7 @@ def _get_general_help_text(agent: "BaseAgent") -> str:
     return "\n".join(parts)
 
 
-def _format_user_function_sig(fn: UserFunction) -> str:
+def _format_user_function_sig(fn) -> str:
     """Formats a UserFunction into a signature string."""
     # This is a simplified formatter. A real one would handle more arg types.
     arg_names = [arg.arg for arg in fn.args.args]
@@ -391,7 +389,7 @@ def _is_allowed_for_help(item: Any) -> bool:
     )
 
 
-def _help(evaluator: BaseEvaluator, *args, **kwargs) -> None:
+def _help(evaluator, *args, **kwargs) -> None:
     """Implementation of the help() builtin."""
     if kwargs:
         raise AgexError("help() does not take keyword arguments.")

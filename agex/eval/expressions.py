@@ -13,47 +13,13 @@ from .user_errors import AgexAttributeError, AgexIndexError, AgexKeyError, AgexT
 class ExpressionEvaluator(BaseEvaluator):
     """A mixin for evaluating expression nodes."""
 
-    def _resolve_name(self, name: str, node: ast.AST) -> Any:
-        """Resolve a name by checking builtins, state, and agent registries."""
-        # 1. Check builtins
-        if name in BUILTINS:
-            return BUILTINS[name]
-
-        # 2. Check the current execution state
-        value = self.state.get(name)
-        if value is not None or name in self.state:
-            return value
-
-        # NEW: Check for registered live objects
-        if name in self.agent.object_registry:
-            from .objects import BoundInstanceObject
-
-            reg_object = self.agent.object_registry[name]
-            return BoundInstanceObject(
-                reg_object=reg_object,
-                host_registry=self.agent._host_object_registry,
-            )
-
-        # 3. Check agent function registry
-        if name in self.agent.fn_registry:
-            from .functions import NativeFunction
-
-            spec = self.agent.fn_registry[name]
-            return NativeFunction(name=name, fn=spec.fn)
-
-        # 4. Check agent class registry
-        if name in self.agent.cls_registry:
-            return self.agent.cls_registry[name].cls
-
-        raise EvalError(f"Name '{name}' is not defined. (forgot import?)", node)
-
     def visit_Constant(self, node: ast.Constant) -> Any:
         """Handles literal values like numbers, strings, True, False, None."""
         return node.value
 
     def visit_Name(self, node: ast.Name) -> Any:
         """Handles variable lookups."""
-        return self._resolve_name(node.id, node)
+        return self.resolver.resolve_name(node.id, self.state, node)
 
     def visit_List(self, node: ast.List) -> list:
         """Handles list literals."""
@@ -103,76 +69,7 @@ class ExpressionEvaluator(BaseEvaluator):
     def visit_Attribute(self, node: ast.Attribute) -> Any:
         """Handles attribute access like 'obj.attr'."""
         value = self.visit(node.value)
-
-        # Handle AgexModule with JIT resolution (implemented below)
-
-        attr_name = node.attr
-
-        # Sandboxed AgexObjects and live objects have their own logic
-        if isinstance(value, (AgexObject, AgexInstance)):
-            return value.getattr(attr_name)
-
-        # Handle live objects
-        from .objects import BoundInstanceObject
-
-        if isinstance(value, BoundInstanceObject):
-            return value.getattr(attr_name)
-
-        # Handle AgexModule attribute access with JIT resolution
-        if isinstance(value, AgexModule):
-            # Look up the real module from the agent's registry
-            reg_module = self.agent.importable_modules.get(value.name)
-            if not reg_module:
-                raise AgexAttributeError(
-                    f"Module '{value.name}' is not registered", node
-                )
-
-            # Get the attribute from the real module
-            try:
-                real_attr = getattr(reg_module.module, attr_name)
-            except AttributeError:
-                raise AgexAttributeError(
-                    f"module '{value.name}' has no attribute '{attr_name}'", node
-                )
-
-            # If the attribute is a module, check if the submodule is explicitly registered
-            # Otherwise, return the actual value
-            import types
-
-            if isinstance(real_attr, types.ModuleType):
-                submodule_name = f"{value.name}.{attr_name}"
-                # Check if the resolved submodule object is in the agent's registry.
-                found_spec = None
-                for spec in self.agent.importable_modules.values():
-                    if spec.module is real_attr:
-                        found_spec = spec
-                        break
-
-                if not found_spec:
-                    raise AgexAttributeError(
-                        f"Submodule '{submodule_name}' is not allowed. ",
-                        node,
-                    )
-                return AgexModule(
-                    name=found_spec.name, agent_fingerprint=self.agent.fingerprint
-                )
-
-            return real_attr
-
-        # Check for registered host classes and whitelisted methods
-        allowed_attrs = get_allowed_attributes_for_instance(self.agent, value)
-        if attr_name in allowed_attrs:
-            try:
-                return getattr(value, attr_name)
-            except AttributeError:
-                raise AgexAttributeError(
-                    f"'{type(value).__name__}' object has no attribute '{attr_name}'",
-                    node,
-                )
-
-        raise AgexAttributeError(
-            f"'{type(value).__name__}' object has no attribute '{attr_name}'", node
-        )
+        return self.resolver.resolve_attribute(value, node.attr, node)
 
     def visit_Slice(self, node: ast.Slice) -> slice:
         """Handles slice objects."""

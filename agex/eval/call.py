@@ -179,8 +179,20 @@ class CallEvaluator(BaseEvaluator):
             if isinstance(fn, (AgexClass, AgexDataClass)):
                 return fn(*args, **kwargs)
 
+            # Legacy direct UserFunction execution path (explicit to handle signature)
             if isinstance(fn, UserFunction):
                 return fn.execute(args, kwargs, self.source_code, parent_evaluator=self)
+
+            # If this is a dual-decorated function needing state injection, route via proxy
+            if hasattr(fn, "__agex_task_namespace__"):
+                from .functions import TaskProxy
+
+                proxy = TaskProxy(self, getattr(fn, "fn", fn))
+                return proxy.execute(args, kwargs)
+
+            # If function has a unified execute() hook, use it
+            if hasattr(fn, "execute") and callable(getattr(fn, "execute")):
+                return fn.execute(args, kwargs)  # type: ignore[attr-defined]
 
             if not callable(fn):
                 fn_name_for_error = getattr(
@@ -189,37 +201,6 @@ class CallEvaluator(BaseEvaluator):
                 raise AgexError(f"'{fn_name_for_error}' is not callable.", node)
 
                 # Check if this is a dual-decorated function needing state injection
-            if hasattr(fn, "__agex_task_namespace__"):
-                # Create hierarchical namespaced state for sub-agent
-                namespace = fn.__agex_task_namespace__
-
-                # If current state is a base storage type (Versioned, Namespaced, Live), use it directly
-                # If current state is transient (Scoped, LiveClosureState), find underlying base state
-                from ..state import Live, Versioned
-                from ..state import Namespaced as NamespacedState
-
-                if isinstance(self.state, (Versioned, NamespacedState, Live)):
-                    parent_state = self.state
-                else:
-                    # Use base_store to find underlying base state
-                    parent_state = self.state.base_store
-
-                namespaced_state = NamespacedState(parent_state, namespace)  # type: ignore
-                kwargs["state"] = namespaced_state
-
-                # Propagate the event handler to the sub-agent call
-                if self.on_event:
-                    kwargs["on_event"] = self.on_event
-
-                # Measure sub-agent call time to deduct from parent timeout
-                import time
-
-                sub_agent_start = time.time()
-                try:
-                    result = fn(*args, **kwargs)
-                finally:
-                    sub_agent_duration = time.time() - sub_agent_start
-                    self.add_sub_agent_time(sub_agent_duration)
             else:
                 # Regular function call - no timer changes needed
                 # For external functions, unwrap BoundInstanceObject arguments
