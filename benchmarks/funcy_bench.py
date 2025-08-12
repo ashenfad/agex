@@ -5,9 +5,7 @@ Benchmark for examples/funcy.py - Simple Function Generation
 import math
 from typing import Callable
 
-from IPython.display import display
-
-from agex import Agent, Versioned, connect_llm
+from agex import Agent, connect_llm
 from agex.bench import Trial, benchmark_pass_fail, params
 
 

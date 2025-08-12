@@ -3,11 +3,13 @@ Benchmark for Excel Analysis - Data Processing and Business Intelligence
 Tests agent's ability to analyze business data using pandas operations.
 """
 
-import pandas as pd
 from typing import Callable
+
+import pandas as pd
 import pytest
 from IPython.display import display
-from agex import Agent, connect_llm, Event, TaskStartEvent
+
+from agex import Agent, connect_llm
 from agex.bench import Trial, benchmark_pass_fail, params
 from agex.helpers import register_pandas, register_stdlib
 
@@ -151,7 +153,8 @@ def main():
             # make_task("qwen3:8b"),
             # make_task("qwen3:14b"),
             # make_task("qwen3-coder:30b"),
-            make_task("gpt-4.1-nano"),
+            # make_task("gpt-4.1-nano"),
+            make_task("gpt-5-nano"),
         ],
         trials=trials * 2,  # Run each test case 2 times
         max_concurrency=1,
@@ -212,3 +215,8 @@ if __name__ == "__main__":
 # Completed trials: 10/10
 # Passed trials: 10/10
 # Actions per trial: 1.8
+#
+# Task: <agex.task analyst-gpt-5-nano/analyze_sales_data at 0x119e07380>
+# Completed trials: 10/10
+# Passed trials: 10/10
+# Actions per trial: 2.7
