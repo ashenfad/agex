@@ -12,6 +12,8 @@ Agent(
     max_tokens: int = 2**16,
     name: str | None = None,
     llm_client: LLMClient | None = None,
+    llm_max_retries: int = 2,
+    llm_retry_backoff: float = 0.25,
 )
 ```
 
@@ -25,6 +27,8 @@ Agent(
 | `max_tokens` | `int` | `65536` | Maximum tokens for context rendering |
 | `name` | `str | None` | `None` | Unique identifier for the agent (auto-generated if not provided) |
 | `llm_client` | `LLMClient | None` | `None` | An instantiated `LLMClient` for the agent to use. If `None`, a default client is created. |
+| `llm_max_retries` | `int` | `2` | Number of times to retry a failed LLM completion before aborting with `LLMFail`. |
+| `llm_retry_backoff` | `float` | `0.25` | Initial backoff (seconds) between retries. Backoff grows exponentially per attempt. |
 
 ### Examples
 

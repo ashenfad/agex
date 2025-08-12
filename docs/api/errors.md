@@ -99,6 +99,24 @@ except TaskTimeout as e:
     # or the task complexity exceeds the iteration limit
 ```
 
+### `LLMFail` (framework)
+
+Raised when the configured LLM client fails to return a usable response after the agent automatically retries.
+
+This is a framework-level, uncatchable control exception (like `TaskTimeout`) intended to abort the loop. The task did not run to completion due to infrastructure/provider failure rather than agent logic.
+
+When retries are enabled (default), the agent emits an `ErrorEvent` per failed attempt with `recoverable=True`, and a final `ErrorEvent` with `recoverable=False` before raising `LLMFail`.
+
+Attributes:
+- `message: str` – last error message from the client/provider
+- `provider: str | None` – provider name (e.g., "OpenAI")
+- `model: str | None` – model identifier
+- `retries: int` – number of retry attempts performed
+
+Notes:
+- Configure retries via `Agent(llm_max_retries=..., llm_retry_backoff=...)`.
+- Transient errors (timeouts/network/parse) are retried with exponential backoff; fatal errors (auth/config) fail immediately.
+
 ## Error Propagation
 
 Error behavior depends on who calls the agent task:

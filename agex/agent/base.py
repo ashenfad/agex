@@ -75,6 +75,9 @@ class BaseAgent:
         name: str | None = None,
         # LLM configuration (optional, uses smart defaults)
         llm_client: LLMClient | None = None,
+        # LLM retry controls
+        llm_max_retries: int = 2,
+        llm_retry_backoff: float = 0.25,
     ):
         self.name = name or _random_name()
         self.primer = primer
@@ -84,6 +87,9 @@ class BaseAgent:
 
         # Create LLM client using the resolved configuration
         self.llm_client = llm_client or connect_llm()
+        # LLM retry settings
+        self.llm_max_retries = llm_max_retries
+        self.llm_retry_backoff = llm_retry_backoff
 
         # private, host-side registry for live, unpickleable objects
         self._host_object_registry: dict[str, Any] = {}

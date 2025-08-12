@@ -59,6 +59,9 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         name: str | None = None,
         # LLM configuration (optional, uses smart defaults)
         llm_client: LLMClient | None = None,
+        # LLM retry controls
+        llm_max_retries: int = 2,
+        llm_retry_backoff: float = 0.25,
     ):
         """
         An agent that can be used to execute tasks.
@@ -78,4 +81,6 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             max_tokens,
             name=name,
             llm_client=llm_client,
+            llm_max_retries=llm_max_retries,
+            llm_retry_backoff=llm_retry_backoff,
         )

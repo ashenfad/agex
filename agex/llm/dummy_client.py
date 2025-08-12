@@ -16,7 +16,9 @@ class DummyLLMClient(LLMClient):
     Useful for testing agent logic without actual LLM calls.
     """
 
-    def __init__(self, responses: List[LLMResponse] | None = None, **kwargs):
+    def __init__(
+        self, responses: List[LLMResponse | Exception] | None = None, **kwargs
+    ):
         """
         Initialize with a sequence of LLMResponse objects to return.
 
@@ -44,9 +46,13 @@ class DummyLLMClient(LLMClient):
         # Store the received messages for test inspection
         self.all_messages.append(messages)
 
-        # Get the next response in the cycle
-        response = self.responses[self.call_count % len(self.responses)].model_copy()
+        # Get the next item in the cycle
+        item = self.responses[self.call_count % len(self.responses)]
         self.call_count += 1
+        # If the item is an exception, raise it to simulate client failure
+        if isinstance(item, Exception):
+            raise item
+        response = item.model_copy()
 
         # Check for any multimodal messages to simulate vision processing
         has_images = any(

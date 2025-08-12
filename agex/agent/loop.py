@@ -13,6 +13,7 @@ from agex.agent.conversation import (
     conversation_log,
 )
 from agex.agent.datatypes import (
+    LLMFail,
     TaskClarify,
     TaskContinue,
     TaskFail,
@@ -91,7 +92,7 @@ class TaskLoopMixin(BaseAgent):
         if "__event_log__" not in exec_state:
             exec_state.set("__event_log__", [])
 
-        events_yielded = len(events(exec_state))
+        events_yielded = len(events(exec_state))  # type: ignore
 
         # Build system message (always static, never stored in state)
         system_message = self._build_system_message()
@@ -151,9 +152,8 @@ class TaskLoopMixin(BaseAgent):
             # Reconstruct conversation from state
             messages = conversation_log(exec_state, system_message, self)
 
-            # Get LLM response and determine what code to evaluate
-            # Try to get structured response first
-            llm_response = self._get_llm_response(messages)
+            # Get LLM response with built-in retry and event emission
+            llm_response = self._get_llm_response(messages, exec_state, on_event)
             code_to_evaluate = llm_response.code
 
             # Store assistant response in event log and yield immediately
@@ -243,6 +243,9 @@ class TaskLoopMixin(BaseAgent):
                 else:
                     # We're top-level, re-raise the TaskFail
                     raise
+            except LLMFail:
+                # Emit fatal ErrorEvent already done in _get_llm_response; propagate
+                raise
             except _AgentExit:
                 # Before handling exit, yield any evaluation events first
                 events_yielded = yield from self._yield_new_events(
@@ -421,6 +424,38 @@ class TaskLoopMixin(BaseAgent):
             docstring, inputs_dataclass, inputs_instance, return_type
         )
 
-    def _get_llm_response(self, messages):
-        """Get structured response from the agent's configured LLM client."""
-        return self.llm_client.complete(messages)
+    def _get_llm_response(self, messages, exec_state, on_event):
+        """Get structured response with retry; emit ErrorEvent per attempt."""
+        import time
+
+        from agex.agent.events import ErrorEvent
+        from agex.llm.core import ResponseParseError
+
+        max_retries = max(0, self.llm_max_retries)
+        backoff = max(0.0, self.llm_retry_backoff)
+        provider = self.llm_client.provider_name
+        model = self.llm_client.model
+
+        attempt = 0
+        while True:
+            try:
+                return self.llm_client.complete(messages)
+            except (ResponseParseError, RuntimeError) as e:
+                is_last = attempt >= max_retries
+                # Emit recoverable for retries, fatal for last
+                err = ErrorEvent(
+                    agent_name=self.name,
+                    error=e,
+                    recoverable=not is_last,
+                )
+                from agex.state.log import add_event_to_log
+
+                add_event_to_log(exec_state, err, on_event=on_event)
+                if is_last:
+                    raise LLMFail(
+                        message=str(e), provider=provider, model=model, retries=attempt
+                    )
+                # Backoff and retry
+                sleep_secs = backoff * (2**attempt)
+                time.sleep(sleep_secs)
+                attempt += 1

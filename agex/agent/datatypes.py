@@ -50,6 +50,16 @@ class TaskTimeout(_AgentExit):
 
 
 @dataclass
+class LLMFail(_AgentExit):
+    """Uncatchable signal that the LLM call failed (after retries)."""
+
+    message: str
+    provider: str | None = None
+    model: str | None = None
+    retries: int = 0
+
+
+@dataclass
 class MemberSpec:
     visibility: Visibility | None = None
     docstring: str | None = None
