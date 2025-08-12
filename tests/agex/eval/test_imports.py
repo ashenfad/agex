@@ -64,3 +64,57 @@ def test_module_import_with_alias():
     # Importing a similarly named module should also fail.
     with pytest.raises(EvalError):
         eval_and_get_state("import random", agent=agent)
+
+
+def test_numpy_random_normal_resolution_with_alias_and_full_path():
+    """
+    Reproduces attribute resolution for submodules: np.random.normal and numpy.random.normal.
+    Previously failed with "module has no attribute 'normal'" when submodule wasn't wrapped as AgexModule.
+    """
+    from agex.llm.dummy_client import DummyLLMClient, LLMResponse
+
+    clear_agent_registry()
+    # 1) Alias path: import np; np.random.normal
+    llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="Will import np and call np.random.normal",
+                code=(
+                    "import np\n"
+                    "noise = np.random.normal(0, 5, size=12)\n"
+                    "task_success(True)"
+                ),
+            )
+        ]
+    )
+    agent = Agent(name="test_agent", max_iterations=2, llm_client=llm_client)
+    agent.module(np, name="np")
+    agent.module(np.random)
+
+    @agent.task("Return True if noise vector can be generated")
+    def make_noise_alias() -> bool:  # type: ignore[return-value]
+        pass
+
+    assert make_noise_alias() is True
+
+    # 2) Full path: import numpy; numpy.random.normal
+    llm_client2 = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="Will import numpy and call numpy.random.normal",
+                code=(
+                    "import numpy\n"
+                    "noise = numpy.random.normal(0, 5, size=12)\n"
+                    "task_success(True)"
+                ),
+            )
+        ]
+    )
+    agent2 = Agent(name="test_agent2", max_iterations=2, llm_client=llm_client2)
+    agent2.module(np, name="numpy", recursive=True)
+
+    @agent2.task("Return True if noise vector can be generated")
+    def make_noise_full() -> bool:  # type: ignore[return-value]
+        pass
+
+    assert make_noise_full() is True

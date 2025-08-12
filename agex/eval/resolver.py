@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import ModuleType
 from typing import Any
 
 from agex.agent.policy.resolve import make_predicate
@@ -109,16 +110,51 @@ class Resolver:
 
         # AgexModule attribute access with JIT resolution
         if isinstance(value, AgexModule):
+            # Prefer exact namespace match
             res = self.agent._policy.resolve_module_member(value.name, attr_name)
+            # If no exact match, try resolving against the nearest registered parent namespace
+            if res is None and "." in value.name:
+                # Find longest namespace that is a prefix of value.name
+                parent_ns_name = None
+                for ns_name in sorted(
+                    self.agent._policy.namespaces.keys(), key=len, reverse=True
+                ):  # type: ignore[attr-defined]
+                    if value.name.startswith(ns_name + "."):
+                        parent_ns_name = ns_name
+                        break
+                if parent_ns_name is not None:
+                    # Compose a dotted member path relative to the parent module
+                    suffix = value.name[len(parent_ns_name) + 1 :]
+                    dotted_member = suffix + "." + attr_name
+                    res = self.agent._policy.resolve_module_member(
+                        parent_ns_name, dotted_member
+                    )
             if res is None:
                 raise AgexAttributeError(
                     f"module '{value.name}' has no attribute '{attr_name}'", node
                 )
-            return (
-                getattr(res, "fn", None)
-                or getattr(res, "cls", None)
-                or getattr(res, "value", None)
-            )
+            # If the resolved member is a submodule, prefer an existing registered
+            # namespace for that module (supports independent submodule registration).
+            submod = getattr(res, "value", None)
+            if isinstance(submod, ModuleType):
+                # Look for a namespace whose loaded module object matches this submodule
+                for ns_name, ns in getattr(self.agent._policy, "namespaces").items():  # type: ignore[attr-defined]
+                    if getattr(ns, "kind", None) == "module":
+                        try:
+                            loaded = ns._ensure_module_loaded()
+                        except Exception:
+                            continue
+                        if loaded is submod:
+                            return AgexModule(
+                                name=ns_name,
+                                agent_fingerprint=self.agent.fingerprint,
+                            )
+                # Otherwise, wrap as a dotted child of the current module name
+                return AgexModule(
+                    name=f"{value.name}.{attr_name}",
+                    agent_fingerprint=self.agent.fingerprint,
+                )
+            return getattr(res, "fn", None) or getattr(res, "cls", None) or submod
 
         # Check for registered host classes and whitelisted methods on Python objects
         allowed_attrs = get_allowed_attributes_for_instance(self.agent, value)
