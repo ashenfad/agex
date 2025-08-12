@@ -189,8 +189,13 @@ def test_dir_no_args_includes_object_names():
     # Set up state for direct evaluation
     exec_state = Live()
 
-    # Add the object to scope (this would normally happen via name resolution)
-    exec_state.set("db", agent.object_registry["db"])
+    # Add the object to scope (this would normally happen via resolver)
+    # Use the BoundInstanceObject built by resolver policy path
+    from agex.eval.resolver import Resolver
+
+    resolver = Resolver(agent)
+    bound = resolver.resolve_name("db", exec_state, None)
+    exec_state.set("db", bound)
 
     # Test dir() with no arguments
     code = """
@@ -426,9 +431,14 @@ def test_automatic_instance_attribute_detection():
     # Register class with default wildcard pattern
     agent.cls(MockChildClass)
 
-    # Check what attributes were detected
-    spec = agent.cls_registry_by_type[MockChildClass]
-    attrs = set(spec.attrs.keys())
+    # Check what attributes were detected via policy
+    main = agent._policy.namespaces.get("__main__")
+    rc = main.classes["MockChildClass"]
+    from agex.agent.policy.describe import describe_class
+
+    ns = agent._policy._class_namespaces[rc.cls]
+    desc = describe_class(rc.cls, ns, include_low=True)
+    attrs = {k for k, v in (desc.members or {}).items() if v.kind == "obj"}
 
     # Should include attributes from both parent and child classes
     assert "inherited_attr1" in attrs
@@ -443,9 +453,14 @@ def test_explicit_include_overrides_automatic_detection():
     # Register class with explicit include list
     agent.cls(MockChildClass, include=["child_attr"])
 
-    # Check what attributes were registered
-    spec = agent.cls_registry_by_type[MockChildClass]
-    attrs = list(spec.attrs.keys())
+    # Check what attributes were registered via policy description
+    main = agent._policy.namespaces.get("__main__")
+    rc = main.classes["MockChildClass"]
+    from agex.agent.policy.describe import describe_class
+
+    ns = agent._policy._class_namespaces[rc.cls]
+    desc = describe_class(rc.cls, ns, include_low=True)
+    attrs = [k for k, v in (desc.members or {}).items() if v.kind == "obj"]
 
     # Should only include explicitly listed attribute
     assert attrs == ["child_attr"]

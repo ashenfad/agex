@@ -1,5 +1,3 @@
-import ast
-import fnmatch
 import inspect
 from types import ModuleType
 from typing import Any, Callable, TypeVar, overload
@@ -9,64 +7,12 @@ from agex.agent.datatypes import (
     RESERVED_NAMES,
     MemberSpec,
     Pattern,
-    RegisteredClass,
-    RegisteredFn,
-    RegisteredModule,
-    RegisteredObject,
     Visibility,
 )
+from agex.agent.policy.resolve import make_predicate
+from agex.agent.utils import get_instance_attributes_from_init
 from agex.eval.functions import UserFunction
 from agex.eval.objects import AgexModule
-
-
-def create_predicate(pattern: Pattern | None) -> Callable[[str], bool]:
-    """Creates a predicate function that matches names against a pattern."""
-    if pattern is None:
-        return lambda name: False
-    if isinstance(pattern, str):
-        return lambda name: fnmatch.fnmatch(name, pattern)
-    if isinstance(pattern, (list, set)):
-        return lambda name: any(create_predicate(p)(name) for p in pattern)
-    raise TypeError(f"Invalid pattern type: {type(pattern)}")
-
-
-def _get_instance_attributes_from_init(cls: type) -> set[str]:
-    """Extract instance attributes from __init__ methods across the entire MRO."""
-    attributes = set()
-
-    # Check all classes in the Method Resolution Order
-    for base_cls in cls.__mro__:
-        if not hasattr(base_cls, "__init__") or base_cls.__init__ is object.__init__:
-            continue
-
-        try:
-            source = inspect.getsource(base_cls.__init__)
-            # Remove common leading whitespace to make it parseable
-            import textwrap
-
-            source = textwrap.dedent(source)
-
-            tree = ast.parse(source)
-
-            class AttributeVisitor(ast.NodeVisitor):
-                def visit_Assign(self, node):
-                    for target in node.targets:
-                        if isinstance(target, ast.Attribute):
-                            if (
-                                isinstance(target.value, ast.Name)
-                                and target.value.id == "self"
-                            ):
-                                attributes.add(target.attr)
-                    self.generic_visit(node)
-
-            visitor = AttributeVisitor()
-            visitor.visit(tree)
-        except Exception:
-            # If AST parsing fails for this class, continue with others
-            continue
-
-    return attributes
-
 
 T = TypeVar("T", bound=type)
 
@@ -113,9 +59,14 @@ class RegistrationMixin(BaseAgent):
                     else (f.source_text or user_function_wrapper.__doc__)
                 )
 
-                self.fn_registry[final_name] = RegisteredFn(
-                    fn=user_function_wrapper, visibility=visibility, docstring=final_doc
+                # Register in new policy system
+                self._policy.register_fn(
+                    func=user_function_wrapper,
+                    name=final_name,
+                    visibility=visibility,
+                    docstring=final_doc,
                 )
+
                 self._update_fingerprint()
 
                 # Return the wrapper for consistency
@@ -128,9 +79,13 @@ class RegistrationMixin(BaseAgent):
                         f"The name '{final_name}' is reserved and cannot be registered."
                     )
                 final_doc = docstring if docstring is not None else f.__doc__
-                self.fn_registry[final_name] = RegisteredFn(
-                    fn=f, visibility=visibility, docstring=final_doc
+                self._policy.register_fn(
+                    func=f,
+                    name=final_name,
+                    visibility=visibility,
+                    docstring=final_doc,
                 )
+
                 self._update_fingerprint()
 
                 # Mark as fn-decorated for dual-decorator validation (allow multiple fn decorators)
@@ -207,7 +162,7 @@ class RegistrationMixin(BaseAgent):
 
             # Add instance attributes from __init__ method when using wildcard patterns
             if include == "*" or (isinstance(include, str) and "*" in include):
-                instance_attrs = _get_instance_attributes_from_init(c)
+                instance_attrs = get_instance_attributes_from_init(c)
                 all_members.update(instance_attrs)
 
             if isinstance(include, (list, set)):
@@ -216,8 +171,8 @@ class RegistrationMixin(BaseAgent):
                 all_members.update(include)
 
             # 2. Filter members based on include/exclude patterns
-            include_pred = create_predicate(include)
-            exclude_pred = create_predicate(exclude)
+            include_pred = make_predicate(include)
+            exclude_pred = make_predicate(exclude)
             selected_names = {
                 name
                 for name in all_members
@@ -250,25 +205,25 @@ class RegistrationMixin(BaseAgent):
                 else:
                     final_attrs[member_name] = MemberSpec(visibility=vis, docstring=doc)
 
-            # Create the spec for the current class
-            spec = RegisteredClass(
+            sec_final_configure = {
+                k: MemberSpec(
+                    visibility=(v.visibility if v is not None else None),
+                    docstring=(v.docstring if v is not None else None),
+                    constructable=(v.constructable if v is not None else None),
+                )
+                for k, v in (final_configure or {}).items()
+            }
+
+            self._policy.register_cls(
                 cls=c,
+                name=final_name,
                 visibility=visibility,
                 constructable=constructable,
-                attrs=final_attrs,
-                methods=final_methods,
+                include=include,
+                exclude=exclude,
+                configure=sec_final_configure,
             )
 
-            # Inherit from parent specs if they exist
-            for parent in c.__bases__:
-                # We can only inherit from registered classes
-                parent_spec = self.cls_registry_by_type.get(parent)
-                if parent_spec:
-                    spec.attrs.update(parent_spec.attrs)
-                    spec.methods.update(parent_spec.methods)
-
-            self.cls_registry[final_name] = spec
-            self.cls_registry_by_type[c] = spec
             self._update_fingerprint()
             return c
 
@@ -296,400 +251,121 @@ class RegistrationMixin(BaseAgent):
                 raise TypeError(
                     "The 'recursive' option is only supported for module registration, not for class instances."
                 )
-            self._recursively_register_module(
-                obj,
+            # Validate reserved names
+            final_name = name or (obj.__name__ if isinstance(obj, ModuleType) else None)
+            if final_name in RESERVED_NAMES:
+                raise ValueError(
+                    f"The name '{final_name}' is reserved and cannot be registered."
+                )
+            # Lazy: register a single policy namespace with recursive flag; no eager walk/imports
+            sec_configure = {
+                k: MemberSpec(
+                    visibility=v.visibility,
+                    docstring=v.docstring,
+                    constructable=v.constructable,
+                )
+                for k, v in (configure or {}).items()
+            }
+            self._policy.register_module(
                 name=name,
+                module=obj,
                 visibility=visibility,
                 include=include,
-                exclude=exclude,
-                configure=configure,
+                exclude=tuple(exclude) if isinstance(exclude, list) else exclude,
+                configure=sec_configure,
+                recursive=True,
             )
-            return  # End execution here after recursion
+            self._update_fingerprint()
+            return
 
         # Check if this is an AgexModule (agent registering module from another agent)
-        from agex.eval.objects import AgexModule
 
         if isinstance(obj, AgexModule):
-            # Special case: inherit from parent agent's registration with security intersection
-            inherited_registration = self._handle_agex_module_inheritance(
-                obj, name, visibility, include, exclude
-            )
-            self.importable_modules[inherited_registration.name] = (
-                inherited_registration
-            )
+            # Special case: inherit from parent agent via policy 'inherited' namespace
+            parent_agent = resolve_agent(obj.agent_fingerprint)
+            parent_ns = parent_agent._policy.namespaces.get(obj.name)  # type: ignore[attr-defined]
+            if parent_ns is not None:
+                from agex.agent.policy.datatypes import Namespace
+
+                final_name = name or obj.name
+                if final_name in RESERVED_NAMES:
+                    raise ValueError(
+                        f"The name '{final_name}' is reserved and cannot be registered."
+                    )
+                child_ns = Namespace(
+                    name=final_name,
+                    kind="inherited",
+                    module=parent_ns.module,
+                    visibility=visibility,
+                    include=include,
+                    exclude=tuple(exclude) if isinstance(exclude, list) else exclude,
+                    configure={},
+                    recursive=False,
+                    parent=parent_ns,
+                )
+                self._policy.namespaces[final_name] = child_ns
             self._update_fingerprint()
             return obj  # Return the AgexModule for consistency
 
         # Check if we're dealing with a module or an instance
         elif isinstance(obj, ModuleType):
-            return self._register_module(
-                obj,
+            # Validate reserved names
+            final_name = name or obj.__name__
+            if final_name in RESERVED_NAMES:
+                raise ValueError(
+                    f"The name '{final_name}' is reserved and cannot be registered."
+                )
+            sec_configure = {
+                k: MemberSpec(
+                    visibility=(v.visibility if v is not None else None),
+                    docstring=(v.docstring if v is not None else None),
+                    constructable=(v.constructable if v is not None else None),
+                )
+                for k, v in (configure or {}).items()
+            }
+            self._policy.register_module(
                 name=name,
+                module=obj,
                 visibility=visibility,
                 include=include,
-                exclude=exclude,
-                configure=configure,
+                exclude=tuple(exclude) if isinstance(exclude, list) else exclude,
+                configure=sec_configure,
+                recursive=False,
             )
+            # Fully lazy: rely on policy for rendering/resolution
+            self._update_fingerprint()
+            return obj
         else:
-            return self._register_instance(
-                obj,
-                name=name,
+            sec_configure = {
+                k: MemberSpec(
+                    visibility=(v.visibility if v is not None else None),
+                    docstring=(v.docstring if v is not None else None),
+                    constructable=(v.constructable if v is not None else None),
+                )
+                for k, v in (configure or {}).items()
+            }
+            if name is None:
+                raise TypeError(
+                    "The 'name' parameter is required when registering an instance object."
+                )
+            if name in RESERVED_NAMES:
+                raise ValueError(
+                    f"The name '{name}' is reserved and cannot be registered."
+                )
+            self._policy.register_instance(
+                name=name if name is not None else "",
+                obj=obj,
                 visibility=visibility,
                 include=include,
-                exclude=exclude,
-                configure=configure,
+                exclude=tuple(exclude) if isinstance(exclude, list) else exclude,
+                configure=sec_configure,
                 exception_mappings=exception_mappings,
             )
+            # Store the live instance in the host registry for runtime access
+            self._host_object_registry[name] = obj
+            # Fully lazy: rely on policy for rendering/resolution
+            self._update_fingerprint()
+            return obj
 
-    def _register_module(
-        self,
-        mod: ModuleType,
-        *,
-        name: str | None = None,
-        visibility: Visibility = "high",
-        include: Pattern | None = "*",
-        exclude: Pattern | None = ["_*", "*._*"],
-        configure: dict[str, MemberSpec] | None = None,
-    ):
-        """
-        Registers a module and its members with the agent.
-        """
-        final_name = name or mod.__name__
-        if final_name in RESERVED_NAMES:
-            raise ValueError(
-                f"The name '{final_name}' is reserved and cannot be registered."
-            )
-        final_configure = configure or {}
-
-        # 1. Generate all possible members with dot-notation for class members
-        all_members = set()
-        for member_name, member in inspect.getmembers(mod):
-            if member_name.startswith("@"):
-                continue
-            all_members.add(member_name)
-            if inspect.isclass(member):
-                for class_member_name, _ in inspect.getmembers(member):
-                    if (
-                        not class_member_name.startswith("__")
-                        or class_member_name == "__init__"
-                    ):
-                        all_members.add(f"{member_name}.{class_member_name}")
-
-        # 2. Filter members based on include/exclude patterns
-        include_pred = create_predicate(include)
-        exclude_pred = create_predicate(exclude)
-        selected_names = {
-            name
-            for name in all_members
-            if include_pred(name) and not exclude_pred(name)
-        }
-
-        # 3. Process selected members and apply configurations
-        mod_fns: dict[str, MemberSpec] = {}
-        mod_consts: dict[str, MemberSpec] = {}
-        mod_classes: dict[str, RegisteredClass] = {}
-
-        # Separate class members from top-level members for processing
-        top_level_names = {n for n in selected_names if "." not in n}
-        class_member_names = selected_names - top_level_names
-
-        for member_name in top_level_names:
-            member = getattr(mod, member_name)
-            config = final_configure.get(member_name, MemberSpec())
-            vis = config.visibility or visibility
-            doc = config.docstring
-
-            if inspect.isroutine(member):
-                mod_fns[member_name] = MemberSpec(visibility=vis, docstring=doc)
-            elif inspect.isclass(member):
-                cls_attrs: dict[str, MemberSpec] = {}
-                cls_methods: dict[str, MemberSpec] = {}
-
-                # Determine constructability from config, defaulting to True
-                cls_is_constructable = (
-                    config.constructable if config.constructable is not None else True
-                )
-
-                # Get all members for this specific class from the selection
-                cls_selected_members = {
-                    cm.split(".", 1)[1]
-                    for cm in class_member_names
-                    if cm.startswith(f"{member_name}.")
-                }
-
-                # Also apply the top-level exclude predicate to these members
-                exclude_pred = create_predicate(exclude)
-                cls_selected_members = {
-                    m
-                    for m in cls_selected_members
-                    if not exclude_pred(f"{member_name}.{m}")
-                }
-
-                # Handle __init__ based on constructability, overriding include/exclude
-                if cls_is_constructable:
-                    cls_selected_members.add("__init__")
-                elif "__init__" in cls_selected_members:
-                    cls_selected_members.remove("__init__")
-
-                for short_name in cls_selected_members:
-                    class_member = getattr(member, short_name, None)
-                    if not class_member:
-                        continue
-
-                    cm_config_key = f"{member_name}.{short_name}"
-                    cm_config = final_configure.get(cm_config_key, MemberSpec())
-                    cm_vis = cm_config.visibility or vis
-                    cm_doc = cm_config.docstring
-
-                    if inspect.isroutine(class_member):
-                        cls_methods[short_name] = MemberSpec(
-                            visibility=cm_vis, docstring=cm_doc
-                        )
-                    else:
-                        cls_attrs[short_name] = MemberSpec(
-                            visibility=cm_vis, docstring=cm_doc
-                        )
-
-                mod_classes[member_name] = RegisteredClass(
-                    cls=member,
-                    visibility=vis,
-                    constructable=cls_is_constructable,
-                    attrs=cls_attrs,
-                    methods=cls_methods,
-                )
-            else:  # It's a constant
-                mod_consts[member_name] = MemberSpec(visibility=vis, docstring=doc)
-
-        reg_mod = RegisteredModule(
-            name=final_name,
-            module=mod,
-            visibility=visibility,
-            fns=mod_fns,
-            consts=mod_consts,
-            classes=mod_classes,
-        )
-        self.importable_modules[final_name] = reg_mod
-
-        # Also add all registered classes to the agent's central by-type registry
-        for spec in mod_classes.values():
-            self.cls_registry_by_type[spec.cls] = spec
-
-        self._update_fingerprint()
-
-    def _register_instance(
-        self,
-        obj: Any,
-        *,
-        name: str | None = None,
-        visibility: Visibility = "high",
-        include: Pattern | None = "*",
-        exclude: Pattern | None = ["_*", "*._*"],
-        configure: dict[str, MemberSpec] | None = None,
-        exception_mappings: dict[type, type] | None = None,
-    ):
-        """
-        Registers an instance object and its members with the agent.
-        """
-        if name is None:
-            raise TypeError(
-                "The 'name' parameter is required when registering an instance object."
-            )
-
-        final_name = name
-        if final_name in RESERVED_NAMES:
-            raise ValueError(
-                f"The name '{final_name}' is reserved and cannot be registered."
-            )
-        final_configure = configure or {}
-
-        # Store the live instance in the host registry
-        self._host_object_registry[final_name] = obj
-
-        # 1. Generate all possible members
-        all_members = set()
-        for member_name, member in inspect.getmembers(obj):
-            if not member_name.startswith("@"):
-                all_members.add(member_name)
-
-        # 2. Filter members based on include/exclude patterns
-        include_pred = create_predicate(include)
-        exclude_pred = create_predicate(exclude)
-        selected_names = {
-            name
-            for name in all_members
-            if include_pred(name) and not exclude_pred(name)
-        }
-
-        # 3. Process selected members and apply configurations
-        final_methods: dict[str, MemberSpec] = {}
-        final_properties: dict[str, MemberSpec] = {}
-
-        for member_name in selected_names:
-            member = getattr(obj, member_name)
-            config = final_configure.get(member_name, MemberSpec())
-            vis = config.visibility or visibility
-            doc = config.docstring
-
-            if callable(member):
-                final_methods[member_name] = MemberSpec(visibility=vis, docstring=doc)
-            else:
-                final_properties[member_name] = MemberSpec(
-                    visibility=vis, docstring=doc
-                )
-
-        # Create the serializable RegisteredObject configuration
-        reg_object = RegisteredObject(
-            name=final_name,
-            visibility=visibility,
-            methods=final_methods,
-            properties=final_properties,
-            exception_mappings=exception_mappings or {},
-        )
-
-        # Add it to the object registry
-        self.object_registry[final_name] = reg_object
-        self._update_fingerprint()
-
-    def _recursively_register_module(
-        self,
-        base_module: ModuleType,
-        *,
-        name: str | None,
-        visibility: Visibility,
-        include: Pattern | None,
-        exclude: Pattern | None,
-        configure: dict[str, MemberSpec] | None,
-    ):
-        """Recursively discover and register all sub-modules of a given base module."""
-        import importlib
-        import pkgutil
-
-        # Register the root module first
-        self._register_module(
-            base_module,
-            name=name,
-            visibility=visibility,
-            include=include,
-            exclude=exclude,
-            configure=configure,
-        )
-
-        # Walk the package to find all sub-modules
-        # We need at least one path to start walking
-        if not hasattr(base_module, "__path__"):
-            return  # Not a package, nothing to recurse
-
-        for module_info in pkgutil.walk_packages(
-            base_module.__path__, prefix=base_module.__name__ + "."
-        ):
-            if module_info.name.split(".")[-1].startswith("_"):
-                continue  # Skip private modules
-
-            try:
-                sub_module = importlib.import_module(module_info.name)
-                # Register each submodule using the same settings
-                self._register_module(
-                    sub_module,
-                    visibility=visibility,
-                    include=include,
-                    exclude=exclude,
-                    configure=configure,
-                )
-            except ImportError:
-                # Silently ignore modules that can't be imported
-                continue
-
-    def _handle_agex_module_inheritance(
-        self,
-        agex_module: AgexModule,
-        name: str | None,
-        visibility: Visibility,
-        include: Pattern | None,
-        exclude: Pattern | None,
-    ) -> RegisteredModule:
-        """
-        Handle security inheritance when registering an AgexModule from a parent agent.
-
-        Args:
-            agex_module: The AgexModule from a parent agent
-            name: Optional name override
-            visibility: Visibility level
-            include: Include pattern for member filtering
-            exclude: Exclude pattern for member filtering
-
-        Returns:
-            RegisteredModule with inherited, filtered permissions
-
-        Raises:
-            ValueError: If security inheritance fails or no members are approved
-        """
-        if not agex_module.agent_fingerprint:
-            # TODO: Handle closure-frozen AgexModules gracefully
-            # When UserFunctions with modules in closures get pickled/unpickled,
-            # the modules become AgexModule(agent_fingerprint=""). We should
-            # allow graceful fallback to direct registration rather than inheritance.
-            raise ValueError(
-                f"AgexModule '{agex_module.name}' has no parent agent for security inheritance"
-            )
-
-        # Resolve parent agent to get its registration
-        parent_agent = resolve_agent(agex_module.agent_fingerprint)
-        parent_registration = parent_agent.importable_modules.get(agex_module.name)
-
-        if not parent_registration:
-            raise ValueError(
-                f"Module '{agex_module.name}' is not registered with parent agent"
-            )
-
-        # Get parent's approved member set (combine fns, consts, and classes)
-        parent_approved = set()
-        parent_approved.update(parent_registration.fns.keys())
-        parent_approved.update(parent_registration.consts.keys())
-        parent_approved.update(parent_registration.classes.keys())
-
-        # Apply include/exclude filters to determine what child agent wants
-        include_pred = create_predicate(include)
-        exclude_pred = create_predicate(exclude)
-
-        # Start with all parent-approved members
-        child_requested = {
-            name
-            for name in parent_approved
-            if include_pred(name) and not exclude_pred(name)
-        }
-
-        # Security inheritance: intersection of parent's approval and child's request
-        final_allowed = parent_approved.intersection(child_requested)
-
-        if not final_allowed:
-            raise ValueError(
-                f"No members approved for inheritance. Parent allows: {sorted(parent_approved)}, "
-                f"child requested: {sorted(child_requested)}"
-            )
-
-        # Create new registration with inherited permissions by filtering parent's registrations
-        final_name = name or agex_module.name
-        if final_name in RESERVED_NAMES:
-            raise ValueError(
-                f"The name '{final_name}' is reserved and cannot be registered."
-            )
-
-        # Filter parent's registrations to only include allowed members
-        inherited_fns = {
-            k: v for k, v in parent_registration.fns.items() if k in final_allowed
-        }
-        inherited_consts = {
-            k: v for k, v in parent_registration.consts.items() if k in final_allowed
-        }
-        inherited_classes = {
-            k: v for k, v in parent_registration.classes.items() if k in final_allowed
-        }
-
-        return RegisteredModule(
-            name=final_name,
-            module=parent_registration.module,  # Same underlying module
-            visibility=visibility,
-            fns=inherited_fns,
-            consts=inherited_consts,
-            classes=inherited_classes,
-        )
+    # NOTE: `_handle_agex_module_inheritance` removed. Inheritance is handled lazily
+    # via a child policy namespace of kind "inherited" created in `module()`.

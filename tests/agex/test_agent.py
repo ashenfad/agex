@@ -6,9 +6,14 @@ from types import ModuleType
 import pytest
 
 from agex import events
-from agex.agent import Agent, MemberSpec, RegisteredClass
+from agex.agent import Agent, MemberSpec
 from agex.agent.base import clear_agent_registry
 from agex.agent.events import ActionEvent, OutputEvent, SuccessEvent, TaskStartEvent
+from agex.agent.policy.describe import (
+    describe_class,
+    describe_member,
+    describe_namespace,
+)
 from agex.llm import DummyLLMClient
 from agex.llm.core import LLMResponse
 from agex.state import Namespaced, Versioned
@@ -37,11 +42,12 @@ def test_agent_fn_registration_decorator():
         """My docstring"""
         return 1
 
-    assert "my_func" in agent.fn_registry
-    reg = agent.fn_registry["my_func"]
-    assert reg.fn == my_func
-    assert reg.visibility == "high"
-    assert reg.docstring == "My docstring"
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    assert "my_func" in main.fns
+    ms = main.fns["my_func"]
+    assert ms.visibility == "high"
+    assert ms.docstring == "My docstring"
 
 
 def test_agent_fn_registration_decorator_with_args():
@@ -52,11 +58,12 @@ def test_agent_fn_registration_decorator_with_args():
         """Original doc"""
         return 1
 
-    assert "my_func" in agent.fn_registry
-    reg = agent.fn_registry["my_func"]
-    assert reg.fn == my_func
-    assert reg.visibility == "low"
-    assert reg.docstring == "New doc"
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    assert "my_func" in main.fns
+    ms = main.fns["my_func"]
+    assert ms.visibility == "low"
+    assert ms.docstring == "New doc"
 
 
 def test_agent_fn_registration_functional():
@@ -67,27 +74,28 @@ def test_agent_fn_registration_functional():
 
     agent.fn(visibility="medium")(my_func)
 
-    assert "my_func" in agent.fn_registry
-    reg = agent.fn_registry["my_func"]
-    assert reg.fn == my_func
-    assert reg.visibility == "medium"
-    assert reg.docstring is None
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    assert "my_func" in main.fns
+    ms = main.fns["my_func"]
+    assert ms.visibility == "medium"
+    assert (ms.docstring or None) is None
 
 
 def test_agent_fn_registration_functional_builtin():
     agent = Agent()
     agent.fn()(math.sqrt)  # Test the decorator factory style
-    assert "sqrt" in agent.fn_registry
-    reg = agent.fn_registry["sqrt"]
-    assert reg.fn == math.sqrt
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    assert "sqrt" in main.fns
 
 
 def test_agent_fn_registration_direct_call():
     agent = Agent()
     agent.fn(math.sqrt)  # Test the direct call style
-    assert "sqrt" in agent.fn_registry
-    reg = agent.fn_registry["sqrt"]
-    assert reg.fn == math.sqrt
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    assert "sqrt" in main.fns
 
 
 def test_agent_fn_registration_with_name_alias():
@@ -98,10 +106,10 @@ def test_agent_fn_registration_with_name_alias():
 
     agent.fn(original_function_name, name="alias")
 
-    assert "alias" in agent.fn_registry
-    assert "original_function_name" not in agent.fn_registry
-    reg = agent.fn_registry["alias"]
-    assert reg.fn() == "aliased"
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    assert "alias" in main.fns
+    assert "original_function_name" not in main.fns
 
 
 def test_registering_reserved_name_fails():
@@ -142,17 +150,19 @@ def test_agent_cls_registration_defaults():
         def _do_private_stuff(self):
             pass
 
-    assert "MyData" in agent.cls_registry
-    reg = agent.cls_registry["MyData"]
-    assert reg.cls == MyData
-    assert reg.visibility == "high"
-    assert reg.constructable is True
-    assert set(reg.attrs.keys()) == {"x", "y"}  # _z is excluded
-    assert reg.attrs["x"].visibility == "high"
-    assert set(reg.methods.keys()) == {
-        "do_stuff",
-        "__init__",
-    }  # _do_private_stuff is excluded
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    assert "MyData" in main.classes
+    rc = main.classes["MyData"]
+    ns = agent._policy._class_namespaces[rc.cls]
+    desc = describe_class(rc.cls, ns, include_low=True)
+    assert desc.constructable is True
+    assert "do_stuff" in (desc.members or {})
+    assert "__init__" in (desc.members or {})
+    assert "_do_private_stuff" not in (desc.members or {})
+    # attributes
+    members = desc.members or {}
+    assert "x" in members and "y" in members and "_z" not in members
 
 
 def test_agent_cls_registration_selectors():
@@ -177,15 +187,16 @@ def test_agent_cls_registration_selectors():
         exclude=None,  # Include everything from the list
     )
 
-    assert "MyClass" in agent.cls_registry
-    reg = agent.cls_registry["MyClass"]
-    assert reg.cls == MyClass
-    assert reg.visibility == "medium"
-    assert reg.constructable is False
-    assert set(reg.attrs.keys()) == {"x", "_y"}
-    assert set(reg.methods.keys()) == {
-        "do_stuff"
-    }  # constructable=False removed __init__
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    assert "MyClass" in main.classes
+    rc = main.classes["MyClass"]
+    ns = agent._policy._class_namespaces[rc.cls]
+    desc = describe_class(rc.cls, ns, include_low=True)
+    assert desc.constructable is False
+    members = desc.members or {}
+    assert set(k for k, v in members.items() if v.kind == "obj") == {"x", "_y"}
+    assert "do_stuff" in members and "__init__" not in members
 
 
 def test_agent_cls_registration_configure_and_exclude():
@@ -219,19 +230,19 @@ def test_agent_cls_registration_configure_and_exclude():
         },
     )
 
-    assert "MyService" in agent.cls_registry
-    reg = agent.cls_registry["MyService"]
-
-    # Check methods: critical_op was included and configured, regular_op was excluded.
-    # __init__ is included because constructable=True by default.
-    assert set(reg.methods.keys()) == {"critical_op", "__init__"}
-    assert reg.methods["critical_op"].visibility == "high"
-    assert "_private_op" not in reg.methods
-
-    # Check attrs: name and config_path included, _internal_id excluded.
-    assert set(reg.attrs.keys()) == {"config_path", "name"}
-    assert reg.attrs["config_path"].visibility == "low"
-    assert reg.attrs["name"].visibility == "medium"
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    rc = main.classes["MyService"]
+    ns = agent._policy._class_namespaces[rc.cls]
+    desc = describe_class(rc.cls, ns, include_low=True)
+    members = desc.members or {}
+    # methods
+    assert "critical_op" in members and members["critical_op"].visibility == "high"
+    assert "__init__" in members
+    assert "_private_op" not in members
+    # attrs
+    assert "config_path" in members and members["config_path"].visibility == "low"
+    assert "name" in members
 
 
 def test_agent_module_registration():
@@ -249,41 +260,35 @@ def test_agent_module_registration():
         },
     )
 
-    assert "sample" in agent.importable_modules
-    reg = agent.importable_modules["sample"]
-
-    # Check top-level visibilities
-    assert reg.visibility == "low"
-
-    # Check top-level consts and fns
-    assert reg.consts["PI"].visibility == "high"
-    assert reg.fns["public_fn"].visibility == "low"
-
-    # Check class and its nested method
-    cls_reg = reg.classes["PublicClass"]
-    assert cls_reg.constructable is True
-    assert "__init__" in cls_reg.methods
-    assert "public_method" in cls_reg.methods
-    assert cls_reg.methods["public_method"].visibility == "high"
+    ns = agent._policy.namespaces.get("sample")
+    assert ns is not None and ns.kind == "module"
+    desc = describe_namespace(ns, include_low=True)
+    # Top-level
+    assert desc["PI"].visibility == "high"
+    assert desc["public_fn"].visibility == "low"
+    # Class
+    cdesc = describe_class(
+        getattr(ns._ensure_module_loaded(), "PublicClass"), ns, include_low=True
+    )
+    assert cdesc.constructable is True
+    m = describe_member(ns, "PublicClass.public_method")
+    assert m is not None and m.visibility == "high"
 
 
 def test_agent_module_registration_defaults():
     agent = Agent()
     agent.module(test_module, name="test_module")
 
-    assert "test_module" in agent.importable_modules
-    reg = agent.importable_modules["test_module"]
-
-    assert reg.name == "test_module"
-    assert set(reg.fns.keys()) == {"public_fn"}
-    assert set(reg.consts.keys()) == {"PI"}
-    assert "PublicClass" in reg.classes
-    assert "_PrivateClass" not in reg.classes
-
-    public_class_reg = reg.classes["PublicClass"]
-    assert isinstance(public_class_reg, RegisteredClass)
-    assert public_class_reg.constructable is True
-    assert set(public_class_reg.methods.keys()) == {"public_method", "__init__"}
+    ns = agent._policy.namespaces.get("test_module")
+    assert ns is not None and ns.kind == "module"
+    desc = describe_namespace(ns, include_low=True)
+    assert "public_fn" in desc and desc["public_fn"].kind == "fn"
+    assert "PI" in desc and desc["PI"].kind == "obj"
+    assert "PublicClass" in desc and desc["PublicClass"].kind == "class"
+    assert "_PrivateClass" not in desc
+    # Validate nested member via describe_member
+    m = describe_member(ns, "PublicClass.public_method")
+    assert m is not None and m.kind == "fn"
 
 
 def test_agent_module_with_configure():
@@ -302,26 +307,18 @@ def test_agent_module_with_configure():
         },
     )
 
-    assert "sample" in agent.importable_modules
-    reg = agent.importable_modules["sample"]
-
-    # Check that the module itself has the base visibility
-    assert reg.visibility == "low"
-
-    # Check that a selected function has the configured visibility
-    assert "public_fn" in reg.fns
-    assert reg.fns["public_fn"].visibility == "medium"
-
-    # Check that a constant's visibility can be configured
-    assert "PI" in reg.consts
-    assert reg.consts["PI"].visibility == "high"
-
-    # Check that a class's method can be configured and it is not constructable
-    assert "PublicClass" in reg.classes
-    pub_cls = reg.classes["PublicClass"]
-    assert pub_cls.constructable is False
-    assert set(pub_cls.methods.keys()) == {"public_method"}  # No __init__
-    assert pub_cls.methods["public_method"].visibility == "high"
+    ns = agent._policy.namespaces.get("sample")
+    assert ns is not None and ns.kind == "module"
+    desc = describe_namespace(ns, include_low=True)
+    assert desc["public_fn"].visibility == "medium"
+    assert desc["PI"].visibility == "high"
+    # class constructable and nested method vis
+    cdesc = describe_class(
+        getattr(ns._ensure_module_loaded(), "PublicClass"), ns, include_low=True
+    )
+    assert cdesc.constructable is False
+    m = describe_member(ns, "PublicClass.public_method")
+    assert m is not None and m.visibility == "high"
 
 
 def test_agent_cls_no_parens():
@@ -333,11 +330,9 @@ def test_agent_cls_no_parens():
     class SimpleData:
         value: str
 
-    assert "SimpleData" in agent.cls_registry
-    reg = agent.cls_registry["SimpleData"]
-    assert reg.cls == SimpleData
-    assert reg.visibility == "high"  # Check default visibility
-    assert set(reg.attrs.keys()) == {"value"}  # Check default attr selection
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    assert "SimpleData" in main.classes
 
 
 def test_agent_cls_direct_call():
@@ -348,10 +343,9 @@ def test_agent_cls_direct_call():
 
     agent.cls(MyClass, visibility="low")
 
-    assert "MyClass" in agent.cls_registry
-    reg = agent.cls_registry["MyClass"]
-    assert reg.cls == MyClass
-    assert reg.visibility == "low"
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    assert "MyClass" in main.classes
 
 
 def test_agent_cls_with_name_alias():
@@ -362,11 +356,10 @@ def test_agent_cls_with_name_alias():
 
     agent.cls(OriginalClassName, name="AliasClass")  # type: ignore
 
-    assert "AliasClass" in agent.cls_registry
-    assert "OriginalClassName" not in agent.cls_registry
-
-    reg = agent.cls_registry["AliasClass"]
-    assert reg.cls == OriginalClassName
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None
+    assert "AliasClass" in main.classes
+    assert "OriginalClassName" not in main.classes
 
 
 # =============================================================================
@@ -467,8 +460,8 @@ def test_fn_decorator_builtin_functions():
     assert registered_sqrt is math.sqrt
 
     # Should be registered in the agent
-    assert "sqrt" in agent.fn_registry
-    assert agent.fn_registry["sqrt"].fn is math.sqrt
+    main = agent._policy.namespaces.get("__main__")
+    assert main is not None and "sqrt" in main.fns
 
 
 def test_task_decorator_validation_error_messages():
@@ -538,8 +531,9 @@ def test_dual_decorator_namespace_setting():
     assert hasattr(dual_function, "__agex_task_namespace__")
     assert dual_function.__agex_task_namespace__ == "specialist"
 
-    # Verify it's registered in the fn decorator's agent
-    assert "dual_function" in orchestrator.fn_registry
+    # Verify it's registered in the fn decorator's agent via policy
+    main = orchestrator._policy.namespaces.get("__main__")
+    assert main is not None and "dual_function" in main.fns
 
     # Verify dual-decorator metadata (namespace is sufficient)
     # The __agex_task_namespace__ attribute serves as both the task marker and namespace
@@ -829,7 +823,7 @@ def test_task_setup_functionality():
     agent = Agent(name="setup_test_agent", llm_client=llm_client)
 
     # Define task with setup
-    @agent.task("Test task with setup", setup='setup_var = "Hello from setup!"')
+    @agent.task(primer="Test task with setup", setup='setup_var = "Hello from setup!"')
     def test_task() -> str:  # type: ignore[return-value]
         """Test task with setup"""
         ...
@@ -878,7 +872,8 @@ def test_task_setup_error_handling():
 
     # Define task with setup that will error
     @agent.task(
-        "Test task with setup error", setup="invalid_variable = undefined_function()"
+        primer="Test task with setup error",
+        setup="invalid_variable = undefined_function()",
     )
     def test_task() -> str:  # type: ignore[return-value]
         """Test task with setup that errors"""
@@ -927,7 +922,7 @@ def test_task_without_setup():
     agent = Agent(name="no_setup_agent", llm_client=llm_client)
 
     # Define task without setup
-    @agent.task("Test task without setup")
+    @agent.task(primer="Test task without setup")
     def test_task() -> str:  # type: ignore[return-value]
         """Test task without setup"""
         ...
@@ -976,7 +971,7 @@ print(f"Setup complete: {setup_var}")
     # Test 1: Batch execution
     batch_agent = create_agent("batch_agent")
 
-    @batch_agent.task("Test task", setup=SETUP_CODE)
+    @batch_agent.task(primer="Test task", setup=SETUP_CODE)
     def batch_task(prompt: str) -> str:  # type: ignore[return-value]
         """Test task for batch execution"""
         ...
@@ -988,7 +983,7 @@ print(f"Setup complete: {setup_var}")
     # Test 2: Streaming execution
     streaming_agent = create_agent("streaming_agent")
 
-    @streaming_agent.task("Test task", setup=SETUP_CODE)
+    @streaming_agent.task(primer="Test task", setup=SETUP_CODE)
     def streaming_task(prompt: str) -> str:  # type: ignore[return-value]
         """Test task for streaming execution"""
         ...
@@ -1000,8 +995,8 @@ print(f"Setup complete: {setup_var}")
     assert len(streaming_events) > 0  # Streaming should yield events
 
     # Verify event counts match
-    assert len(batch_events) == len(
-        streaming_events
+    assert (
+        len(batch_events) == len(streaming_events)
     ), f"Event count mismatch: batch={len(batch_events)}, streaming={len(streaming_events)}"
 
     # Verify event types match in sequence

@@ -22,7 +22,6 @@ def get_llm_config(**overrides) -> Dict[str, Any]:
         "provider": "dummy",
         "model": None,
         "base_url": None,
-        "temperature": 0.7,
     }
 
     # Apply environment variables

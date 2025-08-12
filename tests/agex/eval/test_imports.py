@@ -16,11 +16,10 @@ def test_module_import_name_collision():
     # Register numpy.random. This should NOT create an importable module named 'random'.
     agent.module(np.random)
 
-    # This should be in the registry under its full name.
-    assert "numpy.random" in agent.importable_modules
-
-    # This should NOT be in the registry under the short name.
-    assert "random" not in agent.importable_modules
+    # Policy: module namespace should be present under its full name
+    assert "numpy.random" in agent._policy.namespaces
+    # Short name should not exist
+    assert "random" not in agent._policy.namespaces
 
     # Now, try to import 'random' in the evaluator. This should fail.
     with pytest.raises(EvalError) as exc_info:
@@ -47,10 +46,9 @@ def test_module_import_with_alias():
     # Register numpy.random with a specific alias 'rand'.
     agent.module(np.random, name="rand")
 
-    # The alias should be in the registry.
-    assert "rand" in agent.importable_modules
-    # The original full name should NOT be.
-    assert "numpy.random" not in agent.importable_modules
+    # Policy: alias namespace exists; original full name does not
+    assert "rand" in agent._policy.namespaces
+    assert "numpy.random" not in agent._policy.namespaces
 
     # Importing the alias should work.
     try:

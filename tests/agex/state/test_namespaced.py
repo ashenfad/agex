@@ -171,9 +171,9 @@ def test_local_namespace_detection():
 
     for key, expected in test_cases:
         result = ns_ab._local_namespace(key)
-        assert result == expected, (
-            f"Key '{key}' should return '{expected}', got '{result}'"
-        )
+        assert (
+            result == expected
+        ), f"Key '{key}' should return '{expected}', got '{result}'"
 
 
 def test_keys_only_shows_direct_children():
@@ -256,9 +256,9 @@ def test_mixed_direct_and_nested_keys():
     }, f"Worker1 keys should be direct only, got {worker1_keys}"
 
     worker2_keys = set(ns_worker2.keys())
-    assert worker2_keys == {"task"}, (
-        f"Worker2 keys should be direct only, got {worker2_keys}"
-    )
+    assert worker2_keys == {
+        "task"
+    }, f"Worker2 keys should be direct only, got {worker2_keys}"
 
     # Verify isolation - each namespace only sees its own direct keys
     assert ns_root.get("app_config") == "config_value"
@@ -304,9 +304,9 @@ def test_descendant_keys_hierarchical_traversal():
         "logs/error.log",
         "logs/access.log",  # logs sub-namespace
     }
-    assert all_keys == expected_all_keys, (
-        f"Expected {expected_all_keys}, got {all_keys}"
-    )
+    assert (
+        all_keys == expected_all_keys
+    ), f"Expected {expected_all_keys}, got {all_keys}"
 
 
 def test_descendant_keys_nested_namespace_isolation():
@@ -339,23 +339,23 @@ def test_descendant_keys_nested_namespace_isolation():
         "worker/status",  # Key in 'a/worker'
         "cache/item",  # Key in 'a/cache'
     }
-    assert a_descendants == expected_a_descendants, (
-        f"Expected {expected_a_descendants}, got {a_descendants}"
-    )
+    assert (
+        a_descendants == expected_a_descendants
+    ), f"Expected {expected_a_descendants}, got {a_descendants}"
 
     # Test descendant_keys() for 'b' namespace
     b_descendants = set(ns_b.descendant_keys())
     expected_b_descendants = {"config", "data"}  # Only direct keys in 'b'
-    assert b_descendants == expected_b_descendants, (
-        f"Expected {expected_b_descendants}, got {b_descendants}"
-    )
+    assert (
+        b_descendants == expected_b_descendants
+    ), f"Expected {expected_b_descendants}, got {b_descendants}"
 
     # Test descendant_keys() for nested namespace
     worker_descendants = set(ns_a_worker.descendant_keys())
     expected_worker_descendants = {"task", "status"}  # Only keys in 'a/worker'
-    assert worker_descendants == expected_worker_descendants, (
-        f"Expected {expected_worker_descendants}, got {worker_descendants}"
-    )
+    assert (
+        worker_descendants == expected_worker_descendants
+    ), f"Expected {expected_worker_descendants}, got {worker_descendants}"
 
 
 def test_descendant_keys_empty_namespace():
@@ -365,9 +365,9 @@ def test_descendant_keys_empty_namespace():
 
     # Should return empty iterable
     descendants = list(ns_empty.descendant_keys())
-    assert descendants == [], (
-        f"Empty namespace should have no descendants, got {descendants}"
-    )
+    assert (
+        descendants == []
+    ), f"Empty namespace should have no descendants, got {descendants}"
 
     # Add some unrelated keys
     state.set("other/key", "value")

@@ -1,13 +1,10 @@
 import ast
 from typing import Any
 
-from ..eval.utils import get_allowed_attributes_for_instance
 from .base import BaseEvaluator
-from .builtins import BUILTINS
 from .error import EvalError
 from .loops import _safe_bool_eval
-from .objects import AgexInstance, AgexModule, AgexObject
-from .user_errors import AgexAttributeError, AgexIndexError, AgexKeyError, AgexTypeError
+from .user_errors import AgexIndexError, AgexKeyError, AgexTypeError
 
 
 class ExpressionEvaluator(BaseEvaluator):

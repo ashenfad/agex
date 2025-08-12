@@ -214,12 +214,15 @@ def _dir(evaluator, *args, **kwargs) -> list[str]:
     elif isinstance(obj, AgexObject):
         attrs = sorted(obj.attributes.keys())
     elif isinstance(obj, AgexModule):
-        # For modules, introspect the actual registered module
-        reg_module = evaluator.agent.importable_modules.get(obj.name)
-        if reg_module:
-            attrs = sorted([a for a in dir(reg_module.module) if not a.startswith("_")])
-        else:
+        # Policy-backed enumeration only
+        ns = evaluator.agent._policy.namespaces.get(obj.name)  # type: ignore[attr-defined]
+        if ns is None:
             attrs = []
+        else:
+            from agex.agent.policy.describe import describe_namespace
+
+            desc = describe_namespace(ns, include_low=False)
+            attrs = sorted(k for k in desc.keys() if not k.startswith("_"))
     elif _is_bound_instance_object(obj):
         # This is a BoundInstanceObject (registered live object)
         from ..eval.objects import BoundInstanceObject
@@ -265,11 +268,9 @@ def _hasattr(evaluator, *args, **kwargs) -> bool:
     if isinstance(obj, AgexClass):
         return name in obj.methods
     if isinstance(obj, AgexModule):
-        # Use JIT resolution to check if the attribute exists on the real module
-        reg_module = evaluator.agent.importable_modules.get(obj.name)
-        if not reg_module:
-            return False
-        return hasattr(reg_module.module, name) and not name.startswith("_")
+        # Policy-backed check for module attributes only
+        res = evaluator.agent._policy.resolve_module_member(obj.name, name)  # type: ignore[attr-defined]
+        return res is not None
 
     # Check for BoundInstanceObject (registered live objects)
     if _is_bound_instance_object(obj):
@@ -287,23 +288,34 @@ def _get_general_help_text(agent: "BaseAgent") -> str:
     """Returns a string with a summary of all registered items."""
     parts = ["Available items:"]
 
-    # Functions
-    fns = sorted(agent.fn_registry.keys())
-    if fns:
-        parts.append("\nFunctions:")
-        parts.extend([f"- {fn}" for fn in fns])
+    # Functions and classes from policy __main__
+    try:
+        main_ns = agent._policy.namespaces.get("__main__")  # type: ignore[attr-defined]
+    except Exception:
+        main_ns = None
+    if main_ns is not None and main_ns.kind == "virtual":
+        fns = sorted(main_ns.fns.keys())
+        if fns:
+            parts.append("\nFunctions:")
+            parts.extend([f"- {fn}" for fn in fns])
+        clss = sorted(main_ns.classes.keys())
+        if clss:
+            parts.append("\nClasses:")
+            parts.extend([f"- {cls}" for cls in clss])
 
-    # Classes
-    clss = sorted(agent.cls_registry.keys())
-    if clss:
-        parts.append("\nClasses:")
-        parts.extend([f"- {cls}" for cls in clss])
-
-    # Objects (Modules and registered objects)
-    mods = sorted(agent.importable_modules.keys())
-    objects = sorted(agent.object_registry.keys())
-
-    # Combine modules and objects
+    # Modules and objects from policy namespaces
+    mods = []
+    objects = []
+    try:
+        for name, ns in agent._policy.namespaces.items():  # type: ignore[attr-defined]
+            if name == "__main__":
+                continue
+            if getattr(ns, "kind", None) == "module":
+                mods.append(name)
+            elif getattr(ns, "kind", None) == "instance":
+                objects.append(name)
+    except Exception:
+        pass
     all_objects = sorted(set(mods) | set(objects))
     if all_objects:
         parts.append("\nObjects:")
@@ -344,14 +356,18 @@ def _get_help_text(agent: "BaseAgent", item: Any) -> str:
         return "\n".join(parts)
     if isinstance(item, AgexModule):
         parts = ["Help on module " + item.name + ":\n"]
-        reg_module = agent.importable_modules.get(item.name)
-        if reg_module:
+        ns = agent._policy.namespaces.get(item.name)  # type: ignore[attr-defined]
+        if ns is not None:
+            from agex.agent.policy.describe import describe_namespace
+
             contents = sorted(
-                [attr for attr in dir(reg_module.module) if not attr.startswith("_")]
+                k
+                for k in describe_namespace(ns, include_low=False).keys()
+                if not k.startswith("_")
             )
             if contents:
                 parts.append("CONTENTS")
-                parts.extend([f"    {item}" for item in contents])
+                parts.extend([f"    {x}" for x in contents])
         return "\n".join(parts)
     if _is_bound_instance_object(item):
         from ..eval.objects import BoundInstanceObject

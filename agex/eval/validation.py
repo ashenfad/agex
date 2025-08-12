@@ -106,7 +106,7 @@ def validate_with_sampling(value: Any, annotation: Any) -> Any:
             adapter = TypeAdapter(annotation, config=REGULAR_CONFIG)
 
         return adapter.validate_python(value)
-    except ValidationError as e:
+    except ValidationError:
         # Re-raise the original ValidationError - it already contains all the necessary information
         raise
 

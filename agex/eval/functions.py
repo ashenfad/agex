@@ -62,6 +62,14 @@ class UserFunction:
         None  # Fingerprint of the agent this function was defined in
     )
 
+    # Ensure hashability for use in libraries that cache by callable (e.g., pandas.apply)
+    def __hash__(self) -> int:  # type: ignore[override]
+        # Identity-based hash keeps semantics simple and avoids mutable field issues
+        return hash(id(self))
+
+    def __eq__(self, other: object) -> bool:  # type: ignore[override]
+        return self is other
+
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         if not self.agent_fingerprint:
             raise RuntimeError(
@@ -270,7 +278,7 @@ class TaskProxy:
     def __init__(self, evaluator: "BaseEvaluator", task_callable: Any):
         from agex.eval.base import (
             BaseEvaluator as _BaseEvaluator,
-        )  # local import to avoid cycles
+        )
 
         if not isinstance(evaluator, _BaseEvaluator):
             raise TypeError("TaskProxy requires a BaseEvaluator instance")

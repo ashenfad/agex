@@ -5,7 +5,7 @@ Tests for benchmark functions: benchmark_generic, benchmark_pass_fail, benchmark
 and internal functions.
 """
 
-import operator
+from typing import Callable
 from unittest.mock import Mock
 
 import pytest
@@ -20,7 +20,6 @@ from agex.bench.core import (
 from agex.bench.types import NumericStats, PassFailStats, Stats, Trial, params
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import DummyLLMClient
-from typing import Callable
 
 
 class TestTrialResult:

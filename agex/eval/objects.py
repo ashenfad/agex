@@ -244,13 +244,40 @@ class BoundInstanceMethod:
         """Look up the live object and call the real method."""
         live_instance = self.host_registry[self.reg_object.name]
         method = getattr(live_instance, self.method_name)
-        return method(*args, **kwargs)
+        try:
+            return method(*args, **kwargs)
+        except Exception as e:  # Map to agent-catchable errors
+            from agex.agent.datatypes import _AgentExit
+
+            from .user_errors import AgexError
+
+            # Pass through agent control and already agent errors
+            if isinstance(e, (_AgentExit, AgexError)):
+                raise
+            # Specific mappings take precedence
+            for src_exc, target_exc in self.reg_object.exception_mappings.items():
+                if isinstance(e, src_exc):
+                    raise target_exc(str(e)) from e
+            # Fallback: wrap into generic AgexError with original type name
+            raise AgexError(f"{type(e).__name__}: {e}") from e
 
     # New unified execution hook used by the evaluator
     def execute(self, args: list[Any], kwargs: dict[str, Any]) -> Any:
         live_instance = self.host_registry[self.reg_object.name]
         method = getattr(live_instance, self.method_name)
-        return method(*args, **kwargs)
+        try:
+            return method(*args, **kwargs)
+        except Exception as e:  # Map to agent-catchable errors
+            from agex.agent.datatypes import _AgentExit
+
+            from .user_errors import AgexError
+
+            if isinstance(e, (_AgentExit, AgexError)):
+                raise
+            for src_exc, target_exc in self.reg_object.exception_mappings.items():
+                if isinstance(e, src_exc):
+                    raise target_exc(str(e)) from e
+            raise AgexError(f"{type(e).__name__}: {e}") from e
 
 
 @dataclass

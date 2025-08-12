@@ -3,8 +3,16 @@ import inspect
 from typing import Any
 
 from agex.agent.base import BaseAgent
+from agex.agent.policy.describe import (
+    collect_class_candidate_names,
+    describe_namespace,
+    get_effective_member_spec,
+)
+from agex.agent.policy.resolve import make_predicate
+from agex.agent.utils import get_instance_attributes_from_init
 
 from ..agent.datatypes import (
+    MemberSpec,
     RegisteredClass,
     RegisteredFn,
     RegisteredModule,
@@ -76,48 +84,70 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
     visibility, ignoring these rules.
     """
     output = []
-    # Collect available class names for type annotation rendering
-    available_classes = set(agent.cls_registry.keys())
+    # Collect available class names for type annotation rendering (from policy __main__)
+    main_ns = agent._policy.namespaces.get("__main__")  # type: ignore[attr-defined]
+    available_classes = set(main_ns.classes.keys()) if main_ns else set()
 
-    # Render standalone functions
-    for name, spec in agent.fn_registry.items():
-        if not full and spec.visibility != "high":
-            continue
-        output.append(
-            _render_function(name, spec, available_classes=available_classes, full=full)
-        )
-
-    # Render classes
-    classes_to_render = []
-    for name, spec in agent.cls_registry.items():
-        # The top-level rendering logic for a class is now more complex,
-        # because a low-visibility class might be "promoted" if it has a
-        # high-visibility member.
-        is_promoted = _is_class_promoted(spec)
-        effective_visibility = spec.visibility
-        if spec.visibility == "low" and is_promoted:
-            effective_visibility = "medium"
-
-        if full or effective_visibility != "low":
-            # We create a new spec with the effective visibility to pass down.
-            spec_to_render = dataclasses.replace(spec, visibility=effective_visibility)
-            classes_to_render.append(
-                _render_class(
-                    name, spec_to_render, available_classes=available_classes, full=full
+    # Render standalone functions from policy __main__
+    if main_ns:
+        for name, ms in main_ns.fns.items():
+            eff_vis = ms.visibility or main_ns.visibility
+            if not full and eff_vis != "high":
+                continue
+            fn_obj = main_ns.fn_objects.get(name)
+            if not fn_obj:
+                continue
+            fn_spec = RegisteredFn(
+                fn=fn_obj, docstring=ms.docstring or fn_obj.__doc__, visibility=eff_vis
+            )
+            output.append(
+                _render_function(
+                    name, fn_spec, available_classes=available_classes, full=full
                 )
             )
+
+    # Render classes using policy-backed adapter for __main__ virtual namespace
+    classes_to_render = []
+    if main_ns:
+        for name, rc in main_ns.classes.items():  # type: ignore[union-attr]
+            adapted = _policy_main_class_to_registered_class(agent, rc.cls)
+            if not adapted:
+                continue
+            is_promoted = _is_class_promoted(adapted)
+            effective_visibility = adapted.visibility
+            if adapted.visibility == "low" and is_promoted:
+                effective_visibility = "medium"
+
+            if full or effective_visibility != "low":
+                spec_to_render = dataclasses.replace(
+                    adapted, visibility=effective_visibility
+                )
+                classes_to_render.append(
+                    _render_class(
+                        name,
+                        spec_to_render,
+                        available_classes=available_classes,
+                        full=full,
+                    )
+                )
 
     # Add helpful header if classes are present
     if classes_to_render:
         output.append("# Available classes (use directly, no import needed):")
         output.extend(classes_to_render)
 
-    # Render modules with helpful header
+    # Render modules with helpful header (adapter: prefer policy; fallback to legacy)
     modules_to_render = []
-    for name, spec in agent.importable_modules.items():
-        rendered_module = _render_module(name, spec, full=full)
-        if rendered_module:
-            modules_to_render.append(rendered_module)
+    # Prefer policy namespaces first
+    for ns_name, ns in agent._policy.namespaces.items():  # type: ignore[attr-defined]
+        if ns.kind != "module":
+            continue
+        adapted = _policy_namespace_to_registered_module(agent, ns_name)
+        if adapted:
+            rendered = _render_module(ns_name, adapted, full=full)
+            if rendered:
+                modules_to_render.append(rendered)
+    # No legacy fallback: modules are enumerated from policy only
 
     if modules_to_render:
         output.append("# Available modules (import before using):")
@@ -129,13 +159,225 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
         note += "\n# If you do not, you will see this as an error in your stdout (such as a 'no attribute' error)."
         output.append(note)
 
-    # Render registered objects (live objects)
-    for name, spec in agent.object_registry.items():
-        rendered_object = _render_object(name, spec, agent, full=full)
+    # Render registered objects (live objects) from policy instance namespaces
+    for ns_name, ns in agent._policy.namespaces.items():  # type: ignore[attr-defined]
+        if ns.kind != "instance":
+            continue
+        # Describe instance namespace to honor include/exclude and configure
+        include_pred = make_predicate(ns.include)
+        exclude_pred = make_predicate(ns.exclude)
+        methods: dict[str, MemberSpec] = {}
+        properties: dict[str, MemberSpec] = {}
+        # Use live object if present to distinguish callables
+        live_obj = getattr(ns, "obj", None)
+        if live_obj is not None:
+            for attr in dir(live_obj):
+                if attr.startswith("_"):
+                    continue
+                if not (include_pred(attr) and not exclude_pred(attr)):
+                    continue
+                cfg = ns.configure.get(attr, MemberSpec())
+                vis = cfg.visibility or ns.visibility
+                doc = cfg.docstring
+                try:
+                    member = getattr(live_obj, attr)
+                except Exception:
+                    member = None
+                if callable(member):
+                    methods[attr] = MemberSpec(visibility=vis, docstring=doc)
+                else:
+                    properties[attr] = MemberSpec(visibility=vis, docstring=doc)
+        spec = RegisteredObject(
+            name=ns_name,
+            visibility=ns.visibility,
+            methods=methods,
+            properties=properties,
+        )
+        rendered_object = _render_object(ns_name, spec, agent, full=full)
         if rendered_object:
             output.append(rendered_object)
 
     return "\n\n".join(output)
+
+
+def _policy_namespace_to_registered_module(
+    agent: BaseAgent, ns_name: str
+) -> RegisteredModule | None:
+    """
+    Build a RegisteredModule-equivalent from a policy module namespace using
+    describe() logic. This is a compatibility adapter to allow the existing
+    rendering pipeline to operate without changes.
+    """
+    ns = agent._policy.namespaces.get(ns_name)  # type: ignore[attr-defined]
+    if not ns or ns.kind != "module":
+        return None
+    mod = ns._ensure_module_loaded()
+    top = describe_namespace(ns, include_low=True)
+
+    mod_fns: dict[str, MemberSpec] = {}
+    mod_consts: dict[str, MemberSpec] = {}
+    mod_classes: dict[str, RegisteredClass] = {}
+
+    for member_name, desc in top.items():
+        if desc.kind == "fn":
+            mod_fns[member_name] = MemberSpec(
+                visibility=desc.visibility, docstring=desc.docstring
+            )
+        elif desc.kind == "class":
+            cls_obj = getattr(mod, member_name, None)
+            if cls_obj is None:
+                continue
+            # Build class members using shared helpers with dotted precedence
+            include_pred = make_predicate(ns.include)
+            exclude_pred = make_predicate(ns.exclude)
+            cls_attrs: dict[str, MemberSpec] = {}
+            cls_methods: dict[str, MemberSpec] = {}
+
+            # Determine constructability from class-level config, default True
+            cls_cfg = ns.configure.get(member_name, MemberSpec())
+            cls_is_constructable = (
+                cls_cfg.constructable if cls_cfg.constructable is not None else True
+            )
+
+            candidates = collect_class_candidate_names(
+                cls_obj, ns=ns, constructable=cls_is_constructable
+            )
+
+            # Apply include/exclude on dotted names
+            selected = set()
+            for short in candidates:
+                dotted = f"{member_name}.{short}"
+                if include_pred(dotted) and not exclude_pred(dotted):
+                    selected.add(short)
+
+            for short in selected:
+                obj = getattr(cls_obj, short, None)
+                cm_cfg = get_effective_member_spec(
+                    ns, class_name=member_name, member_name=short
+                )
+                cm_vis: Visibility | None = cm_cfg.visibility or (
+                    cls_cfg.visibility or ns.visibility
+                )
+                cm_doc = cm_cfg.docstring
+
+                if inspect.isroutine(obj) or short == "__init__":
+                    if short == "__init__" and cm_cfg.visibility is None:
+                        cm_vis = "medium"
+                    cls_methods[short] = MemberSpec(visibility=cm_vis, docstring=cm_doc)
+                else:
+                    cls_attrs[short] = MemberSpec(visibility=cm_vis, docstring=cm_doc)
+
+            reg_cls = RegisteredClass(
+                cls=cls_obj,
+                visibility=cls_cfg.visibility or ns.visibility,
+                constructable=cls_is_constructable,
+                attrs=cls_attrs,
+                methods=cls_methods,
+            )
+            mod_classes[member_name] = reg_cls
+        else:
+            mod_consts[member_name] = MemberSpec(
+                visibility=desc.visibility, docstring=desc.docstring
+            )
+
+    return RegisteredModule(
+        name=ns_name,
+        module=mod,
+        visibility=ns.visibility,
+        fns=mod_fns,
+        consts=mod_consts,
+        classes=mod_classes,
+    )
+
+
+def _policy_main_class_to_registered_class(
+    agent: BaseAgent, py_cls: type
+) -> RegisteredClass | None:
+    """
+    Adapt a class registered in the policy virtual main namespace into a
+    RegisteredClass that matches legacy rendering behavior.
+    """
+    # Retrieve the per-class namespace spec captured at registration time.
+    ns = getattr(agent._policy, "_class_namespaces", {}).get(py_cls)  # type: ignore[attr-defined]
+    if ns is None:
+        return None
+
+    cls_name = getattr(py_cls, "__name__", "")
+
+    # Determine class-level visibility with override precedence
+    class_cfg = ns.configure.get(cls_name, MemberSpec())
+    class_visibility = class_cfg.visibility or ns.visibility
+
+    # Determine constructability
+    try:
+        rc = agent._policy.resolve_class_spec(py_cls)  # type: ignore[attr-defined]
+        constructable = bool(rc.constructable) if rc is not None else True
+    except Exception:
+        constructable = True
+
+    # Build include/exclude predicates
+    include_pred = make_predicate(ns.include)
+    exclude_pred = make_predicate(ns.exclude)
+
+    # Generate candidate member names
+    all_members: set[str] = set()
+    for name, member in inspect.getmembers(py_cls):
+        if not name.startswith("__") or name == "__init__":
+            all_members.add(name)
+    if hasattr(py_cls, "__annotations__"):
+        all_members.update(py_cls.__annotations__.keys())
+
+    # Include instance attributes from __init__ when wildcard patterns or explicit includes are used
+    if (
+        ns.include == "*"
+        or (isinstance(ns.include, str) and "*" in ns.include)
+        or isinstance(ns.include, (list, set, tuple))
+    ):
+        try:
+            instance_attrs = get_instance_attributes_from_init(py_cls)
+            all_members.update(instance_attrs)
+        except Exception:
+            pass
+
+    # If include is an iterable of explicit names, add them to candidates too
+    if isinstance(ns.include, (list, set, tuple)):
+        for item in ns.include:
+            if isinstance(item, str):
+                all_members.add(item)
+
+    # Select members via include/exclude
+    selected_names = {n for n in all_members if include_pred(n) and not exclude_pred(n)}
+
+    # Enforce constructability on __init__
+    if constructable:
+        selected_names.add("__init__")
+    else:
+        selected_names.discard("__init__")
+
+    attrs: dict[str, MemberSpec] = {}
+    methods: dict[str, MemberSpec] = {}
+
+    for member_name in selected_names:
+        obj = getattr(py_cls, member_name, None)
+
+        # Look up config with both dotted and plain keys for override precedence
+        dotted_key = f"{cls_name}.{member_name}"
+        cfg = ns.configure.get(dotted_key, ns.configure.get(member_name, MemberSpec()))
+        vis = cfg.visibility or class_visibility
+        doc = cfg.docstring
+
+        if member_name == "__init__" or inspect.isroutine(obj):
+            methods[member_name] = MemberSpec(visibility=vis, docstring=doc)
+        else:
+            attrs[member_name] = MemberSpec(visibility=vis, docstring=doc)
+
+    return RegisteredClass(
+        cls=py_cls,
+        visibility=class_visibility,
+        constructable=constructable,
+        attrs=attrs,
+        methods=methods,
+    )
 
 
 def _should_render_member(

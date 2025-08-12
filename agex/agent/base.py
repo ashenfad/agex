@@ -5,11 +5,9 @@ from ..llm import LLMClient, connect_llm
 from .datatypes import (
     MemberSpec,
     RegisteredClass,
-    RegisteredFn,
-    RegisteredModule,
-    RegisteredObject,
 )
-from .fingerprint import compute_agent_fingerprint
+from .fingerprint import compute_agent_fingerprint_from_policy
+from .policy.policy import AgentPolicy
 
 # Global registry mapping fingerprints to agents
 _AGENT_REGISTRY: Dict[str, "BaseAgent"] = {}
@@ -31,9 +29,7 @@ def register_agent(agent: "BaseAgent") -> str:
                 raise ValueError(f"Agent name '{agent.name}' already exists")
         _AGENT_REGISTRY_BY_NAME[agent.name] = agent
 
-    fingerprint = compute_agent_fingerprint(
-        agent.primer, agent.fn_registry, agent.cls_registry, agent.importable_modules
-    )
+    fingerprint = compute_agent_fingerprint_from_policy(agent)
     _AGENT_REGISTRY[fingerprint] = agent
     return fingerprint
 
@@ -89,15 +85,11 @@ class BaseAgent:
         # Create LLM client using the resolved configuration
         self.llm_client = llm_client or connect_llm()
 
-        # Agent registries
-        self.fn_registry: dict[str, RegisteredFn] = {}
-        self.cls_registry: dict[str, RegisteredClass] = {}
-        self.cls_registry_by_type: dict[type, RegisteredClass] = {}
-        self.importable_modules: dict[str, RegisteredModule] = {}
-        self.object_registry: dict[str, RegisteredObject] = {}
-
         # private, host-side registry for live, unpickleable objects
         self._host_object_registry: dict[str, Any] = {}
+
+        # New lazy policy system (coexisting with eager registries during migration)
+        self._policy: AgentPolicy = AgentPolicy()
 
         # Auto-register this agent
         self.fingerprint = register_agent(self)

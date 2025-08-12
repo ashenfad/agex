@@ -83,6 +83,7 @@ class OpenAIClient(LLMClient):
             return parsed_response
 
         except Exception as e:
+            print("ADAM ---- ", e)
             raise RuntimeError(f"OpenAI completion failed: {e}") from e
 
     @property

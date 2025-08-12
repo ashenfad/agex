@@ -5,8 +5,6 @@ Tests for core data structures: Params, Trial, Stats, PassFailStats, NumericStat
 and helper functions like params().
 """
 
-import operator
-
 from agex.bench.types import NumericStats, Params, PassFailStats, Stats, Trial, params
 
 

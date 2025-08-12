@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from agex.agent.policy.resolve import make_predicate
+
 from .builtins import BUILTINS
 from .error import EvalError
 from .objects import AgexInstance, AgexModule, AgexObject, BoundInstanceObject
@@ -20,6 +22,7 @@ class Resolver:
 
     def __init__(self, agent):
         self.agent = agent
+        # Policy-backed resolution only
 
     # --- Name Resolution ---
     def resolve_name(self, name: str, state, node) -> Any:
@@ -32,26 +35,65 @@ class Resolver:
         if value is not None or name in state:
             return value
 
-        # 3. Registered live objects
-        if name in self.agent.object_registry:
-            reg_object = self.agent.object_registry[name]
+        # 3. Registered live objects via policy instance namespaces
+        ns = self.agent._policy.namespaces.get(name)  # type: ignore[attr-defined]
+        if ns is not None and getattr(ns, "kind", None) == "instance":
+            from agex.agent.datatypes import MemberSpec, RegisteredObject
+
             from .objects import BoundInstanceObject
 
+            methods: dict[str, MemberSpec] = {}
+            properties: dict[str, MemberSpec] = {}
+            live_obj = self.agent._host_object_registry.get(name)
+            if live_obj is not None:
+                include_pred = make_predicate(ns.include)
+                exclude_pred = make_predicate(ns.exclude)
+                for attr in dir(live_obj):
+                    if attr.startswith("@"):
+                        continue
+                    if not (include_pred(attr) and not exclude_pred(attr)):
+                        continue
+                    try:
+                        value = getattr(live_obj, attr)
+                    except Exception:
+                        continue
+                    cfg = ns.configure.get(attr, MemberSpec())
+                    vis = cfg.visibility or ns.visibility
+                    doc = cfg.docstring
+                    if callable(value):
+                        methods[attr] = MemberSpec(visibility=vis, docstring=doc)
+                    else:
+                        properties[attr] = MemberSpec(visibility=vis, docstring=doc)
+            else:
+                # Fallback to configured names only if live object missing
+                for attr, cfg in ns.configure.items():
+                    if attr.startswith("__"):
+                        continue
+                    vis = cfg.visibility or ns.visibility
+                    methods[attr] = MemberSpec(visibility=vis, docstring=cfg.docstring)
+
+            reg_object = RegisteredObject(
+                name=name,
+                visibility=ns.visibility,
+                methods=methods,
+                properties=properties,
+                exception_mappings=getattr(ns, "exception_mappings", {}),
+            )
             return BoundInstanceObject(
                 reg_object=reg_object, host_registry=self.agent._host_object_registry
             )
 
-        # 4. Registered functions
-        if name in self.agent.fn_registry:
-            # Local import to avoid circular dependency during module import
+        # 4. Registered functions via policy
+        res = self.agent._policy.resolve_module_member("__main__", name)
+        if res is not None and hasattr(res, "fn"):
             from .functions import NativeFunction
 
-            spec = self.agent.fn_registry[name]
-            return NativeFunction(name=name, fn=spec.fn)
+            return NativeFunction(name=name, fn=res.fn)  # type: ignore[attr-defined]
 
-        # 5. Registered classes
-        if name in self.agent.cls_registry:
-            return self.agent.cls_registry[name].cls
+        # 5. Registered classes via policy
+        res = self.agent._policy.resolve_module_member("__main__", name)
+        if res is not None and hasattr(res, "cls"):
+            return res.cls  # type: ignore[attr-defined]
 
         raise EvalError(f"Name '{name}' is not defined. (forgot import?)", node)
 
@@ -67,39 +109,16 @@ class Resolver:
 
         # AgexModule attribute access with JIT resolution
         if isinstance(value, AgexModule):
-            reg_module = self.agent.importable_modules.get(value.name)
-            if not reg_module:
-                raise AgexAttributeError(
-                    f"Module '{value.name}' is not registered", node
-                )
-
-            # Get attribute from host module
-            try:
-                real_attr = getattr(reg_module.module, attr_name)
-            except AttributeError:
+            res = self.agent._policy.resolve_module_member(value.name, attr_name)
+            if res is None:
                 raise AgexAttributeError(
                     f"module '{value.name}' has no attribute '{attr_name}'", node
                 )
-
-            # If attribute is a module, ensure it is explicitly registered
-            import types
-
-            if isinstance(real_attr, types.ModuleType):
-                submodule_name = f"{value.name}.{attr_name}"
-                found_spec = None
-                for spec in self.agent.importable_modules.values():
-                    if spec.module is real_attr:
-                        found_spec = spec
-                        break
-                if not found_spec:
-                    raise AgexAttributeError(
-                        f"Submodule '{submodule_name}' is not allowed. ", node
-                    )
-                return AgexModule(
-                    name=found_spec.name, agent_fingerprint=self.agent.fingerprint
-                )
-
-            return real_attr
+            return (
+                getattr(res, "fn", None)
+                or getattr(res, "cls", None)
+                or getattr(res, "value", None)
+            )
 
         # Check for registered host classes and whitelisted methods on Python objects
         allowed_attrs = get_allowed_attributes_for_instance(self.agent, value)
@@ -118,21 +137,29 @@ class Resolver:
 
     # --- Import Resolution ---
     def resolve_module(self, module_name: str, node) -> AgexModule:
-        reg_module = self.agent.importable_modules.get(module_name)
-        if not reg_module:
-            raise EvalError(
-                f"Module '{module_name}' is not registered or whitelisted.", node
+        # Creating AgexModule is safe as a capability token; members resolve lazily via policy
+        if module_name in self.agent._policy.namespaces:  # type: ignore[attr-defined]
+            return AgexModule(
+                name=module_name, agent_fingerprint=self.agent.fingerprint
             )
-        return AgexModule(name=module_name, agent_fingerprint=self.agent.fingerprint)
+        raise EvalError(
+            f"Module '{module_name}' is not registered or whitelisted.", node
+        )
 
     def import_from(self, module_name: str, member_name: str, node) -> Any:
-        reg_module = self.agent.importable_modules.get(module_name)
-        if not reg_module:
+        # Preserve legacy special-case: only allow `from dataclasses import dataclass` as a no-op.
+        # For any other import from dataclasses, treat module as unregistered.
+        if module_name == "dataclasses":
             raise EvalError(f"No module named '{module_name}' is registered.", node)
 
-        # Simplified import model as before
-        if hasattr(reg_module.module, member_name):
-            return getattr(reg_module.module, member_name)
-        raise EvalError(
-            f"Cannot import name '{member_name}' from module '{module_name}'.", node
+        res = self.agent._policy.resolve_module_member(module_name, member_name)
+        if res is None:
+            raise EvalError(
+                f"Cannot import name '{member_name}' from module '{module_name}'.",
+                node,
+            )
+        return (
+            getattr(res, "fn", None)
+            or getattr(res, "cls", None)
+            or getattr(res, "value", None)
         )

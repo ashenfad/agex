@@ -106,14 +106,10 @@ task_success(fingerprint)
     # Execute
     new_agent_fingerprint = create_processor()
 
-    # Verify the new agent exists and has the registered function
+    # Verify the new agent exists and has the registered function (policy)
     new_agent = resolve_agent(new_agent_fingerprint)
-    assert "math_helper" in new_agent.fn_registry
-
-    # Verify it's wrapped properly for UserFunction
-    registered_fn = new_agent.fn_registry["math_helper"]
-    assert registered_fn.fn is not None
-    assert callable(registered_fn.fn)
+    main = new_agent._policy.namespaces.get("__main__")
+    assert main is not None and "math_helper" in main.fns
 
 
 def test_module_security_inheritance():
@@ -158,25 +154,17 @@ task_success(fingerprint)
     # Execute
     new_agent_fingerprint = create_math_agent()
 
-    # Verify security inheritance worked
+    # Verify security inheritance worked via policy describe
     new_agent = resolve_agent(new_agent_fingerprint)
-    assert "math" in new_agent.importable_modules
+    ns = new_agent._policy.namespaces.get("math")
+    assert ns is not None
+    from agex.agent.policy.describe import describe_namespace
 
-    math_registration = new_agent.importable_modules["math"]
-
-    # Should only have intersection of parent's permissions (sin, cos, pi) and child's request (sin, tan, pi)
-    # Expected result: sin, pi (cos was allowed by parent but not requested by child in this test)
-    all_allowed = set()
-    all_allowed.update(math_registration.fns.keys())
-    all_allowed.update(math_registration.consts.keys())
-
-    # sin should be allowed (in both parent and child request)
-    # pi should be allowed (in both parent and child request)
-    # tan should NOT be allowed (not in parent's permissions)
-    # cos should NOT be allowed (parent had it but child didn't request it)
-    assert "sin" in all_allowed
-    assert "pi" in all_allowed
-    assert "tan" not in all_allowed
+    desc = describe_namespace(ns)
+    keys = set(desc.keys())
+    assert "sin" in keys
+    assert "pi" in keys
+    assert "tan" not in keys
 
 
 def test_comprehensive_dogfood_workflow():
@@ -247,23 +235,18 @@ with Agent() as geom_agent:
     # Get the created agent
     geom_agent = resolve_agent(result["agent_fingerprint"])
 
-    # Verify function registration
-    assert "euclidean_distance" in geom_agent.fn_registry
+    # Verify function registration (policy)
+    main = geom_agent._policy.namespaces.get("__main__")
+    assert main is not None and "euclidean_distance" in main.fns
 
-    # Verify module registration with security inheritance
-    assert "math" in geom_agent.importable_modules
-    math_reg = geom_agent.importable_modules["math"]
+    # Verify module registration with security inheritance (policy)
+    ns = geom_agent._policy.namespaces.get("math")
+    assert ns is not None
+    from agex.agent.policy.describe import describe_namespace
 
-    # Should have intersection of parent's [sin, cos, sqrt] and child's [sin, cos, tan, sqrt]
-    # Expected: [sin, cos, sqrt] (tan should be excluded)
-    all_allowed = set()
-    all_allowed.update(math_reg.fns.keys())
-    all_allowed.update(math_reg.consts.keys())
-
-    assert "sin" in all_allowed
-    assert "cos" in all_allowed
-    assert "sqrt" in all_allowed
-    assert "tan" not in all_allowed  # Should be filtered out by security inheritance
+    keys = set(describe_namespace(ns).keys())
+    assert {"sin", "cos", "sqrt"}.issubset(keys)
+    assert "tan" not in keys
 
     # Verify the task function
     task_fn = result["task_function"]

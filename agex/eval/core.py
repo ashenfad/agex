@@ -5,7 +5,6 @@ from agex.agent.base import BaseAgent
 from agex.state.core import State
 
 from .base import BaseEvaluator
-from .resolver import Resolver
 from .binop import BinOpEvaluator
 from .call import CallEvaluator
 from .comprehension import ComprehensionEvaluator
@@ -13,6 +12,7 @@ from .error import EvalError
 from .expressions import ExpressionEvaluator
 from .functions import FunctionEvaluator, _ReturnException
 from .loops import LoopEvaluator
+from .resolver import Resolver
 from .statements import StatementEvaluator
 
 
