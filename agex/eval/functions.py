@@ -3,6 +3,7 @@ from dataclasses import dataclass, make_dataclass
 from typing import Any, Callable
 
 from agex.agent.base import resolve_agent
+from agex.state import Live
 
 from ..state import State
 from ..state.closure import LiveClosureState
@@ -229,7 +230,7 @@ class TaskUserFunction(UserFunction):
             parent_state = parent_evaluator.state
         else:
             # When executed directly, no parent evaluator means no parent state; pass through provided state
-            parent_state = kwargs.pop("state", None)
+            parent_state = kwargs.pop("state", Live())
 
         on_event = None
         if parent_evaluator is not None:
