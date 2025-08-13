@@ -6,6 +6,19 @@ To that effect, all code samples in this document are specifically for the sandb
 
 **State Choice Affects Constraints**: Some limitations depend on whether you use live state (default, no persistence) or persistent state (remembers variables between task calls). Live state is more flexible but doesn't persist memory; persistent state has more constraints but enables complex multi-step workflows.
 
+> Note on imports
+>
+> Agent-generated code may use `import` statements, but imports only succeed for modules that have been explicitly registered via `agent.module(...)` (or exposed through other registration methods). Within those modules, only whitelisted members are visible to agent code; excluded members behave as if they don’t exist.
+>
+> Example:
+> ```python
+> import pandas as pd              # OK if `pandas` was registered
+> from pandas import DataFrame     # OK if `DataFrame` is whitelisted
+> from pandas import read_csv      # Fails if excluded by registration
+> 
+> import os                        # Fails if `os` was not registered
+> ```
+
 ## What Works (Agent-Generated Code)
 
 Most Python features work exactly as you'd expect when agents generate code:

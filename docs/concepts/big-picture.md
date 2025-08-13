@@ -11,7 +11,7 @@ The key insight is that **code is language made formal enough to get stuff done*
 - **REPLs** for interactive exploration and step-by-step reasoning
 - **`dir()` and `help()`** for discovering capabilities  
 - **State inspection** like `print` for understanding structure
-- **Modular imports** for accessing functionality
+ - **Imports for whitelisted modules** for accessing functionality
 - **Function definitions** for building reusable tools
 
 Instead of inventing new agent interaction patterns, `agex` adapts the proven tools developers have used for decades. This makes agents more effective and their behavior more predictable.
@@ -22,7 +22,6 @@ This philosophy shapes how agex works:
 
 - **REPL-Like Environment** - Agents operate in familiar, persistent environments where they can introspect (`help`, `dir`), see their own output (`print`, `view_image`), and build solutions iteratively
 - **Natural Error Handling** - Validation errors and exceptions appear in the agent's stdout just like in a real Python environment, creating natural debugging loops
-- **Smart Context Management** - The framework automatically manages token budgets, keeping agents focused on relevant information without manual intervention
 - **Flexible State Management** - Tasks can run in live mode or with persistent state that captures the agent's entire workspace, enabling both simple single-shot tasks and complex workflows where agents keep and re-use their own functions
 
 
