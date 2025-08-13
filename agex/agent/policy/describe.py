@@ -250,9 +250,12 @@ def describe_class(
 
     members: dict[str, Description] = {}
     for name in sorted(candidate_names):
-        # Apply include/exclude, but allow __init__ if constructable
+        # Apply include/exclude on plain or dotted key, but allow __init__ if constructable
         if name != "__init__":
-            if not (include_pred(name) and not exclude_pred(name)):
+            dotted = f"{py_cls.__name__}.{name}"
+            inc_ok = include_pred(name) or include_pred(dotted)
+            exc_hit = exclude_pred(name) or exclude_pred(dotted)
+            if not (inc_ok and not exc_hit):
                 continue
         # Effective visibility uses dotted override first, falling back to plain
         ms = get_effective_member_spec(ns, class_name=py_cls.__name__, member_name=name)
@@ -285,11 +288,18 @@ def describe_namespace(
     inc = make_predicate(ns.include)
     exc = make_predicate(ns.exclude)
 
-    def include_key(key: str) -> bool:
-        eff_vis = _effective_visibility(ns, key)
+    def include_key(plain_key: str, dotted_prefix: str | None = None) -> bool:
+        """
+        Apply include/exclude to either the plain key or dotted prefix.key. Visibility
+        is determined by the plain key.
+        """
+        eff_vis = _effective_visibility(ns, plain_key)
         if eff_vis == "low" and not include_low:
             return False
-        return inc(key) and not exc(key)
+        dotted_key = f"{dotted_prefix}.{plain_key}" if dotted_prefix else None
+        inc_ok = inc(plain_key) or (dotted_key is not None and inc(dotted_key))
+        exc_hit = exc(plain_key) or (dotted_key is not None and exc(dotted_key))
+        return inc_ok and not exc_hit
 
     result: dict[str, Description] = {}
 
@@ -300,7 +310,12 @@ def describe_namespace(
             # Intersect parent's allowed view with child's include/exclude
             parent_view = describe_namespace(parent, include_low)
             for name, desc in parent_view.items():
-                if not include_key(name):
+                dotted_prefix = None
+                try:
+                    dotted_prefix = parent._ensure_module_loaded().__name__
+                except Exception:
+                    dotted_prefix = None
+                if not include_key(name, dotted_prefix):
                     continue
                 # Keep parent's kind/doc; apply child's effective visibility if configured
                 eff_vis = _effective_visibility(ns, name)
@@ -360,10 +375,11 @@ def describe_namespace(
     # Non-inherited namespaces
     if ns.kind == "module":
         mod = ns._ensure_module_loaded()
+        mod_name = getattr(mod, "__name__", None)
         for name, obj in inspect.getmembers(mod):
             if name.startswith("@"):
                 continue
-            if not include_key(name):
+            if not include_key(name, mod_name):
                 continue
             if inspect.isclass(obj):
                 result[name] = describe_class(obj, ns, include_low)
