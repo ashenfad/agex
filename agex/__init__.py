@@ -4,6 +4,7 @@ from .agent import (
     TaskFail,
     clear_agent_registry,
 )
+from .agent.console import pprint_events
 from .agent.datatypes import TaskClarify, TaskTimeout
 from .agent.events import (
     ActionEvent,
@@ -54,4 +55,6 @@ __all__ = [
     "Memory",
     "Disk",
     "Cache",
+    # Console
+    "pprint_events",
 ]

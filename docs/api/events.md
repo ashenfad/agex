@@ -200,6 +200,38 @@ for event in my_task.stream("process data"):
         log_agent_action(event)
 ```
 
+### 4. Console Pretty-Printing with `pprint_events`
+
+Use the top-level `pprint_events` helper to get a concise, colorful event stream in terminals. It works both as a real-time `on_event` handler and for post-hoc printing of a list/generator of events.
+
+```python
+from agex import pprint_events
+
+# Real-time: pass as on_event
+result = my_task("analyze", on_event=pprint_events)
+
+# Post-hoc: pretty-print all events from state
+from agex import events
+all_events = events(state)
+pprint_events(all_events, verbosity="brief")
+
+# Customize output
+pprint_events(
+    single_event_or_iterable,
+    verbosity="normal",          # "brief" | "normal" | "verbose"
+    color="auto",                # "auto" | "always" | "never" (honors NO_COLOR)
+    show_delta=True,              # show Δ since previous event
+    indent_by_namespace=True,     # indent and header prefix by namespace depth
+    width=None,                   # autodetect terminal width if None
+    truncate_code_lines=8,        # lines shown for sampled code in verbose mode
+)
+```
+
+Notes:
+- `pprint_events` accepts either a single event or any iterable/generator of events.
+- When used as `on_event`, it keeps a running Δ time between prints.
+- Colors auto-disable when output is not a TTY; set `color="always"` to force.
+
 ## Usage Patterns
 
 ### Event Type Filtering
