@@ -31,7 +31,7 @@ def make_data(prompt: str) -> list[np.ndarray]:  # type: ignore[return-value]
 
 gen_data_request = """
 Please generate 1000 numpy arrays, each with 120 elements. They should represent
-two minute long processes when a manufacturing step happens and power is is monitored.
+two minute long processes when a manufacturing step happens and power is monitored.
 The signals should be dynamic yet similar with small variations.
 Please make 50 of the signals have aberrations.
 """
