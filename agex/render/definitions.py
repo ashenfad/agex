@@ -639,6 +639,10 @@ def _render_function(
             params.append(p_name)  # self/cls
             continue
 
+        # Hide framework-injected parameters for sub-agent task functions
+        if is_sub_agent and p_name in ("state", "on_event"):
+            continue
+
         param_str = p_name
         type_str = _render_type_annotation(p.annotation, available_classes)
         if type_str:
