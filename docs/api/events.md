@@ -161,7 +161,6 @@ The `on_event` parameter is the recommended approach for most real-time use case
 **Choose `on_event` if:**
 *   You need the final return value of the task.
 *   You want a simple "fire-and-forget" callback for logging or display.
-*   You require immediate, non-batched events from hierarchical agent workflows.
 
 **In Jupyter notebooks:**
 ```python
@@ -200,8 +199,6 @@ for event in my_task.stream("process data"):
     if isinstance(event, ActionEvent):
         log_agent_action(event)
 ```
-
-**Known Limitation:** In hierarchical agent workflows, events from a sub-agent are currently yielded as a **single batch** after the sub-agent task completes, rather than being streamed one-by-one. For true real-time streaming in multi-agent setups, prefer `on_event`.
 
 ## Usage Patterns
 

@@ -344,7 +344,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
             # Pop the state and on_event arguments, they are handled separately
             state = bound_args.arguments.pop("state", None)
-            on_event = bound_args.arguments.pop("on_event", None)
+            user_on_event = bound_args.arguments.pop("on_event", None)
 
             # Create inputs dataclass instance with pass-by-value semantics
             inputs_instance = None
@@ -363,17 +363,71 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         ) from e
                 inputs_instance = inputs_dataclass(**validated_args)
 
-            # Return the generator directly for streaming
-            return self._task_loop_generator(
-                task_name=task_name,
-                docstring=effective_docstring,
-                inputs_dataclass=inputs_dataclass,
-                inputs_instance=inputs_instance,
-                return_type=return_type,
-                state=state,
-                on_event=on_event,
-                setup=setup,
-            )
+            # Implement real-time hierarchical streaming using a worker thread and queue
+            from queue import Queue
+            from threading import Event as _ThreadEvent
+            from threading import Thread
+
+            _SENTINEL = object()
+            _queue: Queue = Queue()
+            _done = _ThreadEvent()
+
+            def _handler(ev):
+                # Enqueue every event and optionally forward to user handler
+                try:
+                    _queue.put(ev)
+                finally:
+                    if user_on_event is not None:
+                        try:
+                            user_on_event(ev)
+                        except Exception:
+                            # Swallow user handler errors to avoid breaking streaming
+                            pass
+
+            def _run_task():
+                try:
+                    # Execute standard (non-streaming) loop; events flow via _handler
+                    self._run_task_loop(
+                        task_name=task_name,
+                        docstring=effective_docstring,
+                        inputs_dataclass=inputs_dataclass,
+                        inputs_instance=inputs_instance,
+                        return_type=return_type,
+                        state=state,
+                        on_event=_handler,
+                        setup=setup,
+                    )
+                except BaseException as e:
+                    # Emit the exception into the queue so the consumer can re-raise
+                    try:
+                        _queue.put(e)
+                    finally:
+                        pass
+                finally:
+                    try:
+                        _queue.put(_SENTINEL)
+                    finally:
+                        _done.set()
+
+            _thread = Thread(target=_run_task, daemon=True)
+            _thread.start()
+
+            def _event_generator():
+                try:
+                    while True:
+                        ev = _queue.get()
+                        # If the worker enqueued an exception, re-raise it to match test expectations
+                        if isinstance(ev, BaseException):
+                            raise ev
+                        if ev is _SENTINEL:
+                            break
+                        yield ev
+                finally:
+                    if not _done.is_set():
+                        _done.wait(timeout=1.0)
+                    _thread.join(timeout=1.0)
+
+            return _event_generator()
 
         # Create the custom wrapper with proper __repr__
         agent_name = self.name if self.name is not None else self.__class__.__name__
