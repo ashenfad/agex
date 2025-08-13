@@ -81,7 +81,7 @@ class TaskLoopMixin(BaseAgent):
             exec_state = Namespaced(versioned_state, namespace=self.name)
         else:
             # None = we create and own new live state (no persistence by default)
-            exec_state = Live()
+            exec_state = Namespaced(Live(), namespace=self.name)
 
         # Add inputs and expected return type to state for agent access
         if inputs_instance is not None:
