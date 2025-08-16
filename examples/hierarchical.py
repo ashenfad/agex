@@ -10,10 +10,6 @@ from `data.py` and the `plot_data` task from `viz.py`, treating them as
 callable functions for the orchestrator agent.
 
 Bulk data flows between sub-agents without special handling.
-
-Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
-"micro-DSL" approach—providing a focused set of capabilities—can guide even
-smaller models to success on complex tasks.
 """
 
 from data import make_data
@@ -21,10 +17,12 @@ from plotly.graph_objects import Figure
 from viz import plot_data
 
 from agex import Agent
+from agex.llm import connect_llm
 
 orchestrator = Agent(
     name="orchestrator",
     primer="You orchestrate other agents to solve a problem.",
+    llm_client=connect_llm(provider="openai", model="gpt-4.1-nano"),
 )
 
 # Give the orchestrator access to the specialist tasks.

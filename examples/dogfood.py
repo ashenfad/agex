@@ -6,10 +6,6 @@ an agent build a brand-new agent on demand.
 
 Note: This example works within a single process. Persistence of dynamically
 created agents across process boundaries is a planned roadmap item.
-
-Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
-"micro-DSL" approach—providing a focused set of capabilities—can guide even
-smaller models to success on complex tasks.
 """
 
 import math
@@ -18,9 +14,14 @@ from typing import Callable
 from dogfood_primer import PRIMER
 
 from agex import Agent
+from agex.llm import connect_llm
 
 # create an architect agent that can create other agents
-architect = Agent(name="architect", primer=PRIMER)
+architect = Agent(
+    name="architect",
+    primer=PRIMER,
+    llm_client=connect_llm(provider="openai", model="gpt-4.1-nano"),
+)
 
 # register the Agent class so the architect can use it...
 # this is where we eat our own dogfood!

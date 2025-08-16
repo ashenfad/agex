@@ -3,17 +3,17 @@ Mathematical Computing
 
 Agent performs calculations using Python's math module and works with numerical
 data. Demonstrates basic agent-module integration for computational tasks.
-
-Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
-"micro-DSL" approach—providing a focused set of capabilities—can guide even
-smaller models to success on complex tasks.
 """
 
 import math
 
 from agex import Agent
+from agex.llm import connect_llm
 
-mathy_agent = Agent(primer="You are an expert at solving math problems.")
+mathy_agent = Agent(
+    primer="You are an expert at solving math problems.",
+    llm_client=connect_llm(provider="openai", model="gpt-4.1-nano"),
+)
 
 # medium viz shows function sigs but not docs to save context
 mathy_agent.module(math, visibility="medium")

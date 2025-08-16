@@ -9,10 +9,6 @@ Note: This example uses versioned storage for state checkpointing and cross-proc
 persistence, which requires method chaining for unpickleable objects like cursors.
 The agent is coached via detailed primer instructions on how to work within these
 constraints effectively.
-
-Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
-"micro-DSL" approach—providing a focused set of capabilities—can guide even
-smaller models to success on complex tasks.
 """
 
 import sqlite3
@@ -21,8 +17,13 @@ from typing import Any
 from db_primer import PRIMER
 
 from agex import Agent, Versioned
+from agex.llm import connect_llm
 
-db = Agent(name="db_agent", primer=PRIMER)
+db = Agent(
+    name="db_agent",
+    primer=PRIMER,
+    llm_client=connect_llm(provider="openai", model="gpt-4.1-nano"),
+)
 
 # create an in-memory database and register the connection with the agent
 conn = sqlite3.connect(":memory:")

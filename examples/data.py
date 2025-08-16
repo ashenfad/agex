@@ -4,10 +4,6 @@ Data Generation
 Agent generates complex NumPy arrays representing synthetic datasets.
 Creates bulk data (1000 arrays) that flows to user or other agents
 without special handling.
-
-Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
-"micro-DSL" approach—providing a focused set of capabilities—can guide even
-smaller models to success on complex tasks.
 """
 
 import random
@@ -15,8 +11,13 @@ import random
 import numpy as np
 
 from agex import Agent
+from agex.llm import connect_llm
 
-data_maker = Agent(name="data_maker", primer="You excel at generating data via numpy.")
+data_maker = Agent(
+    name="data_maker",
+    primer="You excel at generating data via numpy.",
+    llm_client=connect_llm(provider="openai", model="gpt-4.1-nano"),
+)
 
 data_maker.module(np, visibility="low")
 data_maker.module(np.random, visibility="low")

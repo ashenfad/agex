@@ -3,10 +3,6 @@ Data Visualization
 
 Agent works with complex NumPy arrays and generates Plotly visualizations.
 Bulk data flows between agents without special handling.
-
-Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
-"micro-DSL" approach—providing a focused set of capabilities—can guide even
-smaller models to success on complex tasks.
 """
 
 import numpy as np
@@ -16,10 +12,12 @@ from data import gen_data_request, make_data
 from plotly.graph_objects import Figure
 
 from agex import Agent
+from agex.llm import connect_llm
 
 viz = Agent(
     name="viz",
     primer="You excel plotting data via plotly express.",
+    llm_client=connect_llm(provider="openai", model="gpt-4.1-nano"),
 )
 
 viz.module(np, visibility="low")
