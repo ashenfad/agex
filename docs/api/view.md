@@ -45,6 +45,35 @@ fn: calculate_sum(a: int, b: int) -> int
 ---------------------------
 ```
 
+### Notes on Recursive Module Views
+
+If you registered a package with `recursive=True` (e.g., `osmnx` as a single module), `view(agent)`:
+
+- Does not enumerate entire subpackages to keep the output concise and avoid heavy imports.
+- Will show explicitly configured dotted members (e.g., `routing.shortest_path`) when their `visibility` is `"medium"` or `"high"`.
+
+To ensure key nested functions appear in `view(agent)`, promote them via `configure` at registration time:
+
+```python
+import osmnx as ox
+from agex import Agent, MemberSpec, view
+
+agent = Agent()
+agent.module(
+    ox,
+    visibility="low",
+    recursive=True,
+    configure={
+        "geocoder.geocode": MemberSpec(visibility="high"),
+        "routing.shortest_path": MemberSpec(visibility="high"),
+    },
+)
+
+print(view(agent))
+```
+
+Alternatively, register submodules directly (e.g., `ox.routing`) when you want their members listed without dotted names.
+
 ## State Inspection: `view(state)`
 
 View a snapshot of an agent's memory (`Versioned` state). This is useful for debugging the outcome of an agent's execution.

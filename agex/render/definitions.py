@@ -1,5 +1,7 @@
 import dataclasses
+import importlib
 import inspect
+from types import ModuleType
 from typing import Any
 
 from agex.agent.base import BaseAgent
@@ -280,6 +282,70 @@ def _policy_namespace_to_registered_module(
                 visibility=desc.visibility, docstring=desc.docstring
             )
 
+    # Targeted support for dotted members explicitly configured on recursive modules.
+    # We add functions/classes like "routing.shortest_path" when their effective
+    # visibility is medium/high. Skip class-member dotted keys (e.g., "Cls.meth").
+    def _resolve_dotted_member(root: ModuleType, dotted: str) -> Any | None:
+        parts = dotted.split(".")
+        current: Any = root
+        for idx, part in enumerate(parts):
+            try:
+                if hasattr(current, part):
+                    current = getattr(current, part)
+                    continue
+            except Exception:
+                return None
+            # Attempt to import a submodule when attribute is missing
+            if isinstance(current, ModuleType):
+                base = current.__name__
+                try:
+                    current = importlib.import_module(f"{base}.{part}")
+                    continue
+                except Exception:
+                    return None
+            return None
+        return current
+
+    # Only attempt when module namespace is recursive
+    if getattr(ns, "recursive", False):
+        # Prefer explicitly configured dotted keys
+        for dotted_key, ms in ns.configure.items():
+            if "." not in dotted_key:
+                continue
+            # Avoid class-member dotted keys by skipping if the left part is a class
+            left, _sep, _rest = dotted_key.partition(".")
+            try:
+                left_obj = getattr(mod, left)
+                if inspect.isclass(left_obj):
+                    continue
+            except Exception:
+                # If left attr missing on root, still allow resolution via import
+                pass
+
+            eff_vis = ms.visibility or ns.visibility
+            if eff_vis == "low":
+                continue
+
+            obj = _resolve_dotted_member(mod, dotted_key)
+            if obj is None:
+                continue
+            # Capture docstring override or object's own
+            doc = ms.docstring or getattr(obj, "__doc__", None)
+            if inspect.isclass(obj):
+                reg_cls = RegisteredClass(
+                    cls=obj,
+                    visibility=eff_vis,
+                    constructable=True,
+                    attrs={},
+                    methods={},
+                )
+                mod_classes[dotted_key] = reg_cls
+            elif inspect.isroutine(obj):
+                # Store as a function member with the dotted name
+                mod_fns[dotted_key] = MemberSpec(visibility=eff_vis, docstring=doc)
+            else:
+                mod_consts[dotted_key] = MemberSpec(visibility=eff_vis, docstring=doc)
+
     return RegisteredModule(
         name=ns_name,
         module=mod,
@@ -428,6 +494,33 @@ def _render_module(name: str, spec: RegisteredModule, full: bool = False) -> str
     rendered_fns = []
     rendered_classes = []
 
+    # Helper to resolve dotted attributes under the module when needed
+    def _resolve_under_module(module: ModuleType, dotted: str) -> Any | None:
+        if "." not in dotted:
+            try:
+                return getattr(module, dotted)
+            except Exception:
+                return None
+        parts = dotted.split(".")
+        current: Any = module
+        for idx, part in enumerate(parts):
+            try:
+                if hasattr(current, part):
+                    current = getattr(current, part)
+                    continue
+            except Exception:
+                return None
+            if isinstance(current, ModuleType):
+                base = current.__name__
+                try:
+                    current = importlib.import_module(f"{base}.{part}")
+                    continue
+                except Exception:
+                    return None
+            else:
+                return None
+        return current
+
     # Render functions
     for fn_name, fn_member_spec in spec.fns.items():
         if _should_render_member(
@@ -435,11 +528,14 @@ def _render_module(name: str, spec: RegisteredModule, full: bool = False) -> str
             effective_visibility,
             full=full,
         ):
-            fn = getattr(spec.module, fn_name)
+            fn = _resolve_under_module(spec.module, fn_name)
+            if fn is None:
+                # Fallback placeholder if resolution fails
+                fn = lambda: None
             doc = (
                 fn_member_spec.docstring
                 if fn_member_spec.docstring is not None
-                else fn.__doc__
+                else getattr(fn, "__doc__", None)
             )
             # We pass the member's own visibility down so the function renderer
             # knows whether to render the docstring or not.

@@ -249,6 +249,78 @@ agent.module(
 
 > **Note**: The `recursive` option is only valid for modules, not for class instances.
 
+### Viewing Recursive Modules in `view(agent)`
+
+When you register a large package with `recursive=True`, the agent can resolve nested members at runtime (e.g., `routing.shortest_path`). However, the human-readable `view(agent)` intentionally does not enumerate entire subpackages to avoid importing large trees and overwhelming the context.
+
+What `view(agent)` shows for recursive modules:
+
+- Top-level members of the root module
+- Explicitly configured dotted members (via `configure`) that have `visibility` set to `"medium"` or `"high"`
+
+What it does not show:
+
+- Arbitrary nested submodules discovered by recursion
+- Dotted members that are only listed in `include` without a corresponding `configure` entry
+
+Workarounds (pick one):
+
+- Promote specific dotted members with `configure` so they render in `view(agent)`:
+
+```python
+import osmnx as ox
+from agex import Agent, MemberSpec
+
+agent = Agent()
+agent.module(
+    ox,
+    visibility="low",
+    recursive=True,
+    configure={
+        "geocoder.geocode": MemberSpec(visibility="high"),
+        "routing.shortest_path": MemberSpec(visibility="high"),
+        "routing.route_to_gdf": MemberSpec(visibility="high"),
+    },
+)
+# view(agent) will now list those dotted entries under the module
+```
+
+- Register submodules directly when you want their members listed without dotted names:
+
+```python
+agent.module(ox.routing, include=["shortest_path", "route_to_gdf"], visibility="high")
+```
+
+Notes:
+
+- `full=True` in `view(agent, full=True)` lifts visibility gating but does not force deep submodule enumeration.
+- This design keeps the view concise and avoids expensive imports; recursive registration still works fully at runtime.
+
+### About Pattern Matching vs. Concrete Listings
+
+Include/exclude patterns (globs like `"foo.bar*"` or lists of names) control what is allowed and how visibility is applied, but they do not automatically expand into concrete member listings in the rendered context.
+
+- The agent’s rendered context (and `view(agent)`) shows:
+  - Members discovered via introspection at that level (filtered by include/exclude), and
+  - Explicit entries in `configure` (including dotted names), when their visibility is medium/high.
+
+- It does not enumerate wildcard matches under dotted paths. For example:
+
+```python
+agent.module(
+    some_pkg,
+    recursive=True,
+    include=["foo.bar*"],
+    configure={"foo.bar1": MemberSpec(visibility="high")},
+)
+
+# The context will allow calls under foo.bar*, but only foo.bar1 is explicitly shown.
+# If you want foo.bar2 to be visible, list it too:
+# configure={"foo.bar1": MemberSpec(visibility="high"), "foo.bar2": MemberSpec(visibility="high")}
+```
+
+Tip: For a browsable listing in `view(agent)`, explicitly promote key dotted members via `configure`, or register the submodule directly and include its members at that level.
+
 ### Usage Examples
 
 ```python
