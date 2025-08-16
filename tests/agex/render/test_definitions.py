@@ -213,6 +213,9 @@ def test_render_high_vis_module(dummy_module):
 
 module my_mod:
     class ClsHigh:
+        """
+        High-vis cls doc.
+        """
         def __init__(self):
             ...
         def meth_high(self):
@@ -256,6 +259,9 @@ def test_render_medium_vis_module(dummy_module):
 
 module my_mod:
     class ClsHigh:
+        """
+        High-vis cls doc.
+        """
         def __init__(self):
             ...
         def meth_high(self):
@@ -346,6 +352,9 @@ def test_render_low_vis_module_promoted_by_class(dummy_module):
 
 module my_mod:
     class ClsHigh:
+        """
+        High-vis cls doc.
+        """
         def __init__(self):
             ...
         def meth_high(self):

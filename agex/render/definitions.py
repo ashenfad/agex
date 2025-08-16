@@ -689,6 +689,11 @@ def _render_class(
     """Renders a single class definition based on its visibility."""
     member_indent = indent + "    "
     output = [f"{indent}class {name}:"]
+    # Render class-level docstring for high visibility (or in full mode)
+    if full or spec.visibility == "high":
+        cls_doc = getattr(spec.cls, "__doc__", None)
+        if cls_doc:
+            output.append(_render_docstring(cls_doc, indent=member_indent, full=full))
     init_str = []
     attr_strs = []
     meth_strs = []
