@@ -37,6 +37,19 @@ This curated environment helps guide the agent toward a correct solution by limi
 
 This philosophy of providing guidance through a curated environment is the primary design principle. A powerful and welcome side-effect of this approach is a robust security model. By limiting the agent's world to only the capabilities you provide, you inherently prevent it from accessing unintended, and potentially unsafe, parts of your system. Security becomes a natural outcome of thoughtful agent design.
 
+### Registration, Not Tool-Making
+
+This curated environment is created through **registration**, not by writing tool abstractions. In many frameworks, adapting a library for agent use requires writing wrapper functions or "tools" that handle JSON serialization and provide a simplified interface. `agex` bypasses this entirely.
+
+Instead of writing `tools/my_pandas_tool.py`, you simply register the `pandas` library directly with the agent:
+
+```python
+import pandas as pd
+agent.module(pd)  # see agex/helpers/pandas_helper.py for a full example
+```
+
+Your existing codebase *is* the toolset. The registration system acts as a secure and targeted bridge between your code and the agent, without forcing you to create and maintain a parallel set of tool abstractions.
+
 For a more detailed comparison of this approach to industry-standard tooling models like MCP, see our full **[note on this philosophy](agex-and-mcp.md)**.
 
 ## Security Through Design
