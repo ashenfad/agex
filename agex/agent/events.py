@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -171,7 +171,7 @@ def _code_section(title: str, code: str, color: str = "#28a745") -> str:
 class BaseEvent(BaseModel):
     """Base class for all agent events with common fields."""
 
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     agent_name: str
     full_namespace: str = ""  # Will be set by add_event_to_log
     commit_hash: str | None = None
