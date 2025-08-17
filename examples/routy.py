@@ -3,6 +3,8 @@ Geospatial Routing and Visualization
 
 Agent uses osmnx to find routes and folium to create interactive map visualizations.
 Demonstrates integration with specialized libraries for geospatial analysis.
+
+Also available as a notebook: https://ashenfad.github.io/agex/examples/routy/
 """
 
 import folium
@@ -18,7 +20,6 @@ routy = Agent(
     primer="You assist the user finding routes (OSMnx) and visualizing them (Folium).",
     llm_client=connect_llm(provider="openai", model="gpt-5"),
     timeout_seconds=60.0,  # agent will need to download openstreetmap data
-    max_iterations=20,
 )
 
 # give our agent standard lib modules like 'math'
