@@ -53,10 +53,10 @@ nav:
     - Routy (notebook): examples/routy.ipynb
     - Mathy: examples/mathy.md
     - Funcy: examples/funcy.md
-    - DB (SQLite): examples/db.md
+    - DB: examples/db.md
     - Hierarchical: examples/hierarchical.md
     - Evaluator–Optimizer: examples/evaluator_optimizer.md
-    - Dogfood (agents creating agents): examples/dogfood.md
+    - Dogfood: examples/dogfood.md
   - API Reference:
     - Overview: api/overview.md
     - Agent: api/agent.md
