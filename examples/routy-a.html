@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_6ed613ac2533c3e85f238a3562a87328 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+
+            <style>html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            </style>
+
+            <style>#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            </style>
+
+            <script>
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            </script>
+
+        
+</head>
+<body>
+    
+    
+            <div class="folium-map" id="map_6ed613ac2533c3e85f238a3562a87328" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_6ed613ac2533c3e85f238a3562a87328 = L.map(
+                "map_6ed613ac2533c3e85f238a3562a87328",
+                {
+                    center: [44.600536500000004, -123.18398795],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  "zoom": 12,
+  "zoomControl": true,
+  "preferCanvas": false,
+}
+
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_103ef1656439d08ea06c44b989b72481 = L.tileLayer(
+                "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+                {
+  "minZoom": 0,
+  "maxZoom": 20,
+  "maxNativeZoom": 20,
+  "noWrap": false,
+  "attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors \u0026copy; \u003ca href=\"https://carto.com/attributions\"\u003eCARTO\u003c/a\u003e",
+  "subdomains": "abcd",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_103ef1656439d08ea06c44b989b72481.addTo(map_6ed613ac2533c3e85f238a3562a87328);
+        
+    
+            var marker_17473648b8bb8f2c539602855fe89b8d = L.marker(
+                [44.6365071, -123.1059324],
+                {
+}
+            ).addTo(map_6ed613ac2533c3e85f238a3562a87328);
+        
+    
+        var popup_8b631b57be924d63ec179ec7ee0dde69 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_d961faeb82f26f8f9d8a83dfcb4de106 = $(`<div id="html_d961faeb82f26f8f9d8a83dfcb4de106" style="width: 100.0%; height: 100.0%;">Start: Albany, OR</div>`)[0];
+                popup_8b631b57be924d63ec179ec7ee0dde69.setContent(html_d961faeb82f26f8f9d8a83dfcb4de106);
+            
+        
+
+        marker_17473648b8bb8f2c539602855fe89b8d.bindPopup(popup_8b631b57be924d63ec179ec7ee0dde69)
+        ;
+
+        
+    
+    
+            marker_17473648b8bb8f2c539602855fe89b8d.bindTooltip(
+                `<div>
+                     Start
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var marker_ca31aae615722acd0fd1b97d704449ec = L.marker(
+                [44.5645659, -123.2620435],
+                {
+}
+            ).addTo(map_6ed613ac2533c3e85f238a3562a87328);
+        
+    
+        var popup_1e88c84e7c38bc18bf22c3cd84bd6619 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_a28a12d1571c843cb25ceacd52d6c60c = $(`<div id="html_a28a12d1571c843cb25ceacd52d6c60c" style="width: 100.0%; height: 100.0%;">End: Corvallis, OR</div>`)[0];
+                popup_1e88c84e7c38bc18bf22c3cd84bd6619.setContent(html_a28a12d1571c843cb25ceacd52d6c60c);
+            
+        
+
+        marker_ca31aae615722acd0fd1b97d704449ec.bindPopup(popup_1e88c84e7c38bc18bf22c3cd84bd6619)
+        ;
+
+        
+    
+    
+            marker_ca31aae615722acd0fd1b97d704449ec.bindTooltip(
+                `<div>
+                     End
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_c829d3900743cac6339367fe3dfa3ed6 = L.polyline(
+                [[44.6365091, -123.1060134], [44.6366595, -123.1047554], [44.637417, -123.1049301], [44.64182, -123.1076655], [44.6420502, -123.1130928], [44.641773, -123.120854], [44.6415791, -123.1233588], [44.6415949, -123.1276655], [44.642837, -123.141856], [44.6394941, -123.1607692], [44.6371899, -123.179238], [44.6369704, -123.1799085], [44.6367119, -123.1807609], [44.6360008, -123.1827262], [44.6350828, -123.1853038], [44.6319988, -123.1920927], [44.6309828, -123.1939606], [44.6305313, -123.1948066], [44.6298621, -123.1960698], [44.62874, -123.1980644], [44.6111872, -123.2161103], [44.608808, -123.217431], [44.6032349, -123.2203299], [44.602762, -123.220587], [44.6020958, -123.2209675], [44.5994391, -123.2222579], [44.5973842, -123.224216], [44.593183, -123.227573], [44.5914632, -123.2287596], [44.5887704, -123.2311018], [44.5883688, -123.231516], [44.574585, -123.252906], [44.574145, -123.253339], [44.573655, -123.253781], [44.5725662, -123.2547654], [44.568997, -123.257357], [44.568023, -123.257853], [44.568292, -123.258917], [44.56855, -123.259945], [44.56757, -123.26045], [44.5666029, -123.260967], [44.5656181, -123.2614684], [44.5646386, -123.261974]],
+                {"bubblingMouseEvents": true, "color": "blue", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "blue", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.8, "smoothFactor": 1.0, "stroke": true, "weight": 6}
+            ).addTo(map_6ed613ac2533c3e85f238a3562a87328);
+        
+    
+            poly_line_c829d3900743cac6339367fe3dfa3ed6.bindTooltip(
+                `<div>
+                     Route: 17.47 km
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            map_6ed613ac2533c3e85f238a3562a87328.fitBounds(
+                [[44.5646386, -123.261974], [44.642837, -123.1047554]],
+                {}
+            );
+        
+</script>
+</html>
