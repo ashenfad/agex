@@ -13,4 +13,4 @@ Short, focused examples showing core agex patterns.
 Prefer a notebook?
 
 - [Agex 101](agex101.ipynb)
-- [Routy]()
+- [Routy](routy.ipynb)
