@@ -1,7 +1,7 @@
 import os
 from unittest.mock import patch
 
-from agex.llm import connect_llm
+from agex import connect_llm
 
 
 def test_dummy_provider_example():

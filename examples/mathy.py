@@ -7,8 +7,7 @@ data. Demonstrates basic agent-module integration for computational tasks.
 
 import math
 
-from agex import Agent
-from agex.llm import connect_llm
+from agex import Agent, connect_llm
 
 mathy_agent = Agent(
     primer="You are an expert at solving math problems.",

@@ -8,8 +8,7 @@ program. Demonstrates runtime interoperability beyond JSON serialization.
 import math
 from typing import Callable
 
-from agex import Agent, Versioned
-from agex.llm import connect_llm
+from agex import Agent, Versioned, connect_llm
 
 funcy_agent = Agent(
     primer="You are great at providing custom functions to the user.",

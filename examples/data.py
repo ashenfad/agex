@@ -10,8 +10,7 @@ import random
 
 import numpy as np
 
-from agex import Agent
-from agex.llm import connect_llm
+from agex import Agent, connect_llm
 
 data_maker = Agent(
     name="data_maker",

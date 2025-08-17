@@ -16,8 +16,7 @@ from typing import Any
 
 from db_primer import PRIMER
 
-from agex import Agent, Versioned
-from agex.llm import connect_llm
+from agex import Agent, Versioned, connect_llm
 
 db = Agent(
     name="db_agent",

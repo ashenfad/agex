@@ -16,8 +16,7 @@ from data import make_data
 from plotly.graph_objects import Figure
 from viz import plot_data
 
-from agex import Agent
-from agex.llm import connect_llm
+from agex import Agent, connect_llm
 
 orchestrator = Agent(
     name="orchestrator",

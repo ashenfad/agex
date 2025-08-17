@@ -11,8 +11,7 @@ import plotly.express
 from data import gen_data_request, make_data
 from plotly.graph_objects import Figure
 
-from agex import Agent
-from agex.llm import connect_llm
+from agex import Agent, connect_llm
 
 viz = Agent(
     name="viz",

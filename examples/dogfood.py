@@ -13,8 +13,7 @@ from typing import Callable
 
 from dogfood_primer import PRIMER
 
-from agex import Agent
-from agex.llm import connect_llm
+from agex import Agent, connect_llm
 
 # create an architect agent that can create other agents
 architect = Agent(
