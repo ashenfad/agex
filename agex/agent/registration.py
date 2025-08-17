@@ -257,7 +257,6 @@ class RegistrationMixin(BaseAgent):
                 raise ValueError(
                     f"The name '{final_name}' is reserved and cannot be registered."
                 )
-            # Lazy: register a single policy namespace with recursive flag; no eager walk/imports
             sec_configure = {
                 k: MemberSpec(
                     visibility=v.visibility,
@@ -332,7 +331,6 @@ class RegistrationMixin(BaseAgent):
                 configure=sec_configure,
                 recursive=False,
             )
-            # Fully lazy: rely on policy for rendering/resolution
             self._update_fingerprint()
             return obj
         else:
@@ -363,7 +361,6 @@ class RegistrationMixin(BaseAgent):
             )
             # Store the live instance in the host registry for runtime access
             self._host_object_registry[name] = obj
-            # Fully lazy: rely on policy for rendering/resolution
             self._update_fingerprint()
             return obj
 

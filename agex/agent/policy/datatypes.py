@@ -38,7 +38,6 @@ class Namespace:
 
     name: str
     kind: Literal["module", "instance", "inherited", "virtual"]
-    # For module namespaces use either module object or import path (lazy import)
     module: ModuleType | str | None = None
     # For instance namespaces, hold the live object
     obj: Any | None = None

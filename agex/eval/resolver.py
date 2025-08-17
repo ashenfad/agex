@@ -14,11 +14,7 @@ from .utils import get_allowed_attributes_for_instance
 
 class Resolver:
     """
-    Facade over the agent's eager registries used by the evaluator.
-
-    This centralizes name, attribute, and import resolution so we can later
-    swap it with a lazy policy-based implementation without touching evaluator
-    logic.
+    Resolve policies to discover whether artifacts are whitelisted.
     """
 
     def __init__(self, agent):

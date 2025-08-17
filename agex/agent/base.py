@@ -94,7 +94,6 @@ class BaseAgent:
         # private, host-side registry for live, unpickleable objects
         self._host_object_registry: dict[str, Any] = {}
 
-        # New lazy policy system (coexisting with eager registries during migration)
         self._policy: AgentPolicy = AgentPolicy()
 
         # Auto-register this agent
