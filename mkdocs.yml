@@ -110,14 +110,6 @@ markdown_extensions:
 plugins:
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
-  - blog:
-      blog_dir: blog
-      post_dir: blog/posts
-      blog_toc: True
-      archive: false
-      categories: false
-      pagination: false
-      post_readtime: false
   - mkdocs-jupyter:
       execute: false
       allow_errors: false
@@ -125,7 +117,6 @@ plugins:
       ignore_h1_titles: true
       include_requirejs: false
       kernel_name: python3
-      theme: dark
 
 extra:
   social:
