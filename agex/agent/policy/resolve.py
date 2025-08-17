@@ -126,6 +126,24 @@ def _resolve_module_member(
     scope: ResolutionScope,
 ) -> ResolvedFn | ResolvedClass | ResolvedObj | None:
     mod = spec._ensure_module_loaded()
+    # Support recursive resolution for submodule imports via
+    #   from pkg import submodule
+    # When recursive is enabled and the top-level package does not have a direct
+    # attribute named `member_name`, attempt to import `pkg.member_name` as a
+    # submodule, respecting exclude patterns.
+    if "." not in member_name and spec.recursive:
+        # If the package already has a direct attribute, fall through to normal
+        # handling below to preserve class/member resolution and include gating.
+        if not hasattr(mod, member_name):
+            submod_path = f"{mod.__name__}.{member_name}"
+            # Use the dotted path for exclude checks
+            if not exclude_pred(submod_path):
+                try:
+                    submod = importlib.import_module(submod_path)
+                except Exception:
+                    submod = None
+                if submod is not None:
+                    return ResolvedObj(value=submod)
     if "." in member_name:
         parts = member_name.split(".")
         if len(parts) == 2:
@@ -164,6 +182,11 @@ def _resolve_module_member(
     member = getattr(mod, member_name, None)
     if member is None:
         return None
+    # If the resolved member is actually a submodule (ModuleType), return it as
+    # a ResolvedObj. The caller (attribute access vs import-from) can impose
+    # additional policy (e.g., recursion required) if needed.
+    if isinstance(member, ModuleType):
+        return ResolvedObj(value=member)
     if inspect.isroutine(member):
         return ResolvedFn(fn=member)
     elif inspect.isclass(member):

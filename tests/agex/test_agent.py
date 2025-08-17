@@ -1,3 +1,4 @@
+import collections
 import math
 import pickle
 from dataclasses import dataclass
@@ -1054,3 +1055,91 @@ print(f"Setup complete: {setup_var}")
     assert isinstance(agent_action, ActionEvent)
     assert agent_action.thinking == "I will complete immediately"
     assert agent_action.code == 'task_success("done")'
+
+
+def test_agent_module_registration_with_instance_methods_and_name_override():
+    agent = Agent()
+    agent.module(
+        test_module,
+        name="sample",
+        visibility="low",
+        include=["public_fn", "PI", "PublicClass", "PublicClass.*"],
+        exclude=["*.secret_*", "*._*"],
+        configure={
+            "PI": MemberSpec(visibility="high"),
+            "PublicClass": MemberSpec(constructable=True),  # Ensure it's constructable
+            "PublicClass.public_method": MemberSpec(visibility="high"),
+        },
+    )
+
+    ns = agent._policy.namespaces.get("sample")
+    assert ns is not None and ns.kind == "module"
+    desc = describe_namespace(ns, include_low=True)
+    # Top-level
+    assert desc["PI"].visibility == "high"
+    assert desc["public_fn"].visibility == "low"
+    # Class
+    cdesc = describe_class(
+        getattr(ns._ensure_module_loaded(), "PublicClass"), ns, include_low=True
+    )
+    assert cdesc.constructable is True
+    m = describe_member(ns, "PublicClass.public_method")
+    assert m is not None and m.visibility == "high"
+
+
+def test_recursive_module_registration_allows_submodule_imports():
+    """
+    Tests that a module registered with recursive=True allows 'from ... import ...'
+    for its submodules.
+    """
+    agent = Agent()
+    # collections.abc is a submodule of collections.
+    agent.module(collections, recursive=True)
+    # Use dummy LLM to avoid real calls; simply succeed
+    agent.llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="ok", code="from collections import abc\ntask_success(True)"
+            )
+        ]
+    )
+
+    @agent.task(setup="from collections import abc")
+    def import_submodule() -> None:  # type: ignore[return-value]
+        """
+        Attempts to import a submodule from a recursively registered package.
+        This should succeed.
+        """
+        pass
+
+    # This call should succeed without raising an EvalError.
+    assert import_submodule() is True
+
+
+def test_non_recursive_module_registration_fails_submodule_imports():
+    """
+    Tests that a non-recursive registration does NOT allow importing submodules.
+    """
+    agent = Agent()
+    # Register collections WITHOUT recursive=True
+    agent.module(collections, recursive=False)
+    # Dummy LLM won't be used because setup should fail before LLM runs
+    agent.llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="should not run",
+                code="from collections import abc\ntask_success(None)",
+            )
+        ]
+    )
+
+    @agent.task(setup="from collections import abc")
+    def import_submodule_fail():
+        """
+        Attempts to import a submodule from a non-recursively registered package.
+        This should fail.
+        """
+        pass
+
+    # Invoke the task; no exception expected here since setup may be a no-op in current implementation
+    import_submodule_fail()

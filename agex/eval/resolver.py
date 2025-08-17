@@ -130,6 +130,38 @@ class Resolver:
                         parent_ns_name, dotted_member
                     )
             if res is None:
+                # Fallback: if a child submodule is registered as its own namespace, return it
+                # Compute the fully qualified module path for the child attribute
+                try:
+                    parent_spec = self.agent._policy.namespaces.get(value.name)  # type: ignore[attr-defined]
+                except Exception:
+                    parent_spec = None
+                if (
+                    parent_spec is not None
+                    and getattr(parent_spec, "kind", None) == "module"
+                ):
+                    try:
+                        parent_mod = parent_spec._ensure_module_loaded()
+                        dotted = f"{parent_mod.__name__}.{attr_name}"
+                        # Find a registered namespace matching this dotted module path
+                        for ns_name, ns in self.agent._policy.namespaces.items():  # type: ignore[attr-defined]
+                            if getattr(ns, "kind", None) != "module":
+                                continue
+                            loaded = None
+                            try:
+                                loaded = ns._ensure_module_loaded()
+                            except Exception:
+                                continue
+                            if (
+                                isinstance(loaded, ModuleType)
+                                and loaded.__name__ == dotted
+                            ):
+                                return AgexModule(
+                                    name=ns_name,
+                                    agent_fingerprint=self.agent.fingerprint,
+                                )
+                    except Exception:
+                        pass
                 raise AgexAttributeError(
                     f"module '{value.name}' has no attribute '{attr_name}'", node
                 )
