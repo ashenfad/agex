@@ -45,6 +45,10 @@ class NativeFunction:
             f"'{type(self).__name__}' object has no attribute '{name}'"
         )
 
+    def __deepcopy__(self, memo):
+        # no deepcopy for native functions
+        return self
+
     @property
     def __doc__(self):
         return self.fn.__doc__

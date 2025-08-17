@@ -64,7 +64,20 @@ class Evaluator(
         Handles expressions that are used as statements.
         The result of the expression is calculated but not stored.
         """
-        self.visit(node.value)
+        if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
+            # avoid printing for builtins that already print
+            if node.value.func.id in ("print", "view_image", "dir", "help"):
+                # Still need to visit the call to execute it for its side effect.
+                self.visit(node.value)
+                return
+
+        result = self.visit(node.value)
+
+        if result is not None:
+            # we auto-print here to mimic notebook behavior
+            from .builtins import _print_stateful
+
+            _print_stateful(result, state=self.state, agent_name=self.agent.name)
 
 
 def evaluate_program(
