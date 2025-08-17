@@ -68,18 +68,19 @@ for event in solve_equation.stream("4x + 2 = 10"):
     display(event) # Renders a rich view of each event
 ```
 
+The final result of the task is not returned directly, but is available as the `.result` attribute of the `SuccessEvent` yielded at the end of the stream.
+
 ### 3. Real-time Handlers with `on_event`
 
-For production monitoring and integration with observability platforms (like OpenTelemetry), you can pass an `on_event` handler. This provides a "fire-and-forget" way to get a real-time, hierarchical stream of all events without needing to consume a generator.
+You may get both event-level visibility and a blocking result via the `on_event` handler. This provides a "fire-and-forget" way to get a real-time stream of all events without needing to consume a generator.
 
 The handler is a callable that receives the raw event object each time an event is created.
 
 ```python
-def my_event_handler(event):
-    print(f"[{event.timestamp}] Event from {event.agent_name}: {event.__class__.__name__}")
+from agex import pprint_events
 
-# The handler will be called for all events from the main task and any sub-agents.
-result = solve_equation("x**2 = 16", on_event=my_event_handler)
+# For simple, colorful terminal logging, you can use the built-in pprint_events helper.
+result = solve_equation("x**2 = 16", on_event=pprint_events)
 ```
 
 ## Function Signature
@@ -99,6 +100,7 @@ def my_function(x: int, y: str) -> bool:  # type: ignore[return-value]
 ```
 
 ### State Parameter
+
 - **Optional**: `state: Versioned | Live | None = None`
 - **One-shot mode** (default): No memory between calls
 - **Persistent mode**: Pass a `Versioned` or `Live` state for long-term memory
@@ -115,6 +117,7 @@ result2 = my_function(x=20, y="world", state=shared_state)  # Remembers previous
 See [State](state.md) for more details on state management.
 
 ### on_event Parameter
+
 - **Optional**: `on_event: Callable[[BaseEvent], None] | None = None`
 - **Purpose**: Provide a callback function to receive events in real time.
 - **Propagation**: The handler is automatically passed to any sub-agent tasks, providing a single, unified event stream for an entire end-to-end operation.
@@ -237,13 +240,11 @@ def no_instructions():
 agent1 = Agent(name="agent1")
 agent2 = Agent(name="agent2")
 
-@agent1.task("First task")
+# Raises ValueError
+@agent1.task
+@agent2.task
 def my_task():
-    pass
-
-# ❌ Invalid: Multiple task decorators
-@agent2.task("Second task")  # Raises ValueError
-def my_task():
+    "Do a thing"
     pass
 ```
 

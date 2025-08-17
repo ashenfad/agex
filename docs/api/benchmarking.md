@@ -7,12 +7,14 @@ The `agex.bench` module provides a framework for empirically evaluating agent pe
 ### Trial-Based Evaluation
 
 A **Trial** represents a single test case with:
+
 - **Parameters**: Input arguments to the task function
 - **Judge Function**: Evaluates the actual result
 
 ### Judge Functions
 
 Judge functions take the actual result from a task and return a new result for aggregation:
+
 - **Pass/Fail**: Return `bool` for success rate metrics
 - **Numeric**: Return `float` for average scores
 - **Custom**: Return any type with matching aggregator
@@ -22,6 +24,7 @@ Judge functions take the actual result from a task and return a new result for a
 ### Metrics
 
 All benchmarks automatically collect:
+
 - **Completion rate**: Successful vs errored trials
 - **Performance**: Average actions taken and time per trial
 - **Judge-specific**: Pass rates, scores, etc.

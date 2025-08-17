@@ -179,6 +179,7 @@ agent.module(
 ```
 
 **MemberSpec Properties:**
+
 - `visibility`: Override visibility for this specific member
 - `docstring`: Custom docstring for the agent (for functions/methods)  
 - `constructable`: Whether class can be instantiated (for classes in modules)

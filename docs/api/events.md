@@ -185,19 +185,24 @@ result = my_task("important task", on_event=custom_handler)
 ```
 
 ### 3. Real-time Generator with `.stream()`
-The `.stream()` method is best for situations where your primary goal is to process the stream of events itself, and the final return value of the task is **not** needed.
+The `.stream()` method is best for situations where your primary goal is to process the stream of events itself. Unlike a standard function call, it does not `return` the final result directly. Instead, the result is available as an attribute of the `SuccessEvent` yielded at the end of the stream.
 
 **Choose `.stream()` if:**
-*   You only care about the events and not the final result.
+*   Your primary focus is processing the event stream, rather than getting a direct return value.
 *   You want to use generator-based control flow (e.g., with `itertools`).
 
 ```python
-from agex.agent.events import ActionEvent
+from agex.agent.events import ActionEvent, SuccessEvent
 
 # You get a generator of events, but not the final result.
+final_result = None
 for event in my_task.stream("process data"):
     if isinstance(event, ActionEvent):
         log_agent_action(event)
+    elif isinstance(event, SuccessEvent):
+        final_result = event.result
+
+print(f"Final result from stream: {final_result}")
 ```
 
 ### 4. Console Pretty-Printing with `pprint_events`

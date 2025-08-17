@@ -39,7 +39,7 @@ from agex import Agent, connect_llm, LLMClient
 agent = Agent(primer="You are a helpful assistant.")
 
 # Agent configured with a specific, explicitly created client
-llm_client = connect_llm(provider="openai", model="gpt-4-turbo", temperature=0.1)
+llm_client = connect_llm(provider="openai", model="gpt-4.1-nano", temperature=0.1)
 expert_agent = Agent(
     primer="You are an expert data analyst.",
     llm_client=llm_client
@@ -59,7 +59,7 @@ from agex import connect_llm, Agent
 from agex.llm.dummy_client import DummyLLMClient
 
 # For production, create a client for a specific provider
-prod_client = connect_llm(provider="openai", model="gpt-4-turbo")
+prod_client = connect_llm(provider="openai", model="gpt-4.1-nano")
 prod_agent = Agent(llm_client=prod_client)
 
 # For testing, you can inject a dummy client
@@ -70,6 +70,13 @@ test_agent = Agent(llm_client=test_client)
 ### 2. Default Client (via Environment Variables)
 
 If you do not pass an `llm_client` to the `Agent` constructor, `agex` will automatically create a default one for you by calling `connect_llm()` with no arguments. This default client is configured using environment variables.
+
+```bash
+# Example: Configure agent via environment variables
+export AGEX_LLM_PROVIDER="openai"
+export AGEX_LLM_MODEL="gpt-4.1-nano"
+export OPENAI_API_KEY="your-key-here"
+```
 
 ### 3. Using OpenAI-Compatible Endpoints (e.g., Ollama)
 
@@ -101,7 +108,7 @@ You can pass both types of arguments directly to `connect_llm`. The underlying c
 # Example with both client and completion arguments
 client = connect_llm(
     provider="openai",
-    model="gpt-4-turbo",
+    model="gpt-4.1-nano",
     # --- Client Arguments ---
     api_key="sk-...",
     timeout=30.0,
@@ -111,22 +118,6 @@ client = connect_llm(
 )
 ```
 
-This separation ensures that connection details are configured once, while model parameters can be set as defaults and overridden on a per-call basis if needed.
-
-The fallback chain is:
-1.  **Environment Variables**: `AGEX_LLM_PROVIDER`, `AGEX_LLM_MODEL`, etc. will be used if set. Provider-specific keys like `OPENAI_API_KEY` are also needed.
-2.  **Hard-coded Default**: If no environment variables are found, a `DummyLLMClient` is created, which produces placeholder responses and requires no API keys. This ensures `agex` works out-of-the-box for local testing.
-
-```bash
-# Example: Configure agent via environment variables
-export AGEX_LLM_PROVIDER=openai
-export AGEX_LLM_MODEL=gpt-4-turbo
-export OPENAI_API_KEY="your-key-here"
-```
-```python
-# This agent will now use the client configured from the environment
-env_agent = Agent(primer="You are configured by the environment.")
-```
 
 ## Properties
 
@@ -168,16 +159,8 @@ Maximum number of think-act cycles per task. If an agent doesn't complete a task
 
 Maximum number of tokens to use when rendering the agent's context.
 
-## Multi-Agent Usage
 
-### Unique Agent Names
-When creating multiple agents, ensure they have unique names for proper identification:
-```python
-research_agent = Agent(name="researcher", primer="You excel at research.")
-writer_agent = Agent(name="writer", primer="You are a skilled writer.")
-```
-
-### Agent Registry
+## Agent Registry
 agex automatically registers all agents in a global registry to enable inter-agent communication. For **testing**, use `clear_agent_registry()` to prevent cross-contamination between test cases.
 
 ```python

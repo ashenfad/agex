@@ -18,6 +18,7 @@ from agex import Agent, TaskFail, TaskClarify, TaskTimeout
 Raised when an agent needs more information from the caller (a human or another agent) to proceed. This is a non-terminal, interactive signal.
 
 **Attributes:**
+
 - `message: str` - The agent's question or request for clarification
 
 **Example:**
@@ -53,6 +54,7 @@ while True:
 Raised when an agent determines it cannot complete the task.
 
 **Attributes:**
+
 - `message: str` - The error message provided by the agent
 
 **Example:**
@@ -79,6 +81,7 @@ Raised when an agent exceeds its maximum iterations without completing the task.
 Think of this less as a recoverable error and more as a **signal to the developer** that something is wrong. An agent should ideally complete its task or fail gracefully (`TaskFail`) well within the iteration limit. A timeout suggests the agent is stuck in a loop, the task is too complex for the current `max_iterations` setting, or there is an issue in the framework itself.
 
 **When it occurs:**
+
 - Agent reaches `max_iterations` without finishing
 - Usually indicates a framework issue or infinite loop in agent logic
 - **Not** a normal error condition - suggests something is wrong
@@ -108,12 +111,14 @@ This is a framework-level, uncatchable control exception (like `TaskTimeout`) in
 When retries are enabled (default), the agent emits an `ErrorEvent` per failed attempt with `recoverable=True`, and a final `ErrorEvent` with `recoverable=False` before raising `LLMFail`.
 
 Attributes:
+
 - `message: str` – last error message from the client/provider
 - `provider: str | None` – provider name (e.g., "OpenAI")
 - `model: str | None` – model identifier
 - `retries: int` – number of retry attempts performed
 
 Notes:
+
 - Configure retries via `Agent(llm_max_retries=..., llm_retry_backoff=...)`.
 - Transient errors (timeouts/network/parse) are retried with exponential backoff; fatal errors (auth/config) fail immediately.
 
@@ -149,6 +154,7 @@ except TaskTimeout as e:
 In multi-agent workflows, child agent errors are automatically converted to evaluation errors that appear in the parent's execution log (its virtual `stdout`). This allows parent agents to see and respond to sub-agent failures naturally.
 
 **How it works:**
+
 - When a sub-agent calls `task_clarify()` or `task_fail()`, the framework converts these to `EvalError`s
 - The parent agent sees these errors in its execution log as: `💥 Evaluation error: Sub-agent needs clarification: <message>` or `💥 Evaluation error: Sub-agent failed: <message>`
 - The parent can then respond by retrying with different parameters, using alternative approaches, or escalating the error
@@ -160,6 +166,7 @@ This error conversion only happens for sub-agents. Top-level agents (called dire
 *This section explains what happens internally when agents run. You don't need to call these functions - they're used by agents automatically.*
 
 Agents have internal functions to signal different outcomes:
+
 - **`task_success(result)`** - Agent completed successfully. Becomes the return value of the task.
 - **`task_fail(message)`** - Agent cannot complete the task. Raises a `TaskFail` exception.
 - **`task_clarify(message)`** - Agent needs more information. Raises a `TaskClarify` exception.
