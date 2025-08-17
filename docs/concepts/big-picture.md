@@ -1,6 +1,6 @@
 # The Big Picture: Agents That Think in Code
 
-Many agentic frameworks adopt JSON tooling as the communication medium between your code and AI agents. This choice often mean designing new tool-friendly abstractions and serialization when working with existing codebases. 
+Many agentic frameworks adopt JSON tooling as the communication medium between your code and AI agents. This choice often means designing new tool-friendly abstractions and serialization when working with existing codebases. 
 
 `agex` takes a different approach: **agents work directly with your Python runtime**. Instead of JSON interfaces, agents think in code and operate on real Python objects.
 
