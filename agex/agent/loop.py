@@ -337,6 +337,31 @@ class TaskLoopMixin(BaseAgent):
                         yield warning_output
                         events_yielded += 1
 
+        # Final snapshot before returning, to catch any last-minute mutations
+        # or state changes that occurred during the final successful evaluation.
+        if versioned_state is not None:
+            result = versioned_state.snapshot()
+            if result.unsaved_keys:
+                agent_visible_keys = []
+                namespace_prefix = f"{self.name}/"
+                for key in result.unsaved_keys:
+                    if key.startswith(namespace_prefix):
+                        agent_visible_keys.append(key[len(namespace_prefix) :])
+                    else:
+                        agent_visible_keys.append(key)
+
+                warning_message = (
+                    f"⚠️ Could not save the following variables because they "
+                    f"are not serializable: {', '.join(agent_visible_keys)}"
+                )
+                warning_output = OutputEvent(
+                    agent_name=self.name,
+                    parts=[PrintAction([warning_message])],
+                )
+                add_event_to_log(exec_state, warning_output, on_event=on_event)
+                yield warning_output
+                events_yielded += 1
+
         # If we get here, we hit max iterations
         raise TaskTimeout(
             f"Task '{task_name}' exceeded maximum iterations ({self.max_iterations})"

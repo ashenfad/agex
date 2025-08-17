@@ -639,9 +639,13 @@ def test_unserializable_object_in_state_is_handled_gracefully():
     )
     agent = Agent(name="test_agent", llm_client=llm_client)
 
+    class Unserializable:
+        def __getstate__(self):
+            raise pickle.PicklingError("This object cannot be pickled.")
+
     @agent.fn()
     def make_object_unserializable(obj):
-        obj["bad_field"] = lambda: "I cannot be pickled"
+        obj["bad_field"] = Unserializable()
 
     @agent.task("A task that creates bad state via mutation.")
     def task_with_unserializable_state() -> str:  # type: ignore

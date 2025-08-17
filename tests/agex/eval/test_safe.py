@@ -1,6 +1,5 @@
 """Tests for pickle safety checking."""
 
-import threading
 from types import ModuleType
 
 import pytest
@@ -28,33 +27,19 @@ def test_module_conversion():
     assert result.name == "test_module"
 
 
-def test_unpickleable_objects_fail():
-    """Test that unpickleable objects raise EvalError."""
-    # Test objects that don't have reliable pickle methods
-    with pytest.raises(EvalError, match="Cannot assign unpickleable"):
-        check_assignment_safety(threading.Lock())
-
-    with pytest.raises(EvalError, match="Cannot assign unpickleable"):
-        check_assignment_safety(threading.Thread(target=lambda: None))
-
-    # Test file object (has __reduce__ but not reliable pickle methods)
-    file_obj = open(__file__, "r")
-    try:
-        with pytest.raises(EvalError, match="Cannot assign unpickleable"):
-            check_assignment_safety(file_obj)
-    finally:
-        file_obj.close()
-
-
 def test_collections_with_bad_contents():
     """Test that collections containing unpickleable objects fail."""
-    lock = threading.Lock()
+
+    class Unserializable:
+        def __getstate__(self):
+            raise TypeError("This object cannot be pickled")
+
+    unserializable_instance = Unserializable()
 
     bad_collections = [
-        [1, 2, lock],
-        (1, 2, lock),
-        {1, 2, lock},
-        {"key": lock},
+        [1, 2, unserializable_instance],
+        (1, 2, unserializable_instance),
+        {"key": unserializable_instance},
     ]
 
     for collection in bad_collections:
@@ -165,7 +150,7 @@ def test_file_objects_with_reduce():
     try:
         # File objects have __reduce__ but still aren't pickleable
         # The safety checker should fall back to the full pickle test
-        with pytest.raises(EvalError, match="Cannot assign unpickleable"):
+        with pytest.raises(EvalError, match="Cannot assign file object"):
             check_assignment_safety(file_obj)
     finally:
         file_obj.close()

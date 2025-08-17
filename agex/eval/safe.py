@@ -6,9 +6,11 @@ before they enter the state, catching unpickleable objects early with
 good error messages.
 """
 
-import pickle
+import io
 from types import ModuleType
 from typing import Any
+
+import dill
 
 from .error import EvalError
 from .objects import AgexModule
@@ -38,6 +40,13 @@ def check_assignment_safety(value: Any) -> Any:
     safe_atomic_types = {int, float, str, bytes, bool, type(None), complex, range}
     if type(value) in safe_atomic_types:
         return value
+
+    # Explicitly block file objects
+    if isinstance(value, io.IOBase):
+        raise EvalError(
+            f"Cannot assign file object of type {type(value).__name__} to state.",
+            node=None,
+        )
 
     # Fast path: objects with pickle dunders that aren't collections
     if _has_pickle_support(value) and not _is_collection(value):
@@ -80,14 +89,16 @@ def check_assignment_safety(value: Any) -> Any:
             node=None,
         )
 
-    # Slow path: full pickle test for everything else
+    # Fallback to a full pickle test
     try:
-        pickle.dumps(value)
-        return value
-    except Exception as e:
+        dill.dumps(value)
+    except Exception:
         raise EvalError(
-            f"Cannot assign unpickleable {type(value).__name__}: {e}", node=None
+            f"Cannot assign unpickleable object of type {type(value).__name__}",
+            node=None,
         )
+
+    return value
 
 
 def _has_pickle_support(obj: Any) -> bool:
