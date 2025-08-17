@@ -222,7 +222,7 @@ def _dir(evaluator, *args, **kwargs) -> list[str]:
             from agex.agent.policy.describe import describe_namespace
 
             desc = describe_namespace(ns, include_low=False)
-            attrs = sorted(k for k in desc.keys() if not k.startswith("_"))
+            attrs = sorted(k for k in desc.keys())
     elif _is_bound_instance_object(obj):
         # This is a BoundInstanceObject (registered live object)
         from ..eval.objects import BoundInstanceObject
@@ -239,14 +239,17 @@ def _dir(evaluator, *args, **kwargs) -> list[str]:
         allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
         attrs = sorted(list(allowed))
 
+    # Scrub any private/protected attributes from the final list
+    final_attrs = [attr for attr in attrs if not attr.startswith("_")]
+
     # No deepcopy needed here, as `attrs` is a new list of strings, which is immutable.
     # Create and add the event using efficient reference-based storage
     from agex.state.log import add_event_to_log
 
-    event = OutputEvent(agent_name=evaluator.agent.name, parts=[attrs])
+    event = OutputEvent(agent_name=evaluator.agent.name, parts=[final_attrs])
     add_event_to_log(evaluator.state, event)
 
-    return attrs
+    return final_attrs
 
 
 def _hasattr(evaluator, *args, **kwargs) -> bool:

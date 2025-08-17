@@ -80,8 +80,6 @@ except Exception as e:
     log_result = state.get("log_result")
     assert isinstance(dir_result, list)
     assert sorted(dir_result) == [
-        "__init__",
-        "_value",
         "get_value",
         "increment",
         "log",
