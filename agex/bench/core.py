@@ -7,7 +7,7 @@ task functions against test trials and collect performance metrics.
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, Callable, TypeVar, cast
+from typing import Any, Callable, Generic, TypeVar, cast
 
 from agex.agent.events import ActionEvent, BaseEvent
 
@@ -20,7 +20,7 @@ U = TypeVar("U")
 
 
 @dataclass
-class TrialResult[T, U]:
+class TrialResult(Generic[T, U]):
     """Result of running a single trial."""
 
     trial: Trial[T, U]

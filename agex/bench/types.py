@@ -6,7 +6,7 @@ benchmark trials, parameters, and results.
 """
 
 from dataclasses import dataclass
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Generic, TypeVar
 
 # Type variables for generic trial definitions
 T = TypeVar("T")  # Type of expected/actual values
@@ -42,7 +42,7 @@ def params(*args, **kwargs) -> Params:
 
 
 @dataclass
-class Trial[T, U]:
+class Trial(Generic[T, U]):
     """A single benchmark trial definition.
 
     Represents one test case with input parameters and a judge function
