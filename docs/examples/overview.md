@@ -11,5 +11,5 @@ Short, focused examples showing core agex patterns.
 
 Prefer a notebook?
 
-- [Agex 101](agex101.ipynb)
-- [Routy](routy.ipynb)
+- [Agex 101](agex101.ipynb) - Gentle intro to agex
+- [Routy](routy.ipynb) - OSMnx & Folio for route planning
