@@ -75,8 +75,6 @@ nav:
     - MIME Bundles for Events: roadmap/mime_bundles.md
     - Local Registries: roadmap/local_registries.md
     - Faded Memory: roadmap/faded_memory.md
-  - Blog:
-    - Posts: blog/index.md
 
 markdown_extensions:
   - pymdownx.highlight:
