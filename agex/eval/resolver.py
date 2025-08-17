@@ -226,8 +226,30 @@ class Resolver:
                 f"Cannot import name '{member_name}' from module '{module_name}'.",
                 node,
             )
-        return (
+        # If the resolved member is itself a module, return it wrapped as an
+        # AgexModule so that subsequent attribute access goes through policy
+        # (enabling constants and dotted resolution with include/exclude gating).
+        val = (
             getattr(res, "fn", None)
             or getattr(res, "cls", None)
             or getattr(res, "value", None)
         )
+        if isinstance(val, ModuleType):
+            # Prefer an existing registered namespace for the resolved module
+            for ns_name, ns in getattr(self.agent._policy, "namespaces").items():  # type: ignore[attr-defined]
+                if getattr(ns, "kind", None) != "module":
+                    continue
+                try:
+                    loaded = ns._ensure_module_loaded()
+                except Exception:
+                    continue
+                if loaded is val:
+                    return AgexModule(
+                        name=ns_name, agent_fingerprint=self.agent.fingerprint
+                    )
+            # Otherwise compose a dotted child path relative to the parent module name
+            dotted_name = f"{module_name}.{member_name}"
+            return AgexModule(
+                name=dotted_name, agent_fingerprint=self.agent.fingerprint
+            )
+        return val
