@@ -32,7 +32,7 @@ llm_client = connect_llm(provider="openai", model="gpt-4.1-nano")
 # llm_client = connect_llm()
 ```
 
-## 1. Your First Agent
+## Your First Agent
 
 Let's start with a simple agent that can do math. We'll pass it the `llm_client` we just created.
 
@@ -72,7 +72,7 @@ print(result)  # 50.26548245743669
 - **`agent.module()`**: Exposes existing Python modules to the agent.
 - **`@agent.task`**: Defines what you want accomplished (agent provides implementation).
 
-## 2. Custom Functions
+## Custom Functions
 
 You can register your own functions as agent capabilities:
 
@@ -97,7 +97,7 @@ print(analysis)
 
 The agent can now use your custom `calculate_compound_interest` function while generating its response.
 
-## 3. Working with Complex Data
+## Working with Complex Data
 
 Agents can work with rich Python objects like numpy arrays and pandas DataFrames:
 
@@ -122,7 +122,7 @@ print(f"Created {len(signals)} arrays, first one shape: {signals[0].shape}")
 combined = np.concatenate(signals)
 ```
 
-## 4. Persistent State
+## Persistent State
 
 For agents that need to remember across calls, use `Versioned` state:
 
@@ -145,7 +145,7 @@ punchline = workshop_joke("Deliver the punchline!", state=state)
 print(f"{setup}\n{buildup}\n{punchline}")
 ```
 
-## 5. Hierarchical Multi-Agent Orchestration
+## Hierarchical Multi-Agent Orchestration
 
 Create specialized agents that work together using the dual-decorator pattern:
 
@@ -191,7 +191,7 @@ plot.show()
 
 - **Dual decorators**: `@orchestrator.fn` + `@specialist.task` creates hierarchical agent flows where orchestrator agents can call specialist agents as functions
 
-## 6. Other Agent Collaboration Patterns
+## Other Agent Collaboration Patterns
 
 Beyond hierarchical flows, agents can collaborate as peers. For example, iterative improvement workflows:
 
@@ -237,7 +237,7 @@ print(f"Final content: {content}")
 
 This peer collaboration pattern enables quality improvement, fact-checking, and iterative refinement workflows.
 
-## 7. Event Monitoring and Debugging
+## Event Monitoring and Debugging
 
 One of agex's most powerful features is comprehensive event tracking that lets you see exactly what agents are thinking and doing. This is invaluable for debugging, monitoring, and understanding agent behavior.
 
