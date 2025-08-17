@@ -79,7 +79,7 @@ print(math_solver("4x + 5 = 13"))
 # task_success(solution_steps)
 ```
 
-## Why it’s compelling:
+Why it’s compelling:
 
 - Recursive capability building without leaving Python
 - Specialists are just callables for the orchestrator
@@ -88,4 +88,5 @@ print(math_solver("4x + 5 = 13"))
 —
 
 Source: [https://github.com/ashenfad/agex/blob/main/examples/dogfood.py](https://github.com/ashenfad/agex/blob/main/examples/dogfood.py)
+
 Primer: [https://github.com/ashenfad/agex/blob/main/examples/dogfood_primer.py](https://github.com/ashenfad/agex/blob/main/examples/dogfood_primer.py)

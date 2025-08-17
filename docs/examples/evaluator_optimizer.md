@@ -49,7 +49,7 @@ while (review := review_joke(joke)).quality != "good":
 print(joke)
 ```
 
-## Why it’s useful
+Why it’s useful:
 
 - Natural control flow in host Python
 - Typed feedback loop via a shared `Review` dataclass
