@@ -52,6 +52,11 @@ def _truncate(text: str, max_chars: int) -> str:
     return text[: max_chars - 1] + "…"
 
 
+def _strip_newlines(text: str) -> str:
+    """Replaces newline characters with spaces."""
+    return text.replace("\n", " ")
+
+
 def _short_hash(commit_hash: str | None) -> str:
     if not commit_hash:
         return ""
@@ -154,8 +159,7 @@ def _summarize_output_parts(parts: list[Any], max_preview: int = 80) -> str:
         part = parts[0]
         type_name = type(part).__name__
         if isinstance(part, str):
-            cleaned_part = part.replace("\n", " ")
-            return f"text {_truncate(cleaned_part, max_preview)}"
+            return f"text {_truncate(_strip_newlines(part), max_preview)}"
         shape = getattr(part, "shape", None)
         if shape is not None:
             return f"{type_name} shape={shape}"
@@ -226,7 +230,7 @@ def _format_event_lines(
 
     elif isinstance(event, ActionEvent):
         thinking_preview = _truncate(
-            event.thinking.replace("\n", " "), 120 if verbosity != "brief" else 80
+            _strip_newlines(event.thinking), 120 if verbosity != "brief" else 80
         )
         body_lines.append(_indent(detail_indent, f"Thinking: {thinking_preview}"))
         code_lines_total = event.code.count("\n") + 1 if event.code else 0
@@ -259,7 +263,7 @@ def _format_event_lines(
             else str(type(event.error))
         )
         msg = _truncate(
-            str(event.error).replace("\n", " "), 160 if verbosity == "verbose" else 100
+            _strip_newlines(str(event.error)), 160 if verbosity == "verbose" else 100
         )
         status = "recoverable" if event.recoverable else "fatal"
         body_lines.append(_indent(detail_indent, f"Error: {name}: {msg} ({status})"))
@@ -268,7 +272,7 @@ def _format_event_lines(
         body_lines.append(
             _indent(
                 detail_indent,
-                f"Message: {_truncate(event.message.replace('\n', ' '), 160)}",
+                f"Message: {_truncate(_strip_newlines(event.message), 160)}",
             )
         )
 
@@ -276,7 +280,7 @@ def _format_event_lines(
         body_lines.append(
             _indent(
                 detail_indent,
-                f"Message: {_truncate(event.message.replace('\n', ' '), 160)}",
+                f"Message: {_truncate(_strip_newlines(event.message), 160)}",
             )
         )
 
