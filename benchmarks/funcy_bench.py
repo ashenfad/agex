@@ -5,6 +5,8 @@ Benchmark for examples/funcy.py - Simple Function Generation
 import math
 from typing import Callable
 
+from IPython.display import display
+
 from agex import Agent, connect_llm
 from agex.bench import Trial, benchmark_pass_fail, params
 
@@ -52,7 +54,10 @@ def main():
 
         def judge(actual_fn: Callable) -> bool:
             test_inputs = range(8)
-            return all(expected_fn(x) == actual_fn(x) for x in test_inputs)
+            try:
+                return all(expected_fn(x) == actual_fn(x) for x in test_inputs)
+            except Exception:
+                return False
 
         return judge
 
@@ -61,30 +66,44 @@ def main():
 
         def judge(actual_fn: Callable) -> bool:
             test_pairs = [(i, j) for i in range(5) for j in range(5)]
-            return all(expected_fn(x, y) == actual_fn(x, y) for x, y in test_pairs)
+            try:
+                return all(expected_fn(x, y) == actual_fn(x, y) for x, y in test_pairs)
+            except Exception:
+                return False
 
         return judge
 
     # Define test cases using reference functions
     trials = [
         Trial(
-            params=params("a fn that returns the factorial of a given number"),
+            params=params(
+                "a fn that returns the factorial of a given number", on_event=display
+            ),
             judge=equivalent(factorial),
         ),
         Trial(
-            params=params("a fn that checks if a given number is even"),
+            params=params(
+                "a fn that checks if a given number is even", on_event=display
+            ),
             judge=equivalent(lambda x: x % 2 == 0),
         ),
         Trial(
-            params=params("a fn that returns the square of a given number"),
+            params=params(
+                "a fn that returns the square of a given number", on_event=display
+            ),
             judge=equivalent(lambda x: x * x),
         ),
         Trial(
-            params=params("a fn that returns the absolute value of a given number"),
+            params=params(
+                "a fn that returns the absolute value of a given number",
+                on_event=display,
+            ),
             judge=equivalent(abs),
         ),
         Trial(
-            params=params("a fn that returns the maximum of two given numbers"),
+            params=params(
+                "a fn that returns the maximum of two given numbers", on_event=display
+            ),
             judge=equivalent_pairs(lambda x, y: max(x, y)),
         ),
     ]
@@ -99,7 +118,7 @@ def main():
             make_task("qwen3:1.7b"),
             make_task("qwen3:4b"),
         ],
-        trials=trials * 5,
+        trials=trials * 3,
         max_concurrency=1,
     )
 
@@ -116,3 +135,22 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Task: <agex.task funcy-qwen3:0.6b/fn_builder at 0x117a18200>
+# Completed trials: 11/15
+# Passed trials: 11/11
+# Actions per trial: 1.0
+# Time per trial: 2.38 seconds
+
+# Task: <agex.task funcy-qwen3:1.7b/fn_builder at 0x117a18f50>
+# Completed trials: 15/15
+# Passed trials: 15/15
+# Actions per trial: 1.0
+# Time per trial: 2.78 seconds
+
+# Task: <agex.task funcy-qwen3:4b/fn_builder at 0x117a19ca0>
+# Completed trials: 15/15
+# Passed trials: 15/15
+# Actions per trial: 1.0
+# Time per trial: 8.06 seconds
