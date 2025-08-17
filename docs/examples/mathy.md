@@ -2,7 +2,7 @@
 
 Solve numerical problems by composing the Python `math` module directly — no JSON tools, no wrappers. The agent “thinks in code,” calling library primitives within a single turn.
 
-## Setup an agent with math
+Setup an agent with the math module:
 
 ```python
 import math
@@ -14,7 +14,7 @@ mathy_agent = Agent(primer="You are an expert at solving math problems.")
 mathy_agent.module(math, visibility="medium")
 ```
 
-## Define tasks (agent implements them)
+Define tasks via function sigs (agents implement them when called):
 
 ```python
 @mathy_agent.task
@@ -28,7 +28,7 @@ def transform(prompt: str, numbers: list[float]) -> list[float]:  # type: ignore
     pass
 ```
 
-## Use it
+Call the task fns:
 
 ```python
 # Single-turn composition across math primitives
@@ -40,7 +40,8 @@ print(transform("Transform these degrees into radians", nums))
 # [... 6.2308254296, 6.2482787221, 6.2657320146]
 ```
 
-## Why this works
+Why this works:
+
 - Code-as-action: the agent writes Python that calls `math` directly.
 - Visibility control: signatures are enough for well-known libs.
 - Minimal ceremony: you define intent (signature + docstring); the agent provides implementation at runtime.

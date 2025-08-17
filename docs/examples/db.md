@@ -2,7 +2,7 @@
 
 Let agents operate directly on `sqlite3.Connection` and `Cursor` — no wrappers. The agent learns a safe pattern for persistent state: chain `.execute(...).fetch*()` to avoid storing unpicklable cursors.
 
-## Setup: register a live connection
+Create an agent and give it access to a live object:
 
 ```python
 import sqlite3
@@ -24,7 +24,7 @@ import sqlite3 as _sqlite
 db.cls(_sqlite.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 ```
 
-## Define tasks (agent implements them)
+Define tasks (agent implements them):
 
 ```python
 @db.task
@@ -38,7 +38,7 @@ def query_db(prompt: str) -> Any:  # type: ignore[return-value]
     pass
 ```
 
-## Use with persistent state
+Use with persistent state so agent remembers between tasks:
 
 ```python
 from agex import Versioned
@@ -59,7 +59,8 @@ print(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
 # 10
 ```
 
-## The safe pattern (why it works)
+The safe pattern (why it works):
+
 - With `Versioned` state, unpicklable objects (like cursors) cannot be saved.
 - The agent chains `.execute(...).fetch*()` so only picklable results persist.
 - For transactional writes, the agent uses `with db as connection: ...` (ephemeral scope inside the sandbox) to commit safely.
@@ -67,4 +68,5 @@ print(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
 —
 
 Source: [https://github.com/ashenfad/agex/blob/main/examples/db.py](https://github.com/ashenfad/agex/blob/main/examples/db.py)
+
 Primer: [https://github.com/ashenfad/agex/blob/main/examples/db_primer.py](https://github.com/ashenfad/agex/blob/main/examples/db_primer.py)

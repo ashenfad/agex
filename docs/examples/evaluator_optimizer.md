@@ -2,7 +2,7 @@
 
 Two agents collaborate as peers: one creates, the other critiques and suggests improvements, iterating until quality criteria are met.
 
-## Setup
+Create the agents and define a `Review` class that they'll both understand:
 
 ```python
 from dataclasses import dataclass
@@ -20,7 +20,7 @@ class Review:
     feedback: str
 ```
 
-## Tasks (agent-implemented)
+Create agent tasks:
 
 ```python
 @optimizer.task
@@ -39,7 +39,7 @@ def review_joke(joke: str) -> Review:  # type: ignore[return-value]
     pass
 ```
 
-## Loop until good
+Run the eval-optimize loop until completion with regular control flow:
 
 ```python
 joke = create_joke("pun about programming and fish")
@@ -50,6 +50,7 @@ print(joke)
 ```
 
 ## Why it’s useful
+
 - Natural control flow in host Python
 - Typed feedback loop via a shared `Review` dataclass
 - Works well for refinement, critique, and QA

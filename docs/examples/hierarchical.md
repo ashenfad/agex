@@ -2,7 +2,7 @@
 
 Compose specialists into an orchestrator using the dual‑decorator pattern. Treat specialist tasks like normal Python functions and pass real objects between agents.
 
-## Specialists
+Create specialists agents:
 
 ```python
 import numpy as np
@@ -19,7 +19,7 @@ data_generator.module(np, visibility="low")
 visualizer.module(px, visibility="low")
 ```
 
-## Orchestrator and dual‑decorated tasks
+Create orchestrator and decorate tasks:
 
 ```python
 orchestrator = Agent(name="orchestrator", primer="You coordinate other agents.")
@@ -42,7 +42,7 @@ def idea_to_visualization(idea: str) -> Figure:  # type: ignore[return-value]
     pass
 ```
 
-## Use it
+Call the orchestrator (which will itself call the other agents):
 
 ```python
 idea = "Show seasonal trends in sales data over 3 years"
@@ -50,7 +50,8 @@ plot = idea_to_visualization(idea)
 plot.show()  # or write_image(...)
 ```
 
-## Why this is compelling
+Why this is compelling:
+
 - Natural composition: specialists become callable functions for the orchestrator.
 - Bulk object passing: large NumPy arrays flow between agents without JSON serialization.
 - Clear separation of concerns with tiny primers per role.
