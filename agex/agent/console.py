@@ -154,7 +154,8 @@ def _summarize_output_parts(parts: list[Any], max_preview: int = 80) -> str:
         part = parts[0]
         type_name = type(part).__name__
         if isinstance(part, str):
-            return f"text {_truncate(part.replace('\n', ' '), max_preview)}"
+            cleaned_part = part.replace("\n", " ")
+            return f"text {_truncate(cleaned_part, max_preview)}"
         shape = getattr(part, "shape", None)
         if shape is not None:
             return f"{type_name} shape={shape}"
