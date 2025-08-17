@@ -17,10 +17,12 @@ from agex.eval.objects import (
     AgexInstance,
     AgexModule,
     AgexObject,
+    BoundInstanceObject,
     ImageAction,
 )
 from agex.eval.user_errors import (
     AgexArithmeticError,
+    AgexAttributeError,
     AgexError,
     AgexIndexError,
     AgexKeyError,
@@ -253,7 +255,9 @@ def _dir(evaluator, *args, **kwargs) -> list[str]:
 
 
 def _hasattr(evaluator, *args, **kwargs) -> bool:
-    """Implementation of the hasattr() builtin."""
+    """
+    Implementation of the hasattr() builtin.
+    """
     if kwargs:
         raise AgexError("hasattr() does not take keyword arguments.")
     if len(args) != 2:
@@ -264,27 +268,66 @@ def _hasattr(evaluator, *args, **kwargs) -> bool:
         raise AgexError("hasattr(): attribute name must be a string")
 
     # Handle AgexObjects first
-    if isinstance(obj, AgexObject):
-        return name in obj.attributes
-    if isinstance(obj, AgexInstance):
-        return name in obj.attributes or name in obj.cls.methods
-    if isinstance(obj, AgexClass):
-        return name in obj.methods
     if isinstance(obj, AgexModule):
         # Policy-backed check for module attributes only
         res = evaluator.agent._policy.resolve_module_member(obj.name, name)  # type: ignore[attr-defined]
         return res is not None
+    if isinstance(obj, (AgexObject, AgexInstance, BoundInstanceObject)):
+        try:
+            obj.getattr(name)
+            return True
+        except AgexAttributeError:
+            return False
 
-    # Check for BoundInstanceObject (registered live objects)
-    if _is_bound_instance_object(obj):
-        from ..eval.objects import BoundInstanceObject
-
-        if isinstance(obj, BoundInstanceObject):
-            return name in obj.reg_object.methods or name in obj.reg_object.properties
-
-    # Check registered classes and native types
+    # For all other objects, respect the agent's sandbox rules.
     allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
     return name in allowed
+
+
+def _getattr(evaluator, *args, **kwargs) -> Any:
+    """
+    Implementation of the getattr() builtin.
+    """
+    if kwargs:
+        raise AgexError("getattr() does not take keyword arguments.")
+    if len(args) not in [2, 3]:
+        raise AgexError(f"getattr() takes 2 or 3 arguments ({len(args)} given)")
+
+    obj, name = args[0], args[1]
+    default = args[2] if len(args) == 3 else None
+
+    if not isinstance(name, str):
+        raise AgexTypeError("getattr(): attribute name must be a string")
+
+    # For AgexObjects, use their custom getattr
+    if isinstance(obj, AgexModule):
+        # Policy-backed check for module attributes only
+        res = evaluator.agent._policy.resolve_module_member(obj.name, name)  # type: ignore[attr-defined]
+        if res is not None:
+            if hasattr(res, "fn"):
+                return res.fn
+            return res
+        if len(args) == 3:
+            return default
+        raise AgexAttributeError(f"'{obj.name}' module has no attribute '{name}'")
+    if isinstance(obj, (AgexObject, AgexInstance, BoundInstanceObject)):
+        try:
+            return obj.getattr(name)
+        except AgexAttributeError:
+            if len(args) == 3:
+                return default
+            raise
+
+    # For all other objects, respect the agent's sandbox rules.
+    allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
+    if name in allowed:
+        if hasattr(obj, name):
+            return getattr(obj, name)
+    if len(args) == 3:
+        return default
+    # If the attribute is not allowed, raise an AttributeError.
+    # This is consistent with how normal attribute access is handled.
+    raise AgexAttributeError(f"'{type(obj).__name__}' object has no attribute '{name}'")
 
 
 def _get_general_help_text(agent: "BaseAgent") -> str:
@@ -453,6 +496,7 @@ STATEFUL_BUILTINS: dict[str, StatefulFn] = {
     "help": StatefulFn(_help, needs_evaluator=True),
     "dir": StatefulFn(_dir, needs_evaluator=True),
     "hasattr": StatefulFn(_hasattr, needs_evaluator=True),
+    "getattr": StatefulFn(_getattr, needs_evaluator=True),
     "task_continue": StatefulFn(_task_continue_with_observations),
 }
 

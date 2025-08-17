@@ -69,6 +69,40 @@ t4 = hasattr(my_mod, "other") # False
     assert state.get("t4") is False
 
 
+def test_getattr():
+    """Tests the getattr() builtin on various object types."""
+    mod = ModuleType("my_mod")
+    mod.my_fn = lambda: 1  # type: ignore
+
+    agent = Agent()
+    agent.module(mod, name="my_mod")
+
+    program = """
+import my_mod
+
+list_val = []
+
+# Test cases
+t1 = getattr(list_val, "append")
+t2 = getattr(list_val, "non_existent", "default")
+t3 = getattr(my_mod, "my_fn")
+t4 = getattr(my_mod, "other", None)
+"""
+    state = eval_and_get_state(program, agent)
+
+    assert callable(state.get("t1"))
+    assert state.get("t2") == "default"
+    assert callable(state.get("t3"))
+    assert state.get("t4") is None
+
+    # Test case for missing attribute without default
+    program_fail = """
+getattr([], "non_existent")
+"""
+    with pytest.raises(AgexAttributeError):
+        eval_and_get_state(program_fail, agent)
+
+
 def test_dir_and_hasattr_sandboxing():
     """
     Tests that dir() and hasattr() respect the agent's registration rules,
