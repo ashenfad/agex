@@ -41,4 +41,5 @@ print(math_solver("4x + 5 = 13"))
 
 —
 
-Sources: https://github.com/ashenfad/agex/blob/main/examples/dogfood.py, https://github.com/ashenfad/agex/blob/main/examples/dogfood_primer.py
+Source: [https://github.com/ashenfad/agex/blob/main/examples/dogfood.py](https://github.com/ashenfad/agex/blob/main/examples/dogfood.py)
+Primer: [https://github.com/ashenfad/agex/blob/main/examples/dogfood_primer.py](https://github.com/ashenfad/agex/blob/main/examples/dogfood_primer.py)

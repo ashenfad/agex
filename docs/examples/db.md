@@ -66,5 +66,5 @@ print(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
 
 —
 
-Source: https://github.com/ashenfad/agex/blob/main/examples/db.py
-Primer text: https://github.com/ashenfad/agex/blob/main/examples/db_primer.py
+Source: [https://github.com/ashenfad/agex/blob/main/examples/db.py](https://github.com/ashenfad/agex/blob/main/examples/db.py)
+Primer: [https://github.com/ashenfad/agex/blob/main/examples/db_primer.py](https://github.com/ashenfad/agex/blob/main/examples/db_primer.py)

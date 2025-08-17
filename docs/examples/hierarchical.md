@@ -58,6 +58,7 @@ plot.show()  # or write_image(...)
 —
 
 Sources:
-- Orchestration: https://github.com/ashenfad/agex/blob/main/examples/hierarchical.py
-- Data: https://github.com/ashenfad/agex/blob/main/examples/data.py
-- Viz: https://github.com/ashenfad/agex/blob/main/examples/viz.py
+
+- Orchestration: [https://github.com/ashenfad/agex/blob/main/examples/hierarchical.py](https://github.com/ashenfad/agex/blob/main/examples/hierarchical.py)
+- Data: [https://github.com/ashenfad/agex/blob/main/examples/data.py](https://github.com/ashenfad/agex/blob/main/examples/data.py)
+- Viz: [https://github.com/ashenfad/agex/blob/main/examples/viz.py](https://github.com/ashenfad/agex/blob/main/examples/viz.py)
