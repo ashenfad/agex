@@ -19,6 +19,7 @@ import re
 import statistics
 import string
 import textwrap
+import time
 import uuid
 
 from agex.agent import Agent
@@ -42,6 +43,7 @@ def register_stdlib(agent: Agent) -> None:
     agent.module(statistics, visibility="low")
     agent.module(decimal, visibility="low")
     agent.module(fractions, visibility="low")
+    agent.module(time, visibility="low")
 
     # Utility modules
     agent.module(collections, visibility="low")
