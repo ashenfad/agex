@@ -273,6 +273,22 @@ counter += 1  # Simple and direct
 - Use normal Python assignment and updates
 - Trust that variables persist between iterations
 
+## Exception Handling in the Sandbox
+
+Your environment supports a subset of Python exceptions you can catch with try/except. You can use either specific exceptions or `Exception` as a base class. The following are supported:
+
+- `Exception` (base class for catchable errors)
+- `ValueError`
+- `TypeError`
+- `KeyError`
+- `IndexError`
+- `ZeroDivisionError`
+- `ArithmeticError`
+
+Notes:
+- A bare `except:` will catch supported errors, but prefer explicit exception types when possible.
+- `globals()` and `locals()` are not available in this environment; rely on your conversation history, `dir()`, `help()`, and printed output to inspect state.
+
 ## Functions & Libraries
 
 **Registered Functions**: Depending on the agent's configuration, you may have access to additional registered functions, classes, and modules beyond the Python standard library.
