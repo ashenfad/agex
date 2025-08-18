@@ -77,7 +77,12 @@ class Evaluator(
             # we auto-print here to mimic notebook behavior
             from .builtins import _print_stateful
 
-            _print_stateful(result, state=self.state, agent_name=self.agent.name)
+            _print_stateful(
+                result,
+                state=self.state,
+                agent_name=self.agent.name,
+                on_event=self.on_event,
+            )
 
 
 def evaluate_program(
