@@ -5,6 +5,7 @@ This module provides the TaskLoopMixin that handles the core think→act loop
 for agent tasks, including LLM communication and code evaluation.
 """
 
+import re
 from copy import deepcopy
 from typing import Any, Callable
 
@@ -39,6 +40,31 @@ from agex.state.log import add_event_to_log
 
 
 class TaskLoopMixin(BaseAgent):
+    @staticmethod
+    def _strip_markdown_code_fence(code: str) -> str:
+        """
+        Remove surrounding ```python ... ``` (or generic ``` ... ```) fences if the entire
+        response code is wrapped in a single fenced block.
+
+        This helps when an LLM mistakenly returns markdown-formatted code blocks.
+        """
+        if not isinstance(code, str):
+            return code
+
+        text = code.strip()
+        # Quick check for starting and ending fences
+        if not text.startswith("```"):
+            return code
+
+        # Match an opening fence (optionally with a language tag) and a closing fence at the end
+        # Capture the body in between in a non-greedy way
+        pattern = r"^```[A-Za-z0-9_+-]*\s*\n([\s\S]*?)\n```\s*$"
+        match = re.match(pattern, text)
+        if match:
+            body = match.group(1)
+            return body
+        return code
+
     def _yield_new_events(self, exec_state, events_yielded_count, on_event):
         """
         Helper method to yield new events and return updated count.
@@ -154,6 +180,8 @@ class TaskLoopMixin(BaseAgent):
 
             # Get LLM response with built-in retry and event emission
             llm_response = self._get_llm_response(messages, exec_state, on_event)
+            # Sanitize common markdown code-fence wrappers if present
+            llm_response.code = self._strip_markdown_code_fence(llm_response.code)
             code_to_evaluate = llm_response.code
 
             # Store assistant response in event log and yield immediately

@@ -101,7 +101,7 @@ class TestEventSystem:
             [
                 LLMResponse(
                     thinking="I'll test various output functions and complete.",
-                    code='print("Hello World")\nhelp()\ndir()\ntask_success("done")',
+                    code="""```python\nprint("Hello World")\nhelp()\ndir()\ntask_success("done")\n```""",
                 )
             ]
         )
