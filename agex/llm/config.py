@@ -21,14 +21,12 @@ def get_llm_config(**overrides) -> Dict[str, Any]:
     config = {
         "provider": "dummy",
         "model": None,
-        "base_url": None,
     }
 
     # Apply environment variables
     env_mapping = {
         "AGEX_LLM_PROVIDER": "provider",
         "AGEX_LLM_MODEL": "model",
-        "AGEX_LLM_BASE_URL": "base_url",
         "AGEX_LLM_TEMPERATURE": "temperature",
         "AGEX_LLM_MAX_TOKENS": "max_tokens",
         "AGEX_LLM_TOP_P": "top_p",

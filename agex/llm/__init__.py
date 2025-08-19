@@ -33,7 +33,6 @@ if GeminiClient is not None:
 def connect_llm(
     provider: Literal["openai", "anthropic", "gemini", "dummy"] | None = None,
     model: str | None = None,
-    base_url: str | None = None,
     **kwargs,
 ) -> LLMClient:
     """
@@ -43,7 +42,7 @@ def connect_llm(
     environment variables.
     """
     # Resolve the full configuration from all sources
-    config = get_llm_config(provider=provider, model=model, base_url=base_url, **kwargs)
+    config = get_llm_config(provider=provider, model=model, **kwargs)
     final_provider = config.get("provider")
 
     # The DummyLLMClient has a unique `responses` kwarg that other clients do not.

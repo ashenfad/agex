@@ -13,7 +13,7 @@ from agex.llm.core import (
 )
 
 # Define keys for client setup vs. completion
-CLIENT_CONFIG_KEYS = {"api_key", "base_url", "timeout"}
+CLIENT_CONFIG_KEYS = {"api_key", "timeout"}
 
 
 def _format_content(message: Message) -> List[dict]:
