@@ -41,6 +41,26 @@ def analyze_data(data: list[float]) -> dict:  # type: ignore[return-value]
 - **Docstring**: Documentation for human callers
 
 
+### `setup` Parameter
+
+The `setup` parameter runs preparatory code in the agent's sandbox *before* the agent's main execution loop begins. This is useful for providing the agent with immediate context, which can save an LLM turn.
+
+Common use cases are to have an agent automatically inspect the head of a pandas DataFrame or view an image.
+
+```python
+from PIL.Image import Image
+
+@agent.task(setup="view_image(inputs.image)")
+def process_image(prompt: str, image: Image) -> Image:  # type: ignore[return-value]
+    """Process an image based on a prompt."""
+    pass
+
+# When called, `view_image(image)` will be executed in the sandbox
+# before the agent starts thinking about how to handle the prompt.
+# This avoids a turn where the agent just decides to view the image.
+process_image("Crop this to the subject.", image=my_image)
+```
+
 ## Executing Tasks
 
 An `@agent.task`-decorated function can be executed in three ways, depending on your needs for interactivity and observability.
