@@ -1,6 +1,6 @@
 # DB (Raw SQLite)
 
-Let agents operate directly on `sqlite3.Connection` and `Cursor` — no wrappers. The agent learns a safe pattern for persistent state: chain `.execute(...).fetch*()` to avoid storing unpicklable cursors.
+Agents can work directly with a live stateful objects like an `sqlite3.Connection` while still peristing their compute environment.
 
 Create an agent and give it access to a live object:
 
@@ -24,7 +24,7 @@ import sqlite3 as _sqlite
 db.cls(_sqlite.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 ```
 
-Define tasks (agent implements them):
+Define task fns (agent implements at call time):
 
 ```python
 @db.task
@@ -38,7 +38,7 @@ def query_db(prompt: str) -> Any:  # type: ignore[return-value]
     pass
 ```
 
-Use with persistent state so agent remembers between tasks:
+Ask the agent to create a a table and then follow up with questions about it:
 
 ```python
 from agex import Versioned
@@ -59,11 +59,9 @@ print(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
 # 10
 ```
 
-The safe pattern (why it works):
+Behind the scenes, the `Versioned` state records the agent's compute environment at the end of each task. An agent could be 'rehydrated' in a new process if we wanted.
 
-- With `Versioned` state, unpicklable objects (like cursors) cannot be saved.
-- The agent chains `.execute(...).fetch*()` so only picklable results persist.
-- For transactional writes, the agent uses `with db as connection: ...` (ephemeral scope inside the sandbox) to commit safely.
+This makes handing a live connection to the agent a bit tricky. The agent has some constraints on how it must interact with live objects, but the primer helps coach toward successful patterns.
 
 —
 
