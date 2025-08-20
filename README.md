@@ -10,12 +10,12 @@
 
 `agex` uses a subset of Python as the agent action space, executing actions in a sandboxed environment within your process. This approach avoids the complexity of JSON serialization and allows complex objects to flow directly between your code and the agent. You control exactly what functions, classes, and modules are available, creating a powerful yet secure environment.
 
--   **Code-as-Action**: AST-based sandbox allows agents to take action through code but within safe limits.
--   **Direct Library Integration**: Expose your existing code directly to agents through a registration system, bypassing the need for a separate tool abstraction layer.
--   **Workspace Persistence**: Agent compute environments persist with git-like versioning.
--   **Multi-Agent**: Build hierarchical agents or coordinate via simple Python control flow.
--   **Event Streams**: Observe your agents through notebook-friendly events.
--   **Benchmarking**: Benchmark agent outputs to understand & improve their performance.
+-   **Code-as-Action**: Secure, sandboxed Python execution for agents.
+-   **Library Integration**: Use your existing code directly, no tool-making required.
+-   **Workspace Persistence**: Git-like versioning for agent state and memory.
+-   **Multi-Agent**: Orchestrate agents with natural Python control flow.
+-   **Event Streams**: Real-time, notebook-friendly observability.
+-   **Benchmarking**: A framework for data-driven agent evaluation.
 
 ## Documentation
 
