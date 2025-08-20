@@ -8,7 +8,7 @@ from agex.agent.policy.resolve import make_predicate
 from .builtins import BUILTINS
 from .error import EvalError
 from .objects import AgexInstance, AgexModule, AgexObject, BoundInstanceObject
-from .user_errors import AgexAttributeError
+from .user_errors import AgexAttributeError, AgexNameError
 from .utils import get_allowed_attributes_for_instance
 
 
@@ -92,7 +92,7 @@ class Resolver:
         if res is not None and hasattr(res, "cls"):
             return res.cls  # type: ignore[attr-defined]
 
-        raise EvalError(f"Name '{name}' is not defined. (forgot import?)", node)
+        raise AgexNameError(f"name '{name}' is not defined", node)
 
     # --- Attribute Resolution ---
     def resolve_attribute(self, value: Any, attr_name: str, node) -> Any:
