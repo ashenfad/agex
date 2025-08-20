@@ -2,36 +2,74 @@
 Hierarchical Agent Orchestration
 
 An orchestrator agent delegates to specialist sub-agents for data generation
-and visualization.
+and visualization. A sub-agents task is the orchestrator's fn. The signature
+is the contract between them.
 
-This example demonstrates how to build a multi-agent system by composing
-agent tasks from different modules. It imports and uses the `make_data` task
-from `data.py` and the `plot_data` task from `viz.py`, treating them as
-callable functions for the orchestrator agent.
-
-Bulk data flows between sub-agents without special handling.
+Bulk data and plots flow between agents without special handling.
 """
 
-from data import make_data
-from plotly.graph_objects import Figure
-from viz import plot_data
+import random
+
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objs as go
 
 from agex import Agent, connect_llm
 
+llm_client = connect_llm(provider="openai", model="gpt-4.1-nano")
+
+
+# define the data-making agent and give it numpy and random
+data_maker = Agent(
+    name="data_maker",
+    primer="You excel at generating data via numpy.",
+    llm_client=llm_client,
+)
+
+data_maker.module(np, recursive=True, visibility="low")
+data_maker.module(random, visibility="low")
+
+
+# define the plotting agent and give it a few modules
+plotty = Agent(
+    name="plotty",
+    primer="You excel plotting data via plotly express.",
+    llm_client=llm_client,
+)
+
+plotty.module(np, recursive=True, visibility="low")
+plotty.module(px, visibility="low")
+plotty.module(go, visibility="low")
+plotty.module(pd, visibility="low")
+
+# define the orchestrator agent, no special modules are needed
 orchestrator = Agent(
     name="orchestrator",
     primer="You orchestrate other agents to solve a problem.",
-    llm_client=connect_llm(provider="openai", model="gpt-4.1-nano"),
+    llm_client=llm_client,
 )
 
-# Give the orchestrator access to the specialist tasks.
-# From the orchestrator's perspective, these are just functions it can call.
-orchestrator.fn(make_data)
-orchestrator.fn(plot_data)
+
+# Define task fns & give the orchestrator access to the specialist tasks
+
+
+@orchestrator.fn
+@data_maker.task
+def make_data(prompt: str) -> list[np.ndarray]:  # type: ignore[return-value]
+    """Produce numpy arrays given the prompt."""
+    pass
+
+
+@orchestrator.fn
+@plotty.task
+def plot_data(prompt: str, data: list[np.ndarray]) -> go.Figure:  # type: ignore[return-value]
+    """Produce a figure from numpy data given the prompt."""
+    pass
 
 
 @orchestrator.task
-def idea_to_plot(idea: str) -> Figure:  # type: ignore[return-value]
+def idea_to_plot(idea: str) -> go.Figure:  # type: ignore[return-value]
     """
     You are given an idea for a plot. You need to orchestrate the other agents to create the plot.
     """
