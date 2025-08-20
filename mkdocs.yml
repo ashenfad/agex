@@ -50,7 +50,8 @@ nav:
   - Examples:
     - Overview: examples/overview.md
     - Agex 101 (notebook): examples/agex101.ipynb
-    - Routy (notebook): examples/routy.ipynb
+    - Routy (notebook): examples/routing.ipynb
+    - Vision (notebook): examples/vision.ipynb
     - Mathy: examples/mathy.md
     - Funcy: examples/funcy.md
     - DB: examples/db.md

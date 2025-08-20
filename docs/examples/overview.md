@@ -12,5 +12,5 @@ Short, focused examples showing core agex patterns.
 Prefer a notebook?
 
 - [Agex 101](agex101.ipynb) - Gentle intro to agex
-- [Routy](routy.ipynb) - OSMnx & Folio for route planning
+- [Routing](routing.ipynb) - OSMnx & Folio for route planning
 - [Vision](vision.ipynb) - Vision-capable agents (w/ Pillow)
