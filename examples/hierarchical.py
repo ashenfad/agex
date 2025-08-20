@@ -13,7 +13,7 @@ import random
 import numpy as np
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objs as go
+import plotly.graph_objects as go
 
 from agex import Agent, connect_llm
 
