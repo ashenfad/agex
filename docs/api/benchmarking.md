@@ -1,6 +1,17 @@
 # Benchmarking
 
-The `agex.bench` module provides a framework for empirically evaluating agent performance and primer effectiveness. It enables A/B testing, regression detection, and systematic improvement of agent behavior through data-driven insights.
+The `agex.bench` module supports **empirical, data-driven agent improvement**. Systematic benchmarking is central for building performant agents. This is especially true when engineering primers, where small changes in wording can lead to significant differences in behavior across different LLM providers and models.
+
+The vision for this module is to support a robust practice of "primer engineering," enabling users to:
+
+-   **A/B test primers** to find the most effective instructions.
+-   **Develop LLM-specific primers**, as the optimal guidance for a GPT model may differ from that of a Gemini or Claude model.
+-   **Detect regressions** in agent behavior as the framework or underlying models evolve.
+-   **Contribute to a community-driven understanding** of what makes agents effective.
+
+By providing the tools for rigorous evaluation, `agex.bench` aims to make agent development a little less magical.
+
+The initial examples in the `benchmarks/` directory serve as a starting point, and community contributions to help build out a comprehensive suite are highly encouraged.
 
 ## Core Concepts
 
