@@ -45,7 +45,7 @@ Instead of writing `tools/my_pandas_tool.py`, you simply register the `pandas` l
 
 ```python
 import pandas as pd
-agent.module(pd)  # see agex/helpers/pandas_helper.py for a full example
+agent.module(pd)
 ```
 
 Your existing codebase *is* the toolset. The registration system acts as a secure and targeted bridge between your code and the agent, without forcing you to create and maintain a parallel set of tool abstractions.

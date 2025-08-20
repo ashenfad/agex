@@ -59,9 +59,7 @@ print(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
 # 10
 ```
 
-Behind the scenes, the `Versioned` state records the agent's compute environment at the end of each task. An agent could be 'rehydrated' in a new process if we wanted.
-
-This makes handing a live connection to the agent a bit tricky. The agent has some constraints on how it must interact with live objects, but the primer helps coach toward successful patterns.
+Working with live objects like a database connection while also using [`Versioned`](../api/state.md) state is one of `agex`'s most compelling features. The linked primer file demonstrates how to currently coach the agent on the correct patterns for this. Making this guidance fully automatic is our plan for [Contextual Primers](../roadmap/primers.md).
 
 —
 
