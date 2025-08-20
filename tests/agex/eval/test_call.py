@@ -1,7 +1,6 @@
 import pytest
 
-from agex.eval.error import EvalError
-from agex.eval.user_errors import AgexAttributeError, AgexError
+from agex.eval.user_errors import AgexAttributeError, AgexError, AgexNameError
 
 from .helpers import eval_and_get_state
 
@@ -14,6 +13,8 @@ y = max(a)
 z = min(a)
 s = sum(a)
 t = str(123)
+p = pow(2, 3)
+b = bytes([65, 66, 67])
 """
     state = eval_and_get_state(program)
     assert state.get("x") == 3
@@ -21,12 +22,14 @@ t = str(123)
     assert state.get("z") == 1
     assert state.get("s") == 6
     assert state.get("t") == "123"
+    assert state.get("p") == 8
+    assert state.get("b") == b"ABC"
 
 
 def test_unknown_function_error():
-    with pytest.raises(EvalError) as e:
+    with pytest.raises(AgexNameError) as e:
         eval_and_get_state("x = no_such_function()")
-    assert "Name 'no_such_function' is not defined" in str(e.value)
+    assert "name 'no_such_function' is not defined" in str(e.value)
 
 
 def test_coercion_functions():
