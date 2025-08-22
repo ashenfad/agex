@@ -106,7 +106,7 @@ except TaskTimeout as e:
 
 Raised when the configured LLM client fails to return a usable response after the agent automatically retries.
 
-This is a framework-level, uncatchable control exception (like `TaskTimeout`) intended to abort the loop. The task did not run to completion due to infrastructure/provider failure rather than agent logic.
+This is a framework-level control exception (like `TaskTimeout`) intended to abort the loop. It indicates that the task did not run to completion due to infrastructure/provider failure rather than agent logic. The agent cannot catch this exception within agent-generated code.
 
 When retries are enabled (default), the agent emits an `ErrorEvent` per failed attempt with `recoverable=True`, and a final `ErrorEvent` with `recoverable=False` before raising `LLMFail`.
 

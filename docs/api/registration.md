@@ -29,11 +29,11 @@ agent.fn(
 
 ### Visibility Levels
 
-| Level | What Agent Sees |
-|-------|----------------|
-| `"high"` | Function signature + full docstring |
-| `"medium"` | Function signature only |
-| `"low"` | Available for use but not shown in context |
+| Level | What Agent Sees | Best For |
+|-------|----------------|----------|
+| `"high"` | Function signature + full docstring | Custom functions or complex APIs where detailed guidance is needed. |
+| `"medium"` | Function signature only | Familiar APIs where the agent only needs a reminder of the function's name and parameters. |
+| `"low"` | Available for use but not shown in context | Common libraries (e.g., `numpy`, `pandas`) that the LLM is already trained on. Saves context space. |
 
 ### Usage Patterns
 
