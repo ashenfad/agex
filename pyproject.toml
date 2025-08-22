@@ -27,7 +27,6 @@ dependencies = [
     "xxhash", 
     "diskcache",
     "pydantic",
-    "dill",
     "pygments",
 ]
 
@@ -51,7 +50,6 @@ test = [
     "anthropic",
     "google-generativeai",
     "openai",
-    "tiktoken",
     "matplotlib"
 ]
 examples = [

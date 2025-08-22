@@ -7,10 +7,9 @@ good error messages.
 """
 
 import io
+import pickle
 from types import ModuleType
 from typing import Any
-
-import dill
 
 from .error import EvalError
 from .objects import AgexModule
@@ -91,7 +90,7 @@ def check_assignment_safety(value: Any) -> Any:
 
     # Fallback to a full pickle test
     try:
-        dill.dumps(value)
+        pickle.dumps(value)
     except Exception:
         raise EvalError(
             f"Cannot assign unpickleable object of type {type(value).__name__}",

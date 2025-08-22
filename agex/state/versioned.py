@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import pickle
 import secrets
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-import dill
 import xxhash
 
 from . import kv
@@ -43,8 +43,8 @@ class Versioned(State):
             commit_hash = _get_commit_hash()
             # Store the initial empty commit metadata so it can be checked out
             initial_metadata = {
-                COMMIT_KEYSET % commit_hash: dill.dumps({}),
-                PARENT_COMMIT % commit_hash: dill.dumps(None),
+                COMMIT_KEYSET % commit_hash: pickle.dumps({}),
+                PARENT_COMMIT % commit_hash: pickle.dumps(None),
             }
             store.set_many(**initial_metadata)
 
@@ -60,7 +60,7 @@ class Versioned(State):
                 COMMIT_KEYSET % self.current_commit
             )
             if commit_keyset_bytes is not None:
-                self.commit_keys = dill.loads(commit_keyset_bytes)
+                self.commit_keys = pickle.loads(commit_keyset_bytes)
             else:
                 self.commit_keys = {}
         else:
@@ -90,7 +90,7 @@ class Versioned(State):
                 original_hash = _fast_hash(serialized_bytes)
 
                 # Deserialize the object
-                value = dill.loads(serialized_bytes)
+                value = pickle.loads(serialized_bytes)
 
                 # Track objects for mutation detection only if not already tracked
                 # This preserves the original object reference that may have been mutated
@@ -141,7 +141,7 @@ class Versioned(State):
             yield current_hash  # Yield current commit first
             parent_bytes = self.long_term.get(PARENT_COMMIT % current_hash)
             if parent_bytes is not None:
-                current_hash = dill.loads(parent_bytes)
+                current_hash = pickle.loads(parent_bytes)
             else:
                 current_hash = None
 
@@ -158,7 +158,7 @@ class Versioned(State):
             # Check ALL accessed objects for mutations, not just unset ones
             # Serialize the object reference we stored
             try:
-                current_bytes = dill.dumps(obj_ref)
+                current_bytes = pickle.dumps(obj_ref)
                 current_hash = _fast_hash(current_bytes)
             except Exception:
                 # This object was mutated into an unserializable state.
@@ -214,7 +214,7 @@ class Versioned(State):
             else:
                 # Serialize the value to bytes before storing
                 try:
-                    serialized_value = dill.dumps(value)
+                    serialized_value = pickle.dumps(value)
                 except Exception:
                     unsaved_keys.append(key)
                     continue
@@ -224,8 +224,8 @@ class Versioned(State):
                 new_commit_keys[key] = versioned_key
 
         # Serialize commit metadata
-        diffs[COMMIT_KEYSET % new_hash] = dill.dumps(new_commit_keys)
-        diffs[PARENT_COMMIT % new_hash] = dill.dumps(self.current_commit)
+        diffs[COMMIT_KEYSET % new_hash] = pickle.dumps(new_commit_keys)
+        diffs[PARENT_COMMIT % new_hash] = pickle.dumps(self.current_commit)
 
         self.long_term.set_many(**diffs)
         self.commit_keys = new_commit_keys
