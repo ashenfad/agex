@@ -47,5 +47,5 @@ One demo notebook worth highlighting is an agent that uses `OSMnx` and `Folium` 
 
 The project is pre-release but the core concepts are stabilizing. I'm hoping to find a few brave souls to kick the tires. Thanks!
 
-- **GitHub:** https://github.com/ashenfad/agex
-- **Docs & Examples:** https://ashenfad.github.io/agex/
+- **GitHub:** [https://github.com/ashenfad/agex](https://github.com/ashenfad/agex)
+- **Docs & Examples:** [https://ashenfad.github.io/agex/](https://ashenfad.github.io/agex/)
