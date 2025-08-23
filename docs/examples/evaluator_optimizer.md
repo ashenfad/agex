@@ -47,6 +47,9 @@ while (review := review_joke(joke)).quality != "good":
     joke = hone_joke(joke, review)
 
 print(joke)
+# Why do programmers prefer fishing?
+# Because they love catching bugs and reeling in exceptions...
+# and sometimes, they get caught in a loop!
 ```
 
 Why it’s useful:
