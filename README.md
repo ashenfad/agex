@@ -8,7 +8,8 @@
 
 ## What Makes This Different
 
-`agex` uses a subset of Python as the agent action space, executing actions in a sandboxed environment within your process. This approach avoids the complexity of JSON serialization and allows complex objects to flow directly between your code and the agent. You control exactly what functions, classes, and modules are available, creating a powerful yet secure environment.
+`agex` uses a subset of Python as the agent action space, executing actions in a sandboxed environment within your process. This approach avoids the complexity of JSON serialization and allows complex objects to flow directly between your code and the agent. You control exactly what functions, classes, and modules are available, creating a safe and focused
+environment for the agent.
 
 -   **Code-as-Action**: Secure, sandboxed Python execution for agents.
 -   **Library Integration**: Use your existing code directly, no tool-making required.
