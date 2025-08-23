@@ -2,18 +2,16 @@
 Shallow, sampling-based validation for large data structures.
 """
 
-import dataclasses
 from typing import Any, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
+from pydantic import ConfigDict, TypeAdapter, ValidationError
 
 DEFAULT_SAMPLING_THRESHOLD = 100
 DEFAULT_SAMPLE_SIZE = 10
 
 
-# Pydantic configuration for handling arbitrary types. This is used when we
-# expect Pydantic to be able to handle the type directly.
-REGULAR_CONFIG = ConfigDict(arbitrary_types_allowed=True)
+# Strict configuration that prevents type coercion to catch type mismatches
+STRICT_CONFIG = ConfigDict(arbitrary_types_allowed=True, strict=True)
 
 
 def _numpy_peek_serializer(obj: Any) -> list:
@@ -89,22 +87,7 @@ def validate_with_sampling(value: Any, annotation: Any) -> Any:
 
     # For all other types, or collections below the threshold, validate normally.
     try:
-        # Check if the annotation is a dataclass, BaseModel, or TypedDict
-        # These types don't accept config parameters in TypeAdapter
-        is_special_type = (
-            dataclasses.is_dataclass(annotation)
-            or (isinstance(annotation, type) and issubclass(annotation, BaseModel))
-            or (
-                hasattr(annotation, "__annotations__")
-                and hasattr(annotation, "__total__")
-            )  # TypedDict
-        )
-
-        if is_special_type:
-            adapter = TypeAdapter(annotation)
-        else:
-            adapter = TypeAdapter(annotation, config=REGULAR_CONFIG)
-
+        adapter = TypeAdapter(annotation, config=STRICT_CONFIG)
         return adapter.validate_python(value)
     except ValidationError:
         # Re-raise the original ValidationError - it already contains all the necessary information
@@ -119,7 +102,7 @@ def _validate_sequence_sample(sequence: list | tuple, annotation: Any) -> list |
     elements.
     """
     item_type = get_args(annotation)[0] if get_args(annotation) else Any
-    adapter = TypeAdapter(list[item_type], config=REGULAR_CONFIG)
+    adapter = TypeAdapter(list[item_type], config=STRICT_CONFIG)
 
     head = sequence[:DEFAULT_SAMPLE_SIZE]
     tail = sequence[-DEFAULT_SAMPLE_SIZE:]
@@ -146,7 +129,7 @@ def _validate_set_sample(value: set, annotation: Any) -> set:
     after converting the set to a list.
     """
     item_type = get_args(annotation)[0] if get_args(annotation) else Any
-    adapter = TypeAdapter(list[item_type], config=REGULAR_CONFIG)
+    adapter = TypeAdapter(list[item_type], config=STRICT_CONFIG)
 
     # Convert set to list to get a sample
     value_list = list(value)
@@ -166,7 +149,7 @@ def _validate_dict_sample(value: dict, annotation: Any) -> dict:
     key_type, value_type = (
         get_args(annotation) if len(get_args(annotation)) == 2 else (Any, Any)
     )
-    adapter = TypeAdapter(list[tuple[key_type, value_type]], config=REGULAR_CONFIG)
+    adapter = TypeAdapter(list[tuple[key_type, value_type]], config=STRICT_CONFIG)
 
     item_list = list(value.items())
     head = item_list[:DEFAULT_SAMPLE_SIZE]
