@@ -45,7 +45,7 @@ From the agent's point-of-view, it lives in a Python REPL. It has its own stdout
 
 One demo notebook worth highlighting is an agent that uses `OSMnx` and `Folium` libraries for geospatial routing. When faced with a novel constraint ("avoid this highway"), it doesn't fail; it writes its own helper on the fly to solve the problem. You can see that here: [Interactive Routing Demo](https://ashenfad.github.io/agex/examples/routing/).
 
-The project is pre-release but the core concepts are stabilizing. I'm hoping to find a few brave souls to kick the tires. Thanks!
+The project is early stage but the core concepts are stabilizing. I'm hoping to find a few brave souls to kick the tires. Thanks!
 
 - **GitHub:** [https://github.com/ashenfad/agex](https://github.com/ashenfad/agex)
 - **Docs & Examples:** [https://ashenfad.github.io/agex/](https://ashenfad.github.io/agex/)
