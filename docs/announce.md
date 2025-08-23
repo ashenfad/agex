@@ -18,7 +18,7 @@ agent.module(math)
 
 # The fn sig is the contract; the agent provides the implementation at runtime
 @agent.task
-def build_function(prompt: str) -> Callable:  # type: ignore[return-value]
+def build_function(prompt: str) -> Callable:
     """Build a callable function from a text prompt."""
     pass
 
