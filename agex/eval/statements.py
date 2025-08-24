@@ -15,6 +15,7 @@ from agex.eval.user_errors import (
     AgexTypeError,
     AgexValueError,
 )
+from agex.state import State, Versioned
 from agex.state.scoped import Scoped
 
 from .base import BaseEvaluator
@@ -74,10 +75,11 @@ class AssignmentTarget(ABC):
         """Gets the current value of the target."""
         ...
 
-    def set_value(self, value: Any):
+    def set_value(self, value: Any, state: State):
         """Sets a new value for the target, checking pickle safety first."""
-        safe_value = check_assignment_safety(value)
-        self._do_set_value(safe_value)
+        if isinstance(state, Versioned):
+            value = check_assignment_safety(value)
+        self._do_set_value(value)
 
     @abstractmethod
     def _do_set_value(self, value: Any):
@@ -123,7 +125,7 @@ class TransientNameTarget(AssignmentTarget):
             raise AgexNameError(f"name '{self._name}' is not defined")
         return self._evaluator.state.get(self._name)
 
-    def set_value(self, value: Any):
+    def set_value(self, value: Any, state: State):
         """Set value directly without pickle safety check."""
         self._evaluator.state.set(self._name, value)
 
@@ -317,7 +319,7 @@ class StatementEvaluator(BaseEvaluator):
                 self._handle_destructuring_assignment(target_node, value)
             else:
                 target = self._resolve_target(target_node)
-                target.set_value(value)
+                target.set_value(value, self.state)
 
     def visit_Delete(self, node: ast.Delete) -> None:
         """Handles the 'del' statement."""
@@ -342,7 +344,7 @@ class StatementEvaluator(BaseEvaluator):
         try:
             current_value = target.get_value()
             new_value = op_func(current_value, rhs_value)
-            target.set_value(new_value)
+            target.set_value(new_value, self.state)
         except AgexError:
             # Let user-facing errors from the getter/setter propagate.
             raise
@@ -474,7 +476,7 @@ class StatementEvaluator(BaseEvaluator):
             else:
                 # Handle tuple unpacking in 'as' clause
                 target = self._resolve_target(with_item.optional_vars)
-                target.set_value(enter_result)
+                target.set_value(enter_result, self.state)
 
         # Execute the body
         exception_info = (None, None, None)
@@ -539,7 +541,7 @@ class StatementEvaluator(BaseEvaluator):
                 else:
                     # Handle tuple unpacking in 'as' clause
                     target = self._resolve_target(with_item.optional_vars)
-                    target.set_value(context_obj)
+                    target.set_value(context_obj, self.state)
 
             # Execute the body with transient scope
             for stmt in node.body:

@@ -15,23 +15,44 @@ from agex.eval.functions import UserFunction
 from agex.eval.objects import AgexModule
 
 T = TypeVar("T", bound=type)
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 class RegistrationMixin(BaseAgent):
+    @overload
     def fn(
         self,
-        _fn: Callable | None = None,
+        _fn: F,
         *,
         name: str | None = None,
         visibility: Visibility = "high",
         docstring: str | None = None,
-    ):
+    ) -> F: ...
+
+    @overload
+    def fn(
+        self,
+        _fn: None = None,
+        *,
+        name: str | None = None,
+        visibility: Visibility = "high",
+        docstring: str | None = None,
+    ) -> Callable[[F], F]: ...
+
+    def fn(
+        self,
+        _fn: Callable[..., Any] | None = None,
+        *,
+        name: str | None = None,
+        visibility: Visibility = "high",
+        docstring: str | None = None,
+    ) -> Callable[..., Any] | Callable[[Callable[..., Any]], Callable[..., Any]]:
         """
         Registers a function with the agent.
         Can be used as a decorator (`@agent.fn`) or a direct call (`agent.fn(...)`).
         """
 
-        def decorator(f: Callable) -> Callable:
+        def decorator(f: F) -> F:
             # Check if this is a UserFunction (agent registering function from another agent)
 
             if isinstance(f, UserFunction):
@@ -242,7 +263,7 @@ class RegistrationMixin(BaseAgent):
         configure: dict[str, MemberSpec] | None = None,
         exception_mappings: dict[type, type] | None = None,
         recursive: bool = False,
-    ):
+    ) -> None:
         """
         Registers a module or instance object and its members with the agent.
         """
@@ -275,7 +296,7 @@ class RegistrationMixin(BaseAgent):
                 recursive=True,
             )
             self._update_fingerprint()
-            return
+            return None
 
         # Check if this is an AgexModule (agent registering module from another agent)
 
@@ -304,7 +325,6 @@ class RegistrationMixin(BaseAgent):
                 )
                 self._policy.namespaces[final_name] = child_ns
             self._update_fingerprint()
-            return obj  # Return the AgexModule for consistency
 
         # Check if we're dealing with a module or an instance
         elif isinstance(obj, ModuleType):
@@ -332,7 +352,6 @@ class RegistrationMixin(BaseAgent):
                 recursive=False,
             )
             self._update_fingerprint()
-            return obj
         else:
             sec_configure = {
                 k: MemberSpec(
@@ -362,7 +381,6 @@ class RegistrationMixin(BaseAgent):
             # Store the live instance in the host registry for runtime access
             self._host_object_registry[name] = obj
             self._update_fingerprint()
-            return obj
 
     # NOTE: `_handle_agex_module_inheritance` removed. Inheritance is handled lazily
     # via a child policy namespace of kind "inherited" created in `module()`.
