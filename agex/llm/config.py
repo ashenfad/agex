@@ -2,7 +2,7 @@ import os
 from typing import Any, Dict
 
 
-def get_llm_config(**overrides) -> Dict[str, Any]:
+def get_llm_config(**overrides: Any) -> Dict[str, Any]:
     """
     Get LLM configuration with a smart fallback chain.
 

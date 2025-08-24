@@ -1,7 +1,7 @@
-from typing import Literal
+from typing import Any, Literal
 
 from .config import get_llm_config
-from .core import LLMClient
+from .core import LLMClient, LLMResponse
 from .dummy_client import DummyLLMClient
 
 # Optional imports for LLM providers
@@ -21,7 +21,7 @@ except ImportError:
     GeminiClient = None
 
 # Build __all__ dynamically based on available clients
-__all__ = ["DummyLLMClient", "connect_llm"]
+__all__ = ["DummyLLMClient", "connect_llm", "LLMResponse"]
 if OpenAIClient is not None:
     __all__.append("OpenAIClient")
 if AnthropicClient is not None:
@@ -33,7 +33,7 @@ if GeminiClient is not None:
 def connect_llm(
     provider: Literal["openai", "anthropic", "gemini", "dummy"] | None = None,
     model: str | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> LLMClient:
     """
     Factory function to get an LLM client.
