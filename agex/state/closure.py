@@ -59,9 +59,8 @@ class LiveClosureState(State):
             return STATEFUL_BUILTINS[key]
 
         # If the variable doesn't exist in captured vars or builtins, it's undefined
-        from ..eval.error import EvalError
 
-        raise EvalError(f"Name '{key}' is not defined.", None)
+        return None
 
     def set(self, key: str, value: Any) -> None:
         raise TypeError("Closures are read-only.")
