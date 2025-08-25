@@ -60,7 +60,7 @@ class LiveClosureState(State):
 
         # If the variable doesn't exist in captured vars or builtins, it's undefined
 
-        return None
+        return default
 
     def set(self, key: str, value: Any) -> None:
         raise TypeError("Closures are read-only.")
