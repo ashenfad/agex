@@ -43,7 +43,9 @@ class Scoped(State):
         return self._local_store.remove(key)
 
     def keys(self) -> Iterable[str]:
-        raise NotImplementedError("Not supported for scoped state.")
+        local = self._local_store.keys()
+        outter = self._parent_store.keys()
+        return set(local) | set(outter)
 
     def values(self) -> Iterable[Any]:
         raise NotImplementedError("Not supported for scoped state.")
