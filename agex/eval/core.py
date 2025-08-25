@@ -71,18 +71,7 @@ class Evaluator(
                 self.visit(node.value)
                 return
 
-        result = self.visit(node.value)
-
-        if result is not None:
-            # we auto-print here to mimic notebook behavior
-            from .builtins import _print_stateful
-
-            _print_stateful(
-                result,
-                state=self.state,
-                agent_name=self.agent.name,
-                on_event=self.on_event,
-            )
+        self.visit(node.value)
 
 
 def evaluate_program(
