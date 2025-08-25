@@ -18,9 +18,25 @@ class FreeVariableAnalyzer(ast.NodeVisitor):
         self.loaded = set()
         self.globals = set()
         self.exception_vars = set()  # Variables bound in except clauses
+        self.default_refs = (
+            set()
+        )  # Variables referenced in default parameter values (always free)
 
-        # Parameters are always bound.
+        # Visit default parameter values FIRST (they reference outer scope, before params are bound)
         args = node.args
+        for i, default in enumerate(args.defaults):
+            # Track references in defaults separately - these are always to outer scope
+            old_loaded = self.loaded.copy()
+            self.visit(default)
+            self.default_refs.update(self.loaded - old_loaded)
+        for default in args.kw_defaults:
+            if default is not None:  # kw_defaults can contain None
+                # Track references in defaults separately - these are always to outer scope
+                old_loaded = self.loaded.copy()
+                self.visit(default)
+                self.default_refs.update(self.loaded - old_loaded)
+
+        # Parameters are bound AFTER visiting defaults
         for arg in args.args:
             self.bound.add(arg.arg)
         for arg in args.kwonlyargs:
@@ -42,6 +58,10 @@ class FreeVariableAnalyzer(ast.NodeVisitor):
         """Returns the set of free variables found, excluding builtins."""
         # Get the basic free variables (loaded but not bound/global)
         basic_free = self.loaded - self.bound - self.globals - self.exception_vars
+
+        # Add variables from default parameters - these are always free variables
+        # even if they match parameter names (they refer to outer scope)
+        basic_free = basic_free | self.default_refs
 
         # Exclude builtins - these should resolve through the builtin system, not be captured
         from ..eval.builtins import BUILTINS, STATEFUL_BUILTINS
