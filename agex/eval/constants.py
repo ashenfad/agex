@@ -33,6 +33,7 @@ WHITELISTED_METHODS = {
         "startswith",
         "endswith",
         "join",
+        "encode",
     },
 }
 
