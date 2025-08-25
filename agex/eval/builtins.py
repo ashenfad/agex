@@ -484,9 +484,11 @@ def _task_continue_with_observations(
     Signal to the agent to continue, providing a list of observations.
     This is effectively a programmatic `print()` that also forces a continue.
     """
-    _print_stateful(
-        *observations, state=state, agent_name=agent_name, on_event=on_event
-    )
+    # Only print if there are observations to print
+    if observations:
+        _print_stateful(
+            *observations, state=state, agent_name=agent_name, on_event=on_event
+        )
     raise TaskContinue()
 
 
