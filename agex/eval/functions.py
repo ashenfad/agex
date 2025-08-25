@@ -1,4 +1,5 @@
 import ast
+import inspect
 from dataclasses import dataclass, make_dataclass
 from typing import Any, Callable
 
@@ -74,6 +75,39 @@ class UserFunction:
 
     def __eq__(self, other: object) -> bool:  # type: ignore[override]
         return self is other
+
+    @property
+    def __signature__(self) -> inspect.Signature:
+        """Convert AST arguments to inspect.Signature for compatibility with inspect.signature()"""
+        parameters = []
+
+        # Convert positional arguments
+        for arg in self.args.args:
+            parameters.append(
+                inspect.Parameter(arg.arg, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+            )
+
+        # Convert keyword-only arguments
+        for arg in self.args.kwonlyargs:
+            parameters.append(
+                inspect.Parameter(arg.arg, inspect.Parameter.KEYWORD_ONLY)
+            )
+
+        # Convert *args if present
+        if self.args.vararg:
+            parameters.append(
+                inspect.Parameter(
+                    self.args.vararg.arg, inspect.Parameter.VAR_POSITIONAL
+                )
+            )
+
+        # Convert **kwargs if present
+        if self.args.kwarg:
+            parameters.append(
+                inspect.Parameter(self.args.kwarg.arg, inspect.Parameter.VAR_KEYWORD)
+            )
+
+        return inspect.Signature(parameters)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         if not self.agent_fingerprint:
