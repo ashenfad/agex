@@ -21,3 +21,10 @@ except ImportError:
     pass
 
 from .stdlib import register_stdlib
+
+__all__ = [
+    "register_pandas",
+    "register_numpy",
+    "register_plotly",
+    "register_stdlib",
+]
