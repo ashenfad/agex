@@ -44,8 +44,8 @@ class Scoped(State):
 
     def keys(self) -> Iterable[str]:
         local = self._local_store.keys()
-        outter = self._parent_store.keys()
-        return set(local) | set(outter)
+        outer = self._parent_store.keys()
+        return set(local) | set(outer)
 
     def values(self) -> Iterable[Any]:
         raise NotImplementedError("Not supported for scoped state.")
