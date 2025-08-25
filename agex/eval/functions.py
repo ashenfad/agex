@@ -329,6 +329,17 @@ class FunctionEvaluator(BaseEvaluator):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Handles function definitions."""
         free_vars = get_free_variables(node)
+
+        # Exclude registered functions from closure capture - they should be resolved via policy
+        # But only if they're not already bound in the current state (i.e., they're not local variables)
+        main_ns = self.agent._policy.namespaces.get("__main__")
+        if main_ns:
+            registered_fns = set(main_ns.fn_objects.keys())
+            # Only exclude if the variable isn't already defined in current scope
+            free_vars = free_vars - {
+                name for name in registered_fns if name not in self.state
+            }
+
         closure = LiveClosureState(self.state, free_vars)
 
         source_text = None
@@ -366,6 +377,17 @@ class FunctionEvaluator(BaseEvaluator):
     def visit_Lambda(self, node: ast.Lambda) -> UserFunction:
         """Handles lambda expressions."""
         free_vars = get_free_variables(node)
+
+        # Exclude registered functions from closure capture - they should be resolved via policy
+        # But only if they're not already bound in the current state (i.e., they're not local variables)
+        main_ns = self.agent._policy.namespaces.get("__main__")
+        if main_ns:
+            registered_fns = set(main_ns.fn_objects.keys())
+            # Only exclude if the variable isn't already defined in current scope
+            free_vars = free_vars - {
+                name for name in registered_fns if name not in self.state
+            }
+
         closure = LiveClosureState(self.state, free_vars)
 
         source_text = None
