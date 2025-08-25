@@ -232,6 +232,14 @@ class BaseEvent(BaseModel):
         else:
             return self.__repr_str__("")  # Use standard repr
 
+    def _repr_html_(self) -> str:
+        """Default to markdown but expect subclasses to override."""
+        return self._repr_markdown_()
+
+    def as_html(self) -> str:
+        """Get the html representation for use outside notebooks."""
+        return self._repr_html_()
+
 
 class TaskStartEvent(BaseEvent):
     """Fired once at the beginning of a task."""
