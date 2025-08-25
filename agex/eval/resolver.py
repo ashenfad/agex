@@ -202,10 +202,23 @@ class Resolver:
     # --- Import Resolution ---
     def resolve_module(self, module_name: str, node) -> AgexModule:
         # Creating AgexModule is safe as a capability token; members resolve lazily via policy
+
+        # First, try exact match
         if module_name in self.agent._policy.namespaces:  # type: ignore[attr-defined]
             return AgexModule(
                 name=module_name, agent_fingerprint=self.agent.fingerprint
             )
+
+        # For recursive modules, check if any registered namespace is a parent
+        for ns_name, ns in self.agent._policy.namespaces.items():  # type: ignore[attr-defined]
+            if getattr(ns, "recursive", False) and module_name.startswith(
+                ns_name + "."
+            ):
+                # This is a submodule of a recursively registered module
+                return AgexModule(
+                    name=module_name, agent_fingerprint=self.agent.fingerprint
+                )
+
         raise EvalError(
             f"Module '{module_name}' is not registered or whitelisted.", node
         )
