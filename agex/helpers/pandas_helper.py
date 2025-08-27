@@ -9,13 +9,16 @@ import warnings
 
 from agex.agent import Agent
 
-PANDAS_EXCLUDE = [
+IO_EXCLUDE = [
+    "read_*",
+    "pandas.io*",
+    "DataFrame.to_*",
+]
+
+CORE_EXCLUDE = [
     "_*",
     "*._*",
-    "read_*",
     "DataFrame.eval",
-    "DataFrame.to_*",
-    "pandas.io*",
     "pandas.core*",
     "pandas.plotting*",
     "pandas.testing*",
@@ -23,17 +26,15 @@ PANDAS_EXCLUDE = [
 ]
 
 
-def register_pandas(agent: Agent) -> None:
+def register_pandas(agent: Agent, io_friendly: bool = False) -> None:
     """Register pandas and its submodules recursively."""
     try:
         import pandas as pd
 
-        agent.module(
-            pd,
-            recursive=True,
-            visibility="low",
-            exclude=PANDAS_EXCLUDE,
-        )
+        exclude = CORE_EXCLUDE
+        if not io_friendly:
+            exclude += IO_EXCLUDE
+        agent.module(pd, recursive=True, visibility="low", exclude=exclude)
 
     except ImportError:
         warnings.warn(
