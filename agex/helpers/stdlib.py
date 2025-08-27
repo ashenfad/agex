@@ -8,18 +8,22 @@ data processing modules.
 
 import base64
 import collections
+import csv
 import datetime
 import decimal
 import fractions
 import hashlib
+import io
 import json
 import math
 import random
 import re
 import statistics
 import string
+import tempfile
 import textwrap
 import time
+import typing
 import uuid
 
 from agex.agent import Agent
@@ -34,7 +38,7 @@ RANDOM_EXCLUDE = [
 ]
 
 
-def register_stdlib(agent: Agent) -> None:
+def register_stdlib(agent: Agent, io_friendly: bool = False) -> None:
     """Register useful Python standard library modules with the agent."""
 
     # Mathematical modules
@@ -64,6 +68,17 @@ def register_stdlib(agent: Agent) -> None:
 
     # Data encoding/processing
     agent.module(json, visibility="low")
+    agent.module(csv, visibility="low")
     agent.module(base64, visibility="low")
     agent.module(uuid, visibility="low")
     agent.module(hashlib, visibility="low")
+
+    # IO and temporary file handling
+    agent.module(tempfile, visibility="low")
+    if io_friendly:
+        agent.module(io, visibility="low")
+    else:
+        agent.module(
+            io, visibility="low", include=["BytesIO", "StringIO", "TextIOWrapper"]
+        )
+    agent.module(typing, visibility="low")

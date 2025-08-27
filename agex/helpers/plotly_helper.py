@@ -9,11 +9,7 @@ import warnings
 
 from agex.agent import Agent
 
-PLOTLY_EXCLUDE = [
-    # General exclusions
-    "_*",
-    "*._*",
-    # File I/O and serialization
+IO_EXCLUDE = [
     "write_*",
     "to_*",
     "to_html",
@@ -21,6 +17,12 @@ PLOTLY_EXCLUDE = [
     "write_html",
     "write_image",
     "base64_to_*",
+]
+
+CORE_EXCLUDE = [
+    # General exclusions
+    "_*",
+    "*._*",
     # Display and export
     "show",
     "plot",  # Blocks plotly.offline.plot
@@ -35,16 +37,19 @@ PLOTLY_EXCLUDE = [
 ]
 
 
-def register_plotly(agent: Agent) -> None:
+def register_plotly(agent: Agent, io_friendly: bool = False) -> None:
     """Register the entire plotly library recursively."""
     try:
         import plotly
 
+        exclude = CORE_EXCLUDE
+        if not io_friendly:
+            exclude += IO_EXCLUDE
         agent.module(
             plotly,
             recursive=True,
             visibility="low",
-            exclude=PLOTLY_EXCLUDE,
+            exclude=exclude,
         )
 
     except ImportError:

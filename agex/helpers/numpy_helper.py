@@ -9,15 +9,16 @@ import warnings
 
 from agex.agent import Agent
 
-NUMPY_EXCLUDE = [
-    # General private/internal members
-    "_*",
-    "*._*",
-    # File I/O
+IO_EXCLUDE = [
     "load*",
     "save*",
     "fromfile",
     "tofile",
+]
+
+CORE_EXCLUDE = [
+    "_*",
+    "*._*",
     # Memory-mapped files
     "memmap",
     "DataSource*",
@@ -28,16 +29,19 @@ NUMPY_EXCLUDE = [
 ]
 
 
-def register_numpy(agent: Agent) -> None:
+def register_numpy(agent: Agent, io_friendly: bool = False) -> None:
     """Register the entire numpy library recursively."""
     try:
         import numpy as np
 
+        exclude = CORE_EXCLUDE
+        if not io_friendly:
+            exclude += IO_EXCLUDE
         agent.module(
             np,
             recursive=True,
             visibility="low",
-            exclude=NUMPY_EXCLUDE,
+            exclude=exclude,
         )
 
     except ImportError:
