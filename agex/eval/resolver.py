@@ -184,6 +184,16 @@ class Resolver:
                 )
             return getattr(res, "fn", None) or getattr(res, "cls", None) or submod
 
+        member = self.agent._policy.resolve_class_member(type(value), attr_name)
+        if member is not None:
+            try:
+                return getattr(value, attr_name)
+            except AttributeError:
+                raise AgexAttributeError(
+                    f"'{type(value).__name__}' object has no attribute '{attr_name}'",
+                    node,
+                )
+
         # Check for registered host classes and whitelisted methods on Python objects
         allowed_attrs = get_allowed_attributes_for_instance(self.agent, value)
         if attr_name in allowed_attrs:

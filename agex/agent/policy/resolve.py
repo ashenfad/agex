@@ -58,13 +58,29 @@ def _resolve_class_member(
     allowed = forced or (include_pred(member_name) and not exclude_pred(member_name))
     if not allowed:
         return None
+
+    # First try getattr (works for class methods and simple attributes)
     member = getattr(py_cls, member_name, None)
-    if member is None:
-        return None
-    if inspect.isroutine(member):
-        return ResolvedFn(fn=member)
-    else:
-        return ResolvedObj(value=member)
+    if member is not None:
+        if inspect.isroutine(member):
+            return ResolvedFn(fn=member)
+        else:
+            return ResolvedObj(value=member)
+
+    # If getattr returns None, check __dict__ of class and its MRO for descriptors/properties
+    for cls in py_cls.__mro__:
+        if member_name in cls.__dict__:
+            member = cls.__dict__[member_name]
+            # Properties, descriptors, and other instance attributes
+            if hasattr(member, "__get__") or hasattr(member, "__set__"):
+                # It's a descriptor (property, etc.) - allow as instance attribute
+                return ResolvedObj(value=None)
+            elif inspect.isroutine(member):
+                return ResolvedFn(fn=member)
+            else:
+                return ResolvedObj(value=member)
+
+    return None
 
 
 def _is_constructable(py_cls: type, spec: Namespace) -> bool:
