@@ -29,12 +29,16 @@ WHITELISTED_METHODS = {
         "lower",
         "strip",
         "split",
+        "rsplit",
         "replace",
         "startswith",
         "endswith",
         "join",
         "encode",
+        "count",
     },
+    bytes: {"decode"},
+    bytearray: {"decode"},
 }
 
 # Methods that return iterators/views and need to be materialized

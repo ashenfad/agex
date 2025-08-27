@@ -280,8 +280,14 @@ def _hasattr(evaluator, *args, **kwargs) -> bool:
             return False
 
     # For all other objects, respect the agent's sandbox rules.
-    allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
-    return name in allowed
+    from agex.eval.resolver import Resolver
+
+    resolver = Resolver(evaluator.agent)
+    try:
+        attr = resolver.resolve_attribute(obj, name, None)
+        return attr is not None
+    except AgexAttributeError:
+        return False
 
 
 def _getattr(evaluator, *args, **kwargs) -> Any:
@@ -319,10 +325,14 @@ def _getattr(evaluator, *args, **kwargs) -> Any:
             raise
 
     # For all other objects, respect the agent's sandbox rules.
-    allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
-    if name in allowed:
-        if hasattr(obj, name):
-            return getattr(obj, name)
+    from agex.eval.resolver import Resolver
+
+    resolver = Resolver(evaluator.agent)
+    try:
+        return resolver.resolve_attribute(obj, name, None)
+    except AgexAttributeError:
+        pass
+
     if len(args) == 3:
         return default
     # If the attribute is not allowed, raise an AttributeError.
@@ -515,6 +525,7 @@ BUILTINS = {
     "float": float,
     "bool": bool,
     "bytes": bytes,
+    "bytearray": bytearray,
     "dict": _AgexTypePlaceholder(dict),
     "set": _AgexTypePlaceholder(set),
     "tuple": _AgexTypePlaceholder(tuple),
