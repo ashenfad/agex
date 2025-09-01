@@ -16,6 +16,7 @@ import hashlib
 import io
 import json
 import math
+import os
 import random
 import re
 import statistics
@@ -77,6 +78,7 @@ def register_stdlib(agent: Agent, io_friendly: bool = False) -> None:
     agent.module(tempfile, visibility="low")
     if io_friendly:
         agent.module(io, visibility="low")
+        agent.module(os, visibility="low")
     else:
         agent.module(
             io, visibility="low", include=["BytesIO", "StringIO", "TextIOWrapper"]
