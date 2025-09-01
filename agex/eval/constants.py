@@ -29,6 +29,7 @@ WHITELISTED_METHODS = {
         "lower",
         "strip",
         "split",
+        "splitlines",
         "rsplit",
         "replace",
         "startswith",
