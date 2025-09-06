@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Any, Literal, TextIO, cast
 
+from ..eval.objects import PrintAction
 from .events import (
     ActionEvent,
     BaseEvent,
@@ -160,6 +161,22 @@ def _summarize_output_parts(parts: list[Any], max_preview: int = 80) -> str:
         type_name = type(part).__name__
         if isinstance(part, str):
             return f"text {_truncate(_strip_newlines(part), max_preview)}"
+        if isinstance(part, PrintAction):
+            # PrintAction is a tuple containing the printed arguments
+            # Join them with spaces and show the content instead of just metadata
+            content = " ".join(str(item) for item in part)
+            stripped_content = content.strip()
+
+            # Check if this looks like an error message and format accordingly
+            if any(
+                keyword in stripped_content
+                for keyword in ["Error:", "Exception:", "Traceback", "ERROR:"]
+            ):
+                return f"error: {_truncate(_strip_newlines(stripped_content), max_preview)}"
+            else:
+                return (
+                    f"print {_truncate(_strip_newlines(stripped_content), max_preview)}"
+                )
         shape = getattr(part, "shape", None)
         if shape is not None:
             return f"{type_name} shape={shape}"
