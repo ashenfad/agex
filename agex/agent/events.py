@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from ..eval.objects import PrintAction
+
 
 def _render_object_as_html(obj: Any) -> str:
     """
@@ -21,6 +23,22 @@ def _render_object_as_html(obj: Any) -> str:
         # Check if object has _repr_html_ method (pandas DataFrames, plotly Figures, etc.)
         if hasattr(obj, "_repr_html_"):
             return f"<div style='margin: 5px 0;'>{obj._repr_html_()}</div>"
+        # Handle PrintAction objects by joining their content
+        elif isinstance(obj, PrintAction):
+            import html
+
+            # Join the PrintAction tuple content with spaces, like print() does
+            content = " ".join(str(item) for item in obj)
+            escaped_content = html.escape(content)
+
+            # Check if this looks like an error and style accordingly
+            if any(
+                keyword in content
+                for keyword in ["Error:", "Exception:", "Traceback", "ERROR:"]
+            ):
+                return f"<pre style='background: #fff2f0; padding: 8px; border-radius: 3px; margin: 0; color: #d73a49; font-family: monospace; border-left: 3px solid #d73a49;'>{escaped_content}</pre>"
+            else:
+                return f"<pre style='background: #fff; padding: 8px; border-radius: 3px; margin: 0; color: #24292e; font-family: monospace;'>{escaped_content}</pre>"
         # Check for _repr_mimebundle_ (matplotlib figures, etc.)
         elif hasattr(obj, "_repr_mimebundle_"):
             bundle = obj._repr_mimebundle_(include=["text/html"])
