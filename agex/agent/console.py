@@ -152,7 +152,9 @@ def _summarize_inputs(
     return ", ".join(items)
 
 
-def _summarize_output_parts(parts: list[Any], max_preview: int = 80) -> str:
+def _summarize_output_parts(
+    parts: list[Any], max_preview: int = 80, verbosity: str = "normal"
+) -> str:
     if not parts:
         return "0 parts"
     # If just one part, try to give a succinct preview
@@ -160,23 +162,33 @@ def _summarize_output_parts(parts: list[Any], max_preview: int = 80) -> str:
         part = parts[0]
         type_name = type(part).__name__
         if isinstance(part, str):
-            return f"text {_truncate(_strip_newlines(part), max_preview)}"
+            if verbosity == "verbose":
+                content = _strip_newlines(part)
+            else:
+                content = _truncate(_strip_newlines(part), max_preview)
+            return f"text {content}"
         if isinstance(part, PrintAction):
             # PrintAction is a tuple containing the printed arguments
             # Join them with spaces and show the content instead of just metadata
             content = " ".join(str(item) for item in part)
             stripped_content = content.strip()
 
+            # In verbose mode, don't truncate print content
+            if verbosity == "verbose":
+                final_content = _strip_newlines(stripped_content)
+            else:
+                final_content = _truncate(
+                    _strip_newlines(stripped_content), max_preview
+                )
+
             # Check if this looks like an error message and format accordingly
             if any(
                 keyword in stripped_content
                 for keyword in ["Error:", "Exception:", "Traceback", "ERROR:"]
             ):
-                return f"error: {_truncate(_strip_newlines(stripped_content), max_preview)}"
+                return f"error: {final_content}"
             else:
-                return (
-                    f"print {_truncate(_strip_newlines(stripped_content), max_preview)}"
-                )
+                return f"print {final_content}"
         shape = getattr(part, "shape", None)
         if shape is not None:
             return f"{type_name} shape={shape}"
@@ -246,10 +258,15 @@ def _format_event_lines(
         body_lines.append(_indent(detail_indent, f"Inputs: {preview}"))
 
     elif isinstance(event, ActionEvent):
-        thinking_preview = _truncate(
-            _strip_newlines(event.thinking), 120 if verbosity != "brief" else 80
-        )
-        body_lines.append(_indent(detail_indent, f"Thinking: {thinking_preview}"))
+        if verbosity == "verbose":
+            # No truncation in verbose mode - show full thinking
+            thinking_text = _strip_newlines(event.thinking)
+        else:
+            # Truncate in brief and normal modes
+            thinking_text = _truncate(
+                _strip_newlines(event.thinking), 120 if verbosity != "brief" else 80
+            )
+        body_lines.append(_indent(detail_indent, f"Thinking: {thinking_text}"))
         code_lines_total = event.code.count("\n") + 1 if event.code else 0
         if verbosity == "verbose" and event.code:
             shown_lines = event.code.splitlines()[:truncate_code_lines]
@@ -266,7 +283,7 @@ def _format_event_lines(
             body_lines.append(_indent(detail_indent, f"Code: {code_lines_total} lines"))
 
     elif isinstance(event, OutputEvent):
-        summary = _summarize_output_parts(event.parts)
+        summary = _summarize_output_parts(event.parts, verbosity=verbosity)
         body_lines.append(_indent(detail_indent, f"Output: {summary}"))
 
     elif isinstance(event, SuccessEvent):
