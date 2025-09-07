@@ -184,7 +184,10 @@ class Resolver:
                 )
             return getattr(res, "fn", None) or getattr(res, "cls", None) or submod
 
-        member = self.agent._policy.resolve_class_member(type(value), attr_name)
+        # Handle class attribute access (e.g., datetime.datetime.now)
+        # If value is a class, resolve its members directly, not the type's members
+        target_class = value if isinstance(value, type) else type(value)
+        member = self.agent._policy.resolve_class_member(target_class, attr_name)
         if member is not None:
             try:
                 return getattr(value, attr_name)
