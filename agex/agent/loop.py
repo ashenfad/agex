@@ -445,17 +445,23 @@ class TaskLoopMixin(BaseAgent):
             raise  # Let TaskFail and TaskClarify propagate normally
 
     def _build_system_message(self) -> str:
-        """Build the system message with builtin primer, registered resources, and agent primer."""
+        """Build the system message with builtin primer, capabilities primer (or registrations), and agent primer."""
         parts = []
 
         # Add builtin primer first (foundation)
         parts.append(BUILTIN_PRIMER)
 
-        # Add registered resources (available tools)
-
-        registered_definitions = render_definitions(self)  # type: ignore
-        if registered_definitions.strip():
-            parts.append("# Registered Resources\n\n" + registered_definitions)
+        # Add capabilities section: prefer explicit capabilities primer when set.
+        cap_text = getattr(self, "capabilities_primer", None)
+        if cap_text is not None:
+            # If explicitly set to empty string, suppress capabilities section entirely
+            if cap_text.strip():
+                parts.append("# Capabilities Primer\n\n" + cap_text)
+        else:
+            # Fallback to rendered registrations
+            registered_definitions = render_definitions(self)  # type: ignore
+            if registered_definitions.strip():
+                parts.append("# Registered Resources\n\n" + registered_definitions)
 
         # Add agent primer if available (specialization)
         if self.primer:
