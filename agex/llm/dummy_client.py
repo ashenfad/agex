@@ -68,6 +68,20 @@ class DummyLLMClient(LLMClient):
 
         return response
 
+    def complete_text(self, messages: List[Message], **kwargs) -> str:
+        """Return a deterministic plain text for testing."""
+        # Join user message texts for a trivial echo; suitable for tests
+        parts: list[str] = []
+        for msg in messages:
+            if isinstance(msg, MultimodalMessage):
+                texts = [
+                    p.text for p in msg.content if getattr(p, "type", "") == "text"
+                ]
+                parts.append(" ".join(texts))
+            else:
+                parts.append(getattr(msg, "content", ""))
+        return " ".join(filter(None, parts)) or "dummy"
+
     @property
     def context_window(self) -> int:
         return 8192

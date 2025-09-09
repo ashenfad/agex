@@ -85,6 +85,29 @@ class OpenAIClient(LLMClient):
         except Exception as e:
             raise RuntimeError(f"OpenAI completion failed: {e}") from e
 
+    def complete_text(self, messages: List[Message], **kwargs) -> str:
+        """Send messages to OpenAI and return plain text content."""
+        # Combine kwargs, giving precedence to method-level ones
+        request_kwargs = {**self._kwargs, **kwargs}
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self._model,
+                messages=[_format_message(msg) for msg in messages],  # type: ignore
+                **request_kwargs,
+            )
+            content = response.choices[0].message.content
+            if isinstance(content, list):
+                # When OpenAI returns content parts, join text parts
+                texts = []
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        texts.append(part.get("text", ""))
+                return "".join(texts)
+            return content or ""
+        except Exception as e:
+            raise RuntimeError(f"OpenAI text completion failed: {e}") from e
+
     @property
     def model(self) -> str:
         return self._model

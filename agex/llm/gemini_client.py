@@ -1,5 +1,5 @@
 import json
-from typing import List
+from typing import Any, List, cast
 
 import google.generativeai as genai
 
@@ -37,9 +37,9 @@ class GeminiClient(LLMClient):
 
         # Configure API key if provided (note: this affects global state)
         if "api_key" in client_kwargs:
-            genai.configure(api_key=client_kwargs["api_key"])
+            genai.configure(api_key=client_kwargs["api_key"])  # type: ignore[attr-defined]
 
-        self.client = genai.GenerativeModel(model_name=model)
+        self.client = genai.GenerativeModel(model_name=model)  # type: ignore[attr-defined]
 
     def complete(self, messages: List[Message], **kwargs) -> LLMResponse:
         """
@@ -72,8 +72,9 @@ class GeminiClient(LLMClient):
                 **request_kwargs,
             )
             # Generate response
+            # Gemini expects a chat-style list of dict parts; typing stubs may not align.
             response = self.client.generate_content(
-                gemini_messages, generation_config=generation_config
+                cast(Any, gemini_messages), generation_config=generation_config
             )
 
             # Parse the JSON response
@@ -93,6 +94,20 @@ class GeminiClient(LLMClient):
 
         except Exception as e:
             raise RuntimeError(f"Gemini completion failed: {e}") from e
+
+    def complete_text(self, messages: List[Message], **kwargs) -> str:
+        """Send messages to Gemini and return plain text content."""
+        request_kwargs = {**self._kwargs, **kwargs}
+        # Convert messages; prepend system content into first user turn as done above
+        gemini_messages = self._convert_messages_to_gemini_format(messages)
+
+        try:
+            response = self.client.generate_content(
+                cast(Any, gemini_messages), **request_kwargs
+            )
+            return response.text or ""
+        except Exception as e:
+            raise RuntimeError(f"Gemini text completion failed: {e}") from e
 
     def _convert_messages_to_gemini_format(self, messages: List[Message]) -> List[dict]:
         """Convert agex Message objects to Gemini's expected format."""
