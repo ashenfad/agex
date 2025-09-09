@@ -1,6 +1,6 @@
 # DB (Raw SQLite)
 
-Agents can work directly with a live stateful objects like an `sqlite3.Connection` while still peristing their compute environment.
+Agents can work directly with a live stateful objects like an `sqlite3.Connection` while still persisting their compute environment.
 
 Create an agent and give it access to a live object:
 
@@ -38,7 +38,7 @@ def query_db(prompt: str) -> Any:  # type: ignore[return-value]
     pass
 ```
 
-Ask the agent to create a a table and then follow up with questions about it:
+Ask the agent to create a table and then follow up with questions about it:
 
 ```python
 from agex import Versioned

@@ -2,7 +2,7 @@
 Hierarchical Agent Orchestration
 
 An orchestrator agent delegates to specialist sub-agents for data generation
-and visualization. A sub-agents task is the orchestrator's fn. The signature
+and visualization. A sub-agent's task is the orchestrator's fn. The signature
 is the contract between them.
 
 Bulk data and plots flow between agents without special handling.
