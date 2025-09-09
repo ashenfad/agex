@@ -35,6 +35,9 @@ print(view(agent))
 
 # The `full=True` flag shows all members, including low-visibility ones
 # print(view(agent, full=True))
+
+# Token budget breakdown for the static system context
+print(view(agent, focus="tokens", model_name="gpt-4"))
 ```
 
 **Example Output:**
@@ -44,6 +47,22 @@ fn: calculate_sum(a: int, b: int) -> int
     Calculates the sum of two integers.
 ---------------------------
 ```
+
+### Token Budget View
+
+Use `focus="tokens"` to see an estimate of tokens for the agent's static system context (built-in primer, registered resources, and agent primer). This helps you budget visibility and primer sizes before calls.
+
+```text
+--- Agent Token Budget (model: gpt-4) ---
+builtin_primer: 1234
+registered_resources: 456
+agent_primer: 78
+total: 1768
+```
+
+Notes:
+- Counts are model-dependent; pass `model_name` to match your provider.
+- Registered resources reflect current visibility (high/medium shown; low hidden).
 
 ### Notes on Recursive Module Views
 
