@@ -79,6 +79,23 @@ class LLMClient(ABC):
         """
         ...
 
+    @abstractmethod
+    def complete_text(self, messages: List[Message], **kwargs) -> str:
+        """
+        Send messages to the LLM and get back plain text.
+
+        This is a generic text API for tasks like summarization or free-form generation
+        where structured outputs are not needed.
+
+        Args:
+            messages: List of Message objects with role and content
+            **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
+
+        Returns:
+            A plain text string
+        """
+        ...
+
     @property
     @abstractmethod
     def model(self) -> str:

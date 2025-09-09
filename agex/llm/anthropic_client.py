@@ -150,6 +150,49 @@ class AnthropicClient(LLMClient):
         except Exception as e:
             raise RuntimeError(f"Anthropic completion failed: {e}") from e
 
+    def complete_text(self, messages: List[Message], **kwargs) -> str:
+        """Send messages to Anthropic and return plain text content."""
+        # Combine kwargs, giving precedence to method-level ones
+        request_kwargs = {**self._kwargs, **kwargs}
+
+        # Separate system and user/assistant messages
+        system_message = None
+        conversation_messages = []
+        for msg in messages:
+            if msg.role == "system":
+                if isinstance(msg, MultimodalMessage):
+                    raise TypeError("Anthropic system messages cannot contain images.")
+                if system_message is None:
+                    system_message = msg.content
+                else:
+                    system_message += "\n\n" + msg.content
+            else:
+                conversation_messages.append(
+                    {"role": msg.role, "content": _format_content(msg)}
+                )
+
+        try:
+            if "max_tokens" not in request_kwargs:
+                request_kwargs["max_tokens"] = 1024
+
+            api_kwargs = {
+                "model": self._model,
+                "messages": conversation_messages,
+                **request_kwargs,
+            }
+            if system_message is not None:
+                api_kwargs["system"] = system_message
+
+            response = self.client.messages.create(**api_kwargs)
+            # Concatenate text parts from content blocks
+            texts: list[str] = []
+            for block in response.content or []:
+                if getattr(block, "type", None) == "text":
+                    texts.append(getattr(block, "text", ""))
+            return "".join(texts)
+        except Exception as e:
+            raise RuntimeError(f"Anthropic text completion failed: {e}") from e
+
     @property
     def model(self) -> str:
         return self._model
