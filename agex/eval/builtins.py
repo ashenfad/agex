@@ -526,6 +526,7 @@ BUILTINS = {
     "bool": bool,
     "bytes": bytes,
     "bytearray": bytearray,
+    "callable": callable,
     "dict": _AgexTypePlaceholder(dict),
     "set": _AgexTypePlaceholder(set),
     "tuple": _AgexTypePlaceholder(tuple),
