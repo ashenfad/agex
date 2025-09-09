@@ -4,6 +4,7 @@ from ..agent import Agent
 from ..state.versioned import Versioned
 from .definitions import render_definitions
 from .stream import StreamRenderer
+from .token_count import system_token_count
 
 
 @overload
@@ -27,7 +28,7 @@ def view(
 def view(
     obj: Union[Agent, Versioned],
     *,
-    focus: Literal["recent", "full"] = "recent",
+    focus: Literal["recent", "full", "tokens"] = "recent",
     model_name: str = "gpt-4",
     max_tokens: int = 4096,
     full: bool = False,
@@ -40,7 +41,9 @@ def view(
     access to the event log, use `agex.events()`.
 
     - `view(agent)`: Shows the functions, classes, and modules registered with an
-      agent.
+      agent. Use `focus="tokens"` to see a token budget breakdown for the
+      agent's static system context (built-in primer, registered resources, and
+      agent primer).
     - `view(state)`: Shows a snapshot of the agent's memory.
 
     Args:
@@ -49,7 +52,8 @@ def view(
             "recent": A summary of state changes from the most recent execution.
             "full": The complete, raw key-value state at the current commit.
         full: For agent views, if True, shows all members regardless of visibility.
-        model_name: The tokenizer model for the "recent" state view.
+        model_name: The tokenizer model for the "recent" state view and the
+            agent token budget view.
         max_tokens: The token budget for the "recent" state view.
 
     Returns:
@@ -60,6 +64,17 @@ def view(
         TypeError: If an unsupported object type is provided.
     """
     if isinstance(obj, Agent):
+        if focus == "tokens":
+            breakdown = system_token_count(obj, model_name=model_name)
+            by = breakdown["by_section"]
+            lines = [
+                f"--- Agent Token Budget (model: {breakdown['model']}) ---",
+                f"builtin_primer: {by['builtin_primer']}",
+                f"registered_resources: {by['registered_resources']}",
+                f"agent_primer: {by['agent_primer']}",
+                f"total: {breakdown['total']}",
+            ]
+            return "\n".join(lines)
         return render_definitions(obj, full=full)
 
     if isinstance(obj, Versioned):
