@@ -11,6 +11,7 @@ Agent(
     max_iterations: int = 10,
     max_tokens: int = 2**16,
     name: str | None = None,
+    capabilities_primer: str | None = None,
     llm_client: LLMClient | None = None,
     llm_max_retries: int = 2,
     llm_retry_backoff: float = 0.25,
@@ -26,6 +27,7 @@ Agent(
 | `max_iterations` | `int` | `10` | Maximum number of think-act cycles per task |
 | `max_tokens` | `int` | `65536` | Maximum tokens for context rendering |
 | `name` | `str | None` | `None` | Unique identifier for the agent (auto-generated if not provided) |
+| `capabilities_primer` | `str | None` | `None` | Optional curated text that replaces the default capabilities listing (rendered from registrations). If `None`, the agent renders capabilities from registrations; if empty string, the section is suppressed. |
 | `llm_client` | `LLMClient | None` | `None` | An instantiated `LLMClient` for the agent to use. If `None`, a default client is created. |
 | `llm_max_retries` | `int` | `2` | Number of times to retry a failed LLM completion before aborting with `LLMFail`. |
 | `llm_retry_backoff` | `float` | `0.25` | Initial backoff (seconds) between retries. Backoff grows exponentially per attempt. |
@@ -139,6 +141,20 @@ print(named_agent.name)  # "my_assistant"
 
 The agent's behavioral instructions.
 
+### `.capabilities_primer`
+
+By default, the agent’s system message includes a capabilities section rendered from your registrations (functions, classes, modules), honoring their visibility levels. You can override this with a curated primer string.
+
+Behavior:
+
+- If `capabilities_primer` is `None` (default): render from registrations.
+- If `capabilities_primer` is a non-empty string: use that text instead.
+
+This lets you replace verbose listings with a concise, guidance-oriented document.
+
+See the [Capabilities Primer Helper](#capabilities-primer-helper) section for how to generate these documents.
+
+
 ```python
 agent = Agent(primer="You are concise and direct.")
 print(agent.primer)  # "You are concise and direct."
@@ -159,6 +175,50 @@ Maximum number of think-act cycles per task. If an agent doesn't complete a task
 
 Maximum number of tokens to use when rendering the agent's context.
 
+
+## Capabilities Primer Helper
+
+Use the helper to generate a curated capabilities primer (markdown) from the agent's current registrations. Attach the result to `agent.capabilities_primer` (or pass via constructor) to replace the default visibility-based listing.
+
+Signature:
+
+```python
+from agex import summarize_capabilities
+
+def summarize_capabilities(
+    agent: Agent,
+    target_chars: int,
+    llm_client: LLMClient | None = None,
+    use_cache: bool = True,
+) -> str: ...
+```
+
+Parameters:
+
+- `agent`: The agent whose registered capabilities will be summarized (visibility-aware).
+- `target_chars`: Minimum character count to target; the helper asks the model to write at least this many characters.
+- `llm_client`: Optional override client for summarization (defaults to `agent.llm_client`).
+- `use_cache`: If True, read/write a project-local cache under `.agex/primer_cache/` keyed by the agent fingerprint, target length, and model id.
+
+Behavior:
+
+- Renders the agent's capabilities per current registrations and visibility, then asks the model to synthesize a concise, guidance-oriented primer.
+- Caches the result at a path like: `.agex/primer_cache/{agent}-{fp8}-ch{target_chars}-m{model}.md` with a small header (agent, fingerprint, target_chars, model, timestamp).
+- The tokens-focused view (`view(agent, focus="tokens")`) counts the capabilities primer when present; otherwise it counts the rendered registrations.
+
+Usage:
+
+```python
+text = summarize_capabilities(agent, target_chars=8000)
+agent.capabilities_primer = text
+
+# Or pass via constructor
+# agent = Agent(capabilities_primer=text)
+
+# Verify token budget with the primer applied
+from agex import view
+print(view(agent, focus="tokens"))
+```
 
 ## Agent Registry
 agex automatically registers all agents in a global registry to enable inter-agent communication. For **testing**, use `clear_agent_registry()` to prevent cross-contamination between test cases.

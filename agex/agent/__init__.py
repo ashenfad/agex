@@ -57,6 +57,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         max_tokens: int = 2**16,
         # Agent identification
         name: str | None = None,
+        # Optional curated capabilities primer
+        capabilities_primer: str | None = None,
         # LLM configuration (optional, uses smart defaults)
         llm_client: LLMClient | None = None,
         # LLM retry controls
@@ -75,11 +77,12 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             llm_client: An instantiated LLMClient for the agent to use.
         """
         super().__init__(
-            primer,
-            timeout_seconds,
-            max_iterations,
-            max_tokens,
+            primer=primer,
+            timeout_seconds=timeout_seconds,
+            max_iterations=max_iterations,
+            max_tokens=max_tokens,
             name=name,
+            capabilities_primer=capabilities_primer,
             llm_client=llm_client,
             llm_max_retries=llm_max_retries,
             llm_retry_backoff=llm_retry_backoff,

@@ -17,6 +17,7 @@ from .agent.events import (
     TaskStartEvent,
 )
 from .llm import LLMClient, connect_llm
+from .render.capabilities import summarize_capabilities
 from .render.token_count import system_token_count
 from .render.view import view
 from .state import Live, Namespaced, Versioned, events
@@ -54,6 +55,8 @@ __all__ = [
     "view",
     # Token counting
     "system_token_count",
+    # Capabilities
+    "summarize_capabilities",
     # KV backends
     "Memory",
     "Disk",
