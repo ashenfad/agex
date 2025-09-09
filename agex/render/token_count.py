@@ -18,7 +18,8 @@ def system_token_count(agent, model_name: str = "gpt-4") -> Dict[str, Any]:
 
     Sections counted:
     - builtin_primer: The framework's built-in primer text
-    - registered_resources: Header + rendered definitions based on visibility
+    - capabilities_primer: Either the agent's capabilities primer (if set),
+      or the rendered registrations (with a header), depending on configuration
     - agent_primer: The agent-specific primer string (if any)
 
     Returns a breakdown by section and a total.
@@ -29,13 +30,19 @@ def system_token_count(agent, model_name: str = "gpt-4") -> Dict[str, Any]:
         _count_tokens(builtin_primer_text, model_name) if builtin_primer_text else 0
     )
 
-    # 2) Registered resources (header + rendered definitions)
-    rendered_defs = render_definitions(agent)  # respects visibility
-    if rendered_defs.strip():
-        resources_text = "# Registered Resources\n\n" + rendered_defs
-        resources_tokens = _count_tokens(resources_text, model_name)
-    else:
-        resources_tokens = 0
+    # 2) Capabilities primer (or fallback to rendered registrations)
+    capabilities_text = getattr(agent, "capabilities_primer", None)
+    if capabilities_text is None:
+        # Fallback to rendered registrations when a capabilities primer is not set
+        rendered_defs = render_definitions(agent)  # respects visibility
+        if rendered_defs.strip():
+            capabilities_text = "# Registered Resources\n\n" + rendered_defs
+        else:
+            capabilities_text = ""
+
+    capabilities_tokens = (
+        _count_tokens(capabilities_text, model_name) if capabilities_text else 0
+    )
 
     # 3) Agent primer
     agent_primer_text = getattr(agent, "primer", None) or ""
@@ -45,7 +52,7 @@ def system_token_count(agent, model_name: str = "gpt-4") -> Dict[str, Any]:
 
     by_section = {
         "builtin_primer": builtin_tokens,
-        "registered_resources": resources_tokens,
+        "capabilities_primer": capabilities_tokens,
         "agent_primer": agent_primer_tokens,
     }
     total = sum(by_section.values())
