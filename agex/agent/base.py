@@ -73,6 +73,8 @@ class BaseAgent:
         max_tokens: int,
         # Agent identification
         name: str | None = None,
+        # Optional curated capabilities primer (overrides rendered registrations when set)
+        capabilities_primer: str | None = None,
         # LLM configuration (optional, uses smart defaults)
         llm_client: LLMClient | None = None,
         # LLM retry controls
@@ -81,6 +83,8 @@ class BaseAgent:
     ):
         self.name = name or _random_name()
         self.primer = primer
+        # If set, used instead of rendered registrations in system context
+        self.capabilities_primer = capabilities_primer
         self.timeout_seconds = timeout_seconds
         self.max_iterations = max_iterations
         self.max_tokens = max_tokens
