@@ -280,6 +280,46 @@ class SubscriptTarget(AssignmentTarget):
 class StatementEvaluator(BaseEvaluator):
     """A mixin for evaluating statement nodes."""
 
+    def _handle_destructuring_assignment(self, target_node: ast.AST, value: Any):
+        """
+        Recursively handle destructuring where targets may include subscripts
+        and attributes in addition to names. This reuses the assignment target
+        machinery so pickle safety and nested containers are handled uniformly.
+        """
+        # Tuple destructuring: validate iterable and arity, then recurse
+        if isinstance(target_node, ast.Tuple):
+            if not hasattr(value, "__iter__"):
+                raise EvalError(
+                    "Cannot unpack non-iterable value for assignment.", target_node
+                )
+            try:
+                values = list(value)
+            except TypeError:
+                raise EvalError(
+                    "Cannot unpack non-iterable value for assignment.", target_node
+                )
+
+            targets = target_node.elts
+            if len(targets) != len(values):
+                raise EvalError(
+                    f"Expected {len(targets)} values to unpack, but got {len(values)}.",
+                    target_node,
+                )
+            for t, v in zip(targets, values):
+                self._handle_destructuring_assignment(t, v)
+            return
+
+        # Leaf target: use assignment target resolver for Name/Attribute/Subscript
+        if isinstance(target_node, (ast.Name, ast.Attribute, ast.Subscript)):
+            target = self._resolve_target(target_node)
+            target.set_value(value, self.state)
+            return
+
+        raise EvalError(
+            "Assignment target must be a name, subscript, attribute, or tuple.",
+            target_node,
+        )
+
     def _resolve_target(self, node: ast.expr) -> AssignmentTarget:
         """Resolves an expression node into a concrete AssignmentTarget."""
         if isinstance(node, ast.Name):
