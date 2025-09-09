@@ -244,6 +244,23 @@ class Resolver:
 
         res = self.agent._policy.resolve_module_member(module_name, member_name)
         if res is None:
+            # Fallback for recursive parents: allow 'from parent.child import leaf'
+            parent_ns_name = None
+            for ns_name, ns in self.agent._policy.namespaces.items():  # type: ignore[attr-defined]
+                if getattr(ns, "kind", None) != "module":
+                    continue
+                if not getattr(ns, "recursive", False):
+                    continue
+                if module_name.startswith(ns_name + "."):
+                    parent_ns_name = ns_name
+                    break
+            if parent_ns_name is not None:
+                suffix = module_name[len(parent_ns_name) + 1 :]
+                dotted_member = f"{suffix}.{member_name}"
+                res = self.agent._policy.resolve_module_member(
+                    parent_ns_name, dotted_member
+                )
+        if res is None:
             raise EvalError(
                 f"Cannot import name '{member_name}' from module '{module_name}'.",
                 node,
