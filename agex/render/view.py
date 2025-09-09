@@ -70,7 +70,7 @@ def view(
             lines = [
                 f"--- Agent Token Budget (model: {breakdown['model']}) ---",
                 f"builtin_primer: {by['builtin_primer']}",
-                f"registered_resources: {by['registered_resources']}",
+                f"capabilities_primer: {by['capabilities_primer']}",
                 f"agent_primer: {by['agent_primer']}",
                 f"total: {breakdown['total']}",
             ]

@@ -50,12 +50,12 @@ fn: calculate_sum(a: int, b: int) -> int
 
 ### Token Budget View
 
-Use `focus="tokens"` to see an estimate of tokens for the agent's static system context (built-in primer, registered resources, and agent primer). This helps you budget visibility and primer sizes before calls.
+Use `focus="tokens"` to see an estimate of tokens for the agent's static system context (built-in primer, capabilities primer or rendered registrations, and agent primer). This helps you budget visibility and primer sizes before calls.
 
 ```text
 --- Agent Token Budget (model: gpt-4) ---
 builtin_primer: 1234
-registered_resources: 456
+capabilities_primer: 456
 agent_primer: 78
 total: 1768
 ```
