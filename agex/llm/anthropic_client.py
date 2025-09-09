@@ -14,6 +14,7 @@ from agex.llm.core import (
 
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key", "timeout"}
+MAX_TOKENS = 2**14
 
 
 def _format_content(message: Message) -> List[dict]:
@@ -107,7 +108,7 @@ class AnthropicClient(LLMClient):
         try:
             # Set default max_tokens if not provided
             if "max_tokens" not in request_kwargs:
-                request_kwargs["max_tokens"] = 4096
+                request_kwargs["max_tokens"] = MAX_TOKENS
 
             # Make the API call with tool calling
             # Only include system parameter if we have a system message
@@ -173,7 +174,7 @@ class AnthropicClient(LLMClient):
 
         try:
             if "max_tokens" not in request_kwargs:
-                request_kwargs["max_tokens"] = 1024
+                request_kwargs["max_tokens"] = MAX_TOKENS
 
             api_kwargs = {
                 "model": self._model,
