@@ -6,6 +6,9 @@
 
 **This works because** `agex` agents can accept and return complex types like `pandas.DataFrame` and `plotly.Figure` objects without intermediate JSON serialization. For a deeper dive, check out the full **[agex101.ipynb tutorial](https://ashenfad.github.io/agex/examples/agex101/)** or see **[geospatial routing with OSMnx](https://ashenfad.github.io/agex/examples/routing/)** for advanced multi-library integration.
 
+For a full demo app where agex integrates with NiceGUI, see [`agex-ui`](https://github.com/ashenfad/agex-ui).
+
+
 ## What Makes This Different
 
 `agex` uses a subset of Python as the agent action space, executing actions in a sandboxed environment within your process. This approach avoids the complexity of JSON serialization and allows complex objects to flow directly between your code and the agent. You control exactly what functions, classes, and modules are available, creating a safe and focused

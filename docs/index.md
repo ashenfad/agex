@@ -80,6 +80,12 @@
 
     Complete technical documentation for all agex components and methods.
 
+-   **[:material-code-tags-check: Demo App: `agex-ui`](https://github.com/ashenfad/agex-ui)**
+
+    ---
+    
+    See an agent build a dynamic web UI on the fly with NiceGUI. A live example of agent-driven development.
+
 </div>
 
 ## Installation
