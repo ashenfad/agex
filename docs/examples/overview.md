@@ -2,14 +2,6 @@
 
 Short, focused examples showing core agex patterns.
 
-## Demo Application: `agex-ui`
-
-For a complete, end-to-end application, see the **[`agex-ui`](https://github.com/ashenfad/agex-ui)** repository. It's a live demo where an `agex` agent builds a dynamic web interface on the fly using the [NiceGUI](https://nicegui.io/) library, combining many of the concepts below into a single project.
-
-<a href="https://youtu.be/-LaY_QBfkf8">
-  <img src="https://raw.githubusercontent.com/ashenfad/agex-ui/main/resources/chat.png" width="400" alt="Watch the Agex-UI Demo">
-</a>
-
 ---
 
 ## Core Concepts
@@ -26,3 +18,11 @@ Prefer a notebook?
 - [Agex 101](agex101.ipynb) - Gentle intro to agex
 - [Routing](routing.ipynb) - OSMnx & Folio for route planning
 - [Vision](vision.ipynb) - Vision-capable agents (w/ Pillow)
+
+## Demo App: `agex-ui`
+
+For a complete demo app, see the **[`agex-ui`](https://github.com/ashenfad/agex-ui)** repository. There you'll find an `agex` agent which builds a dynamic web interface on the fly using the [NiceGUI](https://nicegui.io/) library.
+
+<a href="https://youtu.be/-LaY_QBfkf8">
+  <img src="https://raw.githubusercontent.com/ashenfad/agex-ui/main/resources/chat.png" width="400" alt="Watch the Agex-UI Demo">
+</a>
