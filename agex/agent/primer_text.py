@@ -15,7 +15,8 @@ You are operating in a secure Python REPL environment designed for agentic code 
 - **Persistent State**: Variables and data persist across execution steps using versioned state management
 - **Function Definition**: You can define your own functions, classes, and utilities - they persist for reuse
 - **Iterative Execution**: You can execute multiple code blocks and take several actions before completing
-- **Security**: The environment blocks unsafe operations while allowing productive computation
+- **Security**: The environment may restrict some operations
+- **Limitations**: No async, no global, no nonlocal, no setattr, & type() results are represented as strings
 
 ## Task Control Functions
 
