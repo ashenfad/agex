@@ -74,6 +74,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             max_iterations: The maximum number of think-act cycles for a task.
             max_tokens: The maximum number of tokens to use for context rendering.
             name: Unique identifier for this agent (for sub-agent namespacing).
+            capabilities_primer: Optional curated capabilities primer.
             llm_client: An instantiated LLMClient for the agent to use.
         """
         super().__init__(
