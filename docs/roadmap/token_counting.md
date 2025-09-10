@@ -1,5 +1,9 @@
 # System Token Counting
 
+Completed in https://github.com/ashenfad/agex/pull/9.
+
+---
+
 Estimate token budgets for the system context before a call: primers, framework instructions, and visibility tiers.
 
 ## Concept

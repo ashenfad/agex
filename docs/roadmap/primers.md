@@ -16,4 +16,6 @@ Auto-inject small, targeted coaching based on registered capabilities. The syste
 - Budget control integrates with system token counting.
 - User-extensible primer library with clear triggers (module/class/instance patterns).
 
+Related to PR: https://github.com/ashenfad/agex/pull/9
+
 Related issue: [Issue #1](https://github.com/ashenfad/agex/issues/1)
