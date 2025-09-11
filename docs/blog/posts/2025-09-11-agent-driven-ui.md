@@ -1,3 +1,12 @@
+---
+title: "Deep Dive: Building an Agent-Driven UI with `agex-ui`"
+date: 2025-09-11
+author: ashenfad
+categories:
+  - Deep Dive
+  - Showcase
+---
+
 # Deep Dive: Building an Agent-Driven UI with `agex-ui`
 
 Recently I open-sourced `agex`, an agentic framework that makes it easier for an agent to interact with existing Python libraries without tooling abstractions. I created an assortment of small [examples](https://ashenfad.github.io/agex/examples/overview/) but I also wanted a stand-alone app as a bigger demonstration.
@@ -14,18 +23,18 @@ The `chat` app has the familiar agent/user chat framing. But the agent responds 
 
 Video:
 
-<a href="https://youtu.be/-LaY_QBfkf8">
-  <img src="../assets/chat.png" width="400" alt="Watch the Agex-UI Demo">
-</a>
+<div class="video-wrapper">
+  <iframe width="380" height="315" src="https://www.youtube.com/embed/-LaY_QBfkf8?si=nqKy0AwxXdReQEsq" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</div>
 
 !!! note "A Note on the Demo Video"
-    I used GPT-5 with medium thinking and its not speedy, so I edited liberally. I've also tried it out with GPT-5-nano. The results aren't quite as pretty but the wait isn't nearly so painful.
+    I used GPT-5 with medium thinking and its not speedy, so I edited liberally. I've also tried it out with GPT-5-nano (and locally with qwen3-coder). The results aren't quite as pretty but the wait isn't nearly so painful.
 
 ## Lorem-Ipsum
 
-The `lorem-ipsum` app is a bit simpler but also fun. The user input is only the url path. Try `http://.../nba/blazers/2032/roster` and you'll see players from the future. Visit `http://.../weather/albany/or` and you'll see some not-so-accurate weather forecasts.
+The `lorem-ipsum` app is a bit simpler but also fun. The user input is only the url path. Try `http://127.0.0.1:8080/nba/blazers/2032/roster` and you'll see players from the future. Visit `http://127.0.0.1:8080/weather/albany/or` and you'll see a stand-in for a weather page.
 
-<img src="../assets/lorem.png" width="400" alt="Notional weather page">
+<img src="../assets/lorem.png" width="500" alt="Notional weather page">
 
 ---
 
