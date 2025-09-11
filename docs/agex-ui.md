@@ -38,7 +38,7 @@ An `agex` agent "thinks-in-code" when it takes an action. From the agent's persp
 
 For the `agex-ui` agents, this means the agent generated code runs on the same process hosting the UI components over FastAPI endpoints. This keeps the friction low between the agent code and the UI state.
 
-Let's make this a little more concrete by going through the details of the lorem-ipsum agent. We [create an agent](https://github.com/ashenfad/agex-ui/blob/fa97d610964d0819737d6662e814b36ad8aec23e/agex_ui/lorem_ipsum/main.py#L10-L18) 
+Let's make this a little more concrete by going through the details of the lorem-ipsum agent. First we [create an agent](https://github.com/ashenfad/agex-ui/blob/fa97d610964d0819737d6662e814b36ad8aec23e/agex_ui/lorem_ipsum/main.py#L10-L18):
 
 ```python
 agent = Agent(
