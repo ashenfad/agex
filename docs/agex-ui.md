@@ -18,6 +18,9 @@ Video:
   <img src="assets/chat.png" width="400" alt="Watch the Agex-UI Demo">
 </a>
 
+!!! note "A Note on the Demo Video"
+I used GPT-5 with medium thinking and its not speedy, so I edited liberally. I've also tried it out with GPT-5-nano. The results aren't quite as pretty but the wait isn't nearly so painful.
+
 ## Lorem-Ipsum
 
 The `lorem-ipsum` app is a bit simpler but also fun. The user input is only the url path. Try `http://.../nba/blazers/2032/roster` and you'll see players from the future. Visit `http://.../weather/albany/or` and you'll see some not-so-accurate weather forecasts.
