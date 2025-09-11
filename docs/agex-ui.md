@@ -15,17 +15,17 @@ The `chat` app has the familiar agent/user chat framing. But the agent responds 
 Video:
 
 <a href="https://youtu.be/-LaY_QBfkf8">
-  <img src="assets/chat.png" width="400" alt="Watch the Agex-UI Demo">
+  <img src="../assets/chat.png" width="400" alt="Watch the Agex-UI Demo">
 </a>
 
 !!! note "A Note on the Demo Video"
-I used GPT-5 with medium thinking and its not speedy, so I edited liberally. I've also tried it out with GPT-5-nano. The results aren't quite as pretty but the wait isn't nearly so painful.
+    I used GPT-5 with medium thinking and its not speedy, so I edited liberally. I've also tried it out with GPT-5-nano. The results aren't quite as pretty but the wait isn't nearly so painful.
 
 ## Lorem-Ipsum
 
 The `lorem-ipsum` app is a bit simpler but also fun. The user input is only the url path. Try `http://.../nba/blazers/2032/roster` and you'll see players from the future. Visit `http://.../weather/albany/or` and you'll see some not-so-accurate weather forecasts.
 
-<img src="assets/lorem.png" width="400" alt="Notional weather page">
+<img src="../assets/lorem.png" width="400" alt="Notional weather page">
 
 # How Does It Work?
 
