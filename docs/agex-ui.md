@@ -27,6 +27,8 @@ The `lorem-ipsum` app is a bit simpler but also fun. The user input is only the 
 
 <img src="../assets/lorem.png" width="400" alt="Notional weather page">
 
+---
+
 # How Does It Work?
 
 An `agex` agent "thinks-in-code" when it takes an action. From the agent's perspective, it lives in a REPL with a restricted set of Python capabilities. Its code is executed within a sandbox but it can share a process with regular Python.
