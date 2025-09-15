@@ -13,6 +13,7 @@ from .live import Live
 
 PARENT_COMMIT = "__parent_commit__%s"
 COMMIT_KEYSET = "__commit_keyset__%s"
+HEAD_COMMIT = "__head_commit__"
 
 
 @dataclass
@@ -38,15 +39,20 @@ class Versioned(State):
         self.removed = set()
         self.long_term = store
 
-        # If no commit hash provided, generate an initial commit hash (like Git's empty state)
+        # If no commit hash provided, try to load HEAD; otherwise create initial commit and set HEAD
         if commit_hash is None:
-            commit_hash = _get_commit_hash()
-            # Store the initial empty commit metadata so it can be checked out
-            initial_metadata = {
-                COMMIT_KEYSET % commit_hash: pickle.dumps({}),
-                PARENT_COMMIT % commit_hash: pickle.dumps(None),
-            }
-            store.set_many(**initial_metadata)
+            head_bytes = store.get(HEAD_COMMIT)
+            if head_bytes is not None:
+                commit_hash = pickle.loads(head_bytes)
+            else:
+                commit_hash = _get_commit_hash()
+                # Store the initial empty commit metadata so it can be checked out, and set HEAD
+                initial_metadata = {
+                    COMMIT_KEYSET % commit_hash: pickle.dumps({}),
+                    PARENT_COMMIT % commit_hash: pickle.dumps(None),
+                    HEAD_COMMIT: pickle.dumps(commit_hash),
+                }
+                store.set_many(**initial_metadata)
 
         self.current_commit = commit_hash
 
@@ -225,9 +231,10 @@ class Versioned(State):
                 diffs[versioned_key] = serialized_value
                 new_commit_keys[key] = versioned_key
 
-        # Serialize commit metadata
+        # Serialize commit metadata and update HEAD
         diffs[COMMIT_KEYSET % new_hash] = pickle.dumps(new_commit_keys)
         diffs[PARENT_COMMIT % new_hash] = pickle.dumps(self.current_commit)
+        diffs[HEAD_COMMIT] = pickle.dumps(new_hash)
 
         self.long_term.set_many(**diffs)
         self.commit_keys = new_commit_keys
