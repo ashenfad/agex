@@ -75,8 +75,8 @@ class Versioned(State):
 
     def get(self, key: str, default: Any = None) -> Any:
         # First check live (in-memory changes)
-        if (value := self.live.get(key)) is not None:
-            return value
+        if key in self.live:
+            return self.live.get(key)
 
         # Then check committed state
         if (
@@ -111,10 +111,12 @@ class Versioned(State):
         # Remove from mutation tracking
         self.accessed_objects.pop(key, None)
 
-        if not self.live.remove(key) and key in self.commit_keys:
+        removed_from_live = self.live.remove(key)
+        removed_from_commit = False
+        if not removed_from_live and key in self.commit_keys:
             self.removed.add(key)
-            return True
-        return False
+            removed_from_commit = True
+        return removed_from_live or removed_from_commit
 
     def keys(self) -> Iterable[str]:
         return set(self.live.keys()) | set(self.commit_keys.keys()) - self.removed
