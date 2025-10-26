@@ -15,14 +15,13 @@ from agex.eval.user_errors import (
     AgexTypeError,
     AgexValueError,
 )
-from agex.state import State, Versioned
+from agex.state import State
 from agex.state.scoped import Scoped
 
 from .base import BaseEvaluator
 from .binop import OPERATOR_MAP
 from .error import EvalError
 from .objects import AgexClass, AgexDataClass, AgexInstance, AgexObject
-from .safe import check_assignment_safety
 
 
 def _handle_assignment_exceptions(
@@ -76,9 +75,11 @@ class AssignmentTarget(ABC):
         ...
 
     def set_value(self, value: Any, state: State):
-        """Sets a new value for the target, checking pickle safety first."""
-        if isinstance(state, Versioned):
-            value = check_assignment_safety(value)
+        """Sets a new value for the target.
+
+        Unpicklable objects are allowed - they will be handled by the marker
+        system at snapshot time for Versioned state.
+        """
         self._do_set_value(value)
 
     @abstractmethod
