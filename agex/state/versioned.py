@@ -101,12 +101,14 @@ class Versioned(State):
 
                 # Check if this is an unpicklable marker
                 if isinstance(value, UnpicklableMarker):
+                    # Strip namespace prefix for display (e.g., "agent_name/cursor" -> "cursor")
+                    display_name = key.split("/")[-1] if "/" in key else key
                     raise UnpicklableVariableError(
-                        f"Variable '{key}' ({value.type_name}) is not available. "
+                        f"Variable '{display_name}' ({value.type_name}) is not available. "
                         f"It was not persisted from a previous execution because "
                         f"it is unpicklable.\n\n"
                         f"Solutions:\n"
-                        f"  1. Recreate it: {key} = db.cursor()\n"
+                        f"  1. Recreate it: {display_name} = db.cursor()\n"
                         f"  2. Chain operations: results = db.cursor().fetchall()\n"
                         f"  3. Use this variable only within a single turn"
                     )

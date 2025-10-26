@@ -303,3 +303,24 @@ def test_keys_includes_unpicklable_variables():
     # Bad should raise
     with pytest.raises(UnpicklableVariableError):
         state.get("bad")
+
+
+def test_namespaced_key_displays_correctly_in_error():
+    """Error message should show variable name without namespace prefix."""
+    state = Versioned()
+
+    # Simulate namespaced key (like what Namespaced state would create)
+    cursor = UnpicklableObject(42)
+    state.set("my_agent/cursor", cursor)
+    state.snapshot()
+
+    # Error message should show "cursor", not "my_agent/cursor"
+    with pytest.raises(UnpicklableVariableError) as exc_info:
+        state.get("my_agent/cursor")
+
+    error_msg = str(exc_info.value)
+    # Should show clean variable name
+    assert "Variable 'cursor'" in error_msg
+    assert "Recreate it: cursor = " in error_msg
+    # Should NOT show namespace prefix
+    assert "my_agent/cursor" not in error_msg
