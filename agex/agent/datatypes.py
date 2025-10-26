@@ -59,6 +59,25 @@ class LLMFail(_AgentExit):
     retries: int = 0
 
 
+class UnpicklableVariableError(Exception):
+    """Raised when attempting to access a variable that was not persisted due to being unpicklable."""
+
+    pass
+
+
+@dataclass
+class UnpicklableMarker:
+    """Marker for variables that couldn't be persisted due to being unpicklable.
+
+    This marker is stored in place of the actual unpicklable object. When an agent
+    tries to access this variable in a future turn, we raise an informative error.
+    """
+
+    variable_name: str
+    type_name: str
+    original_exception: str
+
+
 @dataclass
 class MemberSpec:
     visibility: Visibility | None = None

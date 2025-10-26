@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 import xxhash
 
+from ..agent.datatypes import UnpicklableMarker, UnpicklableVariableError
 from . import kv
 from .core import State
 from .live import Live
@@ -98,6 +99,18 @@ class Versioned(State):
                 # Deserialize the object
                 value = pickle.loads(serialized_bytes)
 
+                # Check if this is an unpicklable marker
+                if isinstance(value, UnpicklableMarker):
+                    raise UnpicklableVariableError(
+                        f"Variable '{key}' ({value.type_name}) is not available. "
+                        f"It was not persisted from a previous execution because "
+                        f"it is unpicklable.\n\n"
+                        f"Solutions:\n"
+                        f"  1. Recreate it: {key} = db.cursor()\n"
+                        f"  2. Chain operations: results = db.cursor().fetchall()\n"
+                        f"  3. Use this variable only within a single turn"
+                    )
+
                 # Track objects for mutation detection only if not already tracked
                 # This preserves the original object reference that may have been mutated
                 if key not in self.accessed_objects:
@@ -157,7 +170,7 @@ class Versioned(State):
         """Detect mutations in accessed objects and auto-save them.
 
         Returns:
-            Dict mapping keys to their serialized bytes for mutated objects.
+            Dict mapping keys to their serialized bytes for mutated objects (or markers).
         """
         mutations = {}
         unsavable_keys = []
@@ -168,14 +181,24 @@ class Versioned(State):
             try:
                 current_bytes = pickle.dumps(obj_ref)
                 current_hash = _fast_hash(current_bytes)
-            except Exception:
+            except Exception as e:
                 # This object was mutated into an unserializable state.
-                # We can't get its bytes or hash, but we know it changed.
-                # We force it into live so snapshot() can deal with it.
+                # Create a marker for it instead.
                 if key not in self.live:
                     self.live.set(key, obj_ref)
-                unsavable_keys.append(key)
-                # It won't be in `mutations`, so snapshot() will try to serialize it.
+
+                # Create marker for the unpicklable mutated object
+                marker = UnpicklableMarker(
+                    variable_name=key,
+                    type_name=type(obj_ref).__name__,
+                    original_exception=str(e),
+                )
+                try:
+                    marker_bytes = pickle.dumps(marker)
+                    mutations[key] = marker_bytes
+                except Exception:
+                    # Marker itself failed to pickle (should never happen)
+                    unsavable_keys.append(key)
                 continue
 
             if current_hash != original_hash:
@@ -223,9 +246,19 @@ class Versioned(State):
                 # Serialize the value to bytes before storing
                 try:
                     serialized_value = pickle.dumps(value)
-                except Exception:
-                    unsaved_keys.append(key)
-                    continue
+                except Exception as e:
+                    # Value is unpicklable - create a marker instead
+                    marker = UnpicklableMarker(
+                        variable_name=key,
+                        type_name=type(value).__name__,
+                        original_exception=str(e),
+                    )
+                    try:
+                        serialized_value = pickle.dumps(marker)
+                    except Exception:
+                        # Marker itself failed to pickle (should never happen)
+                        unsaved_keys.append(key)
+                        continue
 
             if serialized_value is not None:
                 diffs[versioned_key] = serialized_value

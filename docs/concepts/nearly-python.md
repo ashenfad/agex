@@ -100,33 +100,18 @@ my_function = my_decorator(my_function)  # Works fine
 
 **Future**: Likely to be added - the syntax is straightforward to implement.
 
-### `with` Statements for Temporary Scope
-**Special behavior for unpicklable objects**: When using `Versioned` (persistent) state, the `with` statement has a special purpose: it allows an agent to temporarily work with an unpicklable object that will not be saved to the agent's permanent memory.
-
-Any variable created inside a `with` block is "ephemeral"—it exists only for the duration of that block and is discarded afterward. This provides a safe way to interact with stateful, unpicklable resources like database connections.
+### `with` Statements
+**Normal context manager behavior**: The `with` statement works as a standard Python context manager.
 
 ```python
-# Assume `db_connection` is an unpicklable database connection
-# object that has been registered with the agent.
-
-# ❌ This code will FAIL with Versioned state because `cursor` is unpicklable.
-# cursor = db_connection.cursor()
-# cursor.execute("SELECT * FROM users")
-# results = cursor.fetchall()
-
-# ✅ This is the correct pattern.
-# The cursor is used and discarded within the temporary scope.
-with db_connection.cursor() as cursor:
-    cursor.execute("SELECT * FROM users")
-    results = cursor.fetchall()
-
-# The `results` variable (a list of tuples) IS picklable and can be
-# stored in the agent's state or returned. The `cursor` object is gone.
+# ✅ Works normally
+with open("file.txt") as f:
+    content = f.read()
 ```
 
-**Impact**: This is the primary pattern for using context managers that yield unpicklable resources (like database cursors) when working with `Versioned` state. It allows agents to perform stateful operations without violating the pickling requirement for persistent memory.
+**Impact**: Standard Python `with` semantics apply.
 
-**Future**: This is a core feature of the sandbox and is unlikely to change.
+**Future**: No changes planned.
 
 ### Async/Await
 **Not supported**: Agents cannot generate async code; the sandbox is synchronous-only.
@@ -219,55 +204,54 @@ def increment_with_state():
 
 **Future**: Unlikely to change - would break the sandbox security model.
 
-### Unpicklable Objects
-**Your choice of state object determines whether agents can assign unpicklable objects to variables.**
+### Unpicklable Objects - Automatic Handling ✨
 
-This is a critical concept when working with stateful resources like database connections, file handles, or network sockets.
+**When using `Versioned` state, unpicklable objects (like database cursors, file handles, network connections) are automatically detected and handled gracefully.**
 
-#### Mode 1: No State (Default)
-When you call a task with no `state` parameter, the execution is self-contained. Agents can freely use unpicklable objects, but nothing is remembered between calls.
+#### It Just Works for Single-Turn Use
 
 ```python
-# ✅ Works perfectly fine
-def process_query(query: str):
-    cursor = db.execute(query) # Assigning cursor is okay
-    return cursor.fetchall()
+# ✅ Natural Python - works perfectly in single turn
+cursor = db.cursor()
+cursor.execute("SELECT * FROM users")
+results = cursor.fetchall()
+# Single-turn use - perfect! No special handling needed.
 ```
-**Use for:** Simple, single-shot tasks that don't require memory.
 
-#### Mode 2: Live State
-When you pass a `Live` state object (`state=Live()`), agents gain in-process memory and can still freely assign unpicklable objects to variables. This is the ideal mode for multi-step workflows involving live resources.
+#### Cross-Turn Use Gets Helpful Guidance
+
+If you try to reference an unpicklable variable from a previous turn, you'll get a clear error with solutions:
 
 ```python
-# ✅ Live state allows assigning unpicklable objects
-def multi_step_db_work(queries: list[str]):
-    # The `state` parameter is added automatically by the @agent.task decorator
-    for query in queries:
-        cursor = db.execute(query) # Storing cursor in state is okay
-        # ... do more work ...
+# Turn 1
+cursor = db.cursor()
+data = cursor.fetchone()
+
+# Turn 2 - agent tries to reuse cursor
+cursor.execute("SELECT ...")  # Error on variable reference!
+
+# UnpicklableVariableError: Variable 'cursor' (sqlite3.Cursor) is not available.
+# It was not persisted from a previous execution because it is unpicklable.
+#
+# Solutions:
+#   1. Recreate it: cursor = db.cursor()
+#   2. Chain operations: results = db.cursor().fetchall()
+#   3. Use this variable only within a single turn
 ```
-**Use for:** Multi-step workflows that need to remember stateful, unpicklable objects like database cursors or file handles.
 
-#### Mode 3: Versioned State
-When you pass a `Versioned` state object (`state=Versioned()`), state is persisted and versioned, which requires all stored objects to be picklable.
+**Impact**: Write natural Python for unpicklable objects. Single-turn use is friction-free. Multi-turn reuse gives clear, actionable guidance.
 
-```python
-# ❌ With Versioned state, agents cannot assign unpicklable objects
-cursor = db.execute("SELECT * FROM users")  # ERROR: Cannot assign cursor to a variable
-result = cursor.fetchall()
+**Best practices:**
+- Chain operations for one-off queries: `results = db.cursor().fetchall()`
+- Recreate resources at the start of each turn: `cursor = db.cursor()`
 
-# ✅ Must chain operations immediately
-result = db.execute("SELECT * FROM users").fetchall()
-```
-**Use for:** Production workflows requiring persistence, rollback capabilities, and multi-agent coordination.
-
-### Summary of Approaches
+### Summary of State Modes
 
 | State Mode | Unpicklable Objects | Memory Between Calls |
 | :--- | :--- | :--- |
-| **Default (No State)** | ✅ Allowed | No |
-| **`Live` State** | ✅ Allowed | Yes (in-process) |
-| **`Versioned` State** | ❌ Not Allowed | Yes (persistent) |
+| **Default (No State)** | ✅ Allowed (no persistence) | No |
+| **`Live` State** | ✅ Allowed (in-memory) | Yes (in-process) |
+| **`Versioned` State** | ✅ Auto-handled via markers | Yes (persistent) |
 
 ### Object Identity Between Executions
 **Objects are reconstructed**: Between task executions (when using `Versioned` state), objects are serialized and deserialized. This breaks object identity (`id()`) and shared references between separate task runs.

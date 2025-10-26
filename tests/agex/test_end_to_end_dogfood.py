@@ -30,16 +30,17 @@ def test_basic_agent_creation_in_agent():
             thinking="I need to create a new agent and return a task function.",
             code="""
 # Create a new agent
-with Agent() as new_agent:
-    # Define a function for the new agent
-    def greet(name: str) -> str:
-        '''Greet someone by name.'''
-        pass
-    
-    # Convert to task
-    task_fn = new_agent.task(greet)
+new_agent = Agent()
 
-    task_success(task_fn)
+# Define a function for the new agent
+def greet(name: str) -> str:
+    '''Greet someone by name.'''
+    pass
+
+# Convert to task
+task_fn = new_agent.task(greet)
+
+task_success(task_fn)
 """,
         )
     ]
@@ -77,13 +78,14 @@ def test_user_function_registration():
         LLMResponse(
             thinking="I need to create a new agent and register the helper function with it.",
             code="""
-# Use context manager to avoid pickle issues
-with Agent() as new_agent:
-    # Register the helper function from parent
-    new_agent.fn(helper, name="math_helper")
-    
-    # Extract fingerprint before leaving context
-    fingerprint = new_agent.fingerprint
+# Create new agent - works fine with marker system
+new_agent = Agent()
+
+# Register the helper function from parent
+new_agent.fn(helper, name="math_helper")
+
+# Get fingerprint
+fingerprint = new_agent.fingerprint
 
 # Return the agent fingerprint so we can verify it
 task_success(fingerprint)
@@ -125,14 +127,15 @@ def test_module_security_inheritance():
 # Import the math module first
 import math
 
-# Use context manager to avoid pickle issues
-with Agent() as new_agent:
-    # Try to register math module with more permissions than parent had
-    # This should only get the intersection of what parent had and what we request
-    new_agent.module(math, include=["sin", "tan", "pi"], name="math")
-    
-    # Extract fingerprint before leaving context
-    fingerprint = new_agent.fingerprint
+# Create agent - works fine with marker system
+new_agent = Agent()
+
+# Try to register math module with more permissions than parent had
+# This should only get the intersection of what parent had and what we request
+new_agent.module(math, include=["sin", "tan", "pi"], name="math")
+
+# Get fingerprint
+fingerprint = new_agent.fingerprint
 
 task_success(fingerprint)
 """,
@@ -182,31 +185,32 @@ def test_comprehensive_dogfood_workflow():
         LLMResponse(
             thinking="I need to create a specialized geometry agent with inherited capabilities.",
             code="""
-# Import math module first  
+# Import math module first
 import math
 
-# Use context manager to avoid pickle issues
-with Agent() as geom_agent:
-    # Register the distance calculation function
-    geom_agent.fn(distance_calc, name="euclidean_distance")
-    
-    # Register math module (should inherit limited permissions)
-    geom_agent.module(math, include=["sin", "cos", "tan", "sqrt"], name="math")
-    
-    # Create a new task for this agent
-    def analyze_triangle(a: float, b: float, c: float) -> dict:
-        '''Analyze a triangle given its side lengths.'''
-        pass
-    
-    triangle_analyzer = geom_agent.task(analyze_triangle)
-    
-    # Extract data before leaving context
-    result = {
-        'agent_fingerprint': geom_agent.fingerprint,
-        'task_function': triangle_analyzer
-    }
+# Create agent - works fine with marker system
+geom_agent = Agent()
 
-    task_success(result)
+# Register the distance calculation function
+geom_agent.fn(distance_calc, name="euclidean_distance")
+
+# Register math module (should inherit limited permissions)
+geom_agent.module(math, include=["sin", "cos", "tan", "sqrt"], name="math")
+
+# Create a new task for this agent
+def analyze_triangle(a: float, b: float, c: float) -> dict:
+    '''Analyze a triangle given its side lengths.'''
+    pass
+
+triangle_analyzer = geom_agent.task(analyze_triangle)
+
+# Build result
+result = {
+    'agent_fingerprint': geom_agent.fingerprint,
+    'task_function': triangle_analyzer
+}
+
+task_success(result)
 """,
         )
     ]

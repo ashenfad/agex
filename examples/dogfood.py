@@ -45,18 +45,18 @@ def main():
     # ----------------------------------------------
     # actual `create_specialist` agent code for the task:
     # ----------------------------------------------
-    # with Agent() as math_solver_agent:
-    #     import math
-    #     # Register math module capabilities with the agent
-    #     math_solver_agent.module(math)
+    # math_solver_agent = Agent()
+    # import math
+    # # Register math module capabilities with the agent
+    # math_solver_agent.module(math)
     #
-    #     def solve_math_problem(equation: str) -> str:
-    #         '''Solve a mathematical equation step by step.'''
-    #         pass  # Empty body for agent task
+    # def solve_math_problem(equation: str) -> str:
+    #     '''Solve a mathematical equation step by step.'''
+    #     pass  # Empty body for agent task
     #
-    #     task_fn = math_solver_agent.task(solve_math_problem)
+    # task_fn = math_solver_agent.task(solve_math_problem)
     #
-    #     task_success(task_fn)
+    # task_success(task_fn)
 
     result = math_solver("4x + 5 = 13")
     print(result)

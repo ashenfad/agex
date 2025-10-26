@@ -59,7 +59,7 @@ print(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
 # 10
 ```
 
-Working with live objects like a database connection while also using [`Versioned`](../api/state.md) state is one of `agex`'s most compelling features. The linked primer file demonstrates how to currently coach the agent on the correct patterns for this. Making this guidance fully automatic is our plan for [Contextual Primers](../roadmap/primers.md).
+Working with live objects like a database connection while also using [`Versioned`](../api/state.md) state is one of `agex`'s most compelling features. Unpicklable objects (like cursors) are automatically handled - they work naturally in single-turn use, and provide clear error messages if accidentally reused across turns.
 
 —
 

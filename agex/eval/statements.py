@@ -113,32 +113,6 @@ class NameTarget(AssignmentTarget):
         self._evaluator.state.remove(self._name)
 
 
-class TransientNameTarget(AssignmentTarget):
-    """Represents assignment to a transient variable name (bypasses pickle safety)."""
-
-    def __init__(self, evaluator: "BaseEvaluator", name: str):
-        self._evaluator = evaluator
-        self._name = name
-
-    def get_value(self) -> Any:
-        if self._name not in self._evaluator.state:
-            raise AgexNameError(f"name '{self._name}' is not defined")
-        return self._evaluator.state.get(self._name)
-
-    def set_value(self, value: Any, state: State):
-        """Set value directly without pickle safety check."""
-        self._evaluator.state.set(self._name, value)
-
-    def _do_set_value(self, value: Any):
-        """This should not be called for transient targets."""
-        self._evaluator.state.set(self._name, value)
-
-    def del_value(self):
-        if self._name not in self._evaluator.state:
-            raise AgexNameError(f"name '{self._name}' is not defined")
-        self._evaluator.state.remove(self._name)
-
-
 class AttributeTarget(AssignmentTarget):
     """Represents assignment to an object attribute."""
 
@@ -323,20 +297,6 @@ class StatementEvaluator(BaseEvaluator):
     def _resolve_target(self, node: ast.expr) -> AssignmentTarget:
         """Resolves an expression node into a concrete AssignmentTarget."""
         if isinstance(node, ast.Name):
-            # Check if we're in a transient scope and this is a transient variable
-            from agex.state import is_live_root
-            from agex.state.transient import TransientScope
-
-            if (
-                isinstance(self.state, TransientScope)
-                and node.id in self.state._transient_vars
-            ):
-                return TransientNameTarget(self, node.id)
-
-            # Use TransientNameTarget if the root state is live (skip pickle enforcement)
-            if is_live_root(self.state):
-                return TransientNameTarget(self, node.id)
-
             return NameTarget(self, node.id)
         if isinstance(node, ast.Attribute):
             obj = self.visit(node.value)
@@ -471,7 +431,7 @@ class StatementEvaluator(BaseEvaluator):
         raise
 
     def visit_With(self, node: ast.With) -> None:
-        """Handles with statements for context managers and transient variables."""
+        """Handles with statements for context managers."""
         if len(node.items) != 1:
             raise EvalError(
                 "Multiple context managers in a single 'with' statement are not supported. "
@@ -482,17 +442,16 @@ class StatementEvaluator(BaseEvaluator):
         with_item = node.items[0]
         context_obj = self.visit(with_item.context_expr)
 
-        # Check if it's a traditional context manager
-        is_context_manager = hasattr(context_obj, "__enter__") and hasattr(
-            context_obj, "__exit__"
-        )
+        # Check if it's a context manager
+        if not (hasattr(context_obj, "__enter__") and hasattr(context_obj, "__exit__")):
+            raise EvalError(
+                f"'{type(context_obj).__name__}' object does not support the context manager protocol. "
+                f"It must have __enter__ and __exit__ methods to be used with 'with'.",
+                node,
+            )
 
-        if is_context_manager:
-            # Traditional context manager path
-            self._handle_context_manager(node, with_item, context_obj)
-        else:
-            # Transient variable path - use the object directly
-            self._handle_transient_with(node, with_item, context_obj)
+        # Handle the context manager
+        self._handle_context_manager(node, with_item, context_obj)
 
     def _handle_context_manager(
         self, node: ast.With, with_item: ast.withitem, context_manager: Any
@@ -551,45 +510,6 @@ class StatementEvaluator(BaseEvaluator):
             except Exception as exit_exc:
                 # If __exit__ raises an exception when no exception occurred, propagate it
                 raise exit_exc
-
-    def _handle_transient_with(
-        self, node: ast.With, with_item: ast.withitem, context_obj: Any
-    ) -> None:
-        """Handle transient variables - objects used directly without context manager protocol."""
-        from agex.state.transient import TransientScope
-
-        # Determine which variables should be transient
-        transient_vars = set()
-        if with_item.optional_vars:
-            if isinstance(with_item.optional_vars, ast.Name):
-                transient_vars.add(with_item.optional_vars.id)
-            else:
-                # For complex assignments, we'll need to be more conservative
-                # For now, just handle simple names
-                pass
-
-        # Create a transient scope for the with block
-        original_state = self.state
-        self.state = TransientScope(original_state, transient_vars)
-
-        try:
-            # If there's an 'as' clause, bind the object directly to the variable
-            if with_item.optional_vars:
-                if isinstance(with_item.optional_vars, ast.Name):
-                    # This assignment bypasses pickle safety for transient variables
-                    self.state.set(with_item.optional_vars.id, context_obj)
-                else:
-                    # Handle tuple unpacking in 'as' clause
-                    target = self._resolve_target(with_item.optional_vars)
-                    target.set_value(context_obj, self.state)
-
-            # Execute the body with transient scope
-            for stmt in node.body:
-                self.visit(stmt)
-
-        finally:
-            # Restore original state - transient variables are automatically cleaned up
-            self.state = original_state
 
     def visit_Import(self, node: ast.Import) -> None:
         """Handles `import <module>` and `import <module> as <alias>`."""
