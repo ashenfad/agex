@@ -617,8 +617,9 @@ def test_task_input_dataclass_pickling():
 def test_unserializable_object_in_state_is_handled_gracefully():
     """
     Test that if an unserializable object (like a lambda) is added to state
-    via mutation, the snapshot process handles it gracefully by recording an
-    error in stdout instead of crashing.
+    via mutation, the snapshot process handles it gracefully by creating a marker.
+    The agent won't see any warnings (silent success), but will get a clear error
+    if they try to access the variable in a future turn.
     """
 
     clear_agent_registry()
@@ -662,43 +663,26 @@ def test_unserializable_object_in_state_is_handled_gracefully():
     state.snapshot()
 
     # Run the task. This will mutate my_object and then try to snapshot.
-    # It should NOT raise a PicklingError.
+    # It should NOT raise a PicklingError - a marker is created instead.
     result = task_with_unserializable_state(state=state)  # type: ignore
     assert result == "done"
 
-    # After task completion, check that warning was shown to agent as output
-    all_events = [e for e in events(state) if e.full_namespace == "test_agent"]
+    # With the new marker system, there's NO warning shown (silent success)
+    # The marker is successfully saved in place of the unpicklable object
 
-    output_events = [e for e in all_events if isinstance(e, OutputEvent)]
+    # Verify that trying to access the variable would now raise an error
+    from agex.agent.datatypes import UnpicklableVariableError
 
-    # Find output events that contain serialization warning messages
-    warning_outputs = []
-    for event in output_events:
-        for part in event.parts:
-            # Handle both raw PrintAction objects and rendered TextPart objects
-            part_text = ""
-            if hasattr(part, "text"):
-                part_text = str(part.text)
-            elif hasattr(part, "__iter__") and len(part) > 0:
-                # PrintAction is iterable, get the first argument
-                part_text = str(part[0])
+    # Directly check that the variable is now a marker
+    with pytest.raises(UnpicklableVariableError) as exc_info:
+        state.get("test_agent/my_object")
 
-            if "Could not save" in part_text:
-                warning_outputs.append(event)
-                break
-
-    assert len(warning_outputs) >= 1
-
-    # Get the warning message from the PrintAction
-    warning_part = warning_outputs[-1].parts[0]
-    if hasattr(warning_part, "text"):
-        warning_message = str(warning_part.text)
-    else:
-        # It's a PrintAction, get the first argument
-        warning_message = str(warning_part[0])
-
-    assert "Could not save" in warning_message
-    assert "my_object" in warning_message
+    # Verify the error message is helpful
+    error_msg = str(exc_info.value)
+    assert "my_object" in error_msg
+    assert "not available" in error_msg
+    assert "unpicklable" in error_msg
+    assert "Solutions:" in error_msg
 
 
 def test_shallow_validation_on_large_input_list():

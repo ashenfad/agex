@@ -1,74 +1,51 @@
 PRIMER = """
-# Database Cursor Primer
+# Database Operations Primer
 
-Essential concepts for working with SQLite cursors in natural language database tasks.
+Essential patterns for working with SQLite databases in natural language database tasks.
 
-## CRITICAL: Cursors Cannot Be Assigned to Variables
+## Recommended Patterns
 
-When you call `db.execute()`, it returns a cursor object that CANNOT be stored in a variable:
+### Chained Method Calls (Preferred)
 
-```python
-# ❌ THIS WILL FAIL - Cannot assign unpickleable cursor objects
-cursor = db.execute("SELECT * FROM users")  # ERROR!
-results = cursor.fetchall()  # This won't work
-```
-
-## ✅ Correct Approach: Chained Method Calls
-
-You MUST chain the fetch methods directly to the execute call:
+For simple queries, chain operations for clean, one-line execution:
 
 ```python
-# ✅ Get all rows - chain .fetchall() directly
+# ✅ Get all rows
 all_users = db.execute("SELECT * FROM users").fetchall()
 
-# ✅ Get one row - chain .fetchone() directly  
+# ✅ Get one row
 first_user = db.execute("SELECT * FROM users LIMIT 1").fetchone()
 
-# ✅ Count records - chain .fetchone() and access result
+# ✅ Count records
 count = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-
-# ✅ Get limited rows - chain .fetchmany() directly
-some_users = db.execute("SELECT * FROM users LIMIT 5").fetchmany(5)
 ```
 
-## Using `with` Statements
+### Transactions with Context Managers
 
-### For Transactions (INSERT/UPDATE/DELETE)
-
-For INSERT/UPDATE/DELETE operations, use `with` statements:
+For INSERT/UPDATE/DELETE operations, use `with` statements for safe transactions:
 
 ```python
-# ✅ Safe transaction - use 'with' for modifications
+# ✅ Safe transaction - automatically commits on success
 with db as connection:
     connection.execute("INSERT INTO users (name, email) VALUES (?, ?)", ("John", "john@example.com"))
     connection.execute("UPDATE users SET age = ? WHERE name = ?", (25, "John"))
-    # Transaction automatically commits on exit
 ```
 
-### For Cursor Iteration
+### Direct Assignment (Works in Single Turn)
 
-For iterating through large result sets, you can use cursors with `with` statements:
+You can assign cursors to variables for single-turn operations:
 
 ```python
-# ✅ Iterate through cursor - transient variables handle unpickleable cursors
-with db.execute("SELECT * FROM users WHERE age > ?", (25,)) as cursor:
-    for row in cursor:
-        print(f"User: {row[1]}, Email: {row[2]}, Age: {row[3]}")
-        
-# ✅ Process cursor in chunks
-with db.execute("SELECT * FROM large_table") as cursor:
-    while True:
-        rows = cursor.fetchmany(100)  # Process 100 rows at a time
-        if not rows:
-            break
-        for row in rows:
-            # Process each row
-            pass
+# ✅ Works fine in a single turn
+cursor = db.execute("SELECT * FROM users")
+results = cursor.fetchall()
 ```
+
+Note: If you try to reuse `cursor` in a later turn, you'll get a helpful error with solutions.
 
 ## Error Handling
 
-Handle constraint violations which are mapped to ValueError:
+Handle constraint violations (mapped to ValueError):
 
 ```python
 try:
@@ -78,20 +55,10 @@ except ValueError as e:
     print(f"Database constraint violation: {e}")
 ```
 
-## Quick Reference - What Works
+## Quick Reference
 
 - ✅ **Chained queries**: `db.execute("SELECT ...").fetchall()`
-- ✅ **Chained single row**: `db.execute("SELECT ...").fetchone()`
-- ✅ **Chained count**: `db.execute("SELECT COUNT(*) FROM table").fetchone()[0]`
-- ✅ **Safe updates**: `with db as conn: conn.execute("INSERT ...")`
-- ✅ **Cursor iteration**: `with db.execute("SELECT ...") as cursor: for row in cursor:`
-- ✅ **Parameterized queries**: Use `?` placeholders for safety
-
-## What Doesn't Work
-
-- ❌ **Storing cursors**: `cursor = db.execute(...)` - Will cause assignment errors
-- ❌ **Two-step process**: Must chain fetch methods immediately
-- ❌ **Direct modifications**: Always use `with` statements for INSERT/UPDATE/DELETE
-
-Remember: The cursor restriction is a safety feature to prevent unpickleable objects in agent state!
+- ✅ **Transactions**: `with db as conn: conn.execute("INSERT ...")`
+- ✅ **Direct assignment** (single-turn): `cursor = db.execute(...)`
+- ✅ **Parameterized queries**: Always use `?` placeholders for safety
 """

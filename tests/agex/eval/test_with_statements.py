@@ -452,8 +452,13 @@ task_success(result)
             db_path.unlink()
 
 
-def test_transient_variables():
-    """Test the new transient variable system for unpickleable objects."""
+def test_unpicklable_marker_system():
+    """Test the new marker-based system for unpicklable objects.
+
+    This replaces the old transient variable system. Now unpicklable objects
+    are automatically handled - they work in single-turn use, and raise helpful
+    errors if accessed across turns.
+    """
 
     # Create temporary database
     db_path = Path(tempfile.mktemp(suffix=".db"))
@@ -471,28 +476,28 @@ def test_transient_variables():
         # Create new connection for test
         conn = sqlite3.connect(str(db_path))
 
-        # Configure dummy LLM
+        # Configure dummy LLM for single-turn use (works perfectly)
         llm_client = DummyLLMClient(
             [
                 LLMResponse(
-                    thinking="I'll test the new transient variable system that allows unpickleable cursors.",
+                    thinking="I'll directly assign and use cursors - the new system handles unpicklables gracefully.",
                     code="""
-# This pattern previously failed due to pickle safety, but now works!
+# New pattern: Just assign and use naturally!
 results = []
 
-# Test 1: Basic transient cursor usage
-with conn.execute("SELECT COUNT(*) FROM items") as cursor:
-    count = cursor.fetchone()[0]
-    results.append(f"Count: {count}")
+# Direct assignment of unpicklable cursor - works fine in single turn
+cursor = conn.execute("SELECT COUNT(*) FROM items")
+count = cursor.fetchone()[0]
+results.append(f"Count: {count}")
 
-# Test 2: Multiple transient operations
-with conn.execute("SELECT value FROM items ORDER BY value") as cursor:
-    items = cursor.fetchall()
-    results.append(f"Items: {[item[0] for item in items]}")
+# Another cursor operation
+cursor2 = conn.execute("SELECT value FROM items ORDER BY value")
+items = cursor2.fetchall()
+results.append(f"Items: {[item[0] for item in items]}")
 
-# Test 3: Verify variables defined inside are accessible outside
-final_count = count  # This should work
-results.append(f"Final count: {final_count}")
+# Chain operations (recommended pattern)
+final = conn.execute("SELECT value FROM items").fetchall()
+results.append(f"Final: {len(final)} items")
 
 task_success(results)
 """,
@@ -504,16 +509,16 @@ task_success(results)
         agent.module(conn, name="conn", include=["execute"])
         agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 
-        @agent.task("Test transient variables with unpickleable cursors")
-        def transient_task() -> list:  # type: ignore[return-value]
+        @agent.task("Test marker-based unpicklable handling")
+        def marker_task() -> list:  # type: ignore[return-value]
             pass
 
-        result = transient_task()
+        result = marker_task()
 
         expected_items = ["item1", "item2", "item3"]
         assert result[0] == "Count: 3"
         assert result[1] == f"Items: {expected_items}"
-        assert result[2] == "Final count: 3"
+        assert result[2] == "Final: 3 items"
 
         conn.close()
 
@@ -620,12 +625,12 @@ if __name__ == "__main__":
     test_with_statement_raw_sqlite_connection()
     print("✅ Raw SQLite connection test passed")
 
-    test_transient_variables()
-    print("✅ Transient variables test passed")
+    test_unpicklable_marker_system()
+    print("✅ Unpicklable marker system test passed")
 
     test_sqlite_context_manager_method_access()
     print("✅ SQLite context manager method access test passed")
 
     print("\n🎉 All with statement tests passed successfully!")
     print("This demonstrates a unique capability no other agent framework offers!")
-    print("✨ NEW: Transient variables allow `with obj as var:` for any object!")
+    print("✨ NEW: Unpicklable objects handled automatically via markers!")

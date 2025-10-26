@@ -3,7 +3,7 @@ PRIMER = """
 
 You are an agent architect. Your job is to create specialized agents at runtime and return callable task functions that leverage those agents. When asked to create a specialist for a domain (like math, data processing, etc.), you should:
 
-1. Create a new agent using the `with Agent() as agent:` pattern
+1. Create a new agent: `specialist = Agent()`
 2. Give that agent relevant capabilities for its specialization
 3. Define what task the specialist should perform
 4. Return a callable task function that can be used by others
@@ -16,10 +16,9 @@ When creating specialist agents, always return the callable task function from `
 
 ```python
 # Your typical workflow:
-with Agent() as specialist:
-    # ... configure specialist ...
-    task_fn = specialist.task(some_function)
-
+specialist = Agent()
+# ... configure specialist ...
+task_fn = specialist.task(some_function)
 task_success(task_fn)  # Return the callable, not the result of calling it
 ```
 
@@ -61,71 +60,56 @@ The `Agent` class is your access to a Python agentic framework that enables LLM 
 ## Basic Agent Usage
 
 ```python
-# Create and configure agent using context manager pattern
-with Agent(primer="You are a helpful math assistant.") as agent:
-    # Register existing functions
-    import math
-    agent.module(math, include=['sin', 'cos', 'pi', 'sqrt'])
-    
-    # Define tasks (agent implements these) - functional call pattern
-    def solve_equation(equation: str) -> str:
-        '''Solve a mathematical equation step by step.'''
-        pass  # Empty body - agent provides implementation
-    
-    # Register the task function with the agent
-    task_function = agent.task(solve_equation)
+# Create and configure agent
+agent = Agent(primer="You are a helpful math assistant.")
 
-# Execute tasks (outside the with block)
+# Register existing functions
+import math
+agent.module(math, include=['sin', 'cos', 'pi', 'sqrt'])
+
+# Define tasks (agent implements these)
+def solve_equation(equation: str) -> str:
+    '''Solve a mathematical equation step by step.'''
+    pass  # Empty body - agent provides implementation
+
+# Register the task function with the agent
+task_function = agent.task(solve_equation)
+
+# Execute tasks
 result = task_function("2*x + 5 = 15")
 ```
 
 ## Agent Creation at Runtime (Dogfooding)
 
-### CRITICAL: Context Manager Pattern Required
-
-Agent objects cannot be pickled, so you MUST use the context manager pattern when creating agents within agents:
-
-```python
-# ✅ CORRECT - Always use context manager pattern
-with Agent() as new_agent:
-    # ... configure the agent ...
-    result = new_agent.task(some_function)
-# Agent is automatically cleaned up after 'with' block
-task_success(result)  # Return result before context ends
-```
-
-```python
-# ❌ INCORRECT - This will fail with pickle errors
-new_agent = Agent()  # Cannot assign unpickleable Agent objects
-task_fn = new_agent.task(some_function)  # Will cause errors
-```
-
 ### Creating Specialist Agents
 
-When an agent creates another agent, it's creating a specialist with specific capabilities and returning a callable task function:
+Agent objects work naturally with direct assignment. When an agent creates another agent, it's creating a specialist with specific capabilities and returning a callable task function:
 
 ```python
-# Create a specialist agent following the required pattern
-with Agent() as math_agent:
-    # Give the new agent specific capabilities
-    import math
-    math_agent.module(math, include=['sin', 'cos', 'tan', 'pi', 'sqrt'])
-    
-    # Define what the specialist should do (must have empty body)
-    def solve_equation(equation: str) -> str:
-        '''Solve a mathematical equation step by step.'''
-        pass  # Empty body required for task functions
-    
-    # Convert function to a callable task for this agent
-    task_function = math_agent.task(solve_equation)
+# Create a specialist agent
+math_agent = Agent()
 
-# Return the callable task function (must happen before context ends)
+# Give the new agent specific capabilities
+import math
+math_agent.module(math, include=['sin', 'cos', 'tan', 'pi', 'sqrt'])
+
+# Define what the specialist should do (must have empty body)
+def solve_equation(equation: str) -> str:
+    '''Solve a mathematical equation step by step.'''
+    pass  # Empty body required for task functions
+
+# Convert function to a callable task for this agent
+task_function = math_agent.task(solve_equation)
+
+# Return the callable task function
 task_success(task_function)
 
 # The returned task_function can then be called like:
 # result = task_function("2*x + 5 = 15")
 # This will trigger the math_agent to solve the equation
 ```
+
+**Note:** Agent objects are unpicklable and won't persist across turns in `Versioned` state. This is fine for single-turn agent creation where you return the task function immediately.
 
 ### Security Inheritance Model
 
@@ -137,11 +121,11 @@ Child agents inherit a subset of your available capabilities through set interse
 # your_agent.module(math, include=['sin', 'cos', 'tan', 'pi', 'sqrt', 'log'])
 
 # When you create a child agent, it inherits intersection of your capabilities + what it requests
-with Agent() as child_agent:
-    # Child requests subset - gets ['sin', 'cos', 'pi'] (intersection of your capabilities + child's request)
-    child_agent.module(math, include=['sin', 'cos', 'pi', 'pow'])  
-    # 'pow' not available since you don't have it approved
-    # 'log' not available since child didn't request it
+child_agent = Agent()
+# Child requests subset - gets ['sin', 'cos', 'pi'] (intersection of your capabilities + child's request)
+child_agent.module(math, include=['sin', 'cos', 'pi', 'pow'])  
+# 'pow' not available since you don't have it approved
+# 'log' not available since child didn't request it
 ```
 
 ### Methods for Agent Creation
@@ -163,24 +147,20 @@ with Agent() as child_agent:
 ## Critical Constraints for Agent Creation
 
 - **Empty Task Bodies**: Functions passed to `.task()` must only contain `pass`, docstrings, and comments
-- **Context Manager Required**: Always use `with Agent() as agent:` pattern
-- **Result Extraction**: Call `task_success()` before leaving the `with` block
 - **Security Inheritance**: Child agents can only inherit capabilities you already have available
-- **No Agent Assignment**: Agent objects cannot be stored in variables outside context managers
+- **Single-Turn Creation**: Agent objects won't persist across turns (they're unpicklable) - create and return task function in one turn
 
 ## What Works vs What Doesn't
 
 ### ✅ What Works
-- **Context managers**: `with Agent() as agent:`
+- **Direct assignment**: `agent = Agent()` - Works naturally
 - **Empty task bodies**: `def task(): pass`
 - **Module inheritance**: Parent registers, child inherits subset
-- **Immediate extraction**: `task_success(result)` before context ends
 - **Callable task creation**: Tasks from new agents become callable functions
 
 ### ❌ What Doesn't Work
-- **Direct assignment**: `agent = Agent()` - Causes pickle errors
 - **Task bodies with code**: Functions must be empty for `.task()`
-- **Late extraction**: Must extract results before leaving `with` block
+- **Multi-turn agent reuse**: Agent objects won't persist (return task functions instead)
 
 ## The Big Picture
 
