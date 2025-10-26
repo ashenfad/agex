@@ -78,9 +78,13 @@ When you use `Versioned` state, you get powerful features automatically:
 - **Rollback Safety**: The framework can revert to any previous state for debugging.
 
 ### Working with Unpicklable Objects in Versioned State
-A key constraint of `Versioned` state is that all stored objects must be serializable (picklable). Therefore, an agent **cannot assign unpicklable objects like database connections to variables.**
+`Versioned` state automatically handles unpicklable objects (like database connections, file handles, etc.) gracefully. Agents can assign these objects to variables naturally - they work perfectly for single-turn use. If an agent tries to access an unpicklable object from a previous turn, they receive a clear error message with actionable solutions.
 
-The correct pattern is to use these resources and consume their results in a single, chained operation. For a complete example, see [`examples/db.py`](https://github.com/ashenfad/agex/blob/main/examples/db.py) and its associated primer, which coaches the agent on the correct `db.execute(...).fetchall()` pattern.
+**Best practices:**
+- Chain operations for one-off use: `results = db.cursor().fetchall()`
+- Recreate resources at the start of each turn if needed across iterations
+
+For a complete example, see [`examples/db.py`](https://github.com/ashenfad/agex/blob/main/examples/db.py) and the [Nearly Python documentation](../concepts/nearly-python.md#unpicklable-objects-automatic-handling) for detailed behavior.
 
 ## Inspecting Historical State
 
