@@ -26,6 +26,7 @@ import textwrap
 import time
 import typing
 import uuid
+import zoneinfo
 
 from agex.agent import Agent
 
@@ -73,6 +74,7 @@ def register_stdlib(agent: Agent, io_friendly: bool = False) -> None:
     agent.module(base64, visibility="low")
     agent.module(uuid, visibility="low")
     agent.module(hashlib, visibility="low")
+    agent.module(zoneinfo, visibility="low")
 
     # IO and temporary file handling
     agent.module(tempfile, visibility="low")
