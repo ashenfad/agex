@@ -117,7 +117,12 @@ class GeminiClient(LLMClient):
     def _convert_messages_to_gemini_format(
         self, system: str, messages_dicts: List[dict]
     ) -> List[dict]:
-        """Convert generic message dicts to Gemini's expected format."""
+        """
+        Convert generic message dicts to Gemini's expected format.
+
+        Note: All images are converted to PNG format by the rendering layer
+        (StreamRenderer._serialize_image_to_base64) before reaching this function.
+        """
         gemini_messages = []
         system_prepended = False
 

@@ -41,6 +41,9 @@ def render_events_as_markdown(
     Returns:
         List of message dicts with role and content
     """
+    # ContextRenderer is initialized with model_name for tokenization.
+    # Token budget (max_tokens) is passed per render_events() call since
+    # different OutputEvents may have different budgets depending on context.
     context_renderer = ContextRenderer(model_name)
     messages: List[dict[str, Any]] = []
 
@@ -79,10 +82,8 @@ def render_events_as_markdown(
                         }
                     )
                 else:
-                    # Text-only message
-                    text = "\n".join(
-                        p.text for p in content_parts if isinstance(p, TextPart)
-                    )
+                    # Text-only message (all parts are TextPart since has_images is False)
+                    text = "\n".join(p.text for p in content_parts)
                     messages.append({"role": "user", "content": text})
 
         elif isinstance(event, SuccessEvent):

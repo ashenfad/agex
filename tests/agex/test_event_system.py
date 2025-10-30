@@ -355,7 +355,19 @@ class TestEventSystem:
         assert len(messages) >= 2
 
         # Check that no message contains error content
-        message_content = " ".join(str(msg.get("content", "")) for msg in messages)
+        # Extract text properly from both string and multimodal list formats
+        text_parts = []
+        for msg in messages:
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                text_parts.append(content)
+            elif isinstance(content, list):
+                # Multimodal message - extract text from dicts
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        text_parts.append(part.get("text", ""))
+
+        message_content = " ".join(text_parts)
         assert "framework error" not in message_content
         assert "ValueError" not in message_content
 

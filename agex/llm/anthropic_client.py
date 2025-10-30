@@ -15,6 +15,9 @@ def _format_message_for_anthropic(message: dict[str, Any]) -> dict:
     Convert generic message dict to Anthropic's format.
 
     Handles multimodal content (images) conversion.
+
+    Note: All images are converted to PNG format by the rendering layer
+    (StreamRenderer._serialize_image_to_base64) before reaching this function.
     """
     if isinstance(message.get("content"), list):
         # Multimodal message
