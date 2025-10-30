@@ -345,11 +345,11 @@ class TestConcurrency:
         """Test that max_concurrency parameter works."""
         clear_agent_registry()
 
-        # This is a basic smoke test - actual concurrency testing would be more complex
+        # Use a single response that echoes the input to avoid race conditions.
+        # DummyLLMClient cycles through responses using a shared counter, so
+        # concurrent execution would get responses in unpredictable order.
         dummy_responses = [
-            LLMResponse(thinking="Test 1", code="task_success('1')"),
-            LLMResponse(thinking="Test 2", code="task_success('2')"),
-            LLMResponse(thinking="Test 3", code="task_success('3')"),
+            LLMResponse(thinking="Echo input", code="task_success(input_val)"),
         ]
         client = DummyLLMClient(responses=dummy_responses)
 
