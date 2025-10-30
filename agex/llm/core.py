@@ -1,14 +1,11 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Literal, Union
+from typing import TYPE_CHECKING, List, Literal, Union
 
 from pydantic import BaseModel
 
-
-@dataclass
-class TextMessage:
-    role: Literal["user", "assistant", "system"]
-    content: str
+if TYPE_CHECKING:
+    from agex.agent.events import Event
 
 
 @dataclass
@@ -26,15 +23,6 @@ class ImagePart:
 
 
 ContentPart = Union[TextPart, ImagePart]
-
-
-@dataclass
-class MultimodalMessage:
-    role: Literal["user", "assistant", "system"]
-    content: List[ContentPart]
-
-
-Message = Union[TextMessage, MultimodalMessage]
 
 
 class LLMResponse(BaseModel):
@@ -62,12 +50,13 @@ class LLMClient(ABC):
     """
 
     @abstractmethod
-    def complete(self, messages: List[Message], **kwargs) -> LLMResponse:
+    def complete(self, system: str, events: List["Event"], **kwargs) -> LLMResponse:
         """
-        Send messages to the LLM and get back a structured response.
+        Agent execution - convert events to structured response.
 
         Args:
-            messages: List of Message objects with role and content
+            system: System message content (primer + capabilities)
+            events: Conversation history as Event objects
             **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
 
         Returns:
@@ -80,19 +69,20 @@ class LLMClient(ABC):
         ...
 
     @abstractmethod
-    def complete_text(self, messages: List[Message], **kwargs) -> str:
+    def summarize(self, system: str, content: str, **kwargs) -> str:
         """
-        Send messages to the LLM and get back plain text.
+        Generic text generation with instructions.
 
-        This is a generic text API for tasks like summarization or free-form generation
-        where structured outputs are not needed.
+        Used for capabilities summarization and other non-agent tasks.
+        Does not handle events or multimodal content.
 
         Args:
-            messages: List of Message objects with role and content
+            system: Instructions for the task
+            content: Text content to process
             **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
 
         Returns:
-            A plain text string
+            Generated text string
         """
         ...
 

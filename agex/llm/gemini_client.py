@@ -3,14 +3,8 @@ from typing import Any, List, cast
 
 import google.generativeai as genai
 
-from agex.llm.core import (
-    LLMClient,
-    LLMResponse,
-    Message,
-    MultimodalMessage,
-    TextMessage,
-    TextPart,
-)
+from agex.agent.events import Event
+from agex.llm.core import LLMClient, LLMResponse
 
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key"}
@@ -41,15 +35,23 @@ class GeminiClient(LLMClient):
 
         self.client = genai.GenerativeModel(model_name=model)  # type: ignore[attr-defined]
 
-    def complete(self, messages: List[Message], **kwargs) -> LLMResponse:
+    def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
-        Send messages to Gemini and return a structured response.
+        Send events to Gemini and return a structured response.
         """
+        from agex.render.events import render_events_as_markdown
+
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
 
-        # Convert messages to Gemini format
-        gemini_messages = self._convert_messages_to_gemini_format(messages)
+        # Use rendering helper to convert events to markdown messages
+        max_tokens = request_kwargs.get("max_tokens", 4096)
+        messages_dicts = render_events_as_markdown(events, self._model, max_tokens)
+
+        # Convert to Gemini format (with system prepended)
+        gemini_messages = self._convert_messages_to_gemini_format(
+            system, messages_dicts
+        )
 
         # Define the structured output schema
         response_schema = {
@@ -95,11 +97,14 @@ class GeminiClient(LLMClient):
         except Exception as e:
             raise RuntimeError(f"Gemini completion failed: {e}") from e
 
-    def complete_text(self, messages: List[Message], **kwargs) -> str:
-        """Send messages to Gemini and return plain text content."""
+    def summarize(self, system: str, content: str, **kwargs) -> str:
+        """Send a simple text summarization request to Gemini."""
         request_kwargs = {**self._kwargs, **kwargs}
-        # Convert messages; prepend system content into first user turn as done above
-        gemini_messages = self._convert_messages_to_gemini_format(messages)
+
+        # Create simple user message with system prepended
+        gemini_messages = [
+            {"role": "user", "parts": [{"text": f"System: {system}\n\n{content}"}]}
+        ]
 
         try:
             response = self.client.generate_content(
@@ -109,48 +114,43 @@ class GeminiClient(LLMClient):
         except Exception as e:
             raise RuntimeError(f"Gemini text completion failed: {e}") from e
 
-    def _convert_messages_to_gemini_format(self, messages: List[Message]) -> List[dict]:
-        """Convert agex Message objects to Gemini's expected format."""
+    def _convert_messages_to_gemini_format(
+        self, system: str, messages_dicts: List[dict]
+    ) -> List[dict]:
+        """Convert generic message dicts to Gemini's expected format."""
         gemini_messages = []
-        system_content = None
+        system_prepended = False
 
-        for message in messages:
-            if message.role == "system":
-                if isinstance(message, MultimodalMessage):
-                    raise TypeError("Gemini system messages cannot contain images.")
-                if system_content is None:
-                    system_content = message.content
-                else:
-                    system_content += "\n\n" + message.content
-            else:
-                role = "user" if message.role == "user" else "model"
-                parts = []
+        for message_dict in messages_dicts:
+            role = "user" if message_dict["role"] == "user" else "model"
+            parts = []
 
-                # Handle prepending system content to the first user message
-                if role == "user" and system_content:
-                    parts.append({"text": f"System: {system_content}"})
-                    system_content = None  # Only add once
+            # Prepend system content to the first user message
+            if role == "user" and not system_prepended:
+                parts.append({"text": f"System: {system}"})
+                system_prepended = True
 
-                # Process message content
-                content_parts = []
-                if isinstance(message, TextMessage):
-                    content_parts = [TextPart(text=message.content)]
-                elif isinstance(message, MultimodalMessage):
-                    content_parts = message.content
-
-                for part in content_parts:
-                    if part.type == "text":
-                        parts.append({"text": part.text})
-                    elif part.type == "image":
+            # Process message content
+            content = message_dict["content"]
+            if isinstance(content, list):
+                # Multimodal message
+                for part in content:
+                    if part["type"] == "text":
+                        parts.append({"text": part["text"]})
+                    elif part["type"] == "image":
                         parts.append(
                             {
                                 "inline_data": {
                                     "mime_type": "image/png",
-                                    "data": part.image,
+                                    "data": part["image_data"],
                                 }
                             }
                         )
-                gemini_messages.append({"role": role, "parts": parts})
+            else:
+                # Text message
+                parts.append({"text": content})
+
+            gemini_messages.append({"role": role, "parts": parts})
 
         return gemini_messages
 

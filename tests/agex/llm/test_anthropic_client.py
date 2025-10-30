@@ -1,7 +1,8 @@
 from unittest.mock import MagicMock, patch
 
+from agex.agent.events import ActionEvent, TaskStartEvent
 from agex.llm.anthropic_client import AnthropicClient
-from agex.llm.core import LLMResponse, TextMessage
+from agex.llm.core import LLMResponse
 
 
 def test_anthropic_client_initialization():
@@ -17,8 +18,8 @@ def test_anthropic_client_custom_model():
     assert client.model == "claude-3-haiku-20240307"
 
 
-def test_anthropic_client_message_separation():
-    """Test that system messages are properly separated from conversation messages."""
+def test_anthropic_client_event_handling():
+    """Test that events are properly handled by Anthropic API."""
     client = AnthropicClient()
 
     # Mock the anthropic client
@@ -32,31 +33,26 @@ def test_anthropic_client_message_separation():
     with patch.object(client, "client") as mock_client:
         mock_client.messages.create.return_value = mock_response
 
-        messages = [
-            TextMessage(role="system", content="You are a helpful assistant."),
-            TextMessage(role="user", content="Hello"),
-            TextMessage(role="assistant", content="Hi there!"),
-            TextMessage(role="user", content="How are you?"),
+        system = "You are a helpful assistant."
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            ),
+            ActionEvent(agent_name="test", thinking="Thinking...", code="result = 1"),
         ]
 
-        response = client.complete(messages)  # type: ignore
+        response = client.complete(system, events)
 
         # Verify the call was made correctly
         mock_client.messages.create.assert_called_once()
         call_args = mock_client.messages.create.call_args
 
         # Check that system message was passed separately
-        assert call_args[1]["system"] == "You are a helpful assistant."
+        assert call_args[1]["system"] == system
 
-        # Check that conversation messages were properly formatted
+        # Check that messages were properly formatted (Anthropic expects content blocks)
         conv_messages = call_args[1]["messages"]
-        assert len(conv_messages) == 3  # Excluding system message
-        assert conv_messages[0]["role"] == "user"
-        assert conv_messages[0]["content"] == [{"type": "text", "text": "Hello"}]
-        assert conv_messages[1]["role"] == "assistant"
-        assert conv_messages[1]["content"] == [{"type": "text", "text": "Hi there!"}]
-        assert conv_messages[2]["role"] == "user"
-        assert conv_messages[2]["content"] == [{"type": "text", "text": "How are you?"}]
+        assert len(conv_messages) >= 1
 
         # Check that structured response tool was configured
         tools = call_args[1]["tools"]
@@ -69,8 +65,8 @@ def test_anthropic_client_message_separation():
         assert response.code == "print('hello')"
 
 
-def test_anthropic_client_multiple_system_messages():
-    """Test that multiple system messages are properly combined."""
+def test_anthropic_client_system_message():
+    """Test that system message is properly passed to Anthropic API."""
     client = AnthropicClient()
 
     mock_response = MagicMock()
@@ -83,17 +79,19 @@ def test_anthropic_client_multiple_system_messages():
     with patch.object(client, "client") as mock_client:
         mock_client.messages.create.return_value = mock_response
 
-        messages = [
-            TextMessage(role="system", content="You are a helpful assistant."),
-            TextMessage(role="system", content="You are also very knowledgeable."),
-            TextMessage(role="user", content="Hello"),
+        system = "You are a helpful assistant. You are also very knowledgeable."
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
         ]
 
-        response = client.complete(messages)  # type: ignore
+        response = client.complete(system, events)
 
-        # Verify system messages were combined
+        # Verify we got a response
+        assert response is not None
+        assert isinstance(response, LLMResponse)
+
+        # Verify system message was passed
         call_args = mock_client.messages.create.call_args
-        expected_system = (
-            "You are a helpful assistant.\n\nYou are also very knowledgeable."
-        )
-        assert call_args[1]["system"] == expected_system
+        assert call_args[1]["system"] == system

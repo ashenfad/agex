@@ -1,41 +1,40 @@
-from dataclasses import asdict
-from typing import List
+from typing import Any, List
 
 import openai
 
-from agex.llm.core import (
-    LLMClient,
-    LLMResponse,
-    Message,
-    MultimodalMessage,
-    TextMessage,
-)
+from agex.agent.events import Event
+from agex.llm.core import LLMClient, LLMResponse
 from agex.tokenizers import get_tokenizer
 
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key", "base_url", "organization", "timeout"}
 
 
-def _format_message(message: Message) -> dict:
-    """Format a Message object into the dictionary structure OpenAI expects."""
-    if isinstance(message, TextMessage):
-        return asdict(message)
+def _format_message_for_openai(message: dict[str, Any]) -> dict:
+    """
+    Convert generic message dict to OpenAI's format.
 
-    if isinstance(message, MultimodalMessage):
+    Handles multimodal content (images) conversion.
+    """
+    if isinstance(message.get("content"), list):
+        # Multimodal message
         content_parts = []
-        for part in message.content:
-            if part.type == "text":
-                content_parts.append({"type": "text", "text": part.text})
-            elif part.type == "image":
+        for part in message["content"]:
+            if part["type"] == "text":
+                content_parts.append({"type": "text", "text": part["text"]})
+            elif part["type"] == "image":
                 content_parts.append(
                     {
                         "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{part.image}"},
+                        "image_url": {
+                            "url": f"data:image/png;base64,{part['image_data']}"
+                        },
                     }
                 )
-        return {"role": message.role, "content": content_parts}
-
-    raise TypeError(f"Unsupported message type: {type(message)}")
+        return {"role": message["role"], "content": content_parts}
+    else:
+        # Text message
+        return message
 
 
 class OpenAIClient(LLMClient):
@@ -60,18 +59,27 @@ class OpenAIClient(LLMClient):
         self.client = openai.OpenAI(**client_kwargs)
         self.tokenizer = get_tokenizer(model)
 
-    def complete(self, messages: List[Message], **kwargs) -> LLMResponse:
+    def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
-        Send messages to OpenAI and return a structured response using native structured outputs.
+        Send events to OpenAI and return a structured response using native structured outputs.
         """
+        from agex.render.events import render_events_as_markdown
+
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
+
+        # Use rendering helper to convert events to markdown messages
+        max_tokens = request_kwargs.get("max_tokens", 4096)
+        messages_dicts = render_events_as_markdown(events, self._model, max_tokens)
+
+        # Add system message at the beginning
+        full_messages = [{"role": "system", "content": system}] + messages_dicts
 
         try:
             # Use OpenAI's native structured outputs with beta.chat.completions.parse
             response = self.client.beta.chat.completions.parse(
                 model=self._model,
-                messages=[_format_message(msg) for msg in messages],  # type: ignore
+                messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
                 response_format=LLMResponse,
                 **request_kwargs,
             )
@@ -85,26 +93,29 @@ class OpenAIClient(LLMClient):
         except Exception as e:
             raise RuntimeError(f"OpenAI completion failed: {e}") from e
 
-    def complete_text(self, messages: List[Message], **kwargs) -> str:
-        """Send messages to OpenAI and return plain text content."""
+    def summarize(self, system: str, content: str, **kwargs) -> str:
+        """Send a simple text summarization request to OpenAI."""
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
 
         try:
             response = self.client.chat.completions.create(
                 model=self._model,
-                messages=[_format_message(msg) for msg in messages],  # type: ignore
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": content},
+                ],
                 **request_kwargs,
             )
-            content = response.choices[0].message.content
-            if isinstance(content, list):
+            result = response.choices[0].message.content
+            if isinstance(result, list):
                 # When OpenAI returns content parts, join text parts
                 texts = []
-                for part in content:
+                for part in result:
                     if isinstance(part, dict) and part.get("type") == "text":
                         texts.append(part.get("text", ""))
                 return "".join(texts)
-            return content or ""
+            return result or ""
         except Exception as e:
             raise RuntimeError(f"OpenAI text completion failed: {e}") from e
 

@@ -10,9 +10,6 @@ from copy import deepcopy
 from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
-from agex.agent.conversation import (
-    conversation_log,
-)
 from agex.agent.datatypes import (
     LLMFail,
     TaskClarify,
@@ -175,11 +172,15 @@ class TaskLoopMixin(BaseAgent):
 
         # Main task loop
         for iteration in range(self.max_iterations):
-            # Reconstruct conversation from state
-            messages = conversation_log(exec_state, system_message, self)
+            # Get all events from state for LLM
+            from agex.state.log import get_events_from_log
+
+            all_events = get_events_from_log(exec_state)
 
             # Get LLM response with built-in retry and event emission
-            llm_response = self._get_llm_response(messages, exec_state, on_event)
+            llm_response = self._get_llm_response(
+                system_message, all_events, exec_state, on_event
+            )
             # Sanitize common markdown code-fence wrappers if present
             llm_response.code = self._strip_markdown_code_fence(llm_response.code)
             code_to_evaluate = llm_response.code
@@ -483,7 +484,7 @@ class TaskLoopMixin(BaseAgent):
             docstring, inputs_dataclass, inputs_instance, return_type
         )
 
-    def _get_llm_response(self, messages, exec_state, on_event):
+    def _get_llm_response(self, system_message, events, exec_state, on_event):
         """Get structured response with retry; emit ErrorEvent per attempt."""
         import time
 
@@ -498,7 +499,7 @@ class TaskLoopMixin(BaseAgent):
         attempt = 0
         while True:
             try:
-                return self.llm_client.complete(messages)
+                return self.llm_client.complete(system_message, events)
             except (ResponseParseError, RuntimeError) as e:
                 is_last = attempt >= max_retries
                 # Emit recoverable for retries, fatal for last

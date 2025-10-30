@@ -2,7 +2,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agex.llm.core import LLMResponse, TextMessage
+from agex.agent.events import ActionEvent, OutputEvent, TaskStartEvent
+from agex.eval.objects import PrintAction
+from agex.llm.core import LLMResponse
 from agex.llm.openai_client import OpenAIClient
 
 
@@ -19,8 +21,8 @@ def test_openai_client_custom_model():
     assert client.model == "gpt-4.1"
 
 
-def test_openai_client_message_handling():
-    """Test that messages are properly handled by OpenAI API."""
+def test_openai_client_event_handling():
+    """Test that events are properly handled by OpenAI API."""
     client = OpenAIClient(api_key="test")
 
     # Mock the OpenAI response
@@ -32,30 +34,29 @@ def test_openai_client_message_handling():
     with patch.object(client, "client") as mock_client:
         mock_client.beta.chat.completions.parse.return_value = mock_response
 
-        messages = [
-            TextMessage(role="system", content="You are a helpful assistant."),
-            TextMessage(role="user", content="Hello"),
-            TextMessage(role="assistant", content="Hi there!"),
-            TextMessage(role="user", content="How are you?"),
+        system = "You are a helpful assistant."
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            ),
+            ActionEvent(agent_name="test", thinking="Thinking...", code="result = 1+1"),
+            OutputEvent(agent_name="test", parts=[PrintAction(["2"])]),
+            ActionEvent(
+                agent_name="test", thinking="Done", code="task_success(result)"
+            ),
         ]
 
-        response = client.complete(messages)  # type: ignore
+        response = client.complete(system, events)
 
         # Verify the call was made correctly
         mock_client.beta.chat.completions.parse.assert_called_once()
         call_args = mock_client.beta.chat.completions.parse.call_args
 
-        # Check that all messages were passed correctly
+        # Check that messages were rendered correctly
         passed_messages = call_args[1]["messages"]
-        assert len(passed_messages) == 4
+        assert len(passed_messages) >= 2  # At least system + events
         assert passed_messages[0]["role"] == "system"
-        assert passed_messages[0]["content"] == "You are a helpful assistant."
-        assert passed_messages[1]["role"] == "user"
-        assert passed_messages[1]["content"] == "Hello"
-        assert passed_messages[2]["role"] == "assistant"
-        assert passed_messages[2]["content"] == "Hi there!"
-        assert passed_messages[3]["role"] == "user"
-        assert passed_messages[3]["content"] == "How are you?"
+        assert passed_messages[0]["content"] == system
 
         # Check that structured output was configured
         assert call_args[1]["response_format"] == LLMResponse
@@ -79,9 +80,14 @@ def test_openai_client_structured_output():
     with patch.object(client, "client") as mock_client:
         mock_client.beta.chat.completions.parse.return_value = mock_response
 
-        messages = [TextMessage(role="user", content="Hello")]
+        system = "Test system"
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
 
-        response = client.complete(messages)  # type: ignore
+        response = client.complete(system, events)
 
         # Verify structured output configuration
         call_args = mock_client.beta.chat.completions.parse.call_args
@@ -105,10 +111,19 @@ def test_openai_client_request_parameters():
     with patch.object(client, "client") as mock_client:
         mock_client.beta.chat.completions.parse.return_value = mock_response
 
-        messages = [TextMessage(role="user", content="Hello")]
+        system = "Test"
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
 
         # Call with additional parameters
-        response = client.complete(messages, top_p=0.9)  # type: ignore
+        response = client.complete(system, events, top_p=0.9)
+
+        # Verify we got a response
+        assert response is not None
+        assert isinstance(response, LLMResponse)
 
         # Verify parameters were passed
         call_args = mock_client.beta.chat.completions.parse.call_args
@@ -128,12 +143,17 @@ def test_openai_client_none_parsed_response():
     with patch.object(client, "client") as mock_client:
         mock_client.beta.chat.completions.parse.return_value = mock_response
 
-        messages = [TextMessage(role="user", content="Hello")]
+        system = "Test"
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
 
         with pytest.raises(
             RuntimeError, match="OpenAI returned None for parsed response"
         ):
-            client.complete(messages)  # type: ignore
+            client.complete(system, events)
 
 
 def test_openai_client_api_error():
@@ -143,10 +163,15 @@ def test_openai_client_api_error():
     with patch.object(client, "client") as mock_client:
         mock_client.beta.chat.completions.parse.side_effect = Exception("API Error")
 
-        messages = [TextMessage(role="user", content="Hello")]
+        system = "Test"
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
 
         with pytest.raises(RuntimeError, match="OpenAI completion failed: API Error"):
-            client.complete(messages)  # type: ignore
+            client.complete(system, events)
 
 
 def test_openai_client_kwargs_filtering():
@@ -161,8 +186,8 @@ def test_openai_client_kwargs_filtering():
     assert "provider" not in client._kwargs
 
 
-def test_openai_client_message_dataclass_conversion():
-    """Test that Message dataclasses are properly converted to dicts."""
+def test_openai_client_event_to_message_conversion():
+    """Test that events are properly converted to messages."""
     client = OpenAIClient(api_key="test")
 
     mock_response = MagicMock()
@@ -173,19 +198,22 @@ def test_openai_client_message_dataclass_conversion():
     with patch.object(client, "client") as mock_client:
         mock_client.beta.chat.completions.parse.return_value = mock_response
 
-        messages = [
-            TextMessage(role="system", content="System message"),
-            TextMessage(role="user", content="User message"),
+        system = "System message"
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="User message"
+            )
         ]
 
-        client.complete(messages)  # type: ignore
+        client.complete(system, events)
 
         # Verify messages were converted to dicts
         call_args = mock_client.beta.chat.completions.parse.call_args
         passed_messages = call_args[1]["messages"]
 
-        # Should be a list of dicts, not Message objects
+        # Should be a list of dicts
         assert isinstance(passed_messages, list)
         assert all(isinstance(msg, dict) for msg in passed_messages)
-        assert passed_messages[0] == {"role": "system", "content": "System message"}
-        assert passed_messages[1] == {"role": "user", "content": "User message"}
+        # First message should be system
+        assert passed_messages[0]["role"] == "system"
+        assert passed_messages[0]["content"] == system

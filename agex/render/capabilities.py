@@ -3,7 +3,7 @@ from pathlib import Path
 
 from agex.agent import BaseAgent
 from agex.agent.fingerprint import compute_agent_fingerprint_from_policy
-from agex.llm.core import LLMClient, Message, TextMessage
+from agex.llm.core import LLMClient
 from agex.render.definitions import render_definitions
 
 
@@ -31,7 +31,7 @@ def summarize_capabilities(
     Build a concise capabilities primer from the agent's registered capabilities.
 
     - Honors visibility via render_definitions(agent)
-    - Uses llm_client.complete_text to compress into ~token_budget tokens (best-effort)
+    - Uses llm_client.summarize to compress into ~token_budget tokens (best-effort)
     - Optional on-disk cache under .agex/primer_cache/
     """
     # Resolve summarizer client and model id for cache key
@@ -57,8 +57,8 @@ def summarize_capabilities(
     # Render current registrations (visibility-aware)
     rendered = render_definitions(agent)
 
-    # Build prompt messages
-    rubric = (
+    # Build prompt content
+    system_instructions = (
         "You are writing a thorough capabilities primer (markdown format) for an agent.\n"
         "The agent has access to a restricted set of Python capabilities.\n"
         "Summarize the patterns of use for the capabilities below,\n"
@@ -70,13 +70,11 @@ def summarize_capabilities(
         f"Write AT LEAST {target_chars} characters. If needed, expand each section with more detail and examples."
     )
 
-    system_msg: Message = TextMessage(role="system", content=rubric)
     # Provide definitions in a fenced block to reduce bleeding
     user_content = "Registered API (visibility-filtered):\n\n```\n" + rendered + "\n```"
-    user_msg: Message = TextMessage(role="user", content=user_content)
 
     # Generate summary text
-    summary_text = client.complete_text([system_msg, user_msg])
+    summary_text = client.summarize(system=system_instructions, content=user_content)
 
     # Prepend a small header for provenance
     created = datetime.now(timezone.utc).isoformat()
