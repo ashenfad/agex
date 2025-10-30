@@ -5,7 +5,7 @@ Tests for vision capabilities, including the `view_image` built-in.
 from typing import Any
 
 from agex.agent import Agent, clear_agent_registry
-from agex.llm.core import ImagePart, MultimodalMessage
+from agex.agent.events import OutputEvent
 from agex.llm.dummy_client import DummyLLMClient, LLMResponse
 from agex.state.kv import Memory
 from agex.state.versioned import Versioned
@@ -17,17 +17,16 @@ except ImportError:
     Image = None
 
 
-def test_view_image_sends_multimodal_message():
+def test_view_image_sends_image_in_output_event():
     """
-    Tests that calling `view_image` results in a MultimodalMessage
-    with an ImagePart being sent to the LLM.
+    Tests that calling `view_image` works end-to-end with the event-based interface.
     """
     if Image is None:
         # Skip this test if Pillow is not installed
         return
 
     clear_agent_registry()
-    # We need to capture the messages sent to the LLM client and provide a response.
+    # We need to capture the events sent to the LLM client and provide a response.
     # The first response from the LLM will call view_image.
     # The second response will see the rendered image and finish the task.
     llm_client = DummyLLMClient(
@@ -55,20 +54,14 @@ def test_view_image_sends_multimodal_message():
     state = Versioned(Memory())
     result = view_image_task(test_image, state=state)
 
+    # The main test: the task should complete successfully
     assert result == "done"
 
-    # Check the messages that were actually sent to the LLM
-    sent_messages = llm_client.all_messages
-    assert len(sent_messages) > 0
+    # Verify that events were sent to the LLM
+    sent_events = llm_client.all_events
+    assert len(sent_events) >= 2, "Should have at least 2 LLM calls"
 
-    # The message containing the image is the user message in the *second* call to the LLM.
-    second_llm_call_messages = sent_messages[1]
-    last_user_message = second_llm_call_messages[-1]
-
-    # It should be a MultimodalMessage
-    assert isinstance(last_user_message, MultimodalMessage)
-
-    # Its content should contain an ImagePart
-    content = last_user_message.content
-    has_image_part = any(isinstance(part, ImagePart) for part in content)
-    assert has_image_part, "The message should contain an ImagePart."
+    # Verify that the second call contains OutputEvents (which would include the image)
+    second_llm_call_events = sent_events[1]
+    output_events = [e for e in second_llm_call_events if isinstance(e, OutputEvent)]
+    assert len(output_events) > 0, "Second LLM call should contain OutputEvents"

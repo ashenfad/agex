@@ -1,46 +1,45 @@
-from typing import List
+from typing import Any, List
 
 import anthropic
 
-from agex.llm.core import (
-    ContentPart,
-    LLMClient,
-    LLMResponse,
-    Message,
-    MultimodalMessage,
-    TextMessage,
-    TextPart,
-)
+from agex.agent.events import Event
+from agex.llm.core import LLMClient, LLMResponse
 
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key", "timeout"}
 MAX_TOKENS = 2**14
 
 
-def _format_content(message: Message) -> List[dict]:
-    """Format a Message object's content into the list structure Anthropic expects."""
-    content_parts: List[ContentPart] = []
-    if isinstance(message, TextMessage):
-        content_parts = [TextPart(text=message.content)]
-    elif isinstance(message, MultimodalMessage):
-        content_parts = message.content
+def _format_message_for_anthropic(message: dict[str, Any]) -> dict:
+    """
+    Convert generic message dict to Anthropic's format.
 
-    formatted_parts = []
-    for part in content_parts:
-        if part.type == "text":
-            formatted_parts.append({"type": "text", "text": part.text})
-        elif part.type == "image":
-            formatted_parts.append(
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/png",
-                        "data": part.image,
-                    },
-                }
-            )
-    return formatted_parts
+    Handles multimodal content (images) conversion.
+    """
+    if isinstance(message.get("content"), list):
+        # Multimodal message
+        content_parts = []
+        for part in message["content"]:
+            if part["type"] == "text":
+                content_parts.append({"type": "text", "text": part["text"]})
+            elif part["type"] == "image":
+                content_parts.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": part["image_data"],
+                        },
+                    }
+                )
+        return {"role": message["role"], "content": content_parts}
+    else:
+        # Text message - Anthropic expects list of content blocks
+        return {
+            "role": message["role"],
+            "content": [{"type": "text", "text": message["content"]}],
+        }
 
 
 class AnthropicClient(LLMClient):
@@ -60,30 +59,23 @@ class AnthropicClient(LLMClient):
         self._kwargs = completion_kwargs
         self.client = anthropic.Anthropic(**client_kwargs)
 
-    def complete(self, messages: List[Message], **kwargs) -> LLMResponse:
+    def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
-        Send messages to Anthropic and return a structured response using tool calling.
+        Send events to Anthropic and return a structured response using tool calling.
         """
+        from agex.render.events import render_events_as_markdown
+
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
 
-        # Separate system message from conversation messages
-        system_message = None
-        conversation_messages = []
+        # Use rendering helper to convert events to markdown messages
+        max_tokens = request_kwargs.get("max_tokens", MAX_TOKENS)
+        messages_dicts = render_events_as_markdown(events, self._model, max_tokens)
 
-        for msg in messages:
-            if msg.role == "system":
-                # System message content must be a simple string for Anthropic
-                if isinstance(msg, MultimodalMessage):
-                    raise TypeError("Anthropic system messages cannot contain images.")
-                if system_message is None:
-                    system_message = msg.content
-                else:
-                    system_message += "\n\n" + msg.content
-            else:
-                conversation_messages.append(
-                    {"role": msg.role, "content": _format_content(msg)}
-                )
+        # Convert to Anthropic format
+        conversation_messages = [
+            _format_message_for_anthropic(msg) for msg in messages_dicts
+        ]
 
         # Define the structured response tool
         structured_response_tool = {
@@ -111,18 +103,15 @@ class AnthropicClient(LLMClient):
                 request_kwargs["max_tokens"] = MAX_TOKENS
 
             # Make the API call with tool calling
-            # Only include system parameter if we have a system message
-            api_kwargs = {
-                "model": self._model,
-                "messages": conversation_messages,
-                "tools": [structured_response_tool],
-                "tool_choice": {"type": "tool", "name": "structured_response"},
+            # Create API call with system message
+            response = self.client.messages.create(
+                model=self._model,
+                system=system,
+                messages=conversation_messages,
+                tools=[structured_response_tool],
+                tool_choice={"type": "tool", "name": "structured_response"},
                 **request_kwargs,
-            }
-            if system_message is not None:
-                api_kwargs["system"] = system_message
-
-            response = self.client.messages.create(**api_kwargs)
+            )
 
             # Extract the structured response from tool use
             if not response.content or len(response.content) == 0:
@@ -151,40 +140,23 @@ class AnthropicClient(LLMClient):
         except Exception as e:
             raise RuntimeError(f"Anthropic completion failed: {e}") from e
 
-    def complete_text(self, messages: List[Message], **kwargs) -> str:
-        """Send messages to Anthropic and return plain text content."""
+    def summarize(self, system: str, content: str, **kwargs) -> str:
+        """Send a simple text summarization request to Anthropic."""
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
-
-        # Separate system and user/assistant messages
-        system_message = None
-        conversation_messages = []
-        for msg in messages:
-            if msg.role == "system":
-                if isinstance(msg, MultimodalMessage):
-                    raise TypeError("Anthropic system messages cannot contain images.")
-                if system_message is None:
-                    system_message = msg.content
-                else:
-                    system_message += "\n\n" + msg.content
-            else:
-                conversation_messages.append(
-                    {"role": msg.role, "content": _format_content(msg)}
-                )
 
         try:
             if "max_tokens" not in request_kwargs:
                 request_kwargs["max_tokens"] = MAX_TOKENS
 
-            api_kwargs = {
-                "model": self._model,
-                "messages": conversation_messages,
+            response = self.client.messages.create(
+                model=self._model,
+                system=system,
+                messages=[
+                    {"role": "user", "content": [{"type": "text", "text": content}]}
+                ],
                 **request_kwargs,
-            }
-            if system_message is not None:
-                api_kwargs["system"] = system_message
-
-            response = self.client.messages.create(**api_kwargs)
+            )
             # Concatenate text parts from content blocks
             texts: list[str] = []
             for block in response.content or []:

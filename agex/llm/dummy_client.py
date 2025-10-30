@@ -7,7 +7,9 @@ sequentially, useful for testing agent behavior without actual LLM calls.
 
 from typing import List
 
-from .core import LLMClient, LLMResponse, Message, MultimodalMessage
+from agex.agent.events import Event, OutputEvent
+
+from .core import LLMClient, LLMResponse
 
 
 class DummyLLMClient(LLMClient):
@@ -36,15 +38,17 @@ class DummyLLMClient(LLMClient):
                 )
             ]
         self.call_count = 0
-        self.all_messages: list[list[Message]] = []
+        self.all_events: list[list[Event]] = []
+        self.all_systems: list[str] = []
 
-    def complete(self, messages: List[Message], **kwargs) -> LLMResponse:
+    def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
         Return the next LLMResponse in the sequence, cycling through the list.
-        If any message is a MultimodalMessage, it prepends a note to the 'thinking' field.
+        If any event contains images, it prepends a note to the 'thinking' field.
         """
-        # Store the received messages for test inspection
-        self.all_messages.append(messages)
+        # Store the received data for test inspection
+        self.all_systems.append(system)
+        self.all_events.append(events)
 
         # Get the next item in the cycle
         item = self.responses[self.call_count % len(self.responses)]
@@ -54,12 +58,28 @@ class DummyLLMClient(LLMClient):
             raise item
         response = item.model_copy()
 
-        # Check for any multimodal messages to simulate vision processing
-        has_images = any(
-            isinstance(msg, MultimodalMessage)
-            and any(part.type == "image" for part in msg.content)
-            for msg in messages
-        )
+        # Check for any images in OutputEvent parts to simulate vision processing
+        # Note: OutputEvent.parts contains raw objects, not ImagePart yet
+        # The conversion to ImagePart happens in ContextRenderer during rendering
+        has_images = False
+        for event in events:
+            if isinstance(event, OutputEvent):
+                for part in event.parts:
+                    # Check for common image types (PIL, matplotlib, numpy, etc.)
+                    part_type = str(type(part))
+                    if any(
+                        img_type in part_type
+                        for img_type in [
+                            "PIL.Image",
+                            "matplotlib.figure.Figure",
+                            "plotly.graph_objs",
+                            "numpy.ndarray",
+                        ]
+                    ):
+                        has_images = True
+                        break
+                if has_images:
+                    break
 
         if has_images:
             response.thinking = (
@@ -68,19 +88,10 @@ class DummyLLMClient(LLMClient):
 
         return response
 
-    def complete_text(self, messages: List[Message], **kwargs) -> str:
+    def summarize(self, system: str, content: str, **kwargs) -> str:
         """Return a deterministic plain text for testing."""
-        # Join user message texts for a trivial echo; suitable for tests
-        parts: list[str] = []
-        for msg in messages:
-            if isinstance(msg, MultimodalMessage):
-                texts = [
-                    p.text for p in msg.content if getattr(p, "type", "") == "text"
-                ]
-                parts.append(" ".join(texts))
-            else:
-                parts.append(getattr(msg, "content", ""))
-        return " ".join(filter(None, parts)) or "dummy"
+        # Simple concatenation for testing
+        return f"{system} {content}".strip() or "dummy"
 
     @property
     def context_window(self) -> int:
