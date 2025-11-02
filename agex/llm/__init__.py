@@ -3,6 +3,7 @@ from typing import Any, Literal
 from .config import get_llm_config
 from .core import LLMClient, LLMResponse
 from .dummy_client import DummyLLMClient
+from .xml import TokenChunk
 
 # Optional imports for LLM providers
 try:
@@ -21,7 +22,7 @@ except ImportError:
     GeminiClient = None
 
 # Build __all__ dynamically based on available clients
-__all__ = ["DummyLLMClient", "connect_llm", "LLMResponse"]
+__all__ = ["DummyLLMClient", "connect_llm", "LLMResponse", "TokenChunk"]
 if OpenAIClient is not None:
     __all__.append("OpenAIClient")
 if AnthropicClient is not None:
