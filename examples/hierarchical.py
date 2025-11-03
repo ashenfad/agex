@@ -11,13 +11,14 @@ Bulk data and plots flow between agents without special handling.
 import random
 
 import numpy as np
-import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 
-from agex import Agent, connect_llm
+from agex import Agent, connect_llm, pprint_tokens
+from agex.helpers import register_numpy, register_plotly
 
-llm_client = connect_llm(provider="openai", model="gpt-4.1-nano")
+llm_client = connect_llm(
+    provider="openai", model="gpt-5-nano", reasoning_effort="medium"
+)
 
 
 # define the data-making agent and give it numpy and random
@@ -38,15 +39,14 @@ plotty = Agent(
     llm_client=llm_client,
 )
 
-plotty.module(np, recursive=True, visibility="low")
-plotty.module(px, visibility="low")
-plotty.module(go, visibility="low")
-plotty.module(pd, visibility="low")
+# use helpers for our plotting agent
+register_plotly(plotty)
+register_numpy(plotty)
 
 # define the orchestrator agent, no special modules are needed
 orchestrator = Agent(
     name="orchestrator",
-    primer="You orchestrate other agents to solve a problem.",
+    primer="You orchestrate other agents to solve a problem. Call 'make_data' and 'plot_data' to spawn sub-agent work.",
     llm_client=llm_client,
 )
 
@@ -83,7 +83,7 @@ def main():
     should be artificial but realistic and span 10 years.
     """
 
-    plot = idea_to_plot(idea)
+    plot = idea_to_plot(idea, on_token=pprint_tokens)
     plot.write_image("examples/seasonal.png")
     # see examples/seasonal.png
 

@@ -23,6 +23,7 @@ class BaseEvaluator(ast.NodeVisitor):
         self.agent = agent
         self.state = state
         self.on_event: Callable[[Any], None] | None = None  # Will be set by Evaluator
+        self.on_token: Callable[[Any], None] | None = None  # Will be set by Evaluator
         self.source_code: str | None = None
         self._start_time = start_time if start_time is not None else time.time()
         self._timeout_seconds = timeout_seconds

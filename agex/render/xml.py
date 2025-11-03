@@ -16,7 +16,7 @@ from agex.agent.events import (
     TaskStartEvent,
 )
 from agex.llm.core import ContentPart, ImagePart, TextPart
-from agex.llm.xml import TAG_PYTHON, TAG_THINKING
+from agex.llm.xml import TAG_PYTHON, TAG_THINKING, TAG_TITLE
 from agex.render.context import ContextRenderer
 
 
@@ -51,9 +51,12 @@ def render_events_as_xml(
 
         elif isinstance(event, ActionEvent):
             # XML format with uppercase tags
+            title_section = (
+                f"<{TAG_TITLE}>{event.title}</{TAG_TITLE}>" if event.title else ""
+            )
             content = (
-                f"<{TAG_THINKING}>\n{event.thinking}\n</{TAG_THINKING}>\n"
-                f"<{TAG_PYTHON}>\n{event.code}\n</{TAG_PYTHON}>"
+                f"{title_section}<{TAG_THINKING}>{event.thinking}</{TAG_THINKING}>\n"
+                f"<{TAG_PYTHON}>{event.code}</{TAG_PYTHON}>"
             )
             messages.append({"role": "assistant", "content": content})
 

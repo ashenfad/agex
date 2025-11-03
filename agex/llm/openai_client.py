@@ -1,9 +1,10 @@
-from typing import Any, List
+from typing import Any, Iterator, List
 
 import openai
 
 from agex.agent.events import Event
-from agex.llm.core import LLMClient, LLMResponse
+from agex.llm.core import LLMClient, LLMResponse, TokenChunk
+from agex.llm.xml import XML_FORMAT_PRIMER, tokenize_xml_stream
 from agex.tokenizers import get_tokenizer
 
 # Define keys for client setup vs. completion
@@ -95,6 +96,51 @@ class OpenAIClient(LLMClient):
 
         except Exception as e:
             raise RuntimeError(f"OpenAI completion failed: {e}") from e
+
+    def complete_stream(
+        self, system: str, events: List[Event], **kwargs
+    ) -> Iterator[TokenChunk]:
+        """
+        Stream tokens from OpenAI using XML format.
+
+        Uses standard streaming API with XML parsing for token-level updates.
+        """
+        from agex.render.xml import render_events_as_xml
+
+        # Combine kwargs, giving precedence to method-level ones
+        request_kwargs = {**self._kwargs, **kwargs}
+
+        # Use XML rendering for streaming (instead of structured outputs)
+        max_tokens = request_kwargs.get("max_tokens", 4096)
+        messages_dicts = render_events_as_xml(events, self._model, max_tokens)
+
+        # Add system message with XML format instructions
+        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+        full_messages = [
+            {"role": "system", "content": system_with_format}
+        ] + messages_dicts
+
+        try:
+            # Use standard streaming API (not structured outputs)
+            stream = self.client.chat.completions.create(
+                model=self._model,
+                messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
+                stream=True,
+                **request_kwargs,
+            )
+
+            # Generator for raw text chunks from OpenAI
+            def raw_chunks() -> Iterator[str]:
+                for chunk in stream:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        yield delta.content
+
+            # Parse XML stream into TokenChunks
+            yield from tokenize_xml_stream(raw_chunks())
+
+        except Exception as e:
+            raise RuntimeError(f"OpenAI streaming completion failed: {e}") from e
 
     def summarize(self, system: str, content: str, **kwargs) -> str:
         """Send a simple text summarization request to OpenAI."""

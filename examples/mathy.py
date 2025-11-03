@@ -7,11 +7,14 @@ data. Demonstrates basic agent-module integration for computational tasks.
 
 import math
 
-from agex import Agent, connect_llm
+from agex import Agent, connect_llm, pprint_tokens
 
 mathy_agent = Agent(
+    name="mathy_agent",
     primer="You are an expert at solving math problems.",
-    llm_client=connect_llm(provider="openai", model="gpt-4.1-nano"),
+    llm_client=connect_llm(
+        provider="openai", model="gpt-5-nano", reasoning_effort="minimal"
+    ),
 )
 
 # medium viz shows function sigs but not docs to save context
@@ -35,12 +38,16 @@ def main():
     We run a calculation and then transform a list of numbers.
     """
 
-    result = run_calculation("What is the square root of 256, multiplied by pi?")
+    result = run_calculation(
+        "What is the square root of 256, multiplied by pi?", on_token=pprint_tokens
+    )
     print(result)
     # 50.26548245743669
 
     nums = list(range(360))
-    result = transform("Transform these degrees into radians", nums)
+    result = transform(
+        "Transform these degrees into radians", nums, on_token=pprint_tokens
+    )
     print(len(result))
     print(result[-3:])
     # 360

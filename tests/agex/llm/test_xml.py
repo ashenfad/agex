@@ -164,6 +164,9 @@ class TestTokenizeXMLStream:
     def test_simple_stream(self):
         """Test tokenizing a simple complete stream."""
         chunks = [
+            "<TITLE>",
+            "Calculating sum",
+            "</TITLE>",
             "<THINKING>",
             "I will ",
             "calculate ",
@@ -175,23 +178,24 @@ class TestTokenizeXMLStream:
         ]
         tokens = list(tokenize_xml_stream(iter(chunks)))
 
-        # Should get thinking content + done, then code content + done
+        title_tokens = [t for t in tokens if t.type == "title"]
         thinking_tokens = [t for t in tokens if t.type == "thinking"]
         code_tokens = [t for t in tokens if t.type == "python"]
 
+        assert len(title_tokens) > 0
         assert len(thinking_tokens) > 0
         assert len(code_tokens) > 0
 
-        # Check that we get done markers
+        assert any(t.done for t in title_tokens)
         assert any(t.done for t in thinking_tokens)
         assert any(t.done for t in code_tokens)
 
-        # Reconstruct content (excluding done markers)
+        title_content = "".join(t.content for t in title_tokens if not t.done)
         thinking_content = "".join(t.content for t in thinking_tokens if not t.done)
         code_content = "".join(t.content for t in code_tokens if not t.done)
 
+        assert "Calculating" in title_content
         assert "calculate" in thinking_content
-        assert "sum" in thinking_content
         assert "result = sum(nums)" in code_content
 
     def test_split_tags(self):
@@ -333,6 +337,29 @@ class TestTokenizeXMLStream:
         assert full_content.index("Part A") < full_content.index("Part B")
         assert full_content.index("Part B") < full_content.index("Part C")
 
+    def test_closing_tag_not_in_content(self):
+        """Test that closing tags split across chunks don't appear in content."""
+        # This tests the bug where "</THINKING>" was appearing in output
+        chunks = [
+            "<THINKING>",
+            "Some content here<",  # Buffer ends with potential tag start
+            "/THINKING>",  # Closing tag continues
+            "<PYTHON>code()</PYTHON>",
+        ]
+        tokens = list(tokenize_xml_stream(iter(chunks)))
+
+        # Collect all content
+        all_content = "".join(t.content for t in tokens if not t.done)
+
+        # Tags should NOT appear in content
+        assert "</THINKING>" not in all_content
+        assert "<PYTHON>" not in all_content
+        assert "</PYTHON>" not in all_content
+
+        # But actual content should be there
+        assert "Some content here" in all_content
+        assert "code()" in all_content
+
 
 class TestXMLResponse:
     """Tests for XMLResponse dataclass."""
@@ -360,6 +387,13 @@ class TestTokenChunk:
         chunk = TokenChunk(type="thinking", content="Hello")
         assert chunk.type == "thinking"
         assert chunk.content == "Hello"
+        assert chunk.done is False
+
+    def test_title_chunk(self):
+        """Test creating a title TokenChunk."""
+        chunk = TokenChunk(type="title", content="Summarizing task")
+        assert chunk.type == "title"
+        assert chunk.content == "Summarizing task"
         assert chunk.done is False
 
     def test_done_marker(self):

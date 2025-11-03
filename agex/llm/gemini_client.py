@@ -1,10 +1,11 @@
 import json
-from typing import Any, List, cast
+from typing import Any, Iterator, List, cast
 
 import google.generativeai as genai
 
 from agex.agent.events import Event
-from agex.llm.core import LLMClient, LLMResponse
+from agex.llm.core import LLMClient, LLMResponse, TokenChunk
+from agex.llm.xml import XML_FORMAT_PRIMER, tokenize_xml_stream
 
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key"}
@@ -96,6 +97,51 @@ class GeminiClient(LLMClient):
 
         except Exception as e:
             raise RuntimeError(f"Gemini completion failed: {e}") from e
+
+    def complete_stream(
+        self, system: str, events: List[Event], **kwargs
+    ) -> Iterator[TokenChunk]:
+        """
+        Stream tokens from Gemini using XML format.
+
+        Uses standard streaming API with XML parsing for token-level updates.
+        """
+        from agex.render.xml import render_events_as_xml
+
+        # Combine kwargs, giving precedence to method-level ones
+        request_kwargs = {**self._kwargs, **kwargs}
+
+        # Use XML rendering for streaming (instead of structured outputs)
+        max_tokens = request_kwargs.get("max_tokens", 4096)
+        messages_dicts = render_events_as_xml(events, self._model, max_tokens)
+
+        # Add system message with XML format instructions
+        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+
+        # Convert to Gemini format
+        gemini_messages = self._convert_messages_to_gemini_format(
+            system_with_format, messages_dicts
+        )
+
+        try:
+            # Use streaming API
+            response = self.client.generate_content(
+                cast(Any, gemini_messages),
+                stream=True,
+                **request_kwargs,
+            )
+
+            # Generator for raw text chunks from Gemini
+            def raw_chunks() -> Iterator[str]:
+                for chunk in response:
+                    if chunk.text:
+                        yield chunk.text
+
+            # Parse XML stream into TokenChunks
+            yield from tokenize_xml_stream(raw_chunks())
+
+        except Exception as e:
+            raise RuntimeError(f"Gemini streaming completion failed: {e}") from e
 
     def summarize(self, system: str, content: str, **kwargs) -> str:
         """Send a simple text summarization request to Gemini."""

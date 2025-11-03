@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Literal, Union
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Iterator, List, Literal, Union
 
 from pydantic import BaseModel
 
@@ -25,9 +26,38 @@ class ImagePart:
 ContentPart = Union[TextPart, ImagePart]
 
 
-class LLMResponse(BaseModel):
-    """Structured LLM response with parsed thinking and code sections."""
+@dataclass
+class TokenChunk:
+    """
+    A piece of streamed content from the LLM.
 
+    Not an Event - tokens are ephemeral and don't go in the state log.
+
+    Attributes:
+        type: Either "title", "thinking", or "python"
+        content: The text content (incremental)
+        done: True when this section is complete
+    """
+
+    type: Literal["title", "thinking", "python"]
+    content: str
+    done: bool = False
+
+
+@dataclass
+class StreamToken(TokenChunk):
+    """TokenChunk enriched with agent metadata for on_token handlers."""
+
+    agent_name: str = ""
+    full_namespace: str = ""
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    start: bool = False
+
+
+class LLMResponse(BaseModel):
+    """Structured LLM response with parsed title, thinking, and code sections."""
+
+    title: str = ""
     thinking: str
     code: str
 
@@ -67,6 +97,49 @@ class LLMClient(ABC):
             ResponseParseError: If response doesn't match expected format
         """
         ...
+
+    def complete_stream(
+        self, system: str, events: List["Event"], **kwargs
+    ) -> Iterator[TokenChunk]:
+        """
+        Agent execution with token-level streaming support.
+
+        This method enables real-time UI feedback by yielding tokens as they arrive.
+        Implementations can choose to support streaming or raise NotImplementedError.
+
+        Default implementation: Falls back to complete() and yields buffered response.
+        Providers that support streaming should override this method.
+
+        Args:
+            system: System message content (primer + capabilities)
+            events: Conversation history as Event objects
+            **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
+
+        Yields:
+            TokenChunk objects as sections are parsed from the stream
+
+        Raises:
+            NotImplementedError: If streaming is not supported by this client
+            RuntimeError: If the completion request fails
+            ResponseParseError: If response doesn't match expected format
+        """
+        # Default fallback: buffer complete() response and yield as tokens
+        response = self.complete(system, events, **kwargs)
+
+        # Yield title section first (if present)
+        if response.title:
+            yield TokenChunk(type="title", content=response.title, done=False)
+            yield TokenChunk(type="title", content="", done=True)
+
+        # Yield thinking section
+        if response.thinking:
+            yield TokenChunk(type="thinking", content=response.thinking, done=False)
+        yield TokenChunk(type="thinking", content="", done=True)
+
+        # Yield code section
+        if response.code:
+            yield TokenChunk(type="python", content=response.code, done=False)
+        yield TokenChunk(type="python", content="", done=True)
 
     @abstractmethod
     def summarize(self, system: str, content: str, **kwargs) -> str:

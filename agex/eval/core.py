@@ -39,6 +39,7 @@ class Evaluator(
         start_time: float | None = None,
         sub_agent_time: float = 0.0,
         on_event: Callable[[Any], None] | None = None,
+        on_token: Callable[[Any], None] | None = None,
     ):
         actual_timeout = (
             timeout_seconds if timeout_seconds is not None else agent.timeout_seconds
@@ -53,6 +54,7 @@ class Evaluator(
         self.source_code = source_code
         self.resolver = Resolver(agent)
         self.on_event = on_event
+        self.on_token = on_token
 
     def visit_Module(self, node: ast.Module):
         """Evaluates a module by visiting each statement in its body."""
@@ -80,6 +82,7 @@ def evaluate_program(
     state: State,
     timeout_seconds: float | None = None,
     on_event: Callable[[Any], None] | None = None,
+    on_token: Callable[[Any], None] | None = None,
 ):
     """
     Updates state with the result of running the program. The agent provides
@@ -102,6 +105,7 @@ def evaluate_program(
         source_code=program,
         timeout_seconds=actual_timeout,
         on_event=on_event,
+        on_token=on_token,
     )
 
     try:

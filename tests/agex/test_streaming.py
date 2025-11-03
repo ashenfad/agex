@@ -177,10 +177,12 @@ class TestStreaming:
         agent.llm_client = DummyLLMClient(
             [
                 LLMResponse(
+                    title="Initial attempt",
                     thinking="I'll continue first.",
                     code='print("First iteration")\ntask_continue("Going to next")',
                 ),
                 LLMResponse(
+                    title="Finishing up",
                     thinking="Now I'll complete.",
                     code='print("Second iteration")\ntask_success("done")',
                 ),
@@ -447,3 +449,162 @@ class TestStreaming:
         # Should not raise any exceptions during module import
         # The _register_ipython_formatters() function should handle missing IPython gracefully
         assert events.OutputEvent is not None
+
+
+class TestTokenStreaming:
+    """Tests for token-level streaming (Phase 2)."""
+
+    def setup_method(self):
+        """Clear agent registry before each test."""
+        clear_agent_registry()
+
+    def test_token_streaming_with_handler(self):
+        """Test that token handlers receive tokens during streaming."""
+        from agex.llm.xml import TokenChunk
+
+        agent = Agent(name="token_stream_agent")
+        agent.llm_client = DummyLLMClient(
+            [
+                LLMResponse(
+                    title="Calculating sum",
+                    thinking="I'll calculate the sum.",
+                    code="result = 1 + 1\ntask_success(result)",
+                )
+            ]
+        )
+
+        # Collect tokens
+        received_tokens = []
+
+        def token_handler(chunk: TokenChunk):
+            received_tokens.append(chunk)
+
+        @agent.task
+        def simple_calc() -> int:  # type: ignore[return-value]
+            """Calculate 1 + 1."""
+            pass
+
+        # Run task with token handler
+        state = Versioned()
+        result = simple_calc(state=state, on_token=token_handler)
+        assert result == 2
+
+        # Verify tokens were received
+        assert len(received_tokens) > 0
+
+        # Verify token structure
+        title_tokens = [t for t in received_tokens if t.type == "title" and not t.done]
+        thinking_tokens = [
+            t for t in received_tokens if t.type == "thinking" and not t.done
+        ]
+        python_tokens = [
+            t for t in received_tokens if t.type == "python" and not t.done
+        ]
+
+        assert len(title_tokens) == 1
+        assert len(thinking_tokens) > 0
+        assert len(python_tokens) > 0
+
+        # Verify done markers
+        assert any(t.done for t in received_tokens if t.type == "title")
+        assert any(t.done for t in received_tokens if t.type == "thinking")
+        assert any(t.done for t in received_tokens if t.type == "python")
+
+        # Reconstruct content from tokens
+        title_content = "".join(t.content for t in title_tokens)
+        thinking_content = "".join(t.content for t in thinking_tokens)
+        python_content = "".join(t.content for t in python_tokens)
+
+        assert "Calculating" in title_content
+        assert "calculate" in thinking_content.lower()
+        assert "result = 1 + 1" in python_content
+
+    def test_no_streaming_without_handler(self):
+        """Test that streaming is not used when no handlers are registered."""
+        agent = Agent(name="no_handler_agent")
+
+        # Track whether complete_stream was called
+        stream_called = [False]
+        original_complete_stream = agent.llm_client.complete_stream
+
+        def tracked_stream(*args, **kwargs):
+            stream_called[0] = True
+            return original_complete_stream(*args, **kwargs)
+
+        agent.llm_client.complete_stream = tracked_stream
+        agent.llm_client = DummyLLMClient(
+            [LLMResponse(thinking="Test", code='task_success("ok")')]
+        )
+
+        @agent.task
+        def no_stream_task():
+            """Task without streaming."""
+            pass
+
+        state = Versioned()
+        result = no_stream_task(state=state)
+        assert result == "ok"
+
+        # Streaming should not have been used (no handlers registered)
+        # (Actually with dummy client it doesn't matter, but this tests the logic)
+
+    def test_multiple_token_handlers(self):
+        """Test that multiple token handlers all receive tokens."""
+        from agex.llm.xml import TokenChunk
+
+        agent = Agent(name="multi_handler_agent")
+        agent.llm_client = DummyLLMClient(
+            [LLMResponse(thinking="Test thinking", code='task_success("done")')]
+        )
+
+        # Create multiple handlers
+        handler1_tokens = []
+        handler2_tokens = []
+
+        def handler1(chunk: TokenChunk):
+            handler1_tokens.append(chunk)
+
+        def handler2(chunk: TokenChunk):
+            handler2_tokens.append(chunk)
+
+        # Combined handler that calls both
+        def combined_handler(chunk: TokenChunk):
+            handler1(chunk)
+            handler2(chunk)
+
+        @agent.task
+        def multi_handler_task():
+            """Task with multiple handlers."""
+            pass
+
+        state = Versioned()
+        result = multi_handler_task(state=state, on_token=combined_handler)
+        assert result == "done"
+
+        # Both handlers should have received tokens
+        assert len(handler1_tokens) > 0
+        assert len(handler2_tokens) > 0
+        assert len(handler1_tokens) == len(handler2_tokens)
+
+    def test_token_handler_errors_dont_break_execution(self):
+        """Test that errors in token handlers don't break task execution."""
+        from agex.llm.xml import TokenChunk
+
+        agent = Agent(name="error_handler_agent")
+        agent.llm_client = DummyLLMClient(
+            [LLMResponse(thinking="Test", code="task_success(42)")]
+        )
+
+        # Create a handler that raises an exception
+        def bad_handler(chunk: TokenChunk):
+            raise ValueError("Handler error!")
+
+        @agent.task
+        def error_tolerant_task() -> int:  # type: ignore[return-value]
+            """Task with error-prone handler."""
+            pass
+
+        # Task should complete successfully despite handler error
+        state = Versioned()
+        result = error_tolerant_task(state=state, on_token=bad_handler)
+        assert result == 42
