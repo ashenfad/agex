@@ -1,10 +1,5 @@
-from .agent import (
-    Agent,
-    MemberSpec,
-    TaskFail,
-    clear_agent_registry,
-)
-from .agent.console import pprint_events
+from .agent import Agent, MemberSpec, TaskFail, clear_agent_registry
+from .agent.console import pprint_events, pprint_tokens
 from .agent.datatypes import TaskClarify, TaskTimeout
 from .agent.events import (
     ActionEvent,
@@ -63,4 +58,5 @@ __all__ = [
     "Cache",
     # Console
     "pprint_events",
+    "pprint_tokens",
 ]

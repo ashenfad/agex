@@ -37,6 +37,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         kwargs: dict,
         parent_state,
         on_event: Callable[[Any], None] | None = None,
+        on_token: Callable[[Any], None] | None = None,
     ) -> Any:
         """
         Execute a task callable within a namespaced child context of the parent state.
@@ -63,6 +64,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         call_kwargs["state"] = child_state
         if on_event is not None:
             call_kwargs["on_event"] = on_event
+        if on_token is not None:
+            call_kwargs["on_token"] = on_token
 
         return task_callable(*args, **call_kwargs)
 
@@ -248,6 +251,12 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             default=None,
             annotation="Callable[[BaseEvent], None] | None",
         )
+        on_token_param = inspect.Parameter(
+            "on_token",
+            inspect.Parameter.KEYWORD_ONLY,
+            default=None,
+            annotation="Callable[[TokenChunk], None] | None",
+        )
 
         # Find if there's a **kwargs parameter (VAR_KEYWORD)
         var_keyword_index = None
@@ -258,12 +267,14 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
         if var_keyword_index is not None:
             # Insert parameters before **kwargs
+            new_params.insert(var_keyword_index, on_token_param)
             new_params.insert(var_keyword_index, on_event_param)
             new_params.insert(var_keyword_index, state_param)
         else:
             # No **kwargs, append at end
             new_params.append(state_param)
             new_params.append(on_event_param)
+            new_params.append(on_token_param)
 
         new_sig = original_sig.replace(parameters=new_params)
 
@@ -281,6 +292,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 self.__annotations__ = func.__annotations__.copy()
                 self.__annotations__["state"] = "Versioned | Live | None"
                 self.__annotations__["on_event"] = "Callable[[BaseEvent], None] | None"
+                self.__annotations__["on_token"] = "Callable[[TokenChunk], None] | None"
                 self.__signature__ = new_sig
 
                 # Set namespace for dual-decorator pattern
@@ -299,13 +311,14 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
         # Create the actual task function
         def task_wrapper(*args, **kwargs):
-            # Bind to the new signature that includes the 'state' and 'on_event' parameters
+            # Bind to the new signature that includes the 'state', 'on_event', and 'on_token' parameters
             bound_args = new_sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
 
-            # Pop the state and on_event arguments, they are handled separately
+            # Pop the state, on_event, and on_token arguments, they are handled separately
             state = bound_args.arguments.pop("state", None)
             on_event = bound_args.arguments.pop("on_event", None)
+            on_token = bound_args.arguments.pop("on_token", None)
 
             # Create inputs dataclass instance with pass-by-value semantics
             inputs_instance = None
@@ -333,6 +346,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 return_type=return_type,
                 state=state,
                 on_event=on_event,
+                on_token=on_token,
                 setup=setup,
             )
 
@@ -342,9 +356,10 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             bound_args = new_sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
 
-            # Pop the state and on_event arguments, they are handled separately
+            # Pop the state, on_event, and on_token arguments, they are handled separately
             state = bound_args.arguments.pop("state", None)
             user_on_event = bound_args.arguments.pop("on_event", None)
+            on_token = bound_args.arguments.pop("on_token", None)
 
             # Create inputs dataclass instance with pass-by-value semantics
             inputs_instance = None
@@ -395,6 +410,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         return_type=return_type,
                         state=state,
                         on_event=_handler,
+                        on_token=on_token,
                         setup=setup,
                     )
                 except BaseException as e:

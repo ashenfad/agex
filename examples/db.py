@@ -16,7 +16,7 @@ from typing import Any
 
 from db_primer import PRIMER
 
-from agex import Agent, Versioned, connect_llm
+from agex import Agent, Versioned, connect_llm, pprint_tokens
 
 db = Agent(
     name="db_agent",
@@ -50,10 +50,14 @@ def query_db(prompt: str) -> Any:  # type: ignore[return-value]
 
 def main():
     state = Versioned()
-    update_db("Create a 'users' table with columns: id, name, email, age", state=state)
-    update_db("Add 10 users to the users table", state=state)
+    update_db(
+        "Create a 'users' table with columns: id, name, email, age",
+        state=state,
+        on_token=pprint_tokens,
+    )
+    update_db("Add 10 users to the users table", state=state, on_token=pprint_tokens)
 
-    oldest = query_db("Who is the oldest user?", state=state)
+    oldest = query_db("Who is the oldest user?", state=state, on_token=pprint_tokens)
     print(f"Oldest user: {oldest}")
     # Oldest user: {'id': 10, 'name': 'User10', 'email': 'user10@example.com', 'age': 30}
 

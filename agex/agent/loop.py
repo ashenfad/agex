@@ -5,8 +5,11 @@ This module provides the TaskLoopMixin that handles the core think→act loop
 for agent tasks, including LLM communication and code evaluation.
 """
 
+from __future__ import annotations
+
 import re
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
@@ -86,6 +89,7 @@ class TaskLoopMixin(BaseAgent):
         return_type: type,
         state: Versioned | Namespaced | None,
         on_event: Callable[[Any], None] | None = None,
+        on_token: Callable[[Any], None] | None = None,
         setup: str | None = None,
     ):
         """
@@ -159,6 +163,7 @@ class TaskLoopMixin(BaseAgent):
                     exec_state,
                     self.timeout_seconds,
                     on_event=on_event,
+                    on_token=on_token,
                 )
             except Exception:
                 # Setup errors are handled normally - they become ErrorEvents
@@ -179,7 +184,7 @@ class TaskLoopMixin(BaseAgent):
 
             # Get LLM response with built-in retry and event emission
             llm_response = self._get_llm_response(
-                system_message, all_events, exec_state, on_event
+                system_message, all_events, exec_state, on_event, on_token
             )
             # Sanitize common markdown code-fence wrappers if present
             llm_response.code = self._strip_markdown_code_fence(llm_response.code)
@@ -189,6 +194,7 @@ class TaskLoopMixin(BaseAgent):
             if llm_response:
                 action_event = ActionEvent(
                     agent_name=self.name,
+                    title=llm_response.title,
                     thinking=llm_response.thinking,
                     code=llm_response.code,
                 )
@@ -205,6 +211,7 @@ class TaskLoopMixin(BaseAgent):
                         exec_state,
                         self.timeout_seconds,
                         on_event=on_event,
+                        on_token=on_token,
                     )
 
             except TaskSuccess as task_signal:
@@ -405,6 +412,7 @@ class TaskLoopMixin(BaseAgent):
         return_type: type,
         state: Versioned | Namespaced | None,
         on_event: Callable[[Any], None] | None = None,
+        on_token: Callable[[Any], None] | None = None,
         setup: str | None = None,
     ):
         """
@@ -433,6 +441,7 @@ class TaskLoopMixin(BaseAgent):
             return_type,
             state,
             on_event=on_event,
+            on_token=on_token,
             setup=setup,
         )
 
@@ -484,22 +493,79 @@ class TaskLoopMixin(BaseAgent):
             docstring, inputs_dataclass, inputs_instance, return_type
         )
 
-    def _get_llm_response(self, system_message, events, exec_state, on_event):
+    def _get_llm_response(self, system_message, events, exec_state, on_event, on_token):
         """Get structured response with retry; emit ErrorEvent per attempt."""
         import time
 
         from agex.agent.events import ErrorEvent
-        from agex.llm.core import ResponseParseError
+        from agex.llm.core import LLMResponse, ResponseParseError, StreamToken
 
         max_retries = max(0, self.llm_max_retries)
         backoff = max(0.0, self.llm_retry_backoff)
         provider = self.llm_client.provider_name
         model = self.llm_client.model
 
+        # Check if streaming is requested (on_token handler provided)
+        use_streaming = on_token is not None
+
         attempt = 0
         while True:
             try:
-                return self.llm_client.complete(system_message, events)
+                if use_streaming:
+                    # Stream tokens and accumulate response
+                    title_parts = []
+                    thinking_parts = []
+                    code_parts = []
+                    seen_sections: dict[str, bool] = {
+                        "title": False,
+                        "thinking": False,
+                        "python": False,
+                    }
+
+                    for token in self.llm_client.complete_stream(
+                        system_message, events
+                    ):
+                        start_flag = (
+                            not token.done
+                            and token.type in seen_sections
+                            and not seen_sections[token.type]
+                        )
+                        if start_flag and token.type in seen_sections:
+                            seen_sections[token.type] = True
+
+                        enriched = StreamToken(
+                            type=token.type,
+                            content=token.content,
+                            done=token.done,
+                            agent_name=self.name,
+                            full_namespace=getattr(exec_state, "namespace", self.name),
+                            timestamp=datetime.now(timezone.utc),
+                            start=start_flag,
+                        )
+
+                        if on_token is not None:
+                            try:
+                                on_token(enriched)
+                            except Exception:
+                                pass
+
+                        if token.type == "title" and not token.done:
+                            title_parts.append(token.content)
+                        elif token.type == "thinking" and not token.done:
+                            thinking_parts.append(token.content)
+                        elif token.type == "python" and not token.done:
+                            code_parts.append(token.content)
+
+                    # Construct complete response from accumulated tokens
+                    return LLMResponse(
+                        title="".join(title_parts).strip(),
+                        thinking="".join(thinking_parts),
+                        code="".join(code_parts),
+                    )
+                else:
+                    # Non-streaming path (backwards compatible)
+                    return self.llm_client.complete(system_message, events)
+
             except (ResponseParseError, RuntimeError) as e:
                 is_last = attempt >= max_retries
                 # Emit recoverable for retries, fatal for last

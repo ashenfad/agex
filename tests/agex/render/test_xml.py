@@ -34,6 +34,7 @@ class TestRenderEventsAsXML:
         events = [
             ActionEvent(
                 agent_name="test_agent",
+                title="Summing numbers",
                 thinking="I'll use sum() function",
                 code="result = sum([1, 2, 3])\ntask_success(result)",
             )
@@ -43,6 +44,9 @@ class TestRenderEventsAsXML:
         assert len(messages) == 1
         assert messages[0]["role"] == "assistant"
         content = messages[0]["content"]
+        assert "<TITLE>" in content
+        assert "Summing numbers" in content
+        assert "</TITLE>" in content
         assert "<THINKING>" in content
         assert "</THINKING>" in content
         assert "<PYTHON>" in content
@@ -89,7 +93,10 @@ class TestRenderEventsAsXML:
                 message="Do a task",
             ),
             ActionEvent(
-                agent_name="test_agent", thinking="My plan", code="do_something()"
+                agent_name="test_agent",
+                title="Executing plan",
+                thinking="My plan",
+                code="do_something()",
             ),
             OutputEvent(agent_name="test_agent", parts=["Result"]),
             SuccessEvent(agent_name="test_agent", result="done"),

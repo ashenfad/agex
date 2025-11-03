@@ -5,6 +5,8 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Any, Literal, TextIO, cast
 
+from agex.llm.core import StreamToken
+
 from ..eval.objects import PrintAction
 from .events import (
     ActionEvent,
@@ -18,6 +20,7 @@ from .events import (
 )
 
 _last_timestamp: datetime | None = None
+_last_section_done: bool = True
 
 
 def _is_tty(stream: TextIO) -> bool:
@@ -401,3 +404,60 @@ def pprint_events(
             pass
 
         _last_timestamp = ev.timestamp
+
+
+def pprint_tokens(
+    token: StreamToken,
+    *,
+    color: str = "auto",
+    stream: TextIO | None = None,
+) -> None:
+    """
+    Pretty-print a streamed token from on_token handler.
+
+    Can be used directly as an on_token handler: task(on_token=pprint_tokens)
+
+    Args:
+        token: A TokenChunk from the LLM stream.
+        color: "auto" | "always" | "never". Honors NO_COLOR env var.
+        stream: Output stream, defaults to sys.stdout.
+    """
+
+    if stream is None:
+        stream = sys.stdout
+    output_stream: TextIO = cast(TextIO, stream)
+
+    use_color = _should_color(color, output_stream)
+
+    if token.done:
+        # Ensure sections end with a newline for readability (but only once)
+        output_stream.write("\n")
+        output_stream.flush()
+        return
+
+    # Color based on token type and optionally prepend context
+    prefix = ""
+    if token.type == "title" and token.start:
+        timestamp = (
+            token.timestamp.astimezone().strftime("%H:%M:%S") if token.timestamp else ""
+        )
+        agent = token.agent_name or "agent"
+        prefix = f"[{timestamp}] {agent}: " if timestamp else f"{agent}: "
+        color_code = _Colors.cyan if use_color else ""
+    elif token.type == "thinking":
+        color_code = _Colors.bright_blue if use_color else ""
+    elif token.type == "python":
+        color_code = _Colors.yellow if use_color else ""
+    else:
+        color_code = _Colors.cyan if use_color else ""
+
+    # Print content with color
+    content = (
+        prefix + token.content
+        if token.start and token.type == "title"
+        else token.content
+    )
+    if use_color and color_code:
+        content = _colorize(use_color, color_code, content)
+    output_stream.write(content)
+    output_stream.flush()

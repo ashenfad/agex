@@ -9,9 +9,9 @@ Note: For rendering events to XML, see agex.render.xml.render_events_as_xml()
 
 import re
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, Literal
 
-from agex.llm.core import ResponseParseError
+from agex.llm.core import ResponseParseError, TokenChunk
 
 # XML tag names as constants
 TAG_THINKING = "THINKING"
@@ -32,12 +32,14 @@ class XMLResponse:
 XML_FORMAT_PRIMER = f"""
 Format your response using XML tags:
 
+<{TAG_TITLE}>A brief action title here</{TAG_TITLE}>
 <{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}>
 <{TAG_PYTHON}>
 # Your Python code here
 </{TAG_PYTHON}>
 
 Example:
+<{TAG_TITLE}>Calculating running total</{TAG_TITLE}>
 <{TAG_THINKING}>
 I need to calculate the sum of the numbers and return it.
 </{TAG_THINKING}>
@@ -52,7 +54,7 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
     """
     Parse complete XML response (non-streaming).
 
-    Extracts <THINKING> and <PYTHON> tags from complete text.
+    Extracts <TITLE>, <THINKING>, and <PYTHON> tags from complete text.
     Tags are case-insensitive.
 
     Args:
@@ -99,27 +101,9 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
     return XMLResponse(thinking=thinking, code=code, title=title)
 
 
-@dataclass
-class TokenChunk:
-    """
-    A piece of streamed content from the LLM.
-
-    Not an Event - tokens are ephemeral and don't go in the state log.
-
-    Attributes:
-        type: Either "thinking" or "python" (future: "title")
-        content: The text content (incremental)
-        done: True when this section is complete
-    """
-
-    type: str  # Literal["thinking", "python"] but using str for now
-    content: str
-    done: bool = False
-
-
 def _process_section_closing(
     buffer: str,
-    section_type: str,
+    section_type: Literal["title", "thinking", "python"],
     closing_tag: str,
 ) -> tuple[list[TokenChunk], str, bool]:
     """
@@ -149,14 +133,38 @@ def _process_section_closing(
         updated_buffer = buffer[closing.end() :]
         return tokens, updated_buffer, True
     else:
-        # No closing tag yet - yield content if substantial
-        # Yield on: length threshold OR any whitespace (natural word boundaries)
+        # No closing tag yet - yield content but hold back potential tag starts
+        # We need to keep any trailing "<" or "</" in the buffer in case it's
+        # the start of a closing tag that will arrive in the next chunk
         tokens = []
-        if len(buffer) > 10 or any(c.isspace() for c in buffer):
-            tokens.append(TokenChunk(type=section_type, content=buffer, done=False))
-            updated_buffer = ""
+
+        # Find the last "<" that could be the start of a closing tag
+        last_bracket = buffer.rfind("<")
+
+        if last_bracket == -1:
+            # No "<" in buffer, safe to yield if substantial
+            if len(buffer) > 10 or any(c.isspace() for c in buffer):
+                tokens.append(TokenChunk(type=section_type, content=buffer, done=False))
+                updated_buffer = ""
+            else:
+                updated_buffer = buffer
         else:
-            updated_buffer = buffer
+            # Hold back from last "<" onwards (might be start of closing tag)
+            content_to_yield = buffer[:last_bracket]
+            holdback = buffer[last_bracket:]
+
+            # Only yield if we have substantial content before the "<"
+            if content_to_yield and (
+                len(content_to_yield) > 10 or any(c.isspace() for c in content_to_yield)
+            ):
+                tokens.append(
+                    TokenChunk(type=section_type, content=content_to_yield, done=False)
+                )
+                updated_buffer = holdback
+            else:
+                # Keep everything in buffer
+                updated_buffer = buffer
+
         return tokens, updated_buffer, False
 
 
@@ -180,7 +188,7 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
         ResponseParseError: If XML structure is malformed
     """
     buffer = ""
-    current_section = None  # "thinking" | "python" | None
+    current_section: Literal["title", "thinking", "python"] | None = None
 
     for chunk in raw_chunks:
         buffer += chunk
@@ -189,19 +197,20 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
         while True:
             if current_section is None:
                 # Look for opening tags (case-insensitive)
+                title_start = re.search(rf"<{TAG_TITLE}>", buffer, re.IGNORECASE)
                 thinking_start = re.search(rf"<{TAG_THINKING}>", buffer, re.IGNORECASE)
                 python_start = re.search(rf"<{TAG_PYTHON}>", buffer, re.IGNORECASE)
 
-                if thinking_start:
-                    # Found opening thinking tag
+                if title_start:
+                    current_section = "title"
+                    buffer = buffer[title_start.end() :]
+                    continue
+                elif thinking_start:
                     current_section = "thinking"
-                    # Keep any content after the tag in buffer
                     buffer = buffer[thinking_start.end() :]
                     continue
                 elif python_start:
-                    # Found opening python tag
                     current_section = "python"
-                    # Keep any content after the tag in buffer
                     buffer = buffer[python_start.end() :]
                     continue
                 else:
@@ -209,6 +218,18 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
                     break
 
             # We're in a section - look for closing tag
+            if current_section == "title":
+                tokens, buffer, complete = _process_section_closing(
+                    buffer, "title", TAG_TITLE
+                )
+                for token in tokens:
+                    yield token
+                if complete:
+                    current_section = None
+                    continue
+                else:
+                    break
+
             if current_section == "thinking":
                 tokens, buffer, complete = _process_section_closing(
                     buffer, "thinking", TAG_THINKING

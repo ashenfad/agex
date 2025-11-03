@@ -317,23 +317,26 @@ class TaskStartEvent(BaseEvent):
 class ActionEvent(BaseEvent):
     """Fired when the agent decides on its next thought and code."""
 
+    title: str = ""
     thinking: str
     code: str
 
     def __str__(self) -> str:
         """Detailed string with thinking and code preview."""
         base = super().__str__()
+        title_text = f"\n  Title: {self.title}" if self.title else ""
         thinking_preview = (
             self.thinking[:80] + "..." if len(self.thinking) > 80 else self.thinking
         )
         code_lines = self.code.count("\n") + 1
-        return f"{base}\n  Thinking: {thinking_preview}\n  Code: {code_lines} lines"
+        return f"{base}{title_text}\n  Thinking: {thinking_preview}\n  Code: {code_lines} lines"
 
     def _repr_markdown_(self) -> str:
         """Rich markdown with code block."""
         base = super()._repr_markdown_()
+        title_section = f"**Title:** {self.title}\n\n" if self.title else ""
         return f"""{base}  
-**Thinking:** {self.thinking}
+{title_section}**Thinking:** {self.thinking}
 
 **Code:**
 ```python
@@ -344,13 +347,21 @@ class ActionEvent(BaseEvent):
         """Rich HTML representation for IPython/Jupyter environments."""
         import html
 
+        sections = []
+        if self.title:
+            sections.append(
+                _event_section("📝 Title:", html.escape(self.title), "#6f42c1")
+            )
+
         # Create the thinking and code sections
         thinking_section = _event_section(
             "💭 Thinking:", html.escape(self.thinking), "#0366d6"
         )
         code_section = _code_section("🐍 Code:", self.code, "#28a745")
 
-        content = thinking_section + code_section
+        sections.extend([thinking_section, code_section])
+
+        content = "".join(sections)
 
         return _event_html_container(
             "🧠",

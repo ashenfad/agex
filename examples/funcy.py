@@ -8,11 +8,14 @@ program. Demonstrates runtime interoperability beyond JSON serialization.
 import math
 from typing import Callable
 
-from agex import Agent, Versioned, connect_llm
+from agex import Agent, Versioned, connect_llm, pprint_tokens
 
 funcy_agent = Agent(
+    name="funcy",
     primer="You are great at providing custom functions to the user.",
-    llm_client=connect_llm(provider="openai", model="gpt-4.1-nano"),
+    llm_client=connect_llm(
+        provider="openai", model="gpt-5-nano", reasoning_effort="minimal"
+    ),
 )
 funcy_agent.module(math, visibility="low")
 
@@ -30,7 +33,11 @@ def main():
     state = Versioned()
 
     # build a function to find next prime
-    fn = fn_builder("a fn for the first prime larger than a given number.", state=state)
+    fn = fn_builder(
+        "a fn for the first prime larger than a given number.",
+        state=state,
+        on_token=pprint_tokens,
+    )
 
     # ----------------------------------------------
     # actual `fn_builder` agent code for the task:
@@ -63,7 +70,11 @@ def main():
     # 500009
 
     # agent remembers existing conversation context and builds related function
-    fn = fn_builder("Okay, now make it the next lower prime.", state=state)
+    fn = fn_builder(
+        "Okay, now make it the next lower prime.",
+        state=state,
+        on_token=pprint_tokens,
+    )
 
     print(fn(500000))
     # 499979

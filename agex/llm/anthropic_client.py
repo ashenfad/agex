@@ -1,9 +1,10 @@
-from typing import Any, List
+from typing import Any, Iterator, List
 
 import anthropic
 
 from agex.agent.events import Event
-from agex.llm.core import LLMClient, LLMResponse
+from agex.llm.core import LLMClient, LLMResponse, TokenChunk
+from agex.llm.xml import XML_FORMAT_PRIMER, tokenize_xml_stream
 
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key", "timeout"}
@@ -142,6 +143,56 @@ class AnthropicClient(LLMClient):
 
         except Exception as e:
             raise RuntimeError(f"Anthropic completion failed: {e}") from e
+
+    def complete_stream(
+        self, system: str, events: List[Event], **kwargs
+    ) -> Iterator[TokenChunk]:
+        """
+        Stream tokens from Anthropic using XML format.
+
+        Uses standard streaming API with XML parsing for token-level updates.
+        """
+        from agex.render.xml import render_events_as_xml
+
+        # Combine kwargs, giving precedence to method-level ones
+        request_kwargs = {**self._kwargs, **kwargs}
+
+        # Use XML rendering for streaming (instead of tool calling)
+        max_tokens = request_kwargs.get("max_tokens", MAX_TOKENS)
+        messages_dicts = render_events_as_xml(events, self._model, max_tokens)
+
+        # Convert to Anthropic format
+        conversation_messages = [
+            _format_message_for_anthropic(msg) for msg in messages_dicts
+        ]
+
+        # Add system message with XML format instructions
+        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+
+        try:
+            # Set default max_tokens if not provided
+            if "max_tokens" not in request_kwargs:
+                request_kwargs["max_tokens"] = MAX_TOKENS
+
+            # Use standard streaming API (not tool calling)
+            stream = self.client.messages.stream(
+                model=self._model,
+                system=system_with_format,
+                messages=conversation_messages,
+                **request_kwargs,
+            )
+
+            # Generator for raw text chunks from Anthropic
+            def raw_chunks() -> Iterator[str]:
+                with stream as message_stream:
+                    for text in message_stream.text_stream:
+                        yield text
+
+            # Parse XML stream into TokenChunks
+            yield from tokenize_xml_stream(raw_chunks())
+
+        except Exception as e:
+            raise RuntimeError(f"Anthropic streaming completion failed: {e}") from e
 
     def summarize(self, system: str, content: str, **kwargs) -> str:
         """Send a simple text summarization request to Anthropic."""

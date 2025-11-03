@@ -276,12 +276,19 @@ class TaskUserFunction(UserFunction):
         else:
             on_event = kwargs.pop("on_event", None)
 
+        on_token = None
+        if parent_evaluator is not None:
+            on_token = getattr(parent_evaluator, "on_token", None)
+        else:
+            on_token = kwargs.pop("on_token", None)
+
         return task_agent.run_task(
             _task_wrapper_adapter,
             args,
             kwargs,
             parent_state,
             on_event=on_event,
+            on_token=on_token,
         )
 
     def _create_inputs_instance(self, args: list, kwargs: dict, inputs_dataclass: type):
@@ -347,6 +354,7 @@ class TaskProxy:
                 kwargs,
                 parent_state,
                 on_event=getattr(self.evaluator, "on_event", None),
+                on_token=getattr(self.evaluator, "on_token", None),
             )
         finally:
             sub_agent_duration = time.time() - sub_agent_start

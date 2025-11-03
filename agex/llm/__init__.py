@@ -1,9 +1,8 @@
 from typing import Any, Literal
 
 from .config import get_llm_config
-from .core import LLMClient, LLMResponse
+from .core import LLMClient, LLMResponse, TokenChunk
 from .dummy_client import DummyLLMClient
-from .xml import TokenChunk
 
 # Optional imports for LLM providers
 try:
