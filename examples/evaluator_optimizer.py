@@ -7,19 +7,23 @@ For more details:
 - https://langchain-ai.github.io/langgraph/tutorials/workflows/#evaluator-optimizer
 - https://github.com/lastmile-ai/mcp-agent?tab=readme-ov-file#evaluator-optimizer
 - https://www.anthropic.com/engineering/building-effective-agents
-
-Note: This example was tested with `gpt-4.1-nano`, highlighting how `agex`'s
-"micro-DSL" approach—providing a focused set of capabilities—can guide even
-smaller models to success on complex tasks.
 """
 
 from dataclasses import dataclass
 from typing import Literal
 
-from agex import Agent
+from agex import Agent, connect_llm, pprint_tokens
 
-optimizer = Agent(name="optimizer", primer="You create and hone jokes.")
-evaluator = Agent(name="evaluator", primer="You critique jokes & suggest improvements.")
+client = connect_llm(provider="openai", model="gpt-5-nano", reasoning_effort="low")
+
+optimizer = Agent(
+    name="optimizer", primer="You create and hone jokes.", llm_client=client
+)
+evaluator = Agent(
+    name="evaluator",
+    primer="You critique jokes & suggest improvements.",
+    llm_client=client,
+)
 
 
 @evaluator.cls
@@ -50,22 +54,17 @@ def review_joke(joke: str) -> Review:  # type: ignore[return-value]
 
 def main():
     # create an initial joke
-    joke = create_joke("pun about programming and fish")
+    joke = create_joke("pun about programming and fish", on_token=pprint_tokens)
 
     # hone the joke until it meets the quality criteria
-    while (review := review_joke(joke)).quality != "good":
-        joke = hone_joke(joke, review)
+    while (review := review_joke(joke, on_token=pprint_tokens)).quality != "good":
+        joke = hone_joke(joke, review, on_token=pprint_tokens)
 
     print("Final joke:")
     print(joke)
 
-    print("Final feedback:")
-    print(review.feedback)
-
     # Final joke:
     # Why do programmers prefer fishing? Because they love catching bugs and reeling in exceptions... and sometimes, they get caught in a loop!
-    # Final feedback:
-    # The joke creatively combines programming metaphors with fishing, making it relatable and humorous for programmers. To improve, consider sharpening the punchline for greater impact or adding a vivid image to make it more memorable.
 
 
 if __name__ == "__main__":
