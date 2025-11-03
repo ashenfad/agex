@@ -47,6 +47,8 @@ I need to calculate the sum of the numbers and return it.
 total = sum(numbers)
 task_success(total)
 </{TAG_PYTHON}>
+
+Keep titles short!
 """
 
 
@@ -258,5 +260,4 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
     if buffer and current_section:
         # Still in a section but stream ended - yield remaining content
         yield TokenChunk(type=current_section, content=buffer, done=False)
-        # Note: We don't mark done=True here because the section wasn't properly closed
-        # This could indicate a truncated response
+    # Section is not properly closed but we choose to be forgiving
