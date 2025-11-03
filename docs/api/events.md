@@ -205,37 +205,68 @@ for event in my_task.stream("process data"):
 print(f"Final result from stream: {final_result}")
 ```
 
-### 4. Console Pretty-Printing with `pprint_events`
+### 4. Token-Level Streaming with `on_token`
+`on_token` is an optional callback that receives LLM output tokens in real time. Tokens arrive as lightweight `TokenChunk` objects with:
 
-Use the top-level `pprint_events` helper to get a concise, colorful event stream in terminals. It works both as a real-time `on_event` handler and for post-hoc printing of a list/generator of events.
+- `type`: either `"thinking"` or `"python"`
+- `content`: the text fragment for that section
+- `done`: a boolean that signals the end of the current section
+
+**Choose `on_token` if:**
+*   You want progressive UI feedback while the LLM is generating content.
+*   You need to distinguish between the agent's reasoning and emitted code.
+*   You are building terminal dashboards or notebooks that benefit from sub-second updates.
+
+```python
+from agex.agent import pprint_tokens
+
+# Stream thinking/code tokens with colorized terminal output
+result = my_task("generate code", on_token=pprint_tokens)
+
+# Custom handler for a UI
+from agex.llm.core import TokenChunk
+
+def render_token(chunk: TokenChunk):
+    if chunk.type == "thinking":
+        ui.update_thinking(chunk.content)
+    elif chunk.type == "python":
+        ui.update_code(chunk.content)
+    if chunk.done:
+        ui.section_complete(chunk.type)
+
+result = my_task("analyze", on_token=render_token)
+```
+
+Token streaming activates only when an `on_token` handler is provided. When omitted, tasks behave exactly as before.
+
+### 5. Console Pretty-Printing Helpers
+
+Use the top-level helpers to get colorful terminal output without writing custom handlers.
 
 ```python
 from agex import pprint_events
+from agex.agent import pprint_tokens
 
-# Real-time: pass as on_event
-result = my_task("analyze", on_event=pprint_events)
+# Real-time: pass as on_event/on_token
+result = my_task(
+    "analyze",
+    on_event=pprint_events,
+    on_token=pprint_tokens,
+)
 
 # Post-hoc: pretty-print all events from state
 from agex import events
 all_events = events(state)
 pprint_events(all_events, verbosity="brief")
-
-# Customize output
-pprint_events(
-    single_event_or_iterable,
-    verbosity="normal",          # "brief" | "normal" | "verbose"
-    color="auto",                # "auto" | "always" | "never" (honors NO_COLOR)
-    show_delta=True,              # show Δ since previous event
-    indent_by_namespace=True,     # indent and header prefix by namespace depth
-    width=None,                   # autodetect terminal width if None
-    truncate_code_lines=8,        # lines shown for sampled code in verbose mode
-)
 ```
 
+`pprint_events` works with a single event, any iterable/generator of events, or as an `on_event` handler. `pprint_tokens` focuses on streaming tokens and prints the full content of each chunk.
+
 Notes:
-- `pprint_events` accepts either a single event or any iterable/generator of events.
-- When used as `on_event`, it keeps a running Δ time between prints.
-- Colors auto-disable when output is not a TTY; set `color="always"` to force.
+- Both helpers respect the `color="auto" | "always" | "never"` setting and the `NO_COLOR` environment variable.
+- `pprint_events` keeps a running Δ time between prints when used as `on_event`.
+- `pprint_tokens` renders 💭 reasoning in blue and 🐍 code in yellow.
+- `pprint_tokens` ignores section-complete markers (`done=True`) so streams remain tidy.
 
 ## Usage Patterns
 

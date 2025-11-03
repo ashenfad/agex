@@ -144,6 +144,22 @@ See [State](state.md) for more details on state management.
 
 See the [Events API Guide](events.md) for more on event consumption patterns.
 
+### on_token Parameter
+
+- **Optional**: `on_token: Callable[[TokenChunk], None] | None = None`
+- **Purpose**: Receive LLM output tokens in real time (reasoning vs. code) while still awaiting the final task result.
+- **Common uses**: Live notebooks, terminal dashboards, or UI components that benefit from progressive updates.
+- **Token structure**: Each callback gets a `TokenChunk` with `type`, `content`, and a `done` flag signalling the end of a section.
+
+```python
+from agex.agent import pprint_tokens
+
+# Stream thinking/code tokens with built-in formatting
+result = my_task("solve this", on_token=pprint_tokens)
+```
+
+See [Token-Level Streaming](events.md#4-token-level-streaming-with-on_token) for deeper coverage.
+
 ## Dual-Decorator Pattern
 
 For multi-agent workflows, combine `@agent.fn` and `@agent.task` decorators:
