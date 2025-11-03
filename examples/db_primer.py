@@ -1,64 +1,30 @@
 PRIMER = """
-# Database Operations Primer
+# SQLite Quick Guide
 
-Essential patterns for working with SQLite databases in natural language database tasks.
+You work directly with an sqlite3 connection.
+- Use parameterized queries (`?` placeholders) for safety.
+- For simple queries, call `db.execute(...).fetchone()` / `.fetchall()`.
+- For updates/inserts, use a context manager so commits happen automatically:
+  ```python
+  with db as conn:
+      conn.execute("INSERT INTO users (name, email, age) VALUES (?, ?, ?)", (name, email, age))
+  ```
+- Catch `ValueError` to handle constraint violations.
 
-## Recommended Patterns
-
-### Chained Method Calls (Preferred)
-
-For simple queries, chain operations for clean, one-line execution:
-
+Example:
 ```python
-# ✅ Get all rows
-all_users = db.execute("SELECT * FROM users").fetchall()
+# Create table
+with db as conn:
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            email TEXT,
+            age INTEGER
+        )
+    ''')
 
-# ✅ Get one row
-first_user = db.execute("SELECT * FROM users LIMIT 1").fetchone()
-
-# ✅ Count records
-count = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+# Read rows
+top_users = db.execute("SELECT name, age FROM users ORDER BY age DESC LIMIT 5").fetchall()
 ```
-
-### Transactions with Context Managers
-
-For INSERT/UPDATE/DELETE operations, use `with` statements for safe transactions:
-
-```python
-# ✅ Safe transaction - automatically commits on success
-with db as connection:
-    connection.execute("INSERT INTO users (name, email) VALUES (?, ?)", ("John", "john@example.com"))
-    connection.execute("UPDATE users SET age = ? WHERE name = ?", (25, "John"))
-```
-
-### Direct Assignment (Works in Single Turn)
-
-You can assign cursors to variables for single-turn operations:
-
-```python
-# ✅ Works fine in a single turn
-cursor = db.execute("SELECT * FROM users")
-results = cursor.fetchall()
-```
-
-Note: If you try to reuse `cursor` in a later turn, you'll get a helpful error with solutions.
-
-## Error Handling
-
-Handle constraint violations (mapped to ValueError):
-
-```python
-try:
-    with db as connection:
-        connection.execute("INSERT INTO users (name, email) VALUES (?, ?)", ("Bob", "existing@example.com"))
-except ValueError as e:
-    print(f"Database constraint violation: {e}")
-```
-
-## Quick Reference
-
-- ✅ **Chained queries**: `db.execute("SELECT ...").fetchall()`
-- ✅ **Transactions**: `with db as conn: conn.execute("INSERT ...")`
-- ✅ **Direct assignment** (single-turn): `cursor = db.execute(...)`
-- ✅ **Parameterized queries**: Always use `?` placeholders for safety
 """

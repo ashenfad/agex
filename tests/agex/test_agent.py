@@ -30,9 +30,8 @@ def test_view_image_primer_text_is_always_visible():
     agent = Agent()
     system_message = agent._build_system_message()
     assert "view_image" in system_message
-    assert "PIL.Image.Image" in system_message
-    assert "matplotlib.figure.Figure" in system_message
-    assert "numpy.ndarray" in system_message
+    assert "task_continue" in system_message
+    assert "image" in system_message
 
 
 def test_agent_fn_registration_decorator():
