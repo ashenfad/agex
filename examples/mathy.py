@@ -41,17 +41,18 @@ def main():
     result = run_calculation(
         "What is the square root of 256, multiplied by pi?", on_token=pprint_tokens
     )
-    print(result)
-    # 50.26548245743669
+    print(f"Square root of 256, multiplied by pi: {result}\n")
+
+    # Square root of 256, multiplied by pi: 50.26548245743669
 
     nums = list(range(360))
     result = transform(
         "Transform these degrees into radians", nums, on_token=pprint_tokens
     )
-    print(len(result))
-    print(result[-3:])
-    # 360
-    # [6.230825429619756, 6.2482787221397, 6.265732014659642]
+    print(f"Total radians: {len(result)}")
+    print(f"Last 3 radians: {result[-3:]}")
+    # Total radians: 360
+    # Last 3 radians: [6.230825429619756, 6.2482787221397, 6.265732014659642]
 
 
 if __name__ == "__main__":

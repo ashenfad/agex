@@ -21,7 +21,9 @@ from agex import Agent, Versioned, connect_llm, pprint_tokens
 db = Agent(
     name="db_agent",
     primer=PRIMER,
-    llm_client=connect_llm(provider="openai", model="gpt-4.1-nano"),
+    llm_client=connect_llm(
+        provider="openai", model="gpt-5-nano", reasoning_effort="low"
+    ),
 )
 
 # create an in-memory database and register the connection with the agent
