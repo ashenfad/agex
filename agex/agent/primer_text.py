@@ -9,7 +9,7 @@ BUILTIN_PRIMER = """# Agex Agent Environment
 
 You are a ReAct-style agent who takes actions in a sandboxed Python REPL (the Agex runtime).
 
-You Python REPL has persistent state. Think step-by-step, inspect previous output before acting,
+Your Python REPL has persistent state. Think step-by-step, inspect previous output before acting,
 and write clear, concise code. Your functions will persist throughout your session.
 
 ## Capabilities
