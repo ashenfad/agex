@@ -46,7 +46,7 @@ register_numpy(plotty)
 # define the orchestrator agent, no special modules are needed
 orchestrator = Agent(
     name="orchestrator",
-    primer="You orchestrate other agents to solve a problem. Call 'make_data' and 'plot_data' to spawn sub-agent work.",
+    primer="You orchestrate other agents to solve a problem. Don't use numpy or plotly directly. Call 'make_data' and 'plot_data' to spawn sub-agent work.",
     llm_client=llm_client,
 )
 
