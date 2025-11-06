@@ -442,7 +442,7 @@ def pprint_tokens(
             token.timestamp.astimezone().strftime("%H:%M:%S") if token.timestamp else ""
         )
         agent = token.agent_name or "agent"
-        prefix = f"[{timestamp}] {agent}: " if timestamp else f"{agent}: "
+        prefix = f"\n[{timestamp}] {agent}: " if timestamp else f"{agent}: "
         color_code = _Colors.cyan if use_color else ""
     elif token.type == "thinking":
         color_code = _Colors.bright_blue if use_color else ""
