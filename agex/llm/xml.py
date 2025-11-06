@@ -31,22 +31,11 @@ class XMLResponse:
 # System prompt instructions for XML format
 XML_FORMAT_PRIMER = f"""
 Format your response using XML tags:
-
-<{TAG_TITLE}>A brief action title here</{TAG_TITLE}>
-<{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}>
-<{TAG_PYTHON}>
-# Your Python code here
-</{TAG_PYTHON}>
+<{TAG_TITLE}>A brief title here</{TAG_TITLE}><{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}><{TAG_PYTHON}># Your Python code here</{TAG_PYTHON}>
 
 Example:
-<{TAG_TITLE}>Calculating running total</{TAG_TITLE}>
-<{TAG_THINKING}>
-I need to calculate the sum of the numbers and return it.
-</{TAG_THINKING}>
-<{TAG_PYTHON}>
-total = sum(numbers)
-task_success(total)
-</{TAG_PYTHON}>
+<{TAG_TITLE}>Calculating running total</{TAG_TITLE}><{TAG_THINKING}>I need to calculate the sum of the numbers and return it.</{TAG_THINKING}><{TAG_PYTHON}>total = sum(numbers)
+task_success(total)</{TAG_PYTHON}>
 
 Keep titles short!
 """
