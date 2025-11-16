@@ -47,6 +47,22 @@ UNARY_OPERATOR_MAP = {
 }
 
 
+def _looks_like_pandas_series(value: Any) -> bool:
+    """Detect pandas/NumPy collection results without importing heavy deps."""
+    return hasattr(value, "dtype") and hasattr(value, "__len__")
+
+
+def _is_numpy_bool(value: Any) -> bool:
+    """Best-effort detection of numpy bool scalars without importing numpy."""
+    cls = value.__class__
+    return cls.__module__ == "numpy" and cls.__name__ in {"bool_", "bool8"}
+
+
+def _is_bool_like(value: Any) -> bool:
+    """Return True when a comparison result is a real boolean scalar."""
+    return isinstance(value, bool) or _is_numpy_bool(value)
+
+
 class BinOpEvaluator(BaseEvaluator):
     """A mixin for evaluating binary operation nodes."""
 
@@ -104,8 +120,9 @@ class BinOpEvaluator(BaseEvaluator):
     def visit_Compare(self, node: ast.Compare) -> bool:
         """Handles comparison operations."""
         left_val = self.visit(node.left)
+        total_ops = len(node.ops)
 
-        for op, comparator_node in zip(node.ops, node.comparators):
+        for idx, (op, comparator_node) in enumerate(zip(node.ops, node.comparators)):
             right_val = self.visit(comparator_node)
 
             op_func = COMPARISON_MAP.get(type(op))
@@ -117,26 +134,29 @@ class BinOpEvaluator(BaseEvaluator):
             try:
                 result = op_func(left_val, right_val)
 
+                remaining_ops = total_ops - idx - 1
+
                 # Check if result is a pandas-like object that shouldn't be boolean-evaluated
-                # In such cases, we can't short-circuit and should just return the result
-                if hasattr(result, "dtype") and hasattr(result, "__len__"):
-                    # This looks like a pandas Series or numpy array
-                    # For chained comparisons with pandas, we can't short-circuit
-                    # so just continue with the next comparison
-                    if len(node.ops) > 1:
-                        # Multiple comparisons with pandas Series - this is complex
-                        # For now, just return the result and let the user handle it
-                        return result
-                    else:
-                        # Single comparison returning a Series - that's normal
-                        return result
-                else:
-                    # Regular scalar comparison - use safe boolean evaluation for short-circuiting
-                    if not _safe_bool_eval(
-                        result, node, f"Comparison operation '{type(op).__name__}'"
-                    ):
-                        # Short-circuit
-                        return False
+                if _looks_like_pandas_series(result):
+                    # For chained comparisons, surface the pandas result immediately
+                    return result
+
+                # Preserve non-boolean comparison results (e.g., DSL filters)
+                if not _is_bool_like(result):
+                    if remaining_ops > 0:
+                        raise EvalError(
+                            "Chained comparisons that return non-boolean results "
+                            "are not supported.",
+                            node,
+                        )
+                    return result
+
+                # Regular scalar comparison - use safe boolean evaluation for short-circuiting
+                if not _safe_bool_eval(
+                    result, node, f"Comparison operation '{type(op).__name__}'"
+                ):
+                    # Short-circuit
+                    return False
             except TypeError as e:
                 # Re-raise as a user-catchable error
                 raise AgexTypeError(str(e), node) from e
