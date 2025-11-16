@@ -35,33 +35,88 @@ class BaseEvaluator(ast.NodeVisitor):
         Recursively handles assignment to a name or a tuple.
         This is used for both standard assignment and comprehension targets.
         """
+        if isinstance(target_node, ast.Starred):
+            values = self._materialize_iterable_for_unpack(value, target_node)
+            self._assign_sequence_targets([target_node], values, target_node)
+            return
+
+        if isinstance(target_node, (ast.Tuple, ast.List)):
+            values = self._materialize_iterable_for_unpack(value, target_node)
+            self._assign_sequence_targets(target_node.elts, values, target_node)
+            return
+
         if isinstance(target_node, ast.Name):
             self.state.set(target_node.id, value)
-        elif isinstance(target_node, ast.Tuple):
-            if not hasattr(value, "__iter__"):
-                raise EvalError(
-                    "Cannot unpack non-iterable value for assignment.", target_node
-                )
+        else:
+            raise EvalError(
+                "Assignment target must be a name, list, or tuple.", target_node
+            )
 
-            targets = target_node.elts
-            try:
-                values = list(value)
-            except TypeError:
-                raise EvalError(
-                    "Cannot unpack non-iterable value for assignment.", target_node
-                )
+    def _materialize_iterable_for_unpack(self, value: Any, node: ast.AST) -> list[Any]:
+        """Convert an iterable into a concrete list for destructuring."""
+        if not hasattr(value, "__iter__"):
+            raise EvalError("Cannot unpack non-iterable value for assignment.", node)
+        try:
+            return list(value)
+        except TypeError:
+            raise EvalError("Cannot unpack non-iterable value for assignment.", node)
 
+    def _assign_sequence_targets(
+        self, targets: list[ast.expr], values: list[Any], node: ast.AST
+    ) -> None:
+        """Assign a concrete list of values to sequence targets (with optional *star)."""
+        star_indices = [
+            idx for idx, target in enumerate(targets) if isinstance(target, ast.Starred)
+        ]
+
+        if len(star_indices) > 1:
+            raise EvalError(
+                "Multiple starred expressions in assignment targets are not supported.",
+                node,
+            )
+
+        if not star_indices:
             if len(targets) != len(values):
                 raise EvalError(
                     f"Expected {len(targets)} values to unpack, but got {len(values)}.",
-                    target_node,
+                    node,
                 )
+            for target, value in zip(targets, values):
+                self._handle_destructuring_assignment(target, value)
+            return
 
-            for t, v in zip(targets, values):
-                # Recurse to handle nested destructuring
-                self._handle_destructuring_assignment(t, v)
-        else:
-            raise EvalError("Assignment target must be a name or a tuple.", target_node)
+        star_index = star_indices[0]
+        leading_targets = targets[:star_index]
+        trailing_targets = targets[star_index + 1 :]
+        required = len(leading_targets) + len(trailing_targets)
+
+        if len(values) < required:
+            raise EvalError(
+                f"Not enough values to unpack (expected at least {required}, "
+                f"got {len(values)}).",
+                node,
+            )
+
+        leading_values = values[: len(leading_targets)]
+        trailing_values = values[len(values) - len(trailing_targets) :]
+        middle_values = values[
+            len(leading_targets) : len(values) - len(trailing_targets)
+        ]
+
+        for target, value in zip(leading_targets, leading_values):
+            self._handle_destructuring_assignment(target, value)
+
+        self._assign_starred_target(targets[star_index], middle_values)
+
+        for target, value in zip(trailing_targets, trailing_values):
+            self._handle_destructuring_assignment(target, value)
+
+    def _assign_starred_target(
+        self, star_target: ast.Starred, values: list[Any]
+    ) -> None:
+        """Assign the collected middle values to a starred target."""
+        # Star targets should always receive a list to mirror Python semantics.
+        self._handle_destructuring_assignment(star_target.value, list(values))
 
     def _get_target_and_value(self, node: ast.Assign):
         if len(node.targets) != 1:

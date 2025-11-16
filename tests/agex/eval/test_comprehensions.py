@@ -74,3 +74,12 @@ l.sort()
 """
     state = eval_and_get_state(program)
     assert state.get("l") == ["a1", "b2"]
+
+
+def test_comprehension_with_starred_destructuring():
+    program = """
+data = [(1, 2, 3), (4, 5)]
+pairs = [(head, tail) for head, *tail in data]
+"""
+    state = eval_and_get_state(program)
+    assert state.get("pairs") == [(1, [2, 3]), (4, [5])]
