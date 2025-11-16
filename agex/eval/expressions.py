@@ -1,4 +1,5 @@
 import ast
+from collections.abc import Mapping
 from typing import Any
 
 from .base import BaseEvaluator
@@ -10,6 +11,29 @@ from .user_errors import AgexIndexError, AgexKeyError, AgexTypeError
 class ExpressionEvaluator(BaseEvaluator):
     """A mixin for evaluating expression nodes."""
 
+    def _collect_starred_iterable(self, node: ast.expr, context: str) -> list[Any]:
+        """Evaluate a starred iterable and return its items as a list."""
+        value = self.visit(node)
+        try:
+            return list(value)
+        except TypeError:
+            raise AgexTypeError(
+                f"{context} requires an iterable, but got '{type(value).__name__}'.",
+                node,
+            )
+
+    def _collect_mapping_items(
+        self, node: ast.expr, context: str
+    ) -> list[tuple[Any, Any]]:
+        """Evaluate a mapping expression used in a dictionary unpack."""
+        value = self.visit(node)
+        if isinstance(value, Mapping):
+            return list(value.items())
+        raise AgexTypeError(
+            f"{context} requires a mapping, but got '{type(value).__name__}'.",
+            node,
+        )
+
     def visit_Constant(self, node: ast.Constant) -> Any:
         """Handles literal values like numbers, strings, True, False, None."""
         return node.value
@@ -20,23 +44,53 @@ class ExpressionEvaluator(BaseEvaluator):
 
     def visit_List(self, node: ast.List) -> list:
         """Handles list literals."""
-        return [self.visit(elt) for elt in node.elts]
+        result: list[Any] = []
+        for elt in node.elts:
+            if isinstance(elt, ast.Starred):
+                result.extend(
+                    self._collect_starred_iterable(elt.value, "List unpacking")
+                )
+            else:
+                result.append(self.visit(elt))
+        return result
 
     def visit_Tuple(self, node: ast.Tuple) -> tuple:
         """Handles tuple literals."""
-        return tuple(self.visit(elt) for elt in node.elts)
+        items: list[Any] = []
+        for elt in node.elts:
+            if isinstance(elt, ast.Starred):
+                items.extend(
+                    self._collect_starred_iterable(elt.value, "Tuple unpacking")
+                )
+            else:
+                items.append(self.visit(elt))
+        return tuple(items)
 
     def visit_Set(self, node: ast.Set) -> set:
         """Handles set literals."""
-        return {self.visit(elt) for elt in node.elts}
+        result: set[Any] = set()
+        for elt in node.elts:
+            if isinstance(elt, ast.Starred):
+                for value in self._collect_starred_iterable(elt.value, "Set unpacking"):
+                    result.add(value)
+            else:
+                result.add(self.visit(elt))
+        return result
 
     def visit_Dict(self, node: ast.Dict) -> dict:
         """Handles dict literals."""
-        return {
-            self.visit(k): self.visit(v)
-            for k, v in zip(node.keys, node.values)
-            if k is not None
-        }
+        result: dict[Any, Any] = {}
+        for key_node, value_node in zip(node.keys, node.values):
+            if key_node is None:
+                for key, value in self._collect_mapping_items(
+                    value_node, "Dictionary unpacking"
+                ):
+                    result[key] = value
+            else:
+                key = self.visit(key_node)
+                value = self.visit(value_node)
+                result[key] = value
+        return result
 
     def visit_BoolOp(self, node: ast.BoolOp) -> Any:
         """Handles boolean logic with short-circuiting ('and', 'or')."""

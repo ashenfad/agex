@@ -262,26 +262,14 @@ class StatementEvaluator(BaseEvaluator):
         machinery so pickle safety and nested containers are handled uniformly.
         """
         # Tuple destructuring: validate iterable and arity, then recurse
-        if isinstance(target_node, ast.Tuple):
-            if not hasattr(value, "__iter__"):
-                raise EvalError(
-                    "Cannot unpack non-iterable value for assignment.", target_node
-                )
-            try:
-                values = list(value)
-            except TypeError:
-                raise EvalError(
-                    "Cannot unpack non-iterable value for assignment.", target_node
-                )
+        if isinstance(target_node, ast.Starred):
+            values = self._materialize_iterable_for_unpack(value, target_node)
+            self._assign_sequence_targets([target_node], values, target_node)
+            return
 
-            targets = target_node.elts
-            if len(targets) != len(values):
-                raise EvalError(
-                    f"Expected {len(targets)} values to unpack, but got {len(values)}.",
-                    target_node,
-                )
-            for t, v in zip(targets, values):
-                self._handle_destructuring_assignment(t, v)
+        if isinstance(target_node, (ast.Tuple, ast.List)):
+            values = self._materialize_iterable_for_unpack(value, target_node)
+            self._assign_sequence_targets(target_node.elts, values, target_node)
             return
 
         # Leaf target: use assignment target resolver for Name/Attribute/Subscript
@@ -311,7 +299,7 @@ class StatementEvaluator(BaseEvaluator):
         value = self.visit(node.value)
 
         for target_node in node.targets:
-            if isinstance(target_node, ast.Tuple):
+            if isinstance(target_node, (ast.Tuple, ast.List, ast.Starred)):
                 # Destructuring assignment, e.g., `a, b = 1, 2`
                 if len(node.targets) > 1:
                     raise EvalError(

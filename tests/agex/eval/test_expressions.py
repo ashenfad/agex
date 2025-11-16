@@ -6,7 +6,7 @@ from agex import events
 from agex.agent import Agent
 from agex.agent.events import OutputEvent
 from agex.eval.functions import NativeFunction
-from agex.eval.user_errors import AgexAttributeError
+from agex.eval.user_errors import AgexAttributeError, AgexTypeError
 
 from .helpers import eval_and_get_state
 
@@ -52,6 +52,33 @@ w = [1, (2, 3), {"a": {4, 5}}]
     assert state.get("y") == {1, "a", True}
     assert state.get("z") == {"a": 1, "b": (1, "a", True)}
     assert state.get("w") == [1, (2, 3), {"a": {4, 5}}]
+
+
+def test_collection_literals_with_unpacking():
+    program = """
+vals = [1, 2]
+extra = (3, 4)
+others = {5, 6}
+lst = [0, *vals, *extra, 5]
+tup = (0, *vals, *extra, 5)
+st = {0, *vals, *others}
+base = {"a": 1}
+delta = {"b": 2}
+merged = {**base, "c": 3, **delta}
+"""
+    state = eval_and_get_state(program)
+    assert state.get("lst") == [0, 1, 2, 3, 4, 5]
+    assert state.get("tup") == (0, 1, 2, 3, 4, 5)
+    assert state.get("st") == {0, 1, 2, 5, 6}
+    assert state.get("merged") == {"a": 1, "c": 3, "b": 2}
+
+
+def test_collection_unpack_type_errors():
+    with pytest.raises(AgexTypeError):
+        eval_and_get_state("value = [*42]")
+
+    with pytest.raises(AgexTypeError):
+        eval_and_get_state("value = {**['not', 'mapping']}")
 
 
 def test_eval_subscript():

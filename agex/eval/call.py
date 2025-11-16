@@ -1,5 +1,6 @@
 import ast
 import inspect
+from collections.abc import Mapping
 from typing import Any
 
 from ..agent.datatypes import TaskSuccess, _AgentExit
@@ -20,6 +21,85 @@ from .validation import validate_with_sampling
 
 class CallEvaluator(BaseEvaluator):
     """A mixin for evaluating function call nodes."""
+
+    def _callable_name(self, node: ast.expr) -> str:
+        """Best-effort name for error messages."""
+        if isinstance(node, ast.Attribute):
+            return node.attr
+        if isinstance(node, ast.Name):
+            return node.id
+        return "object"
+
+    def _evaluate_starred_argument(
+        self, value_node: ast.expr, call_name: str
+    ) -> list[Any]:
+        """Evaluate a *args node and return the iterable contents."""
+        value = self.visit(value_node)
+        try:
+            return list(value)
+        except TypeError:
+            raise AgexTypeError(
+                f"{call_name}() argument after * must be an iterable, "
+                f"got '{type(value).__name__}'.",
+                value_node,
+            )
+
+    def _evaluate_mapping_argument(
+        self, value_node: ast.expr, call_name: str
+    ) -> Mapping[str, Any]:
+        """Evaluate a **kwargs node and ensure it's a mapping."""
+        value = self.visit(value_node)
+        if isinstance(value, Mapping):
+            return value
+        raise AgexTypeError(
+            f"{call_name}() argument after ** must be a mapping, "
+            f"got '{type(value).__name__}'.",
+            value_node,
+        )
+
+    def _expand_call_arguments(
+        self,
+        arg_nodes: list[ast.expr],
+        keyword_nodes: list[ast.keyword],
+        call_name: str,
+    ) -> tuple[list[Any], dict[str, Any]]:
+        """Evaluate args/kwargs with support for *args and **kwargs expansion."""
+        positional_args: list[Any] = []
+        for arg_node in arg_nodes:
+            if isinstance(arg_node, ast.Starred):
+                positional_args.extend(
+                    self._evaluate_starred_argument(arg_node.value, call_name)
+                )
+            else:
+                positional_args.append(self.visit(arg_node))
+
+        keyword_args: dict[str, Any] = {}
+        for kw in keyword_nodes:
+            if kw.arg is None:
+                mapping = self._evaluate_mapping_argument(kw.value, call_name)
+                for key, value in mapping.items():
+                    if not isinstance(key, str):
+                        raise AgexTypeError(
+                            f"{call_name}() keywords must be strings.",
+                            kw.value,
+                        )
+                    if key in keyword_args:
+                        raise AgexTypeError(
+                            f"{call_name}() got multiple values for "
+                            f"keyword argument '{key}'",
+                            kw.value,
+                        )
+                    keyword_args[key] = value
+            else:
+                if kw.arg in keyword_args:
+                    raise AgexTypeError(
+                        f"{call_name}() got multiple values for "
+                        f"keyword argument '{kw.arg}'",
+                        kw.value,
+                    )
+                keyword_args[kw.arg] = self.visit(kw.value)
+
+        return positional_args, keyword_args
 
     def _unwrap_bound_objects(
         self, args: list[Any], kwargs: dict[str, Any]
@@ -57,8 +137,8 @@ class CallEvaluator(BaseEvaluator):
     def _handle_secure_format(
         self,
         format_str: str,
-        args_nodes: list[ast.expr],
-        kwargs_nodes: list[ast.keyword],
+        args: list[Any],
+        kwargs: dict[str, Any],
     ) -> str:
         """
         Secure format string handling that prevents sandbox escapes.
@@ -67,10 +147,6 @@ class CallEvaluator(BaseEvaluator):
         is properly validated), then uses a custom formatter to prevent bypass attacks.
         """
         from string import Formatter
-
-        # Evaluate all arguments through the sandbox first
-        args = [self.visit(arg) for arg in args_nodes]
-        kwargs = {kw.arg: self.visit(kw.value) for kw in kwargs_nodes if kw.arg}
 
         class SandboxFormatter(Formatter):
             def __init__(self, evaluator):
@@ -104,6 +180,8 @@ class CallEvaluator(BaseEvaluator):
 
     def visit_Call(self, node: ast.Call) -> Any:
         """Handles function calls."""
+        call_name = self._callable_name(node.func)
+        args, kwargs = self._expand_call_arguments(node.args, node.keywords, call_name)
 
         # Special handling for string.format() calls to prevent sandbox escapes
         if isinstance(node.func, ast.Attribute) and node.func.attr == "format":
@@ -111,17 +189,12 @@ class CallEvaluator(BaseEvaluator):
             if isinstance(node.func.value, ast.Constant) and isinstance(
                 node.func.value.value, str
             ):
-                return self._handle_secure_format(
-                    node.func.value.value, node.args, node.keywords
-                )
+                return self._handle_secure_format(node.func.value.value, args, kwargs)
 
             # Check if this is a string variable .format() call
             string_obj = self.visit(node.func.value)
             if isinstance(string_obj, str):
-                return self._handle_secure_format(string_obj, node.args, node.keywords)
-
-        args = [self.visit(arg) for arg in node.args]
-        kwargs = {kw.arg: self.visit(kw.value) for kw in node.keywords if kw.arg}
+                return self._handle_secure_format(string_obj, args, kwargs)
 
         # Handle stateful builtins first, as they need dependency injection.
         if isinstance(node.func, ast.Name):

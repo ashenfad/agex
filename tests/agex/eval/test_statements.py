@@ -21,6 +21,28 @@ def test_destructuring_assignment_list():
     assert state.get("z") == 3.14
 
 
+def test_destructuring_assignment_with_starred_targets():
+    program = """
+a, *rest = (1, 2, 3, 4)
+*prefix, last = [10, 20, 30]
+x, *middle, y = [0, 1, 2, 3]
+"""
+    state = eval_and_get_state(program)
+    assert state.get("a") == 1
+    assert state.get("rest") == [2, 3, 4]
+    assert state.get("prefix") == [10, 20]
+    assert state.get("last") == 30
+    assert state.get("x") == 0
+    assert state.get("middle") == [1, 2]
+    assert state.get("y") == 3
+
+
+def test_top_level_star_assignment():
+    program = "*everything, = range(5)"
+    state = eval_and_get_state(program)
+    assert state.get("everything") == [0, 1, 2, 3, 4]
+
+
 def test_destructuring_assignment_implicit_tuple():
     program = "c, d = 3, 4"
     state = eval_and_get_state(program)
@@ -38,6 +60,12 @@ def test_destructuring_mismatch_error_too_few():
     with pytest.raises(EvalError) as e:
         eval_and_get_state("a, b, c = (1, 2)")
     assert "Expected 3 values to unpack, but got 2" in str(e.value)
+
+
+def test_starred_destructuring_not_enough_values_error():
+    with pytest.raises(EvalError) as excinfo:
+        eval_and_get_state("a, *rest, b = [1]")
+    assert "Not enough values to unpack" in str(excinfo.value)
 
 
 def test_destructuring_non_iterable_error():

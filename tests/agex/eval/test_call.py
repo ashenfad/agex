@@ -1,6 +1,11 @@
 import pytest
 
-from agex.eval.user_errors import AgexAttributeError, AgexError, AgexNameError
+from agex.eval.user_errors import (
+    AgexAttributeError,
+    AgexError,
+    AgexNameError,
+    AgexTypeError,
+)
 
 from .helpers import eval_and_get_state
 
@@ -364,3 +369,56 @@ def test_call_on_non_callable():
     with pytest.raises(AgexError) as e:
         eval_and_get_state("x = 123()")
     assert "'object' is not callable" in str(e.value)
+
+
+def test_call_with_star_and_double_star():
+    program = """
+def capture(*args, **kwargs):
+    return args, kwargs
+
+vals = (1, 2)
+extra = [3]
+mapping = {"d": 4}
+result = capture(0, *vals, *extra, c=3, **mapping)
+captured_args = result[0]
+captured_kwargs = result[1]
+"""
+    state = eval_and_get_state(program)
+    assert state.get("captured_args") == (0, 1, 2, 3)
+    assert state.get("captured_kwargs") == {"c": 3, "d": 4}
+
+
+def test_call_star_argument_type_errors():
+    with pytest.raises(AgexTypeError):
+        eval_and_get_state(
+            """
+def f(*args):
+    return args
+
+f(*42)
+"""
+        )
+
+    with pytest.raises(AgexTypeError):
+        eval_and_get_state(
+            """
+def f(**kwargs):
+    return kwargs
+
+f(**[("a", 1)])
+"""
+        )
+
+
+def test_call_double_star_duplicate_keyword_error():
+    with pytest.raises(AgexTypeError) as excinfo:
+        eval_and_get_state(
+            """
+def f(**kwargs):
+    return kwargs
+
+f(a=1, **{"a": 2})
+"""
+        )
+
+    assert "keyword argument 'a'" in str(excinfo.value)

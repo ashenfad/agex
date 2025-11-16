@@ -38,6 +38,16 @@ for k, v in [("a", 1), ("b", 2)]:
     assert state.get("total") == 3
 
 
+def test_for_loop_with_starred_destructuring():
+    program = """
+collected = []
+for head, *tail in [(1, 2, 3), (4, 5)]:
+    collected.append((head, tail))
+"""
+    state = eval_and_get_state(program)
+    assert state.get("collected") == [(1, [2, 3]), (4, [5])]
+
+
 def test_while_loop():
     program = """
 i = 0
