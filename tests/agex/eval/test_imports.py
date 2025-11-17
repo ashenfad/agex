@@ -1,8 +1,11 @@
+import types
+
 import numpy as np
 import pytest
 
 from agex import Agent, clear_agent_registry
 from agex.eval.error import EvalError
+from agex.eval.user_errors import AgexError
 from tests.agex.eval.helpers import eval_and_get_state
 
 
@@ -118,3 +121,46 @@ def test_numpy_random_normal_resolution_with_alias_and_full_path():
         pass
 
     assert make_noise_full() is True
+
+
+def test_dunder_import_registered_module():
+    clear_agent_registry()
+    import math
+
+    agent = Agent(name="dunder_import")
+    agent.module(math, name="math")
+
+    state = eval_and_get_state(
+        "mod = __import__('math')\nresult = mod.sqrt(25)\n", agent=agent
+    )
+    assert state.get("result") == pytest.approx(5.0)
+
+
+def test_dunder_import_fromlist_attaches_members():
+    clear_agent_registry()
+    pkg = types.ModuleType("pkg_for_dunder")
+    pkg.value = 42
+
+    agent = Agent(name="dunder_import_fromlist")
+    agent.module(pkg, name="pkg_for_dunder")
+
+    state = eval_and_get_state(
+        "pkg = __import__('pkg_for_dunder', fromlist=['value'])\n"
+        "result = pkg.value\n",
+        agent=agent,
+    )
+    assert state.get("result") == 42
+
+
+def test_dunder_import_unregistered_module_raises():
+    clear_agent_registry()
+    agent = Agent(name="dunder_import_fail")
+    with pytest.raises(EvalError):
+        eval_and_get_state("__import__('not_registered')", agent=agent)
+
+
+def test_dunder_import_relative_level_error():
+    clear_agent_registry()
+    agent = Agent(name="dunder_import_relative")
+    with pytest.raises(AgexError):
+        eval_and_get_state("__import__('anything', level=1)", agent=agent)
