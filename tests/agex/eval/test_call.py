@@ -1,11 +1,17 @@
+from dataclasses import dataclass
+
 import pytest
 
+from agex.agent import Agent
+from agex.agent.datatypes import TaskSuccess
+from agex.eval.core import evaluate_program
 from agex.eval.user_errors import (
     AgexAttributeError,
     AgexError,
     AgexNameError,
     AgexTypeError,
 )
+from agex.state import Live
 
 from .helpers import eval_and_get_state
 
@@ -422,3 +428,27 @@ f(a=1, **{"a": 2})
         )
 
     assert "keyword argument 'a'" in str(excinfo.value)
+
+
+def test_registered_dataclass_callable_inside_function():
+    agent = Agent()
+
+    @agent.cls
+    @dataclass
+    class Response:
+        parts: list[str]
+
+    program = """
+def helper():
+    return Response(parts=["ok"])
+
+task_success(helper())
+"""
+
+    state = Live()
+
+    with pytest.raises(TaskSuccess) as excinfo:
+        evaluate_program(program, agent, state)
+
+    assert isinstance(excinfo.value.result, Response)
+    assert excinfo.value.result.parts == ["ok"]
