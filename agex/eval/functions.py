@@ -377,9 +377,13 @@ class FunctionEvaluator(BaseEvaluator):
         main_ns = self.agent._policy.namespaces.get("__main__")
         if main_ns:
             registered_fns = set(main_ns.fn_objects.keys())
+            registered_classes = set(main_ns.classes.keys())
             # Only exclude if the variable isn't already defined in current scope
             free_vars = free_vars - {
                 name for name in registered_fns if name not in self.state
+            }
+            free_vars = free_vars - {
+                name for name in registered_classes if name not in self.state
             }
 
         closure = LiveClosureState(self.state, free_vars)
@@ -425,9 +429,13 @@ class FunctionEvaluator(BaseEvaluator):
         main_ns = self.agent._policy.namespaces.get("__main__")
         if main_ns:
             registered_fns = set(main_ns.fn_objects.keys())
+            registered_classes = set(main_ns.classes.keys())
             # Only exclude if the variable isn't already defined in current scope
             free_vars = free_vars - {
                 name for name in registered_fns if name not in self.state
+            }
+            free_vars = free_vars - {
+                name for name in registered_classes if name not in self.state
             }
 
         closure = LiveClosureState(self.state, free_vars)
