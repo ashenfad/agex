@@ -1,15 +1,10 @@
 import copy
 import inspect
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from agex.agent.base import BaseAgent
-from agex.agent.datatypes import (
-    TaskClarify,
-    TaskContinue,
-    TaskFail,
-    TaskSuccess,
-)
+from agex.agent.datatypes import TaskClarify, TaskContinue, TaskFail, TaskSuccess
 from agex.agent.events import OutputEvent
 from agex.eval.objects import (
     AgexClass,
@@ -32,6 +27,41 @@ from agex.eval.user_errors import (
 )
 from agex.eval.utils import get_allowed_attributes_for_instance
 from agex.state import Live, State
+
+
+def _import_stateful(
+    evaluator,
+    name: str,
+    globals_dict=None,
+    locals_dict=None,
+    fromlist: Iterable[str] = (),
+    level: int = 0,
+) -> Any:
+    """
+    Sandbox-aware __import__ replacement that uses the resolver instead of Python's importer.
+    """
+    if level != 0:
+        raise AgexError("Relative imports are not supported.")
+    if not isinstance(name, str) or not name:
+        raise AgexError("__import__() requires a non-empty module name string.")
+
+    resolver = evaluator.resolver
+    module = resolver.resolve_module(name, None)
+
+    if not fromlist:
+        return module
+
+    # Mimic CPython behavior: import submembers and attach them to the base module
+    fromlist_results = []
+    for item in fromlist:
+        if not isinstance(item, str):
+            raise AgexError("__import__ fromlist items must be strings.")
+        member = resolver.import_from(name, item, None)
+        setattr(module, item, member)
+        fromlist_results.append(member)
+
+    # Return the module per CPython semantics even when fromlist is provided
+    return module
 
 
 def _smart_render_for_snapshot(value: Any) -> str:
@@ -510,6 +540,7 @@ STATEFUL_BUILTINS: dict[str, StatefulFn] = {
     "hasattr": StatefulFn(_hasattr, needs_evaluator=True),
     "getattr": StatefulFn(_getattr, needs_evaluator=True),
     "task_continue": StatefulFn(_task_continue_with_observations),
+    "__import__": StatefulFn(_import_stateful, needs_evaluator=True),
 }
 
 
