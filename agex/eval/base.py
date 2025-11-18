@@ -116,7 +116,7 @@ class BaseEvaluator(ast.NodeVisitor):
     ) -> None:
         """Assign the collected middle values to a starred target."""
         # Star targets should always receive a list to mirror Python semantics.
-        self._handle_destructuring_assignment(star_target.value, list(values))
+        self._handle_destructuring_assignment(star_target.value, values)
 
     def _get_target_and_value(self, node: ast.Assign):
         if len(node.targets) != 1:
