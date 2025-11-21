@@ -55,11 +55,29 @@ class Evaluator(
         self.resolver = Resolver(agent)
         self.on_event = on_event
         self.on_token = on_token
+        self._with_binding_cleanup: list[tuple[str, Any]] = []
 
     def visit_Module(self, node: ast.Module):
         """Evaluates a module by visiting each statement in its body."""
         for stmt in node.body:
             self.visit(stmt)
+
+    def cleanup_with_bindings(self):
+        """Remove context-manager bound variables that should not persist across iterations."""
+        for name, original_value in self._with_binding_cleanup:
+            if name not in self.state:
+                continue
+            try:
+                current_value = self.state.get(name)
+            except Exception:
+                # If accessing the value fails (e.g., unpicklable marker), still attempt removal.
+                self.state.remove(name)
+                continue
+
+            # only remove if the value is the same (not re-bound)
+            if current_value is original_value:
+                self.state.remove(name)
+        self._with_binding_cleanup.clear()
 
     def visit_Expr(self, node: ast.Expr):
         """
@@ -117,3 +135,5 @@ def evaluate_program(
             "Use task_success(result) to complete your task, not return.",
             e.node,
         )
+    finally:
+        evaluator.cleanup_with_bindings()

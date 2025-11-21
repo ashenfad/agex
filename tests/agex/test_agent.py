@@ -1,6 +1,7 @@
 import collections
 import math
 import pickle
+import sqlite3
 from dataclasses import dataclass
 from types import ModuleType
 
@@ -9,6 +10,7 @@ import pytest
 from agex import events
 from agex.agent import Agent, MemberSpec
 from agex.agent.base import clear_agent_registry
+from agex.agent.datatypes import UnpicklableMarker
 from agex.agent.events import ActionEvent, OutputEvent, SuccessEvent, TaskStartEvent
 from agex.agent.policy.describe import (
     describe_class,
@@ -96,6 +98,117 @@ def test_agent_fn_registration_direct_call():
     main = agent._policy.namespaces.get("__main__")
     assert main is not None
     assert "sqrt" in main.fns
+
+
+def test_helper_recap_lists_user_functions():
+    """Ensure helper recap OutputEvents list user-defined helpers each iteration."""
+    clear_agent_registry()
+
+    llm_client = DummyLLMClient(
+        [
+            LLMResponse(
+                thinking="Define a helper function.",
+                code="""def helper_fn(x: int) -> int:
+    return x + 1
+
+task_continue("helper ready")""",
+            ),
+            LLMResponse(
+                thinking="Use the helper and finish.",
+                code="result = helper_fn(inputs.value)\ntask_success(result)",
+            ),
+        ]
+    )
+    agent = Agent(name="helper_agent", llm_client=llm_client)
+
+    @agent.task
+    def helper_task(value: int) -> int:
+        """Define and reuse helper functions."""
+        ...
+
+    state = Versioned()
+    result = helper_task(value=5, state=state)
+    assert result == 6
+
+    event_list = [e for e in events(state) if e.full_namespace == "helper_agent"]
+    recap_texts: list[str] = []
+
+    for event in event_list:
+        if not isinstance(event, OutputEvent):
+            continue
+        for part in event.parts:
+            if hasattr(part, "text"):
+                part_text = str(part.text)
+            elif hasattr(part, "__iter__") and not isinstance(part, (str, bytes)):
+                items = list(part)
+                part_text = " ".join(str(item) for item in items)
+            else:
+                part_text = str(part)
+
+            if "Helper recap" in part_text:
+                recap_texts.append(part_text)
+                break
+
+    assert len(recap_texts) == 1, f"Expected 1 helper recap, found {len(recap_texts)}"
+    recap_text = recap_texts[0]
+    assert "helper_fn" in recap_text
+    assert "Reuse these helpers instead of redefining them." in recap_text
+
+
+def test_context_manager_bound_variable_is_cleaned_up():
+    """Context manager bindings (e.g., 'as conn') should not persist after the block."""
+    clear_agent_registry()
+
+    llm_client = DummyLLMClient(
+        [
+            LLMResponse(
+                thinking="Create a table via sqlite3 context manager.",
+                code="""with db as conn:
+    conn.execute("CREATE TABLE IF NOT EXISTS users(id INTEGER)")
+task_success("done")""",
+            )
+        ]
+    )
+    agent = Agent(name="db_agent", llm_client=llm_client)
+    connection = sqlite3.connect(":memory:")
+    agent.module(connection, name="db", include=["execute", "commit"])
+
+    @agent.task
+    def create_table() -> str:  # type: ignore[return-value]
+        """Create a table using sqlite3 context manager."""
+        ...
+
+    state = Versioned()
+    result = create_table(state=state)
+    assert result == "done"
+    assert "db_agent/conn" not in state.keys()
+    connection.close()
+
+
+def test_helper_recap_skips_unpicklable_markers():
+    """UserFunction recap should skip state entries that raise UnpicklableVariableError."""
+    clear_agent_registry()
+
+    llm_client = DummyLLMClient(
+        [LLMResponse(thinking="Simple completion.", code='task_success("ok")')]
+    )
+    agent = Agent(name="marker_agent", llm_client=llm_client)
+
+    @agent.task
+    def marker_task() -> str:  # type: ignore[return-value]
+        """Return without defining helpers."""
+        ...
+
+    state = Versioned()
+    marker = UnpicklableMarker(
+        variable_name="marker_agent/bad",
+        type_name="BadObject",
+        original_exception="cannot pickle",
+    )
+    state.set("marker_agent/bad", marker)
+    state.snapshot()
+
+    assert marker_task(state=state) == "ok"
 
 
 def test_agent_fn_registration_with_name_alias():
