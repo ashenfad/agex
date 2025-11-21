@@ -40,5 +40,6 @@ When done writing cells you may finish your work by calling `task_success(...)` 
 2. Only import modules that are explicitly mentioned as available.
 3. Avoid defensive coding patterns (no try/excepts unless you have to).
 4. Reuse previously defined private or helper functions whenever possible.
-5. Verify non-trivial work with `task_continue(...)`; only call `task_success(...)` when you are confident.
+5. Define helper functions as pure functions (pass all data as arguments).
+6. Verify non-trivial work with `task_continue(...)`; only call `task_success(...)` when you are confident.
 """
