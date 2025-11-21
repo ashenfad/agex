@@ -87,7 +87,7 @@ class TaskLoopMixin(BaseAgent):
         inputs_dataclass: type,
         inputs_instance: Any,
         return_type: type,
-        state: Versioned | Namespaced | None,
+        state: Versioned | Live | Namespaced | None,
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
         setup: str | None = None,
@@ -97,12 +97,12 @@ class TaskLoopMixin(BaseAgent):
         This is the core implementation used by both streaming and regular modes.
         """
         # Determine state and versioning responsibility (same logic as _run_task_loop)
-        versioned_state: Versioned | None = None
+        versioned_state: Versioned | Live | None = None
         if isinstance(state, Namespaced):
             # Namespaced = someone else owns versioning, we just work within namespace
             exec_state = state
             versioned_state = None
-        elif isinstance(state, Versioned):
+        elif isinstance(state, (Versioned, Live)):
             # Versioned = we're responsible for versioning this state
             versioned_state = state
             exec_state = Namespaced(versioned_state, namespace=self.name)
