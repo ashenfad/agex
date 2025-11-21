@@ -152,8 +152,9 @@ class Disk(KVStore):
                 raise TypeError(f"Expected bytes for {key}, got {type(value).__name__}")
 
         # Only set if all values are valid
-        for key, value in kwargs.items():
-            self.set(key, value)
+        with self.store.transact():
+            for key, value in kwargs.items():
+                self.set(key, value)
 
     def items(self) -> Iterable[tuple[str, bytes]]:
         for key in self.store.iterkeys():
