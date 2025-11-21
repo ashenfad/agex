@@ -255,6 +255,8 @@ class SubscriptTarget(AssignmentTarget):
 class StatementEvaluator(BaseEvaluator):
     """A mixin for evaluating statement nodes."""
 
+    _with_binding_cleanup: list[tuple[str, Any]]
+
     def _handle_destructuring_assignment(self, target_node: ast.AST, value: Any):
         """
         Recursively handle destructuring where targets may include subscripts
@@ -465,6 +467,7 @@ class StatementEvaluator(BaseEvaluator):
                 # Handle tuple unpacking in 'as' clause
                 target = self._resolve_target(with_item.optional_vars)
                 target.set_value(enter_result, self.state)
+            self._register_with_binding_cleanup(with_item.optional_vars)
 
         # Execute the body
         exception_info = (None, None, None)
@@ -499,6 +502,30 @@ class StatementEvaluator(BaseEvaluator):
             except Exception as exit_exc:
                 # If __exit__ raises an exception when no exception occurred, propagate it
                 raise exit_exc
+
+    def _register_with_binding_cleanup(self, optional_vars: ast.AST) -> None:
+        """Track with-bound names so they can be cleaned up after execution."""
+        for bound_name in self._collect_with_bound_names(optional_vars):
+            if bound_name not in self.state:
+                continue
+            try:
+                value = self.state.get(bound_name)
+            except Exception:
+                value = None
+            self._with_binding_cleanup.append((bound_name, value))
+
+    def _collect_with_bound_names(self, node: ast.AST) -> list[str]:
+        """Collect simple variable names bound by a with-as clause."""
+        if isinstance(node, ast.Name):
+            return [node.id]
+        if isinstance(node, (ast.Tuple, ast.List)):
+            names: list[str] = []
+            for elt in node.elts:
+                names.extend(self._collect_with_bound_names(elt))
+            return names
+        if isinstance(node, ast.Starred):
+            return self._collect_with_bound_names(node.value)
+        return []
 
     def visit_Import(self, node: ast.Import) -> None:
         """Handles `import <module>` and `import <module> as <alias>`."""

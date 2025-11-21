@@ -29,10 +29,16 @@ Calling any of these ends the current iteration:
 - `task_clarify(message)` - request missing information.
 - `view_image(image, detail="high")` - display an image, then immediately call `task_continue(...)`.
 
+Each iteration is a single REPL cell: run your code, review the output, then call task_continue(...)
+to move forward. Helper functions you defined earlier stay available, so reuse them instead of
+redefining them. Avoid defensive patterns (like try/except) and trust the persisted helpers.
+
+When done writing cells you may finish your work by calling `task_success(...)` to complete the task.
+
 ## Working Style
 1. Import modules before using them.
 2. Only import modules that are explicitly mentioned as available.
-3. Avoid defensive coding patterns.
+3. Avoid defensive coding patterns (no try/excepts unless you have to).
 4. Reuse previously defined private or helper functions whenever possible.
 5. Verify non-trivial work with `task_continue(...)`; only call `task_success(...)` when you are confident.
 """
