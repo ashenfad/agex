@@ -3,7 +3,7 @@ import tempfile
 
 import pytest
 
-from agex.state.kv import Cache, Disk, Memory
+from agex.state.kv import Cache, Disk, Memory, WriteBehind
 
 
 class TestMemory:
@@ -241,3 +241,60 @@ class TestDisk:
         # Should appear in items
         items = dict(self.store.items())
         assert items["empty"] == b""
+
+
+class TestWriteBehind:
+    """Test the WriteBehind KV store wrapper."""
+
+    def test_write_behind_basic_operations(self):
+        store = Memory()
+        wb = WriteBehind(store)
+
+        # Test set (async)
+        wb.set("key1", b"value1")
+
+        # Should be eventually consistent (auto-flush on get)
+        assert store.get("key1") is None  # Store might not have it yet (async)
+        assert wb.get("key1") == b"value1"  # Wrapper should have it (auto-flush)
+
+        # Test contains
+        assert "key1" in wb
+        assert "nonexistent" not in wb
+
+        # Test items
+        wb.set("key2", b"value2")
+        # items() should auto-flush now
+        items = dict(wb.items())
+        assert items == {"key1": b"value1", "key2": b"value2"}
+
+    def test_write_behind_set_many(self):
+        store = Memory()
+        wb = WriteBehind(store)
+
+        # Test set_many (async)
+        wb.set_many(key1=b"value1", key2=b"value2")
+
+        # Should auto-flush on get_many
+        result = wb.get_many("key1", "key2", "nonexistent")
+        assert dict(result) == {"key1": b"value1", "key2": b"value2"}
+
+    def test_write_behind_error_handling(self, capsys):
+        """Test that background errors don't crash the main thread."""
+        store = Memory()
+        wb = WriteBehind(store)
+
+        # Force an error by passing invalid type to underlying store
+        # Memory.set raises TypeError for non-bytes
+        wb.set("key", "not bytes")  # type: ignore
+
+        wb.flush()
+
+        # Main thread should continue fine
+        wb.set("key2", b"valid")
+        wb.flush()
+        assert wb.get("key2") == b"valid"
+
+        # Check stderr for the error message
+        captured = capsys.readouterr()
+        assert "WriteBehind error" in captured.err
+        assert "Expected bytes" in captured.err
