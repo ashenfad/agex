@@ -85,6 +85,16 @@ def get_instance_attributes_from_init(py_cls: type) -> set[str]:
                             attributes.add(target.attr)
                     self.generic_visit(node)
 
+                def visit_AnnAssign(self, node):  # type: ignore[override]
+                    # Handle annotated assignments like: self.attr: type = value
+                    if (
+                        isinstance(node.target, ast.Attribute)
+                        and isinstance(node.target.value, ast.Name)
+                        and node.target.value.id == "self"
+                    ):
+                        attributes.add(node.target.attr)
+                    self.generic_visit(node)
+
             AttributeVisitor().visit(tree)
         except Exception:
             # Ignore classes where source isn't available or parse fails

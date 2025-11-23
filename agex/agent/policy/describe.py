@@ -9,7 +9,7 @@ from agex.agent.utils import get_instance_attributes_from_init
 
 from ..datatypes import MemberSpec
 from .datatypes import Namespace, Visibility
-from .resolve import _is_constructable
+from .resolve import _is_constructable, _should_include_instance_attributes
 
 
 @dataclass
@@ -59,21 +59,7 @@ def collect_class_candidate_names(
     # clearly applies to this class:
     # - Global wildcards when not describing under a concrete module namespace
     # - Or a dotted wildcard like "ClassName.*" for this specific class
-    include_instance_attrs = False
-    if isinstance(ns.include, str):
-        if ns.include == "*" or "*" in ns.include:
-            # Only treat undotted wildcard as class-applicable when not under a module
-            include_instance_attrs = ns.kind != "module"
-    elif isinstance(ns.include, (list, set, tuple)):
-        for it in ns.include:
-            if (
-                isinstance(it, str)
-                and it.startswith(f"{py_cls.__name__}.")
-                and "*" in it
-            ):
-                include_instance_attrs = True
-                break
-    if include_instance_attrs:
+    if _should_include_instance_attributes(py_cls, ns, for_resolution=False):
         try:
             candidate_names.update(get_instance_attributes_from_init(py_cls))
         except Exception:
