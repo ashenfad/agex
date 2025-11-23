@@ -81,6 +81,13 @@ def _resolve_class_member(
             else:
                 return ResolvedObj(value=member)
 
+    # If still not found, check for dataclass fields
+    if hasattr(py_cls, "__dataclass_fields__"):
+        if member_name in py_cls.__dataclass_fields__:
+            # Found as dataclass field - return ResolvedObj with None value
+            # (dataclass fields are instance attributes, not class-level values)
+            return ResolvedObj(value=None)
+
     # If still not found, check for instance attributes assigned in __init__
     if _should_include_instance_attributes(py_cls, spec, for_resolution=True):
         try:
