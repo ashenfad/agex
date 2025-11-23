@@ -1243,3 +1243,45 @@ def test_non_recursive_module_registration_fails_submodule_imports():
 
     # Invoke the task; no exception expected here since setup may be a no-op in current implementation
     import_submodule_fail()
+
+
+def test_recursive_module_registration_resolves_dataclass_fields():
+    """
+    Tests that classes registered via recursive module registration can have
+    their dataclass fields resolved and accessed.
+    """
+    # Create a test module with a dataclass
+    test_mod = ModuleType("test_dataclass_mod")
+
+    @dataclass(frozen=True)
+    class TestInterval:
+        """A test interval dataclass."""
+
+        start: int | None
+        end: int | None
+        _private: int | None = None
+
+    # Set the module attribute so resolve_class can find it
+    TestInterval.__module__ = "test_dataclass_mod"
+    test_mod.TestInterval = TestInterval
+    test_mod.__all__ = ["TestInterval"]
+
+    agent = Agent()
+    # Register the module recursively
+    agent.module(test_mod, recursive=True, visibility="low", include="*", exclude="_*")
+
+    # Test that dataclass fields can be resolved via policy
+    result = agent._policy.resolve_class_member(TestInterval, "start")
+    assert result is not None, "start field should be resolvable"
+    assert hasattr(result, "value"), "result should be ResolvedObj"
+
+    result = agent._policy.resolve_class_member(TestInterval, "end")
+    assert result is not None, "end field should be resolvable"
+
+    # Test that excluded fields are not resolvable
+    result = agent._policy.resolve_class_member(TestInterval, "_private")
+    assert result is None, "_private field should be excluded by policy"
+
+    # Test that non-existent fields are not resolvable
+    result = agent._policy.resolve_class_member(TestInterval, "nonexistent")
+    assert result is None, "nonexistent field should not be resolvable"
