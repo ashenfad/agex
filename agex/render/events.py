@@ -87,10 +87,15 @@ def render_events_as_markdown(
                     messages.append({"role": "user", "content": text})
 
         elif isinstance(event, SuccessEvent):
-            # Render success marker
+            # Render success marker - use same settings as OutputEvent rendering
+            # Convert token budget to character estimate (roughly 4 chars per token)
             from agex.render.value import ValueRenderer
 
-            renderer = ValueRenderer(max_len=200, max_depth=2)
+            # Use same max_len and max_depth as StreamRenderer uses for OutputEvent
+            estimated_chars = (
+                max_tokens * 4
+            )  # Conservative estimate: ~4 chars per token
+            renderer = ValueRenderer(max_len=estimated_chars, max_depth=4)
             rendered = renderer.render(event.result)
             messages.append(
                 {"role": "assistant", "content": f"✅ Task completed: {rendered}"}

@@ -99,7 +99,7 @@ class StreamRenderer:
 
     def __init__(self, model_name: str):
         self.tokenizer: Tokenizer = get_tokenizer(model_name)
-        self.value_renderer = ValueRenderer(max_len=4096)
+        self.value_renderer = ValueRenderer(max_len=4096, max_depth=4)
 
     def render_state_stream(self, items: dict[str, Any], budget: int) -> str:
         """Renders state changes with degradation logic."""
