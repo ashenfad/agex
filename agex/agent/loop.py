@@ -316,10 +316,22 @@ class TaskLoopMixin(BaseAgent):
                 )
 
                 # Log clarification event
-                clarify_event = ClarifyEvent(
-                    agent_name=self.name,
-                    message=task_clarify.message,
-                )
+                try:
+                    clarify_event = ClarifyEvent(
+                        agent_name=self.name,
+                        message=task_clarify.message,
+                    )
+                except Exception as e:
+                    # Catch ValidationError when message is wrong type (Pydantic validates ClarifyEvent)
+                    from pydantic import ValidationError
+
+                    if isinstance(e, ValidationError):
+                        raise EvalError(
+                            f"task_clarify() expects a string message, but got {type(task_clarify.message).__name__}",
+                            None,
+                            cause=e,
+                        )
+                    raise
                 add_event_to_log(exec_state, clarify_event, on_event=on_event)
                 yield clarify_event
 
@@ -339,10 +351,22 @@ class TaskLoopMixin(BaseAgent):
                 )
 
                 # Log failure event
-                fail_event = FailEvent(
-                    agent_name=self.name,
-                    message=task_fail.message,
-                )
+                try:
+                    fail_event = FailEvent(
+                        agent_name=self.name,
+                        message=task_fail.message,
+                    )
+                except Exception as e:
+                    # Catch ValidationError when message is wrong type (Pydantic validates FailEvent)
+                    from pydantic import ValidationError
+
+                    if isinstance(e, ValidationError):
+                        raise EvalError(
+                            f"task_fail() expects a string message, but got {type(task_fail.message).__name__}",
+                            None,
+                            cause=e,
+                        )
+                    raise
                 add_event_to_log(exec_state, fail_event, on_event=on_event)
                 yield fail_event
 
