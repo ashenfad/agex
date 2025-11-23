@@ -43,7 +43,15 @@ class ValueRenderer:
             return self._render_string(value)
 
         # Handle container truncation at max depth
-        if current_depth >= self.max_depth:
+        # But skip depth check for display objects like DataFrames (they should show content)
+        # DataFrames have shape and columns attributes, making them display objects
+        is_display_object = (
+            hasattr(value, "shape")
+            and hasattr(value, "columns")
+            and not isinstance(value, (list, dict, set, tuple))
+        )
+
+        if current_depth >= self.max_depth and not is_display_object:
             if isinstance(value, list):
                 return f"[... ({len(value)} items)]"
             if isinstance(value, dict):
@@ -377,8 +385,8 @@ class ValueRenderer:
         items = []
         for f in fields(value):
             field_value = getattr(value, f.name)
-            # Use compact mode for field values to get concise representations
-            rendered_value = self.render(field_value, depth + 1, compact=True)
+            # Use non-compact mode to show full content (e.g., DataFrames)
+            rendered_value = self.render(field_value, depth + 1, compact=False)
             item_str = f"{f.name}={rendered_value}"
             if len(str(items)) + len(item_str) > self.max_len:
                 items.append("...")
