@@ -4,6 +4,7 @@ from types import ModuleType
 from typing import Callable, Iterable
 
 from ..datatypes import MemberSpec
+from ..utils import get_instance_attributes_from_init
 from .datatypes import (
     Namespace,
     Pattern,
@@ -80,12 +81,57 @@ def _resolve_class_member(
             else:
                 return ResolvedObj(value=member)
 
+    # If still not found, check for instance attributes assigned in __init__
+    if _should_include_instance_attributes(py_cls, spec, for_resolution=True):
+        try:
+            instance_attrs = get_instance_attributes_from_init(py_cls)
+            if member_name in instance_attrs:
+                # Found as instance attribute - return ResolvedObj with None value
+                # (instance attributes don't have class-level values)
+                return ResolvedObj(value=None)
+        except Exception:
+            # Ignore failures to parse __init__ source (best-effort)
+            pass
+
     return None
 
 
 def _is_constructable(py_cls: type, spec: Namespace) -> bool:
     cfg = spec.configure.get(py_cls.__name__, MemberSpec())
     return True if cfg.constructable is None else bool(cfg.constructable)
+
+
+def _should_include_instance_attributes(
+    py_cls: type, spec: Namespace, *, for_resolution: bool = False
+) -> bool:
+    """Determine if instance attributes should be included based on namespace policy.
+
+    Args:
+        py_cls: The class to check
+        spec: The namespace specification
+        for_resolution: If True, always include instance attrs with wildcards (for resolution).
+                       If False, exclude when namespace kind is "module" (for description).
+
+    Returns:
+        True if instance attributes should be checked, False otherwise.
+    """
+    if isinstance(spec.include, str):
+        if spec.include == "*" or "*" in spec.include:
+            if for_resolution:
+                # For resolution, always check instance attrs with wildcard patterns
+                return True
+            else:
+                # For description, only check when not under a module namespace
+                return spec.kind != "module"
+    elif isinstance(spec.include, (list, set, tuple)):
+        for it in spec.include:
+            if (
+                isinstance(it, str)
+                and it.startswith(f"{py_cls.__name__}.")
+                and "*" in it
+            ):
+                return True
+    return False
 
 
 def _resolve_virtual_member(
