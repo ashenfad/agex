@@ -1,6 +1,7 @@
 from typing import Any, Iterator, List
 
 import anthropic
+from anthropic.types import TextBlockParam
 
 from agex.agent.events import Event
 from agex.llm.core import LLMClient, LLMResponse, TokenChunk
@@ -9,9 +10,17 @@ from agex.llm.xml import XML_FORMAT_PRIMER, tokenize_xml_stream
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key", "timeout"}
 MAX_TOKENS = 2**14
+CACHE_TTL = "1h"
 
 
-def _format_message_for_anthropic(message: dict[str, Any]) -> dict:
+def _with_cache(messages: list[dict]) -> list[dict]:
+    messages[-1]["cache_control"] = {"type": "ephemeral", "ttl": CACHE_TTL}
+    return messages
+
+
+def _format_message_for_anthropic(
+    is_last_message: bool, message: dict[str, Any]
+) -> dict:
     """
     Convert generic message dict to Anthropic's format.
 
@@ -20,9 +29,9 @@ def _format_message_for_anthropic(message: dict[str, Any]) -> dict:
     Note: All images are converted to PNG format by the rendering layer
     (StreamRenderer._serialize_image_to_base64) before reaching this function.
     """
+    content_parts: list[dict] = []
     if isinstance(message.get("content"), list):
         # Multimodal message
-        content_parts = []
         for part in message["content"]:
             if part["type"] == "text":
                 content_parts.append({"type": "text", "text": part["text"]})
@@ -37,13 +46,12 @@ def _format_message_for_anthropic(message: dict[str, Any]) -> dict:
                         },
                     }
                 )
-        return {"role": message["role"], "content": content_parts}
     else:
-        # Text message - Anthropic expects list of content blocks
-        return {
-            "role": message["role"],
-            "content": [{"type": "text", "text": message["content"]}],
-        }
+        content_parts.append({"type": "text", "text": message["content"]})
+
+    if is_last_message:
+        _with_cache(content_parts)
+    return {"role": message["role"], "content": content_parts}
 
 
 class AnthropicClient(LLMClient):
@@ -78,7 +86,8 @@ class AnthropicClient(LLMClient):
 
         # Convert to Anthropic format
         conversation_messages = [
-            _format_message_for_anthropic(msg) for msg in messages_dicts
+            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
+            for index, msg in enumerate(messages_dicts)
         ]
 
         # Define the structured response tool
@@ -163,11 +172,17 @@ class AnthropicClient(LLMClient):
 
         # Convert to Anthropic format
         conversation_messages = [
-            _format_message_for_anthropic(msg) for msg in messages_dicts
+            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
+            for index, msg in enumerate(messages_dicts)
         ]
 
         # Add system message with XML format instructions
         system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+        system_block = TextBlockParam(
+            type="text",
+            text=system_with_format,
+            cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
+        )
 
         try:
             # Set default max_tokens if not provided
@@ -177,7 +192,7 @@ class AnthropicClient(LLMClient):
             # Use standard streaming API (not tool calling)
             stream = self.client.messages.stream(
                 model=self._model,
-                system=system_with_format,
+                system=[system_block],
                 messages=conversation_messages,
                 **request_kwargs,
             )
