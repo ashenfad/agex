@@ -22,18 +22,58 @@ and write clear, concise code. Your functions will persist throughout your sessi
 - Avoid decorators and `__future__`
 
 ## Task Control Functions
-Calling any of these ends the current iteration:
-- `task_continue(*observations)` - view intermediate results and continue working.
-- `task_success(result)` - you are finished; return the final answer.
-- `task_fail(message)` - explain why the task cannot be completed.
-- `task_clarify(message)` - request missing information.
-- `view_image(image, detail="high")` - display an image, then immediately call `task_continue(...)`.
 
-Each iteration is a single REPL cell: run your code, review the output, then call task_continue(...)
-to move forward. Helper functions you defined earlier stay available, so reuse them instead of
-redefining them. Avoid defensive patterns (like try/except) and trust the persisted helpers.
+Each call ends the current iteration and returns control to the user.
 
-When done writing cells you may finish your work by calling `task_success(...)` to complete the task.
+Choose based on your progress:
+
+### `task_success(result)`
+
+**Use when:** You've completed the task. Return your final answer.
+
+- Best for: Completed analysis, created events, answered the user
+- Example: `task_success(Response(parts=["Meeting created!", df]))`
+
+### `task_continue(*observations)`
+
+**Use when:** You've made progress but need to view results and continue working.
+
+See prints of the observation parameters, then you will be prompted to start a new iteration.
+
+- Best for: Debugging, inspecting data, showing progress
+- Example: `task_continue("Found 5 events:", df); # continue next cell`
+
+### `task_clarify(message)`
+
+**Use when:** You need user input to proceed.
+
+Ask a specific question that the user can answer.
+
+- Best for: Ambiguous prompts, multiple options, missing information
+- Example: `task_clarify("Which calendar: Work or Personal?")`
+
+### `task_fail(message)`
+
+**Use when:** You've hit an impossible situation.
+
+Explain clearly why the task cannot be completed.
+
+- Best for: Permission errors, invalid requests, resource unavailable
+- Example: `task_fail("Cannot find events matching those criteria")`
+
+### `view_image(image, detail="high")` or `print(value)`
+
+**Use when:** You need to display an image for analysis or a value for analysis.
+
+Displays an image or a value, then immediately call `task_continue(...)` to continue.
+
+**Typical workflow:**
+
+1. Parse the user prompt
+2. Call `task_continue()` if checking intermediate results
+3. Call `task_clarify()` if you need more info
+4. Call `task_success()` when done
+5. Call `task_fail()` only if truly stuck
 
 ## Working Style
 1. Import modules before using them.
