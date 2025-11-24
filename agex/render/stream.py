@@ -25,6 +25,22 @@ from ..tokenizers import Tokenizer, get_tokenizer
 from .value import ValueRenderer
 
 
+def _is_plotly_figure(image: Any) -> bool:
+    """Check if an object is a Plotly figure using duck typing."""
+    # Check for to_image method (defining characteristic of Plotly figures)
+    if hasattr(image, "to_image") and callable(getattr(image, "to_image", None)):
+        # Also check for layout attribute (Plotly figures have this)
+        if hasattr(image, "layout"):
+            return True
+    # Fallback: check isinstance if plotly is available
+    if plotly is not None:
+        try:
+            return isinstance(image, plotly.graph_objects.Figure)
+        except Exception:
+            pass
+    return False
+
+
 def _estimate_image_cost(image: Any, detail: str = "high") -> int:
     """
     Estimates the token cost for an image.
@@ -52,7 +68,7 @@ def _estimate_image_cost(image: Any, detail: str = "high") -> int:
             int(image.get_figwidth() * dpi),
             int(image.get_figheight() * dpi),
         )
-    elif plotly and isinstance(image, plotly.graph_objects.Figure):
+    elif _is_plotly_figure(image):
         # Plotly figures often have explicit pixel dimensions.
         width = image.layout.width if image.layout.width else 500
         height = image.layout.height if image.layout.height else 400
@@ -79,12 +95,18 @@ def _serialize_image_to_base64(image: Any) -> Optional[str]:
         elif matplotlib and isinstance(image, matplotlib.figure.Figure):
             image.savefig(buffer, format="png", bbox_inches="tight")
             return base64.b64encode(buffer.getvalue()).decode("utf-8")
-        elif plotly and isinstance(image, plotly.graph_objects.Figure):
+
+        if _is_plotly_figure(image):
             # kaleido is used by plotly to export static images
-            image_bytes = image.to_image(format="png")
-            return base64.b64encode(image_bytes).decode("utf-8")
+            # Use duck typing - check for to_image method
+            if hasattr(image, "to_image") and callable(
+                getattr(image, "to_image", None)
+            ):
+                image_bytes = image.to_image(format="png")
+                return base64.b64encode(image_bytes).decode("utf-8")
     except Exception:
         # If any error occurs during serialization, fail gracefully.
+        # The caller will generate appropriate error messages
         return None
 
     # Unsupported type
@@ -169,10 +191,8 @@ class StreamRenderer:
                     if base64_image:
                         part = ImagePart(image=base64_image)
                     else:
-                        # Fallback to a text placeholder if serialization fails.
-                        placeholder = (
-                            f"<unsupported image type: {type(item.image).__name__}>"
-                        )
+                        # Generate error message based on image type
+                        placeholder = self._get_image_error_message(item.image)
                         cost = len(self.tokenizer.encode(placeholder + "\n"))
                         part = TextPart(text=placeholder)
                 else:
@@ -199,6 +219,35 @@ class StreamRenderer:
                 final_parts.insert(0, TextPart(text=marker))
 
         return final_parts
+
+    def _get_image_error_message(self, image: Any) -> str:
+        """Generate a helpful error message for failed image serialization."""
+        if not _is_plotly_figure(image):
+            return f"<unsupported image type: {type(image).__name__}>"
+
+        # Try to get the actual error from Plotly export
+        error_msg = None
+        try:
+            if hasattr(image, "to_image") and callable(
+                getattr(image, "to_image", None)
+            ):
+                image.to_image(format="png")
+        except Exception as e:
+            error_msg = str(e)
+
+        # Check for kaleido-specific errors
+        if error_msg and ("kaleido" in error_msg.lower()):
+            return (
+                "<Plotly figure export failed: Kaleido package is required. "
+                "Install with: pip install kaleido>"
+            )
+        elif error_msg:
+            return f"<Plotly figure export failed: {error_msg}>"
+        else:
+            return (
+                "<Plotly figure export failed: Kaleido package may be missing. "
+                "Install with: pip install kaleido>"
+            )
 
     def _render_and_check(
         self, key: str, value: Any, budget: int, depth: int
