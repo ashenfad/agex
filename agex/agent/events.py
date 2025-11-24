@@ -1,11 +1,29 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 
 from ..eval.objects import PrintAction
+
+
+def _suppress_stdout(func: Callable[[], Any]) -> Any:
+    """
+    Context manager helper to suppress stdout during function execution.
+
+    Prevents Plotly figures and other objects with IPython display hooks from
+    printing HTML to stdout in NiceGUI/IPython environments.
+    """
+    import sys
+    from io import StringIO
+
+    old_stdout = sys.stdout
+    sys.stdout = StringIO()
+    try:
+        return func()
+    finally:
+        sys.stdout = old_stdout
 
 
 def _render_object_as_html(obj: Any) -> str:
@@ -22,7 +40,11 @@ def _render_object_as_html(obj: Any) -> str:
     try:
         # Check if object has _repr_html_ method (pandas DataFrames, plotly Figures, etc.)
         if hasattr(obj, "_repr_html_"):
-            return f"<div style='margin: 5px 0;'>{obj._repr_html_()}</div>"
+            # Suppress stdout during _repr_html_ call to prevent Plotly figures
+            # (and other objects with IPython display hooks) from printing HTML to stdout
+            # in NiceGUI/IPython environments
+            html_content = _suppress_stdout(lambda: obj._repr_html_())
+            return f"<div style='margin: 5px 0;'>{html_content}</div>"
         # Handle PrintAction objects by joining their content
         elif isinstance(obj, PrintAction):
             import html
@@ -41,7 +63,12 @@ def _render_object_as_html(obj: Any) -> str:
                 return f"<pre style='background: #fff; padding: 8px; border-radius: 3px; margin: 0; color: #24292e; font-family: monospace;'>{escaped_content}</pre>"
         # Check for _repr_mimebundle_ (matplotlib figures, etc.)
         elif hasattr(obj, "_repr_mimebundle_"):
-            bundle = obj._repr_mimebundle_(include=["text/html"])
+            # Suppress stdout during _repr_mimebundle_ call to prevent Plotly figures
+            # (and other objects with IPython display hooks) from printing HTML to stdout
+            # in NiceGUI/IPython environments
+            bundle = _suppress_stdout(
+                lambda: obj._repr_mimebundle_(include=["text/html"])
+            )
             if "text/html" in bundle:
                 return f"<div style='margin: 5px 0;'>{bundle['text/html']}</div>"
             else:
