@@ -992,6 +992,72 @@ def test_task_without_setup():
     assert action_events[0].thinking == "Simple task completion"
 
 
+def test_setup_events_tagged_with_source():
+    """Test that setup events are tagged with source='setup'."""
+    clear_agent_registry()
+
+    # Create agent that uses task_continue in setup
+    llm_client = DummyLLMClient(
+        responses=[
+            LLMResponse(
+                thinking="I can see the setup output and complete",
+                code='task_success("done")',
+            )
+        ]
+    )
+    agent = Agent(name="setup_source_agent", llm_client=llm_client)
+
+    # Define task with setup that creates output
+    @agent.task(
+        primer="Test source tagging",
+        setup='task_continue("Setup context loaded", {"data": [1, 2, 3]})',
+    )
+    def test_task() -> str:  # type: ignore[return-value]
+        """Test task with setup that produces output"""
+        ...
+
+    # Execute task
+    state = Versioned()
+    result = test_task(state=state)
+    assert result == "done"
+
+    # Verify event source tagging
+    event_list = events(state)
+
+    # Find setup ActionEvent
+    setup_action = [
+        e
+        for e in event_list
+        if isinstance(e, ActionEvent) and "automatically run" in e.thinking
+    ]
+    assert len(setup_action) == 1
+    assert setup_action[0].source == "setup"
+
+    # Find setup OutputEvents (from task_continue)
+    setup_outputs = [
+        e for e in event_list if isinstance(e, OutputEvent) and e.source == "setup"
+    ]
+    assert len(setup_outputs) >= 1  # At least one from task_continue
+
+    # Find main execution ActionEvent
+    main_actions = [
+        e
+        for e in event_list
+        if isinstance(e, ActionEvent) and "automatically run" not in e.thinking
+    ]
+    assert len(main_actions) == 1
+    assert main_actions[0].source == "main"  # Main events have default source
+
+    # Verify TaskStartEvent and SuccessEvent have default source
+    task_start = [e for e in event_list if isinstance(e, TaskStartEvent)]
+    assert len(task_start) == 1
+    assert task_start[0].source == "main"
+
+    success = [e for e in event_list if isinstance(e, SuccessEvent)]
+    assert len(success) == 1
+    assert success[0].source == "main"
+
+
 def test_batch_vs_streaming_event_consistency():
     """Test that batch and streaming execution produce identical event sequences."""
     clear_agent_registry()

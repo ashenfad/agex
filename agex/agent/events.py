@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 
@@ -227,6 +227,7 @@ class BaseEvent(BaseModel):
     agent_name: str
     full_namespace: str = ""  # Will be set by add_event_to_log
     commit_hash: str | None = None
+    source: Literal["setup", "main"] = "main"  # Execution phase
 
     def __repr_args__(self):
         """Override Pydantic's repr args to customize the display."""

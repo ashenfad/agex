@@ -214,13 +214,13 @@ def test_aggregator_type_consistency():
 
     # Pass/fail aggregator should always return PassFailStats
     pf_stats = pass_fail_aggregator([True, False], event_stats)
-    assert type(pf_stats) == PassFailStats
+    assert type(pf_stats) is PassFailStats
     assert isinstance(pf_stats, Stats)  # Should also be a Stats
 
     # Numeric aggregator should always return NumericStats
     num_stats = numeric_aggregator([1.0, 2.0], event_stats)
-    assert type(num_stats) == NumericStats
+    assert type(num_stats) is NumericStats
     assert isinstance(num_stats, Stats)  # Should also be a Stats
 
     # They should be different types
-    assert type(pf_stats) != type(num_stats)
+    assert type(pf_stats) is not type(num_stats)

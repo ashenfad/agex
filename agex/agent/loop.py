@@ -172,19 +172,30 @@ class TaskLoopMixin(BaseAgent):
                 agent_name=self.name,
                 thinking="This code was automatically run to provide context for the task.",
                 code=setup,
+                source="setup",  # Tag as setup event
             )
             add_event_to_log(exec_state, setup_action_event, on_event=on_event)
             yield setup_action_event
             events_yielded += 1
 
-            # Execute the setup code
+            # Wrap on_event to tag all events created during setup
+            def setup_on_event(event):
+                """Wrapper that tags events with source='setup' before passing to handler."""
+                if (
+                    event.source == "main"
+                ):  # Don't override if already set to something specific
+                    event.source = "setup"
+                if on_event is not None:
+                    on_event(event)
+
+            # Execute the setup code with our wrapped event handler
             try:
                 evaluate_program(
                     setup,
                     self,  # type: ignore
                     exec_state,
                     self.timeout_seconds,
-                    on_event=on_event,
+                    on_event=setup_on_event,  # Use wrapper
                     on_token=on_token,
                 )
             except Exception:

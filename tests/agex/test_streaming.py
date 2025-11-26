@@ -104,7 +104,7 @@ class TestStreaming:
 
         assert len(regular_events) == len(streaming_events)
         for reg_event, stream_event in zip(regular_events, streaming_events):
-            assert type(reg_event) == type(stream_event)
+            assert type(reg_event) is type(stream_event)
 
     def test_hierarchical_streaming(self):
         """Test streaming with sub-agent calls shows events from all agents."""
