@@ -21,7 +21,6 @@ from agex.agent.datatypes import (
     TaskFail,
     TaskSuccess,
     TaskTimeout,
-    UnpicklableVariableError,
     _AgentExit,
 )
 from agex.agent.events import (
@@ -50,46 +49,6 @@ def _format_user_function_signature(name: str, fn: UserFunction) -> str:
     except (TypeError, ValueError):
         return f"{name}(...)"
     return f"{name}{signature}"
-
-
-def _build_user_function_recap(exec_state: Namespaced) -> str | None:
-    """
-    Build a short recap of user-defined helper functions currently available in state.
-    Returns None when no helper functions exist.
-    """
-
-    user_functions: list[tuple[str, UserFunction]] = []
-    keys = sorted(list(exec_state.keys()))
-    for key in keys:
-        if key.startswith("_event_") or key.startswith("__"):
-            continue
-        try:
-            value = exec_state.get(key)
-        except UnpicklableVariableError:
-            continue
-        if isinstance(value, UserFunction):
-            user_functions.append((key, value))
-        else:
-            _clear_versioned_tracking(exec_state, key)
-
-    if not user_functions:
-        return None
-
-    total_helpers = len(user_functions)
-    lines = []
-    for name, fn in user_functions[:MAX_USER_FUNCTIONS_IN_RECAP]:
-        lines.append(f"- {_format_user_function_signature(name, fn)}")
-
-    remaining = total_helpers - MAX_USER_FUNCTIONS_IN_RECAP
-    if remaining > 0:
-        plural = "helpers" if remaining != 1 else "helper"
-        lines.append(f"... and {remaining} more {plural}.")
-
-    lines.append("Reuse these helpers instead of redefining them.")
-    header = (
-        f"Helper recap ({total_helpers} helper" f"{'' if total_helpers == 1 else 's'})"
-    )
-    return f"{header}\n" + "\n".join(lines)
 
 
 def _clear_versioned_tracking(exec_state: Namespaced, key: str) -> None:
@@ -240,16 +199,6 @@ class TaskLoopMixin(BaseAgent):
 
         # Main task loop
         for _ in range(self.max_iterations):
-            helper_recap = _build_user_function_recap(exec_state)
-            if helper_recap:
-                helper_event = OutputEvent(
-                    agent_name=self.name,
-                    parts=[PrintAction([helper_recap])],
-                )
-                add_event_to_log(exec_state, helper_event, on_event=on_event)
-                yield helper_event
-                events_yielded += 1
-
             # Get all events from state for LLM
             from agex.state.log import get_events_from_log
 
