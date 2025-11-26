@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 
-from ..eval.objects import PrintAction
+from ..eval.objects import ImageAction, PrintAction
 
 
 def _suppress_stdout(func: Callable[[], Any]) -> Any:
@@ -38,8 +38,8 @@ def _render_object_as_html(obj: Any) -> str:
     Returns HTML string ready for inclusion in a larger HTML structure.
     """
     try:
-        # Check if object has _repr_html_ method (pandas DataFrames, plotly Figures, etc.)
-        if hasattr(obj, "_repr_html_"):
+        # Handle ImageAction objects explicitly (from view_image calls)
+        if isinstance(obj, ImageAction):
             # Suppress stdout during _repr_html_ call to prevent Plotly figures
             # (and other objects with IPython display hooks) from printing HTML to stdout
             # in NiceGUI/IPython environments
@@ -61,6 +61,13 @@ def _render_object_as_html(obj: Any) -> str:
                 return f"<pre style='background: #fff2f0; padding: 8px; border-radius: 3px; margin: 0; color: #d73a49; font-family: monospace; border-left: 3px solid #d73a49;'>{escaped_content}</pre>"
             else:
                 return f"<pre style='background: #fff; padding: 8px; border-radius: 3px; margin: 0; color: #24292e; font-family: monospace;'>{escaped_content}</pre>"
+        # Check if object has _repr_html_ method (pandas DataFrames, plotly Figures, etc.)
+        elif hasattr(obj, "_repr_html_"):
+            # Suppress stdout during _repr_html_ call to prevent Plotly figures
+            # (and other objects with IPython display hooks) from printing HTML to stdout
+            # in NiceGUI/IPython environments
+            html_content = _suppress_stdout(lambda: obj._repr_html_())
+            return f"<div style='margin: 5px 0;'>{html_content}</div>"
         # Check for _repr_mimebundle_ (matplotlib figures, etc.)
         elif hasattr(obj, "_repr_mimebundle_"):
             # Suppress stdout during _repr_mimebundle_ call to prevent Plotly figures

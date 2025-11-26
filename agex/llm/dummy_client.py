@@ -7,7 +7,7 @@ sequentially, useful for testing agent behavior without actual LLM calls.
 
 from typing import List
 
-from agex.agent.events import Event, OutputEvent
+from agex.agent.events import Event
 
 from .core import LLMClient, LLMResponse
 
@@ -44,11 +44,46 @@ class DummyLLMClient(LLMClient):
     def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
         Return the next LLMResponse in the sequence, cycling through the list.
-        If any event contains images, it prepends a note to the 'thinking' field.
+        Exercises the same rendering path as real clients to catch image serialization issues.
         """
         # Store the received data for test inspection
         self.all_systems.append(system)
         self.all_events.append(events)
+
+        # Exercise the same rendering path as real clients
+        # This will call render_item_stream() and _serialize_image_to_base64()
+        # allowing us to see what happens when images fail to serialize
+        from agex.render.events import render_events_as_markdown
+
+        max_tokens = kwargs.get("max_tokens", 4096)
+        try:
+            messages_dicts = render_events_as_markdown(events, self.model, max_tokens)
+            # Store rendered messages for inspection
+            self.all_rendered_messages = getattr(self, "all_rendered_messages", [])
+            self.all_rendered_messages.append(messages_dicts)
+
+            # Check for image export failures in rendered messages
+            has_unsupported_images = False
+            for msg in messages_dicts:
+                content = msg.get("content", "")
+                if isinstance(content, str) and (
+                    "<unsupported image type:" in content
+                    or "<image export failed:" in content
+                ):
+                    has_unsupported_images = True
+                elif isinstance(content, list):
+                    # Check multimodal content parts
+                    for part in content:
+                        if isinstance(part, dict) and part.get("type") == "text":
+                            text = part.get("text", "")
+                            if (
+                                "<unsupported image type:" in text
+                                or "<image export failed:" in text
+                            ):
+                                has_unsupported_images = True
+        except Exception:
+            # Silently handle rendering errors in dummy client
+            pass
 
         # Get the next item in the cycle
         item = self.responses[self.call_count % len(self.responses)]
@@ -58,33 +93,9 @@ class DummyLLMClient(LLMClient):
             raise item
         response = item.model_copy()
 
-        # Check for any images in OutputEvent parts to simulate vision processing
-        # Note: OutputEvent.parts contains raw objects, not ImagePart yet
-        # The conversion to ImagePart happens in ContextRenderer during rendering
-        has_images = False
-        for event in events:
-            if isinstance(event, OutputEvent):
-                for part in event.parts:
-                    # Check for common image types (PIL, matplotlib, numpy, etc.)
-                    part_type = str(type(part))
-                    if any(
-                        img_type in part_type
-                        for img_type in [
-                            "PIL.Image",
-                            "matplotlib.figure.Figure",
-                            "plotly.graph_objs",
-                            "numpy.ndarray",
-                        ]
-                    ):
-                        has_images = True
-                        break
-                if has_images:
-                    break
-
-        if has_images:
-            response.thinking = (
-                f"[Dummy client acknowledges seeing an image.]\n{response.thinking}"
-            )
+        # If we detected unsupported images, note it in the response
+        if has_unsupported_images:
+            response.thinking = f"[Dummy client detected unsupported image type during rendering.]\n{response.thinking}"
 
         return response
 
