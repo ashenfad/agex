@@ -14,6 +14,7 @@ import decimal
 import fractions
 import hashlib
 import io
+import itertools
 import json
 import math
 import os
@@ -53,6 +54,7 @@ def register_stdlib(agent: Agent, io_friendly: bool = False) -> None:
 
     # Utility modules
     agent.module(collections, visibility="low")
+    agent.module(itertools, visibility="low")
 
     # Date/time modules
     agent.module(datetime, visibility="low")
