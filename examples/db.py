@@ -52,18 +52,22 @@ def query_db(prompt: str) -> Any:  # type: ignore[return-value]
 
 def main():
     state = Versioned()
+    print("\nPROMPT:", "Create a 'users' table with columns: id, name, email, age")
     update_db(
         "Create a 'users' table with columns: id, name, email, age",
         state=state,
         on_token=pprint_tokens,
     )
+    print("\nPROMPT:", "Add 10 users to the users table")
     update_db("Add 10 users to the users table", state=state, on_token=pprint_tokens)
 
+    print("\nPROMPT:", "Who is the oldest user?")
     oldest = query_db("Who is the oldest user?", state=state, on_token=pprint_tokens)
     print(f"Oldest user: {oldest}")
     # Oldest user: {'id': 10, 'name': 'User10', 'email': 'user10@example.com', 'age': 30}
 
     # see the results directly
+    print("\nFull users table:")
     print(conn.execute("SELECT * FROM users").fetchall())
     # [(1, 'User1', 'user1@example.com', 21), (2, 'User2', 'user2@example.com', 22), ...]
 
