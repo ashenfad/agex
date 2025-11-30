@@ -19,7 +19,7 @@ class DummyLLMClient(LLMClient):
     """
 
     def __init__(
-        self, responses: List[LLMResponse | Exception] | None = None, **kwargs
+        self, responses: list[LLMResponse | Exception] | None = None, **kwargs
     ):
         """
         Initialize with a sequence of LLMResponse objects to return.
