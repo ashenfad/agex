@@ -38,6 +38,7 @@ def main():
     We run a calculation and then transform a list of numbers.
     """
 
+    print("\nPROMPT:", "What is the square root of 256, multiplied by pi?")
     result = run_calculation(
         "What is the square root of 256, multiplied by pi?", on_token=pprint_tokens
     )
@@ -46,6 +47,7 @@ def main():
     # Square root of 256, multiplied by pi: 50.26548245743669
 
     nums = list(range(360))
+    print("\nPROMPT:", "Transform these degrees into radians")
     result = transform(
         "Transform these degrees into radians", nums, on_token=pprint_tokens
     )

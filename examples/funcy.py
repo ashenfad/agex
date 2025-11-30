@@ -33,6 +33,7 @@ def main():
     state = Versioned()
 
     # build a function to find next prime
+    print("\nPROMPT:", "a fn for the first prime larger than a given number.")
     fn = fn_builder(
         "a fn for the first prime larger than a given number.",
         state=state,
@@ -66,17 +67,15 @@ def main():
     # task_success(first_prime_larger_than)
 
     # the function is callable in native python
-    print(fn(500000))
+    print("fn(500000) =", fn(500000), "\n")
     # 500009
 
     # agent remembers existing conversation context and builds related function
+    print("\nPROMPT:", "Okay, now make it the next lower prime.")
     fn = fn_builder(
-        "Okay, now make it the next lower prime.",
-        state=state,
-        on_token=pprint_tokens,
+        "Okay, now make it the next lower prime.", state=state, on_token=pprint_tokens
     )
-
-    print(fn(500000))
+    print("fn(500000) =", fn(500000), "\n")
     # 499979
 
 

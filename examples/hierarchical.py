@@ -83,6 +83,7 @@ def main():
     should be artificial but realistic and span 10 years.
     """
 
+    print("\nPROMPT:", idea)
     plot = idea_to_plot(idea, on_token=pprint_tokens)
     plot.write_image("examples/seasonal.png")
     # see examples/seasonal.png

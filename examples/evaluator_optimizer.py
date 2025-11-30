@@ -54,6 +54,7 @@ def review_joke(joke: str) -> Review:  # type: ignore[return-value]
 
 def main():
     # create an initial joke
+    print("\nPROMPT:", "pun about programming and fish")
     joke = create_joke("pun about programming and fish", on_token=pprint_tokens)
 
     # hone the joke until it meets the quality criteria
