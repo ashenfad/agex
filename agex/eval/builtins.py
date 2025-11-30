@@ -571,6 +571,8 @@ BUILTINS = {
     "reversed": reversed,
     "zip": zip,
     "enumerate": enumerate,
+    "iter": iter,
+    "next": next,
     "map": map,
     "filter": filter,
     # Type introspection
