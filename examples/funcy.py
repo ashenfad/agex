@@ -3,6 +3,8 @@ Function Generation
 
 Agent generates executable Python functions that can be called directly in your
 program. Demonstrates runtime interoperability beyond JSON serialization.
+
+https://asciinema.org/a/ZqYiNf6AJoskeVkcjPQAalgba
 """
 
 import math
@@ -13,9 +15,7 @@ from agex import Agent, Versioned, connect_llm, pprint_tokens
 funcy_agent = Agent(
     name="funcy",
     primer="You are great at providing custom functions to the user.",
-    llm_client=connect_llm(
-        provider="openai", model="gpt-5-nano", reasoning_effort="minimal"
-    ),
+    llm_client=connect_llm(provider="anthropic", model="claude-haiku-4-5"),
 )
 funcy_agent.module(math, visibility="low")
 

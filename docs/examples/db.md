@@ -61,6 +61,7 @@ print(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
 
 Working with live objects like a database connection while also using [`Versioned`](../api/state.md) state is one of `agex`'s most compelling features. Unpicklable objects (like cursors) are automatically handled - they work naturally in single-turn use, and provide clear error messages if accidentally reused across turns.
 
+[![asciicast](https://asciinema.org/a/LM0phpZWktTueeenfOuZBIp5r.svg)](https://asciinema.org/a/LM0phpZWktTueeenfOuZBIp5r)
 —
 
 Source: [https://github.com/ashenfad/agex/blob/main/examples/db.py](https://github.com/ashenfad/agex/blob/main/examples/db.py)

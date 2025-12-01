@@ -87,6 +87,7 @@ plot.show() # or plot.write_image(...)
 -   **Clear Separation of Concerns:** Each agent has a targeted primer and a specific set of capabilities, helping agents focus their skills.
 -   **Seamless Data Flow:** Complex, rich objects like NumPy arrays and Plotly Figures flow directly between agents with no need for intermediate JSON serialization or wrapper tools.
 
+[![asciicast](https://asciinema.org/a/Ce5oarxRbu58YsE5Kk5URiFu0.svg)](https://asciinema.org/a/Ce5oarxRbu58YsE5Kk5URiFu0)
 ---
 
 Source: [https://github.com/ashenfad/agex/blob/main/examples/hierarchical.py](https://github.com/ashenfad/agex/blob/main/examples/hierarchical.py)

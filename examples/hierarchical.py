@@ -6,6 +6,8 @@ and visualization. A sub-agent's task is the orchestrator's fn. The signature
 is the contract between them.
 
 Bulk data and plots flow between agents without special handling.
+
+https://asciinema.org/a/Ce5oarxRbu58YsE5Kk5URiFu0
 """
 
 import random
@@ -14,11 +16,9 @@ import numpy as np
 import plotly.graph_objects as go
 
 from agex import Agent, connect_llm, pprint_tokens
-from agex.helpers import register_numpy, register_plotly
+from agex.helpers import register_numpy, register_pandas, register_plotly
 
-llm_client = connect_llm(
-    provider="openai", model="gpt-5-nano", reasoning_effort="medium"
-)
+llm_client = connect_llm(provider="anthropic", model="claude-haiku-4-5")
 
 
 # define the data-making agent and give it numpy and random
@@ -42,6 +42,7 @@ plotty = Agent(
 # use helpers for our plotting agent
 register_plotly(plotty)
 register_numpy(plotty)
+register_pandas(plotty)
 
 # define the orchestrator agent, no special modules are needed
 orchestrator = Agent(
@@ -87,6 +88,7 @@ def main():
     plot = idea_to_plot(idea, on_token=pprint_tokens)
     plot.write_image("examples/seasonal.png")
     # see examples/seasonal.png
+    print("Plot saved to examples/seasonal.png")
 
 
 if __name__ == "__main__":

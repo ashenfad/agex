@@ -7,6 +7,8 @@ For more details:
 - https://langchain-ai.github.io/langgraph/tutorials/workflows/#evaluator-optimizer
 - https://github.com/lastmile-ai/mcp-agent?tab=readme-ov-file#evaluator-optimizer
 - https://www.anthropic.com/engineering/building-effective-agents
+
+https://asciinema.org/a/ysCzHbopaKO9s5UPhQJsVWA4o
 """
 
 from dataclasses import dataclass
@@ -14,7 +16,7 @@ from typing import Literal
 
 from agex import Agent, connect_llm, pprint_tokens
 
-client = connect_llm(provider="openai", model="gpt-5-nano", reasoning_effort="low")
+client = connect_llm(provider="anthropic", model="claude-haiku-4-5")
 
 optimizer = Agent(
     name="optimizer", primer="You create and hone jokes.", llm_client=client

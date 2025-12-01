@@ -46,6 +46,8 @@ Why this works:
 - Visibility control: signatures are enough for well-known libs.
 - Minimal ceremony: you define intent (signature + docstring); the agent provides implementation at runtime.
 
+[![asciicast](https://asciinema.org/a/KDPJD3bzk6dsN0VS6HtLQ1223.svg)](https://asciinema.org/a/KDPJD3bzk6dsN0VS6HtLQ1223)
+
 —
 
 Source: [https://github.com/ashenfad/agex/blob/main/examples/mathy.py](https://github.com/ashenfad/agex/blob/main/examples/mathy.py)

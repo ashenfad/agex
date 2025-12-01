@@ -58,6 +58,7 @@ Why it’s useful:
 - Typed feedback loop via a shared `Review` dataclass
 - Works well for refinement, critique, and QA
 
+[![asciicast](https://asciinema.org/a/ysCzHbopaKO9s5UPhQJsVWA4o.svg)](https://asciinema.org/a/ysCzHbopaKO9s5UPhQJsVWA4o)
 —
 
 Source: [https://github.com/ashenfad/agex/blob/main/examples/evaluator_optimizer.py](https://github.com/ashenfad/agex/blob/main/examples/evaluator_optimizer.py)

@@ -5,10 +5,7 @@ Agent works directly with sqlite3.Connection and Cursor objects - no wrapper
 classes needed. Demonstrates stateful object management with live database
 connections.
 
-Note: This example uses versioned storage for state checkpointing and cross-process
-persistence, which requires method chaining for unpickleable objects like cursors.
-The agent is coached via detailed primer instructions on how to work within these
-constraints effectively.
+https://asciinema.org/a/LM0phpZWktTueeenfOuZBIp5r
 """
 
 import sqlite3
@@ -21,9 +18,7 @@ from agex import Agent, Versioned, connect_llm, pprint_tokens
 db = Agent(
     name="db_agent",
     primer=PRIMER,
-    llm_client=connect_llm(
-        provider="openai", model="gpt-5-nano", reasoning_effort="low"
-    ),
+    llm_client=connect_llm(provider="anthropic", model="claude-haiku-4-5"),
 )
 
 # create an in-memory database and register the connection with the agent

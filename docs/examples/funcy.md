@@ -76,6 +76,7 @@ Why this is different:
 - Works with your existing libraries — the agent composes them in code.
 - Persistent context allows progressive capability building.
 
+[![asciicast](https://asciinema.org/a/ZqYiNf6AJoskeVkcjPQAalgba.svg)](https://asciinema.org/a/ZqYiNf6AJoskeVkcjPQAalgba)
 —
 
 Source: [https://github.com/ashenfad/agex/blob/main/examples/funcy.py](https://github.com/ashenfad/agex/blob/main/examples/funcy.py)
