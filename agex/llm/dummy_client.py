@@ -56,6 +56,7 @@ class DummyLLMClient(LLMClient):
         from agex.render.events import render_events_as_markdown
 
         max_tokens = kwargs.get("max_tokens", 4096)
+        has_unsupported_images = False
         try:
             messages_dicts = render_events_as_markdown(events, self.model, max_tokens)
             # Store rendered messages for inspection
@@ -63,7 +64,6 @@ class DummyLLMClient(LLMClient):
             self.all_rendered_messages.append(messages_dicts)
 
             # Check for image export failures in rendered messages
-            has_unsupported_images = False
             for msg in messages_dicts:
                 content = msg.get("content", "")
                 if isinstance(content, str) and (
