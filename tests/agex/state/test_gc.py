@@ -89,3 +89,19 @@ def test_rebased_versioned_rebases_after_snapshot():
     old_commit = snap.commit_hash
     old_versioned_key = f"{old_commit}:a"
     assert store.get(old_versioned_key) is None
+
+
+def test_rebase_drops_unreferenced_events():
+    store = kv.Memory()
+    state = GCVersioned(store, high_water_bytes=1_000, low_water_bytes=200)
+
+    state.set("_event_keep", b"keep")
+    state.set("_event_drop", b"drop")
+    state.set("__event_log__", ["_event_keep"])
+    state.snapshot()
+
+    state.rebase()
+
+    assert state.get("_event_keep") == b"keep"
+    assert state.get("_event_drop") is None
+    assert "_event_drop" not in state.commit_keys
