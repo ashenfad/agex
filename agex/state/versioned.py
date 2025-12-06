@@ -15,6 +15,11 @@ from .live import Live
 PARENT_COMMIT = "__parent_commit__%s"
 COMMIT_KEYSET = "__commit_keyset__%s"
 HEAD_COMMIT = "__head_commit__"
+META_KEY = "__meta__%s"
+TOTAL_VAR_SIZE_KEY = "__total_var_size__%s"
+
+# key -> (last_touch_counter, size_bytes)
+MetaEntry = tuple[int, int | None]
 
 
 @dataclass
@@ -52,6 +57,8 @@ class Versioned(State):
                     COMMIT_KEYSET % commit_hash: pickle.dumps({}),
                     PARENT_COMMIT % commit_hash: pickle.dumps(None),
                     HEAD_COMMIT: pickle.dumps(commit_hash),
+                    META_KEY % commit_hash: pickle.dumps({}),
+                    TOTAL_VAR_SIZE_KEY % commit_hash: pickle.dumps(0),
                 }
                 store.set_many(**initial_metadata)
 
@@ -73,9 +80,45 @@ class Versioned(State):
         else:
             self.commit_keys = {}
 
+        # Metadata tracking for GC/rebase (last touch, serialized size)
+        self.meta: dict[str, MetaEntry] = {}
+        meta_bytes = self.long_term.get(META_KEY % self.current_commit)
+        if meta_bytes is not None:
+            try:
+                self.meta = pickle.loads(meta_bytes)
+            except Exception:
+                self.meta = {}
+        self._touch_counter = (
+            max((entry[0] for entry in self.meta.values()), default=0)
+            if self.meta
+            else 0
+        )
+
     @property
     def base_store(self) -> "State":
         return self
+
+    @staticmethod
+    def _is_user_key(key: str) -> bool:
+        return not key.startswith("__")
+
+    def _next_touch(self) -> int:
+        self._touch_counter += 1
+        return self._touch_counter
+
+    def _note_touch(self, key: str) -> None:
+        if not self._is_user_key(key):
+            return
+        # Always move the touch counter forward for the key
+        last_touch = self._next_touch()
+        _, size = self.meta.get(key, (last_touch, None))
+        self.meta[key] = (last_touch, size)
+
+    def _note_size(self, key: str, size: int) -> None:
+        if not self._is_user_key(key):
+            return
+        last_touch, _ = self.meta.get(key, (self._next_touch(), None))
+        self.meta[key] = (last_touch, size)
 
     def _versioned_key(self, key: str, commit_hash: str | None = None) -> str:
         return f"{commit_hash or self.current_commit}:{key}"
@@ -83,7 +126,9 @@ class Versioned(State):
     def get(self, key: str, default: Any = None) -> Any:
         # First check live (in-memory changes)
         if key in self.live:
-            return self.live.get(key)
+            value = self.live.get(key)
+            self._note_touch(key)
+            return value
 
         # Then check committed state
         if (
@@ -118,6 +163,8 @@ class Versioned(State):
                 if key not in self.accessed_objects:
                     self.accessed_objects[key] = (original_hash, value)
 
+                self._note_touch(key)
+                self._note_size(key, len(serialized_bytes))
                 return value
 
         return default
@@ -127,10 +174,12 @@ class Versioned(State):
         self.removed.discard(key)
         # Remove from mutation tracking since we're explicitly setting
         self.accessed_objects.pop(key, None)
+        self._note_touch(key)
 
     def remove(self, key: str) -> bool:
         # Remove from mutation tracking
         self.accessed_objects.pop(key, None)
+        self.meta.pop(key, None)
 
         removed_from_live = self.live.remove(key)
         removed_from_commit = False
@@ -198,6 +247,7 @@ class Versioned(State):
                 try:
                     marker_bytes = pickle.dumps(marker)
                     mutations[key] = marker_bytes
+                    self._note_touch(key)
                 except Exception:
                     # Marker itself failed to pickle (should never happen)
                     unsavable_keys.append(key)
@@ -209,6 +259,7 @@ class Versioned(State):
                     self.live.set(key, obj_ref)
                 # Cache the serialized bytes to avoid re-serializing in snapshot()
                 mutations[key] = current_bytes
+                self._note_touch(key)
 
         return mutations, unsavable_keys
 
@@ -217,15 +268,15 @@ class Versioned(State):
         mutations, unsavable_keys = self._detect_mutations()
         unsaved_keys = list(unsavable_keys)
 
-        if not self.live:
-            # If nothing happened, don't create an empty commit.
-            # Just return the current commit hash.
+        if not self.live and not self.removed and not mutations:
+            # If nothing changed (no writes, no removals, no mutations), don't create a new commit.
             self.accessed_objects.clear()  # Clear tracking
             return SnapshotResult(self.current_commit, unsaved_keys)
 
         new_hash = _get_commit_hash()
         diffs = {}
         new_commit_keys = {}
+        new_meta: dict[str, MetaEntry] = {}
 
         # Store the order of changes for later diffing.
         diff_keys = tuple(k for k in self.live.keys() if not k.startswith("__"))
@@ -236,6 +287,8 @@ class Versioned(State):
             if key in self.removed:
                 continue
             new_commit_keys[key] = value
+            if self._is_user_key(key) and key in self.meta:
+                new_meta[key] = self.meta[key]
 
         # layer recent writes on top of existing keys
         for key, value in self.live.items():
@@ -265,11 +318,25 @@ class Versioned(State):
             if serialized_value is not None:
                 diffs[versioned_key] = serialized_value
                 new_commit_keys[key] = versioned_key
+                if self._is_user_key(key):
+                    self._note_size(key, len(serialized_value))
+                    if key in self.meta:
+                        new_meta[key] = self.meta[key]
+                    else:
+                        # _note_size will have seeded the meta entry if missing
+                        new_meta[key] = self.meta.get(
+                            key, (self._touch_counter, len(serialized_value))
+                        )
 
         # Serialize commit metadata and update HEAD
         diffs[COMMIT_KEYSET % new_hash] = pickle.dumps(new_commit_keys)
         diffs[PARENT_COMMIT % new_hash] = pickle.dumps(self.current_commit)
         diffs[HEAD_COMMIT] = pickle.dumps(new_hash)
+
+        # Persist GC/rebase metadata for this commit
+        diffs[META_KEY % new_hash] = pickle.dumps(new_meta)
+        total_var_size = sum(size for _, size in new_meta.values() if size is not None)
+        diffs[TOTAL_VAR_SIZE_KEY % new_hash] = pickle.dumps(total_var_size)
 
         self.long_term.set_many(**diffs)
         self.commit_keys = new_commit_keys
@@ -277,6 +344,7 @@ class Versioned(State):
         self.removed = set()
         self.live = Live()
         self.accessed_objects.clear()  # Clear mutation tracking
+        self.meta = new_meta
 
         return SnapshotResult(new_hash, unsaved_keys)
 
