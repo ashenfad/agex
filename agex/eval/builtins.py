@@ -279,7 +279,7 @@ def _dir(evaluator, *args, **kwargs) -> list[str]:
     from agex.state.log import add_event_to_log
 
     event = OutputEvent(agent_name=evaluator.agent.name, parts=[final_attrs])
-    add_event_to_log(evaluator.state, event)
+    add_event_to_log(evaluator.state, event, on_event=evaluator.on_event)
 
     return final_attrs
 
