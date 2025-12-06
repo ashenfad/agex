@@ -108,15 +108,32 @@ class GCVersioned(Versioned):
         system_keys = {k: v for k, v in self.commit_keys.items() if _is_system_key(k)}
         user_meta = {k: v for k, v in meta.items() if not _is_system_key(k)}
 
+        # Resolve event references and drop unreferenced event blobs preemptively.
+        event_refs = set(self.get("__event_log__", []))
+        event_keys = {k for k in self.commit_keys if k.startswith("_event_")}
+        unref_events = event_keys - event_refs
+
+        retained_keys = set(system_keys.keys()) | set(user_meta.keys())
+        total = sum(s or 0 for _, s in user_meta.values())
+        dropped: list[str] = []
+
+        for key in unref_events:
+            if key in retained_keys:
+                retained_keys.discard(key)
+            if key in user_meta:
+                size = user_meta[key][1] or 0
+                total -= size
+                user_meta.pop(key, None)
+            dropped.append(key)
+
+        # Always retain referenced events (they should not be dropped by GC).
+        retained_keys |= event_refs
+
         # Calculate drop list ordered by oldest touch then largest size
         candidates: list[tuple[str, tuple[int, int | None]]] = sorted(
             user_meta.items(), key=lambda kv: (kv[1][0], -(kv[1][1] or 0))
         )
 
-        retained_keys = set(system_keys.keys()) | set(user_meta.keys())
-        total = sum(s or 0 for _, s in user_meta.values())
-
-        dropped: list[str] = []
         for key, (_touch, size) in candidates:
             if total <= self.low_water:
                 break
