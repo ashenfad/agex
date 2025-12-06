@@ -44,6 +44,16 @@ class KVStore(ABC):
         """Check if key exists in store."""
         pass
 
+    @abstractmethod
+    def remove(self, key: str) -> None:
+        """Remove a key if present."""
+        pass
+
+    @abstractmethod
+    def remove_many(self, *keys: str) -> None:
+        """Remove multiple keys."""
+        pass
+
 
 class Memory(KVStore):
     """A memory-backed KV store that stores values as bytes."""
@@ -73,6 +83,13 @@ class Memory(KVStore):
 
     def __contains__(self, key: str) -> bool:
         return key in self.memory
+
+    def remove(self, key: str) -> None:
+        self.memory.pop(key, None)
+
+    def remove_many(self, *keys: str) -> None:
+        for key in keys:
+            self.memory.pop(key, None)
 
 
 SIXTY_FOUR_MB = 64 * 1024 * 1024
@@ -126,6 +143,15 @@ class Cache(KVStore):
 
     def __contains__(self, key: str) -> bool:
         return key in self.cache or key in self.store
+
+    def remove(self, key: str) -> None:
+        self.cache.pop(key, None)
+        self.store.remove(key)
+
+    def remove_many(self, *keys: str) -> None:
+        for key in keys:
+            self.cache.pop(key, None)
+        self.store.remove_many(*keys)
 
 
 class WriteBehind(KVStore):
@@ -181,6 +207,12 @@ class WriteBehind(KVStore):
         self.flush()
         return key in self.store
 
+    def remove(self, key: str) -> None:
+        self._queue.put(("remove", (key,), {}))
+
+    def remove_many(self, *keys: str) -> None:
+        self._queue.put(("remove_many", keys, {}))
+
     def flush(self) -> None:
         """Wait for all pending writes to complete."""
         self._queue.join()
@@ -222,3 +254,14 @@ class Disk(KVStore):
 
     def __contains__(self, key: str) -> bool:
         return key in self.store
+
+    def remove(self, key: str) -> None:
+        try:
+            del self.store[key]
+        except KeyError:
+            pass
+
+    def remove_many(self, *keys: str) -> None:
+        with self.store.transact():
+            for key in keys:
+                self.store.delete(key, retry=False)
