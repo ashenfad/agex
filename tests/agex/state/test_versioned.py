@@ -181,3 +181,102 @@ def test_mutation_detection_with_nested_objects():
     old_data = old_state.get("app_data")
     assert old_data["users"][0]["scores"] == [10, 20]
     assert "timeout" not in old_data["config"]
+
+
+def test_meta_tracks_user_keys_and_sizes():
+    import pickle
+
+    store = kv.Memory()
+    state = Versioned(store)
+
+    state.set("a", 123)
+    state.set("__event_log__", ["ignore_me"])
+    commit = state.snapshot().commit_hash
+
+    meta_bytes = store.get(f"__meta__{commit}")
+    total_bytes = store.get(f"__total_var_size__{commit}")
+    assert meta_bytes is not None
+    assert total_bytes is not None
+
+    meta = pickle.loads(meta_bytes)
+    total_size = pickle.loads(total_bytes)
+
+    assert "a" in meta
+    assert "__event_log__" not in meta
+
+    last_touch, size = meta["a"]
+    assert last_touch > 0
+    expected_size = len(pickle.dumps(123))
+    assert size == expected_size
+    assert total_size == expected_size
+
+
+def test_meta_last_touch_persists_across_commits_and_reload():
+    import pickle
+
+    store = kv.Memory()
+    state = Versioned(store)
+
+    state.set("a", 1)
+    commit1 = state.snapshot().commit_hash
+    meta1 = pickle.loads(store.get(f"__meta__{commit1}"))  # type: ignore[arg-type]
+    touch1, size1 = meta1["a"]
+    assert touch1 > 0
+    assert size1 == len(pickle.dumps(1))
+
+    # Touch the key and force a new commit
+    assert state.get("a") == 1
+    state.set("b", 2)  # force a new snapshot
+    commit2 = state.snapshot().commit_hash
+    meta2 = pickle.loads(store.get(f"__meta__{commit2}"))  # type: ignore[arg-type]
+    touch2, size2 = meta2["a"]
+    assert touch2 > touch1  # touch counter advanced
+    assert size2 == size1
+
+    # Reload to ensure metadata is hydrated
+    Versioned(store)
+    meta3_bytes = store.get(f"__meta__{commit2}")
+    assert meta3_bytes is not None
+    meta3 = pickle.loads(meta3_bytes)
+    assert meta3["a"][0] == touch2
+    assert meta3["b"][1] == len(pickle.dumps(2))
+
+
+def test_meta_removal_prunes_user_key():
+    import pickle
+
+    store = kv.Memory()
+    state = Versioned(store)
+
+    state.set("a", "keep?")
+    state.snapshot()
+
+    state.remove("a")
+    commit = state.snapshot().commit_hash
+    meta_bytes = store.get(f"__meta__{commit}")
+    assert meta_bytes is not None
+    meta = pickle.loads(meta_bytes)
+    assert "a" not in meta
+
+
+def test_mutation_updates_touch_and_size():
+    import pickle
+
+    store = kv.Memory()
+    state = Versioned(store)
+
+    data = [1, 2, 3]
+    state.set("lst", data)
+    commit1 = state.snapshot().commit_hash
+    meta1 = pickle.loads(store.get(f"__meta__{commit1}"))  # type: ignore[arg-type]
+    touch1, size1 = meta1["lst"]
+
+    # Mutate in place
+    retrieved = state.get("lst")
+    retrieved.append(4)
+    commit2 = state.snapshot().commit_hash
+    meta2 = pickle.loads(store.get(f"__meta__{commit2}"))  # type: ignore[arg-type]
+    touch2, size2 = meta2["lst"]
+
+    assert touch2 > touch1  # mutation counts as a touch
+    assert size2 > size1  # serialized size grows with added element
