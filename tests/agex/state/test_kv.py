@@ -242,6 +242,19 @@ class TestDisk:
         items = dict(self.store.items())
         assert items["empty"] == b""
 
+    def test_disk_remove_and_remove_many(self):
+        self.store.set_many(a=b"1", b=b"2", c=b"3")
+        assert "a" in self.store and "b" in self.store and "c" in self.store
+
+        self.store.remove("a")
+        assert "a" not in self.store
+        assert self.store.get("a") is None
+
+        self.store.remove_many("b", "missing")
+        assert "b" not in self.store
+        assert "c" in self.store
+        assert self.store.get("c") == b"3"
+
 
 class TestWriteBehind:
     """Test the WriteBehind KV store wrapper."""
@@ -298,3 +311,57 @@ class TestWriteBehind:
         captured = capsys.readouterr()
         assert "WriteBehind error" in captured.err
         assert "Expected bytes" in captured.err
+
+    def test_write_behind_remove(self):
+        store = Memory()
+        wb = WriteBehind(store)
+        wb.set_many(a=b"1", b=b"2")
+        wb.flush()
+
+        wb.remove("a")
+        wb.flush()
+        assert "a" not in wb
+        assert store.get("a") is None
+
+        wb.remove_many("b", "missing")
+        wb.flush()
+        assert "b" not in wb
+        assert store.get("b") is None
+
+
+class TestCacheRemove:
+    def test_cache_remove_passthrough(self):
+        backing = Memory()
+        cache = Cache(backing, max_bytes=1024)
+        cache.set_many(a=b"1", b=b"2")
+
+        cache.remove("a")
+        assert "a" not in cache
+        assert "a" not in backing
+
+        cache.remove_many("b", "missing")
+        assert "b" not in cache
+        assert "b" not in backing
+
+    def test_cache_remove_clears_cache_entry(self):
+        backing = Memory()
+        cache = Cache(backing, max_bytes=1024)
+        backing.set("x", b"cached")
+        # prime cache
+        assert cache.get("x") == b"cached"
+        assert "x" in cache.cache
+
+        cache.remove("x")
+        assert "x" not in cache.cache
+        assert "x" not in backing
+
+
+class TestMemoryRemove:
+    def test_memory_remove(self):
+        store = Memory()
+        store.set_many(a=b"1", b=b"2")
+        store.remove("a")
+        assert "a" not in store
+        assert store.get("a") is None
+        store.remove_many("b", "missing")
+        assert "b" not in store
