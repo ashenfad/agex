@@ -16,7 +16,7 @@ from agex.llm.core import ResponseParseError, TokenChunk
 # XML tag names as constants
 TAG_THINKING = "THINKING"
 TAG_PYTHON = "PYTHON"
-TAG_TITLE = "TITLE"  # Optional, for future use
+TAG_TITLE = "TITLE"
 
 
 @dataclass
@@ -37,7 +37,7 @@ Example:
 <{TAG_TITLE}>Calculating running total</{TAG_TITLE}><{TAG_THINKING}>I need to calculate the sum of the numbers and return it.</{TAG_THINKING}><{TAG_PYTHON}>total = sum(numbers)
 task_success(total)</{TAG_PYTHON}>
 
-Keep titles short!
+Keep titles short but always include them before thinking/code!
 """
 
 
