@@ -46,8 +46,7 @@ class GeminiClient(LLMClient):
         request_kwargs = {**self._kwargs, **kwargs}
 
         # Use rendering helper to convert events to markdown messages
-        max_tokens = request_kwargs.get("max_tokens", 4096)
-        messages_dicts = render_events_as_markdown(events, self._model, max_tokens)
+        messages_dicts = render_events_as_markdown(events)
 
         # Convert to Gemini format (with system prepended)
         gemini_messages = self._convert_messages_to_gemini_format(

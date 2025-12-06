@@ -81,8 +81,7 @@ class AnthropicClient(LLMClient):
         request_kwargs = {**self._kwargs, **kwargs}
 
         # Use rendering helper to convert events to markdown messages
-        max_tokens = request_kwargs.get("max_tokens", MAX_TOKENS)
-        messages_dicts = render_events_as_markdown(events, self._model, max_tokens)
+        messages_dicts = render_events_as_markdown(events)
 
         # Convert to Anthropic format
         conversation_messages = [
@@ -167,8 +166,7 @@ class AnthropicClient(LLMClient):
         request_kwargs = {**self._kwargs, **kwargs}
 
         # Use XML rendering for streaming (instead of tool calling)
-        max_tokens = request_kwargs.get("max_tokens", MAX_TOKENS)
-        messages_dicts = render_events_as_xml(events, self._model, max_tokens)
+        messages_dicts = render_events_as_xml(events)
 
         # Convert to Anthropic format
         conversation_messages = [
