@@ -12,6 +12,7 @@ from ..render.primitives import (
     render_fail,
     render_output_parts_full,
     render_success,
+    render_summary,
     render_task_start,
 )
 
@@ -264,6 +265,7 @@ class BaseEvent(BaseModel):
             "FailEvent": "❌",
             "ClarifyEvent": "❓",
             "ErrorEvent": "⚠️",
+            "SummaryEvent": "📝",
         }
         emoji = emoji_map.get(class_name, "📋")
 
@@ -685,6 +687,69 @@ class ClarifyEvent(BaseEvent):
         )
 
 
+class SummaryEvent(BaseEvent):
+    """Represents a summary of multiple older events."""
+
+    summary: str  # The summary text
+    summarized_event_count: int  # Number of events summarized
+    original_tokens: int  # Token cost of original events
+
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        # Summary is rendered with a header indicating compression
+        _, tokens = render_summary(
+            self.summary, self.summarized_event_count, self.original_tokens
+        )
+        self.full_detail_tokens = tokens
+        return self
+
+    def __str__(self) -> str:
+        """Detailed string with summary info."""
+        base = super().__str__()
+        compression_ratio = (
+            f"{self.original_tokens} → {self.full_detail_tokens} tokens"
+            if self.full_detail_tokens > 0
+            else f"{self.original_tokens} tokens"
+        )
+        return f"{base}\n  Summarized: {self.summarized_event_count} events ({compression_ratio})"
+
+    def _repr_markdown_(self) -> str:
+        """Rich markdown with summary details."""
+        base = super()._repr_markdown_()
+        compression_ratio = (
+            f"{self.original_tokens} → {self.full_detail_tokens} tokens"
+            if self.full_detail_tokens > 0
+            else f"{self.original_tokens} tokens"
+        )
+        return f"""{base}  
+**Summary:** {self.summarized_event_count} events ({compression_ratio})
+
+{self.summary}"""
+
+    def _repr_html_(self) -> str:
+        """Rich HTML representation for IPython/Jupyter environments."""
+        import html
+
+        compression_ratio = (
+            f"{self.original_tokens} → {self.full_detail_tokens} tokens"
+            if self.full_detail_tokens > 0
+            else f"{self.original_tokens} tokens"
+        )
+        header = (
+            f"📊 Summary of {self.summarized_event_count} events ({compression_ratio})"
+        )
+        content = _event_section(header, html.escape(self.summary), "#6a737d")
+
+        return _event_html_container(
+            "📝",
+            "SummaryEvent",
+            self.full_namespace,
+            self.timestamp,
+            content,
+            self.commit_hash,
+        )
+
+
 Event = (
     TaskStartEvent
     | ActionEvent
@@ -693,6 +758,7 @@ Event = (
     | SuccessEvent
     | FailEvent
     | ClarifyEvent
+    | SummaryEvent
 )
 
 

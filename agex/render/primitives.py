@@ -621,6 +621,20 @@ def render_fail(message: str) -> tuple[str, int]:
     return text, tokens
 
 
+def render_summary(
+    summary: str, event_count: int, original_tokens: int
+) -> tuple[str, int]:
+    """
+    Render a summary event.
+
+    Returns:
+        (summary_text, token_count)
+    """
+    text = f"📝 Summary of {event_count} previous events (originally {original_tokens} tokens):\n\n{summary}"
+    tokens = count_tokens(text)
+    return text, tokens
+
+
 def render_output_parts_full(
     parts: list[Any], budget: int = HI_DETAIL_BUDGET
 ) -> tuple[list[ContentPart], int]:

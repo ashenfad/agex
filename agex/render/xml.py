@@ -13,11 +13,18 @@ from agex.agent.events import (
     FailEvent,
     OutputEvent,
     SuccessEvent,
+    SummaryEvent,
     TaskStartEvent,
 )
 from agex.llm.core import ContentPart, ImagePart, TextPart
 from agex.llm.xml import TAG_PYTHON, TAG_THINKING, TAG_TITLE
-from agex.render.primitives import HI_DETAIL_BUDGET, render_output_parts_full
+from agex.render.primitives import (
+    HI_DETAIL_BUDGET,
+    render_fail,
+    render_output_parts_full,
+    render_success,
+    render_summary,
+)
 
 
 def render_events_as_xml(events: List[Event]) -> List[dict]:
@@ -84,17 +91,20 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
 
         elif isinstance(event, SuccessEvent):
             # Render success marker using primitives
-            from agex.render.primitives import render_success
-
             text, _ = render_success(event.result)
             messages.append({"role": "assistant", "content": text})
 
         elif isinstance(event, FailEvent):
             # Render fail marker using primitives
-            from agex.render.primitives import render_fail
-
             text, _ = render_fail(event.message)
             messages.append({"role": "assistant", "content": text})
+
+        elif isinstance(event, SummaryEvent):
+            # Render summary event using primitives
+            text, _ = render_summary(
+                event.summary, event.summarized_event_count, event.original_tokens
+            )
+            messages.append({"role": "user", "content": text})
 
     return messages
 
