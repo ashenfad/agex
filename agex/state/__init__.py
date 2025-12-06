@@ -1,9 +1,10 @@
-"""
-A state management system for tic agents.
-"""
+"""A state management system for tic agents."""
+
+from typing import cast
 
 from ..agent.events import Event
 from .core import State, is_live_root
+from .gc import GCVersioned, RebaseResult
 from .kv import KVStore
 from .live import Live
 from .namespaced import Namespaced
@@ -18,17 +19,18 @@ __all__ = [
     "Namespaced",
     "Scoped",
     "Versioned",
+    "RebaseResult",
+    "GCVersioned",
 ]
 
 
-def _namespaced(
-    state: Versioned | Live | Namespaced, namespaces: list[str]
-) -> Namespaced | Versioned | Live:
+def _namespaced(state: State, namespaces: list[str]) -> State:
+    base = cast(Versioned | Namespaced | Live, state)
     if namespaces:
-        state = Namespaced(state, namespaces[0])
+        base = Namespaced(base, namespaces[0])
         if namespaces[1:]:
-            return _namespaced(state, namespaces[1:])
-    return state
+            return _namespaced(base, namespaces[1:])
+    return base
 
 
 def events(state: Versioned | Live) -> list[Event]:
