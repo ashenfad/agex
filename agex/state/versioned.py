@@ -32,6 +32,13 @@ def _get_commit_hash() -> str:
     return secrets.token_hex(8)
 
 
+def get_commit_hash() -> str:
+    """
+    Public helper to generate a new commit hash.
+    """
+    return _get_commit_hash()
+
+
 def _fast_hash(data: bytes) -> str:
     """Compute fast hash of bytes data."""
     return xxhash.xxh64(data).hexdigest()
