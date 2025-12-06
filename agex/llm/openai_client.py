@@ -73,8 +73,7 @@ class OpenAIClient(LLMClient):
         request_kwargs = {**self._kwargs, **kwargs}
 
         # Use rendering helper to convert events to markdown messages
-        max_tokens = request_kwargs.get("max_tokens", 4096)
-        messages_dicts = render_events_as_markdown(events, self._model, max_tokens)
+        messages_dicts = render_events_as_markdown(events)
 
         # Add system message at the beginning
         full_messages = [{"role": "system", "content": system}] + messages_dicts

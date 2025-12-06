@@ -313,7 +313,6 @@ class TestEventSystem:
         from agex.render.events import render_events_as_markdown
         from agex.state.log import get_events_from_log
 
-        agent = Agent(name="filter_test_agent")
         state = Versioned()
 
         # Manually add events including an ErrorEvent
@@ -348,7 +347,7 @@ class TestEventSystem:
 
         # Render events as messages (should filter out ErrorEvent)
         all_events = get_events_from_log(state)
-        messages = render_events_as_markdown(all_events, agent.llm_client.model, 10000)
+        messages = render_events_as_markdown(all_events)
 
         # Should have: initial task message, action message, success message
         # Should NOT include anything from ErrorEvent

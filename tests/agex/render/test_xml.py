@@ -23,7 +23,7 @@ class TestRenderEventsAsXML:
                 message="Calculate sum of [1, 2, 3]",
             )
         ]
-        messages = render_events_as_xml(events, "gpt-4", 4096)
+        messages = render_events_as_xml(events)
 
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
@@ -39,7 +39,7 @@ class TestRenderEventsAsXML:
                 code="result = sum([1, 2, 3])\ntask_success(result)",
             )
         ]
-        messages = render_events_as_xml(events, "gpt-4", 4096)
+        messages = render_events_as_xml(events)
 
         assert len(messages) == 1
         assert messages[0]["role"] == "assistant"
@@ -57,7 +57,7 @@ class TestRenderEventsAsXML:
     def test_output_event_text_only(self):
         """Test rendering OutputEvent with text only."""
         events = [OutputEvent(agent_name="test_agent", parts=["6"])]
-        messages = render_events_as_xml(events, "gpt-4", 4096)
+        messages = render_events_as_xml(events)
 
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
@@ -66,7 +66,7 @@ class TestRenderEventsAsXML:
     def test_success_event(self):
         """Test rendering SuccessEvent."""
         events = [SuccessEvent(agent_name="test_agent", result=6)]
-        messages = render_events_as_xml(events, "gpt-4", 4096)
+        messages = render_events_as_xml(events)
 
         assert len(messages) == 1
         assert messages[0]["role"] == "assistant"
@@ -76,7 +76,7 @@ class TestRenderEventsAsXML:
     def test_fail_event(self):
         """Test rendering FailEvent."""
         events = [FailEvent(agent_name="test_agent", message="Invalid input")]
-        messages = render_events_as_xml(events, "gpt-4", 4096)
+        messages = render_events_as_xml(events)
 
         assert len(messages) == 1
         assert messages[0]["role"] == "assistant"
@@ -101,7 +101,7 @@ class TestRenderEventsAsXML:
             OutputEvent(agent_name="test_agent", parts=["Result"]),
             SuccessEvent(agent_name="test_agent", result="done"),
         ]
-        messages = render_events_as_xml(events, "gpt-4", 4096)
+        messages = render_events_as_xml(events)
 
         assert len(messages) == 4
         assert messages[0]["role"] == "user"

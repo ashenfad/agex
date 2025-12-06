@@ -3,9 +3,17 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Callable, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..eval.objects import ImageAction, PrintAction
+from ..render.primitives import (
+    count_tokens,
+    render_action_markdown,
+    render_fail,
+    render_output_parts_full,
+    render_success,
+    render_task_start,
+)
 
 
 def _suppress_stdout(func: Callable[[], Any]) -> Any:
@@ -228,6 +236,7 @@ class BaseEvent(BaseModel):
     full_namespace: str = ""  # Will be set by add_event_to_log
     commit_hash: str | None = None
     source: Literal["setup", "main"] = "main"  # Execution phase
+    full_detail_tokens: int = 0  # Cached token estimate for full render
 
     def __repr_args__(self):
         """Override Pydantic's repr args to customize the display."""
@@ -301,6 +310,12 @@ class TaskStartEvent(BaseEvent):
     inputs: dict[str, Any]
     message: str  # The formatted task message for the LLM
 
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        _, tokens = render_task_start(self.message)
+        self.full_detail_tokens = tokens
+        return self
+
     def __str__(self) -> str:
         """Detailed string with task information."""
         base = super().__str__()
@@ -355,6 +370,12 @@ class ActionEvent(BaseEvent):
     title: str = ""
     thinking: str
     code: str
+
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        _, tokens = render_action_markdown(self.thinking, self.code, self.title)
+        self.full_detail_tokens = tokens
+        return self
 
     def __str__(self) -> str:
         """Detailed string with thinking and code preview."""
@@ -413,6 +434,12 @@ class OutputEvent(BaseEvent):
 
     parts: list[Any]
 
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        _, tokens = render_output_parts_full(self.parts)
+        self.full_detail_tokens = tokens
+        return self
+
     def __str__(self) -> str:
         """Detailed string with output summary."""
         base = super().__str__()
@@ -456,6 +483,12 @@ class ErrorEvent(BaseEvent):
 
     error: Any  # The actual exception object
     recoverable: bool = True  # Whether the task can continue after this error
+
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        # ErrorEvents are not shown to agents, but compute tokens for consistency
+        self.full_detail_tokens = count_tokens(str(self.error))
+        return self
 
     def __str__(self) -> str:
         """Detailed string with error information."""
@@ -524,6 +557,12 @@ class SuccessEvent(BaseEvent):
 
     result: Any
 
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        _, tokens = render_success(self.result)
+        self.full_detail_tokens = tokens
+        return self
+
     def __str__(self) -> str:
         """Detailed string with result preview."""
         base = super().__str__()
@@ -564,6 +603,12 @@ class FailEvent(BaseEvent):
 
     message: str
 
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        _, tokens = render_fail(self.message)
+        self.full_detail_tokens = tokens
+        return self
+
     def __str__(self) -> str:
         """Detailed string with failure message."""
         base = super().__str__()
@@ -600,6 +645,13 @@ class ClarifyEvent(BaseEvent):
     """Fired when the task is paused for clarification."""
 
     message: str
+
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        # Clarify is similar to fail in rendering
+        text = f"❓ Clarification needed: {self.message}"
+        self.full_detail_tokens = count_tokens(text)
+        return self
 
     def __str__(self) -> str:
         """Detailed string with clarification message."""

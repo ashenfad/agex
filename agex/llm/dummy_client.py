@@ -55,10 +55,9 @@ class DummyLLMClient(LLMClient):
         # allowing us to see what happens when images fail to serialize
         from agex.render.events import render_events_as_markdown
 
-        max_tokens = kwargs.get("max_tokens", 4096)
         has_unsupported_images = False
         try:
-            messages_dicts = render_events_as_markdown(events, self.model, max_tokens)
+            messages_dicts = render_events_as_markdown(events)
             # Store rendered messages for inspection
             self.all_rendered_messages = getattr(self, "all_rendered_messages", [])
             self.all_rendered_messages.append(messages_dicts)
