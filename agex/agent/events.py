@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field, model_validator
 
 from ..eval.objects import ImageAction, PrintAction
 from ..render.primitives import (
+    HI_DETAIL_BUDGET,
+    LOW_DETAIL_BUDGET,
     count_tokens,
     render_action_markdown,
     render_fail,
@@ -236,6 +238,7 @@ class BaseEvent(BaseModel):
     commit_hash: str | None = None
     source: Literal["setup", "main"] = "main"  # Execution phase
     full_detail_tokens: int = 0  # Cached token estimate for full render
+    low_detail_tokens: int = 0  # Cached token estimate for low-detail render
 
     def __repr_args__(self):
         """Override Pydantic's repr args to customize the display."""
@@ -312,8 +315,10 @@ class TaskStartEvent(BaseEvent):
 
     @model_validator(mode="after")
     def _compute_tokens(self):
-        _, tokens = render_task_start(self.message)
-        self.full_detail_tokens = tokens
+        _, hi_tokens = render_task_start(self.message, budget=HI_DETAIL_BUDGET)
+        _, lo_tokens = render_task_start(self.message, budget=LOW_DETAIL_BUDGET)
+        self.full_detail_tokens = hi_tokens
+        self.low_detail_tokens = lo_tokens
         return self
 
     def __str__(self) -> str:
@@ -436,8 +441,10 @@ class OutputEvent(BaseEvent):
 
     @model_validator(mode="after")
     def _compute_tokens(self):
-        _, tokens = render_output_parts_full(self.parts)
-        self.full_detail_tokens = tokens
+        _, hi_tokens = render_output_parts_full(self.parts, budget=HI_DETAIL_BUDGET)
+        _, lo_tokens = render_output_parts_full(self.parts, budget=LOW_DETAIL_BUDGET)
+        self.full_detail_tokens = hi_tokens
+        self.low_detail_tokens = lo_tokens
         return self
 
     def __str__(self) -> str:
@@ -559,8 +566,10 @@ class SuccessEvent(BaseEvent):
 
     @model_validator(mode="after")
     def _compute_tokens(self):
-        _, tokens = render_success(self.result)
-        self.full_detail_tokens = tokens
+        _, hi_tokens = render_success(self.result, budget=HI_DETAIL_BUDGET)
+        _, lo_tokens = render_success(self.result, budget=LOW_DETAIL_BUDGET)
+        self.full_detail_tokens = hi_tokens
+        self.low_detail_tokens = lo_tokens
         return self
 
     def __str__(self) -> str:
@@ -691,6 +700,9 @@ class SummaryEvent(BaseEvent):
     summary: str  # The summary text
     summarized_event_count: int  # Number of events summarized
     original_tokens: int  # Token cost of original events
+    low_detail_threshold: datetime | None = (
+        None  # Events older than this render at low detail
+    )
 
     @model_validator(mode="after")
     def _compute_tokens(self):

@@ -4,6 +4,7 @@ Event rendering utilities for LLM consumption.
 Converts agex events into provider message formats for LLM communication.
 """
 
+from datetime import datetime
 from typing import Any, List
 
 from agex.agent.events import (
@@ -19,10 +20,13 @@ from agex.agent.events import (
 from agex.llm.core import ContentPart, ImagePart, TextPart
 from agex.render.primitives import (
     HI_DETAIL_BUDGET,
+    LOW_DETAIL_BUDGET,
+    render_action_markdown,
     render_fail,
     render_output_parts_full,
     render_success,
     render_summary,
+    render_task_start,
 )
 
 
@@ -36,6 +40,9 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
     This is the default rendering strategy. Individual clients can use
     this or implement their own rendering (e.g., XML for streaming).
 
+    Automatically applies low-detail rendering to old events based on
+    the most recent SummaryEvent's low_detail_threshold.
+
     Args:
         events: List of Event objects to render
 
@@ -47,21 +54,35 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
     # Filter out ErrorEvents (not shown to agents)
     filtered_events = [e for e in events if not isinstance(e, ErrorEvent)]
 
+    # Find low-detail threshold from most recent SummaryEvent
+    low_detail_threshold: datetime | None = None
+    for event in reversed(filtered_events):
+        if isinstance(event, SummaryEvent) and event.low_detail_threshold:
+            low_detail_threshold = event.low_detail_threshold
+            break
+
     for event in filtered_events:
+        # Determine if this event should use low-detail rendering
+        use_low_detail = (
+            low_detail_threshold is not None
+            and event.timestamp < low_detail_threshold
+            and isinstance(event, (TaskStartEvent, OutputEvent, SuccessEvent))
+        )
+        budget = LOW_DETAIL_BUDGET if use_low_detail else HI_DETAIL_BUDGET
+
         if isinstance(event, TaskStartEvent):
-            messages.append({"role": "user", "content": event.message})
+            # Render task start message with appropriate budget
+            text, _ = render_task_start(event.message, budget=budget)
+            messages.append({"role": "user", "content": text})
 
         elif isinstance(event, ActionEvent):
-            # Current markdown format
-            content = (
-                f"# Thinking\n{event.thinking}\n\n"
-                f"# Code\n```python\n{event.code}\n```"
-            )
-            messages.append({"role": "assistant", "content": content})
+            # ActionEvent always renders at full detail (code is compact already)
+            text, _ = render_action_markdown(event.thinking, event.code, event.title)
+            messages.append({"role": "assistant", "content": text})
 
         elif isinstance(event, OutputEvent):
-            # Render OutputEvent parts at hi-detail level
-            content_parts, _ = render_output_parts_full(event.parts, HI_DETAIL_BUDGET)
+            # Render OutputEvent parts with budget (low detail replaces images with placeholders)
+            content_parts, _ = render_output_parts_full(event.parts, budget=budget)
 
             if content_parts:
                 # Add "Agent stdout:" header
@@ -89,8 +110,8 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
                     messages.append({"role": "user", "content": text})
 
         elif isinstance(event, SuccessEvent):
-            # Render success marker using primitives
-            text, _ = render_success(event.result)
+            # Render success marker with appropriate budget
+            text, _ = render_success(event.result, budget=budget)
             messages.append({"role": "assistant", "content": text})
 
         elif isinstance(event, FailEvent):
