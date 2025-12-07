@@ -79,7 +79,7 @@ def maybe_summarize_event_log(agent: "BaseAgent", state: State) -> None:
     # This allows us to use correct token counts when deciding what to keep
     low_detail_threshold = None
     if len(events) >= 4:  # Need enough events to make it meaningful
-        threshold_idx = int(len(events) * 0.25)  # Keep newest 25% at hi-detail
+        threshold_idx = int(len(events) * 0.75)  # Keep newest 25% at hi-detail
         threshold_event = events[threshold_idx]
         low_detail_threshold = threshold_event.timestamp
 
