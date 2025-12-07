@@ -31,7 +31,10 @@ from ..llm.core import ContentPart, ImagePart, TextPart
 from ..tokenizers import get_tokenizer
 
 # Standard token budget for "hi" detail rendering
-HI_DETAIL_BUDGET = 4096
+HI_DETAIL_BUDGET = 8192
+
+# Low-detail budget for older events (roughly 1/4 of high-detail)
+LOW_DETAIL_BUDGET = 1024
 
 
 def count_tokens(text: str) -> int:
@@ -580,29 +583,45 @@ def render_action_markdown(
     return content, tokens
 
 
-def render_task_start(message: str) -> tuple[str, int]:
+def render_task_start(message: str, budget: int = HI_DETAIL_BUDGET) -> tuple[str, int]:
     """
     Render a task start event.
 
+    Args:
+        message: The task start message (may contain rich input rendering)
+        budget: Token budget for rendering (HI_DETAIL_BUDGET or LOW_DETAIL_BUDGET)
+
     Returns:
         (message_text, token_count)
+
+    Note: Currently message is pre-rendered, so budget doesn't affect it.
+    Future enhancement could re-render inputs at different detail levels.
     """
     tokens = count_tokens(message)
     return message, tokens
 
 
-def render_success(result: Any) -> tuple[str, int]:
+def render_success(result: Any, budget: int = HI_DETAIL_BUDGET) -> tuple[str, int]:
     """
     Render a success event with result value.
 
-    Uses hi-detail budget for rendering the result.
+    Args:
+        result: The task result to render
+        budget: Token budget for rendering (HI_DETAIL_BUDGET or LOW_DETAIL_BUDGET)
 
     Returns:
         (success_text, token_count)
     """
-    # Use same rendering settings as we use for OutputEvent
-    estimated_chars = HI_DETAIL_BUDGET * 4  # ~4 chars per token
-    renderer = ValueRenderer(max_len=estimated_chars, max_depth=4)
+    estimated_chars = budget * 4  # ~4 chars per token
+    # Adjust depth based on budget (low detail = shallower depth)
+    max_depth = 2 if budget == LOW_DETAIL_BUDGET else 4
+    max_items = 10 if budget == LOW_DETAIL_BUDGET else 25
+
+    renderer = ValueRenderer(
+        max_len=estimated_chars,
+        max_depth=max_depth,
+        max_items=max_items,
+    )
     rendered = renderer.render(result)
     text = f"✅ Task completed: {rendered}"
     tokens = count_tokens(text)
@@ -639,14 +658,14 @@ def render_output_parts_full(
     parts: list[Any], budget: int = HI_DETAIL_BUDGET
 ) -> tuple[list[ContentPart], int]:
     """
-    Render OutputEvent parts at hi-detail level.
+    Render OutputEvent parts with budget management.
 
-    This renders PrintActions, ImageActions, and other objects with a fixed budget,
+    This renders PrintActions, ImageActions, and other objects with a configurable budget,
     returning the actual token count of what was rendered.
 
     Args:
         parts: List of PrintAction, ImageAction, or other objects
-        budget: Token budget for rendering (default: HI_DETAIL_BUDGET)
+        budget: Token budget for rendering (HI_DETAIL_BUDGET or LOW_DETAIL_BUDGET)
 
     Returns:
         (content_parts, actual_token_count)
@@ -655,7 +674,12 @@ def render_output_parts_full(
         return [], 0
 
     tokenizer = get_tokenizer("gpt-4")
-    render_func = ValueRenderer(max_len=4096, max_depth=4).render
+
+    # Adjust rendering parameters based on budget
+    if budget == LOW_DETAIL_BUDGET:
+        render_func = ValueRenderer(max_len=1024, max_depth=2, max_items=10).render
+    else:
+        render_func = ValueRenderer(max_len=4096, max_depth=4).render
 
     # Store tuples of (ContentPart, cost) to manage budget.
     parts_with_cost: list[tuple[ContentPart, int]] = []
@@ -673,19 +697,26 @@ def render_output_parts_full(
             part = TextPart(text=rendered_line)
 
         elif isinstance(item, ImageAction):
-            cost = estimate_image_cost(item.image, item.detail)
-            # Only serialize if it might fit.
-            if current_cost + cost <= budget:
-                base64_image = serialize_image_to_base64(item.image)
-                if base64_image:
-                    part = ImagePart(image=base64_image)
-                else:
-                    # Generate error message based on image type
-                    placeholder = get_image_error_message(item.image)
-                    cost = len(tokenizer.encode(placeholder + "\n"))
-                    part = TextPart(text=placeholder)
+            # Low detail: replace images with text placeholders
+            if budget == LOW_DETAIL_BUDGET:
+                placeholder = "[Image]"
+                cost = len(tokenizer.encode(placeholder + "\n"))
+                part = TextPart(text=placeholder)
             else:
-                cost = 0  # Reset cost, we are not adding this part
+                # High detail: include the actual image
+                cost = estimate_image_cost(item.image, item.detail)
+                # Only serialize if it might fit.
+                if current_cost + cost <= budget:
+                    base64_image = serialize_image_to_base64(item.image)
+                    if base64_image:
+                        part = ImagePart(image=base64_image)
+                    else:
+                        # Generate error message based on image type
+                        placeholder = get_image_error_message(item.image)
+                        cost = len(tokenizer.encode(placeholder + "\n"))
+                        part = TextPart(text=placeholder)
+                else:
+                    cost = 0  # Reset cost, we are not adding this part
 
         else:  # Fallback for other raw types in the stream
             rendered_line = render_func(item)

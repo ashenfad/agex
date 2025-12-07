@@ -75,15 +75,30 @@ def maybe_summarize_event_log(agent: "BaseAgent", state: State) -> None:
     if total_tokens <= agent.log_high_water_tokens:
         return
 
+    # First, determine low-detail threshold (75th percentile by age)
+    # This allows us to use correct token counts when deciding what to keep
+    low_detail_threshold = None
+    if len(events) >= 4:  # Need enough events to make it meaningful
+        threshold_idx = int(len(events) * 0.25)  # Keep newest 25% at hi-detail
+        threshold_event = events[threshold_idx]
+        low_detail_threshold = threshold_event.timestamp
+
     # Determine how many events to summarize
     # Work backwards from newest, keeping events until we're under low_water
+    # Use correct token counts: low_detail for old events, full_detail for new events
     events_to_keep = []
     kept_tokens = 0
 
     for event in reversed(events):
-        if kept_tokens + event.full_detail_tokens <= agent.log_low_water_tokens:
+        # Use low_detail_tokens if event is older than threshold
+        if low_detail_threshold and event.timestamp < low_detail_threshold:
+            event_tokens = event.low_detail_tokens
+        else:
+            event_tokens = event.full_detail_tokens
+
+        if kept_tokens + event_tokens <= agent.log_low_water_tokens:
             events_to_keep.insert(0, event)
-            kept_tokens += event.full_detail_tokens
+            kept_tokens += event_tokens
         else:
             break
 
@@ -111,12 +126,13 @@ def maybe_summarize_event_log(agent: "BaseAgent", state: State) -> None:
             f"Failed to summarize {num_to_summarize} events: {e}"
         ) from e
 
-    # Create summary event
+    # Create summary event with low-detail threshold
     summary = SummaryEvent(
         agent_name=agent.name,
         summary=summary_text,
         summarized_event_count=num_to_summarize,
         original_tokens=original_tokens,
+        low_detail_threshold=low_detail_threshold,
     )
 
     # Replace old events with summary
