@@ -105,3 +105,34 @@ def test_rebase_drops_unreferenced_events():
     assert state.get("_event_keep") == b"keep"
     assert state.get("_event_drop") is None
     assert "_event_drop" not in state.commit_keys
+
+
+def test_rebase_protects_referenced_events_from_gc():
+    """Verify referenced events are never dropped even when exceeding high water."""
+    import os
+
+    store = kv.Memory()
+    state = GCVersioned(store, high_water_bytes=3_000, low_water_bytes=1_000)
+
+    # Create a large referenced event (oldest, largest - would be first GC candidate)
+    large_event = os.urandom(5000)
+    state.set("_event_old_large", large_event)
+    state.set("__event_log__", ["_event_old_large"])
+    state.snapshot()
+
+    # Add newer user data that pushes us over high water
+    state.set("user_data", os.urandom(2000))
+    state.snapshot()
+
+    # Rebase should have occurred (total > high water)
+    result = state.last_rebase_result
+    assert result is not None
+    assert result.performed is True
+
+    # Referenced event must NOT be dropped, even though it's oldest and largest
+    assert "_event_old_large" not in result.dropped_keys
+    assert "_event_old_large" in result.kept_keys
+    assert state.get("_event_old_large") == large_event
+
+    # User data should be dropped instead
+    assert "user_data" in result.dropped_keys
