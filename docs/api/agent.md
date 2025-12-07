@@ -15,6 +15,8 @@ Agent(
     llm_client: LLMClient | None = None,
     llm_max_retries: int = 2,
     llm_retry_backoff: float = 0.25,
+    log_high_water_tokens: int | None = None,
+    log_low_water_tokens: int | None = None,
 )
 ```
 
@@ -31,6 +33,8 @@ Agent(
 | `llm_client` | `LLMClient | None` | `None` | An instantiated `LLMClient` for the agent to use. If `None`, a default client is created. |
 | `llm_max_retries` | `int` | `2` | Number of times to retry a failed LLM completion before aborting with `LLMFail`. |
 | `llm_retry_backoff` | `float` | `0.25` | Initial backoff (seconds) between retries. Backoff grows exponentially per attempt. |
+| `log_high_water_tokens` | `int | None` | `None` | Trigger event log summarization when total tokens exceed this threshold. If `None`, no automatic summarization occurs. |
+| `log_low_water_tokens` | `int | None` | `None` | Target token count after summarization. Defaults to 50% of `log_high_water_tokens` if not specified. Must be less than `log_high_water_tokens`. |
 
 ### Examples
 
@@ -219,6 +223,109 @@ agent.capabilities_primer = text
 from agex import view
 print(view(agent, focus="tokens"))
 ```
+
+## Event Log Summarization
+
+For long-running agents, the event log can grow large and consume significant context window space. Automatic event log summarization helps manage this by condensing older events into concise summaries while preserving recent, detailed events.
+
+### Configuration
+
+Enable summarization by setting `log_high_water_tokens` when creating an agent:
+
+```python
+agent = Agent(
+    name="long_running_agent",
+    log_high_water_tokens=20000,  # Trigger summarization at 20k tokens
+    log_low_water_tokens=10000,   # Target 10k tokens after summarization (optional)
+)
+```
+
+**Parameters:**
+- **`log_high_water_tokens`**: When the event log exceeds this token count, automatic summarization triggers
+- **`log_low_water_tokens`**: Target token count after summarization. Defaults to 50% of `log_high_water_tokens` if not specified
+
+### How It Works: 3-Tier Context Management
+
+agex uses a **3-tier rendering strategy** to maximize context efficiency:
+
+1. **Full Detail** (events newer than threshold): Complete rendering with full images, deep nesting, verbose output
+2. **Low Detail** (events older than threshold): Compressed rendering with image placeholders, shallow nesting
+3. **Summarized** (oldest events): LLM-generated text summary replacing multiple old events
+
+**Note on ratios:** When summarization triggers, the threshold is set to keep the newest ~25% at full detail. However, as new events accumulate between summarizations, they're all newer than the fixed threshold, so the ratio gradually shifts toward more full-detail events until the next summarization cycle.
+
+#### Automatic Management Flow
+
+1. **Monitoring**: Before each LLM call, the agent checks the total token count of all events
+2. **Triggering**: If tokens exceed `log_high_water_tokens`, summarization runs
+3. **Low-Detail Threshold**: Sets a **fixed timestamp threshold** (at 25th percentile by age) in the `SummaryEvent`
+   - Events with `timestamp < threshold` render at low detail
+   - Events with `timestamp >= threshold` render at full detail
+   - As new events arrive, they're all newer than this fixed threshold (full detail) until next summarization
+4. **Token Calculation**: Uses correct token counts when deciding what to keep:
+   - Events newer than threshold: counted at `full_detail_tokens`
+   - Events older than threshold: counted at `low_detail_tokens` (typically 25-50% of full)
+5. **Summarization**: The LLM condenses the oldest events into a single `SummaryEvent` (see [Events](events.md#summaryevent))
+6. **Replacement**: Old events are replaced with the summary, reducing total tokens below `log_low_water_tokens`
+
+#### Low-Detail Rendering
+
+For events older than the threshold, agex automatically applies budget-constrained rendering:
+
+- **Images**: Replaced with `[Image]` text placeholders (saves ~1000 tokens per image)
+- **Nested structures**: Reduced from depth 4 → depth 2 (e.g., dataframes, dicts)
+- **List items**: Truncated more aggressively (25 items → 10 items)
+- **Code and thinking**: Always full detail (already compact)
+
+This means the agent can keep **significantly more event history** in context before needing to summarize.
+
+### Why 50% Default?
+
+The default `log_low_water_tokens` (50% of high water) is aggressive but intentional:
+
+- **Cache invalidation cost**: Summarization breaks provider-side context caching, making it expensive
+- **Maximize runway**: By reducing to 50%, you get maximum "runway" before the next summarization is needed
+- **Rare but effective**: Summarization happens infrequently, but when it does, it significantly reduces token usage
+
+### Example: Long-Running Analysis
+
+```python
+from agex import Agent, Versioned
+
+# Agent configured for long-running tasks
+analyst = Agent(
+    name="data_analyst",
+    primer="You are a data analyst working on complex, multi-step analyses.",
+    log_high_water_tokens=15000,  # Summarize when log exceeds 15k tokens
+    max_iterations=50,             # Allow many iterations
+)
+
+# Long-running task with persistent state
+state = Versioned()
+
+@analyst.task
+def analyze_dataset(data_path: str) -> dict:  # type: ignore[return-value]
+    """Perform comprehensive data analysis with many iterations."""
+    pass
+
+# As the agent works through many iterations, old events are automatically
+# summarized to keep the context manageable
+result = analyze_dataset("large_dataset.csv", state=state)
+```
+
+### Disabling Summarization
+
+Summarization is **opt-in** by default. Simply don't set `log_high_water_tokens`:
+
+```python
+# No automatic summarization
+agent = Agent(name="short_task_agent")
+```
+
+### Related
+
+- **[Events](events.md#summaryevent)**: See `SummaryEvent` documentation
+- **[State](state.md#garbage-collection-with-gcversioned)**: Similar garbage collection for persistent state
 
 ## Agent Registry
 agex automatically registers all agents in a global registry to enable inter-agent communication. For **testing**, use `clear_agent_registry()` to prevent cross-contamination between test cases.
