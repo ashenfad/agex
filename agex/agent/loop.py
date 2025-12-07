@@ -32,6 +32,7 @@ from agex.agent.events import (
     TaskStartEvent,
 )
 from agex.agent.primer_text import BUILTIN_PRIMER
+from agex.agent.summarization import maybe_summarize_event_log
 from agex.eval.core import evaluate_program
 from agex.eval.error import EvalError
 from agex.eval.functions import UserFunction
@@ -210,6 +211,9 @@ class TaskLoopMixin(BaseAgent):
 
         # Main task loop
         for _ in range(self.max_iterations):
+            # Check if event log needs summarization before querying LLM
+            maybe_summarize_event_log(self, exec_state)
+
             # Get all events from state for LLM
             from agex.state.log import get_events_from_log
 

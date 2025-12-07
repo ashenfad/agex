@@ -110,8 +110,7 @@ class OpenAIClient(LLMClient):
         request_kwargs = {**self._kwargs, **kwargs}
 
         # Use XML rendering for streaming (instead of structured outputs)
-        max_tokens = request_kwargs.get("max_tokens", 4096)
-        messages_dicts = render_events_as_xml(events, self._model, max_tokens)
+        messages_dicts = render_events_as_xml(events)
 
         # Add system message with XML format instructions
         system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
@@ -141,18 +140,28 @@ class OpenAIClient(LLMClient):
         except Exception as e:
             raise RuntimeError(f"OpenAI streaming completion failed: {e}") from e
 
-    def summarize(self, system: str, content: str, **kwargs) -> str:
-        """Send a simple text summarization request to OpenAI."""
+    def summarize(self, system: str, content: str | List[Event], **kwargs) -> str:
+        """Send a summarization request to OpenAI (text or events with multimodal)."""
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
+
+        # Prepare content (text or events)
+        is_multimodal, processed = self._prepare_summarization_content(content)
+
+        if is_multimodal:
+            # processed is messages list from events
+            full_messages = [{"role": "system", "content": system}] + processed
+        else:
+            # processed is plain text
+            full_messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": processed},
+            ]
 
         try:
             response = self.client.chat.completions.create(
                 model=self._model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": content},
-                ],
+                messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
                 **request_kwargs,
             )
             result = response.choices[0].message.content
@@ -165,7 +174,7 @@ class OpenAIClient(LLMClient):
                 return "".join(texts)
             return result or ""
         except Exception as e:
-            raise RuntimeError(f"OpenAI text completion failed: {e}") from e
+            raise RuntimeError(f"OpenAI summarization failed: {e}") from e
 
     @property
     def model(self) -> str:

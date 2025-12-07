@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Iterator, List, Literal, Union
+from typing import TYPE_CHECKING, Any, Iterator, List, Literal, Union
 
 from pydantic import BaseModel
 
@@ -141,21 +141,41 @@ class LLMClient(ABC):
             yield TokenChunk(type="python", content=response.code, done=False)
         yield TokenChunk(type="python", content="", done=True)
 
+    def _prepare_summarization_content(
+        self, content: str | List["Event"]
+    ) -> tuple[bool, Any]:
+        """
+        Helper to prepare content for summarization.
+
+        Returns:
+            (is_multimodal, processed_content)
+            - If text: (False, text_string)
+            - If events: (True, rendered_messages)
+        """
+        if isinstance(content, list):
+            # Import here to avoid circular dependency
+            from agex.render.events import render_events_as_markdown
+
+            messages = render_events_as_markdown(content)
+            return (True, messages)
+        else:
+            return (False, content)
+
     @abstractmethod
-    def summarize(self, system: str, content: str, **kwargs) -> str:
+    def summarize(self, system: str, content: str | List["Event"], **kwargs) -> str:
         """
         Generic text generation with instructions.
 
-        Used for capabilities summarization and other non-agent tasks.
-        Does not handle events or multimodal content.
+        Used for capabilities summarization and event log summarization.
+        Supports both plain text and events (with multimodal content).
 
         Args:
             system: Instructions for the task
-            content: Text content to process
+            content: Either plain text OR list of events (may include images)
             **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
 
         Returns:
-            Generated text string
+            Generated summary text
         """
         ...
 

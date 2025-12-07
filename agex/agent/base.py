@@ -80,6 +80,9 @@ class BaseAgent:
         # LLM retry controls
         llm_max_retries: int = 2,
         llm_retry_backoff: float = 0.25,
+        # Event log summarization (optional)
+        log_high_water_tokens: int | None = None,
+        log_low_water_tokens: int | None = None,
     ):
         self.name = name or _random_name()
         self.primer = primer
@@ -94,6 +97,24 @@ class BaseAgent:
         # LLM retry settings
         self.llm_max_retries = llm_max_retries
         self.llm_retry_backoff = llm_retry_backoff
+
+        # Event log summarization settings
+        if log_low_water_tokens is not None and log_high_water_tokens is None:
+            raise ValueError(
+                "log_low_water_tokens requires log_high_water_tokens to be set"
+            )
+
+        if log_high_water_tokens is not None:
+            if log_low_water_tokens is None:
+                log_low_water_tokens = int(log_high_water_tokens * 0.5)
+            elif log_low_water_tokens >= log_high_water_tokens:
+                raise ValueError(
+                    f"log_low_water_tokens ({log_low_water_tokens}) must be < "
+                    f"log_high_water_tokens ({log_high_water_tokens})"
+                )
+
+        self.log_high_water_tokens = log_high_water_tokens
+        self.log_low_water_tokens = log_low_water_tokens
 
         # private, host-side registry for live, unpickleable objects
         self._host_object_registry: dict[str, Any] = {}

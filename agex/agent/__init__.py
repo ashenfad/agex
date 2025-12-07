@@ -21,6 +21,7 @@ from .loop import TaskLoopMixin
 
 # Fingerprinting (usually internal, but exported for testing)
 from .registration import RegistrationMixin
+from .summarization import SummarizationError
 from .task import TaskMixin, clear_dynamic_dataclass_registry
 
 __all__ = [
@@ -44,6 +45,8 @@ __all__ = [
     "Pattern",
     "Visibility",
     "RESERVED_NAMES",
+    # Exceptions
+    "SummarizationError",
     # Fingerprinting
 ]
 
@@ -64,6 +67,9 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         # LLM retry controls
         llm_max_retries: int = 2,
         llm_retry_backoff: float = 0.25,
+        # Event log summarization (optional)
+        log_high_water_tokens: int | None = None,
+        log_low_water_tokens: int | None = None,
     ):
         """
         An agent that can be used to execute tasks.
@@ -76,6 +82,10 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             name: Unique identifier for this agent (for sub-agent namespacing).
             capabilities_primer: Optional curated capabilities primer.
             llm_client: An instantiated LLMClient for the agent to use.
+            log_high_water_tokens: Trigger event log summarization when total tokens
+                exceed this threshold. If None, no summarization is performed.
+            log_low_water_tokens: Target token count after summarization. Defaults to
+                50% of log_high_water_tokens if not specified.
         """
         super().__init__(
             primer=primer,
@@ -87,4 +97,6 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             llm_client=llm_client,
             llm_max_retries=llm_max_retries,
             llm_retry_backoff=llm_retry_backoff,
+            log_high_water_tokens=log_high_water_tokens,
+            log_low_water_tokens=log_low_water_tokens,
         )
