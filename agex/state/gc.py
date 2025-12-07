@@ -130,8 +130,10 @@ class GCVersioned(Versioned):
         retained_keys |= event_refs
 
         # Calculate drop list ordered by oldest touch then largest size
+        # Exclude referenced events from candidates to prevent them from being dropped
         candidates: list[tuple[str, tuple[int, int | None]]] = sorted(
-            user_meta.items(), key=lambda kv: (kv[1][0], -(kv[1][1] or 0))
+            ((k, v) for k, v in user_meta.items() if k not in event_refs),
+            key=lambda kv: (kv[1][0], -(kv[1][1] or 0)),
         )
 
         for key, (_touch, size) in candidates:
