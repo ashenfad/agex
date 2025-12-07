@@ -380,6 +380,7 @@ class ActionEvent(BaseEvent):
     def _compute_tokens(self):
         _, tokens = render_action_markdown(self.thinking, self.code, self.title)
         self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens  # No separate low-detail rendering
         return self
 
     def __str__(self) -> str:
@@ -494,7 +495,9 @@ class ErrorEvent(BaseEvent):
     @model_validator(mode="after")
     def _compute_tokens(self):
         # ErrorEvents are not shown to agents, but compute tokens for consistency
-        self.full_detail_tokens = count_tokens(str(self.error))
+        tokens = count_tokens(str(self.error))
+        self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens  # No separate low-detail rendering
         return self
 
     def __str__(self) -> str:
@@ -616,6 +619,7 @@ class FailEvent(BaseEvent):
     def _compute_tokens(self):
         _, tokens = render_fail(self.message)
         self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens  # No separate low-detail rendering
         return self
 
     def __str__(self) -> str:
@@ -659,7 +663,9 @@ class ClarifyEvent(BaseEvent):
     def _compute_tokens(self):
         # Clarify is similar to fail in rendering
         text = f"❓ Clarification needed: {self.message}"
-        self.full_detail_tokens = count_tokens(text)
+        tokens = count_tokens(text)
+        self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens  # No separate low-detail rendering
         return self
 
     def __str__(self) -> str:
@@ -711,6 +717,7 @@ class SummaryEvent(BaseEvent):
             self.summary, self.summarized_event_count, self.original_tokens
         )
         self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens  # No separate low-detail rendering
         return self
 
     def __str__(self) -> str:
