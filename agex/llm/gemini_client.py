@@ -142,14 +142,25 @@ class GeminiClient(LLMClient):
         except Exception as e:
             raise RuntimeError(f"Gemini streaming completion failed: {e}") from e
 
-    def summarize(self, system: str, content: str, **kwargs) -> str:
-        """Send a simple text summarization request to Gemini."""
+    def summarize(self, system: str, content: str | List[Event], **kwargs) -> str:
+        """Send a summarization request to Gemini (text or events with multimodal)."""
         request_kwargs = {**self._kwargs, **kwargs}
 
-        # Create simple user message with system prepended
-        gemini_messages = [
-            {"role": "user", "parts": [{"text": f"System: {system}\n\n{content}"}]}
-        ]
+        # Prepare content (text or events)
+        is_multimodal, processed = self._prepare_summarization_content(content)
+
+        if is_multimodal:
+            # processed is messages list from events
+            # Use the existing converter that handles multimodal content
+            gemini_messages = self._convert_messages_to_gemini_format(system, processed)
+        else:
+            # processed is plain text
+            gemini_messages = [
+                {
+                    "role": "user",
+                    "parts": [{"text": f"System: {system}\n\n{processed}"}],
+                }
+            ]
 
         try:
             response = self.client.generate_content(
@@ -157,7 +168,7 @@ class GeminiClient(LLMClient):
             )
             return response.text or ""
         except Exception as e:
-            raise RuntimeError(f"Gemini text completion failed: {e}") from e
+            raise RuntimeError(f"Gemini summarization failed: {e}") from e
 
     def _convert_messages_to_gemini_format(
         self, system: str, messages_dicts: List[dict]

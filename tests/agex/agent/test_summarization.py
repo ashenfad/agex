@@ -1,0 +1,290 @@
+"""Tests for event log summarization."""
+
+import pytest
+
+from agex import Agent, clear_agent_registry
+from agex.agent.events import ActionEvent, SummaryEvent, TaskStartEvent
+from agex.agent.summarization import (
+    SummarizationError,
+    maybe_summarize_event_log,
+)
+from agex.llm.dummy_client import DummyLLMClient
+from agex.state import Versioned
+from agex.state.log import add_event_to_log, get_events_from_log
+
+
+class TestEventLogSummarization:
+    """Test suite for event log summarization."""
+
+    def setup_method(self):
+        """Clear agent registry before each test."""
+        clear_agent_registry()
+
+    def test_no_summarization_when_disabled(self):
+        """Test that summarization doesn't run when not configured."""
+        llm_client = DummyLLMClient()
+        agent = Agent(name="test", llm_client=llm_client)  # No log_high_water_tokens
+        state = Versioned()
+
+        # Add many events
+        for i in range(10):
+            event = ActionEvent(
+                agent_name="test", thinking=f"thought {i}", code=f"x = {i}"
+            )
+            add_event_to_log(state, event)
+
+        # Should not summarize (no high_water set)
+        maybe_summarize_event_log(agent, state)
+
+        events = get_events_from_log(state)
+        assert len(events) == 10
+        assert all(isinstance(e, ActionEvent) for e in events)
+
+    def test_no_summarization_below_high_water(self):
+        """Test that summarization doesn't run when below threshold."""
+        llm_client = DummyLLMClient()
+        agent = Agent(
+            name="test",
+            llm_client=llm_client,
+            log_high_water_tokens=10000,  # Very high threshold
+        )
+        state = Versioned()
+
+        # Add a few events (well below threshold)
+        for i in range(3):
+            event = ActionEvent(
+                agent_name="test", thinking=f"thought {i}", code=f"x = {i}"
+            )
+            add_event_to_log(state, event)
+
+        total_tokens = sum(e.full_detail_tokens for e in get_events_from_log(state))
+        assert total_tokens < 10000
+
+        # Should not summarize
+        maybe_summarize_event_log(agent, state)
+
+        events = get_events_from_log(state)
+        assert len(events) == 3
+        assert all(isinstance(e, ActionEvent) for e in events)
+
+    def test_summarization_when_exceeds_high_water(self):
+        """Test that summarization runs when exceeding threshold."""
+        # Configure client to return a summary
+        llm_client = DummyLLMClient()
+        llm_client.summary_response = "Agent performed calculations and stored results."
+
+        agent = Agent(
+            name="test",
+            llm_client=llm_client,
+            log_high_water_tokens=100,  # Low threshold for testing
+            log_low_water_tokens=50,
+        )
+        state = Versioned()
+
+        # Add events until we exceed threshold
+        for i in range(10):
+            event = ActionEvent(
+                agent_name="test",
+                thinking=f"I will compute value {i}",
+                code=f"result_{i} = {i} * {i}",
+            )
+            add_event_to_log(state, event)
+
+        initial_events = get_events_from_log(state)
+        initial_count = len(initial_events)
+        total_tokens = sum(e.full_detail_tokens for e in initial_events)
+
+        # Verify we're above high water
+        assert total_tokens > 100
+
+        # Run summarization
+        maybe_summarize_event_log(agent, state)
+
+        # Verify summarization occurred
+        events = get_events_from_log(state)
+        assert len(events) < initial_count  # Fewer events now
+
+        # First event should be a summary
+        assert isinstance(events[0], SummaryEvent)
+        assert events[0].summarized_event_count > 0
+        assert events[0].summary == "Agent performed calculations and stored results."
+
+        # Verify we're now under low water
+        new_total_tokens = sum(e.full_detail_tokens for e in events)
+        assert new_total_tokens <= 50
+
+    def test_summarization_with_default_low_water(self):
+        """Test that low_water defaults to 50% of high_water."""
+        llm_client = DummyLLMClient()
+        llm_client.summary_response = "Summary of events."
+
+        agent = Agent(
+            name="test",
+            llm_client=llm_client,
+            log_high_water_tokens=100,
+            # No log_low_water_tokens specified
+        )
+
+        # Verify default is 50%
+        assert agent.log_low_water_tokens == 50
+
+        state = Versioned()
+
+        # Add events to exceed high water
+        for i in range(10):
+            event = ActionEvent(
+                agent_name="test", thinking=f"thinking {i}", code=f"x = {i}"
+            )
+            add_event_to_log(state, event)
+
+        maybe_summarize_event_log(agent, state)
+
+        # Should be under or near 50 tokens now (may be slightly over due to summary overhead)
+        events = get_events_from_log(state)
+        total_tokens = sum(e.full_detail_tokens for e in events)
+        assert total_tokens <= 70  # Allow some headroom for summary event overhead
+
+    def test_summarization_includes_all_event_types(self):
+        """Test that summarization includes TaskStart, setup, and all events."""
+        llm_client = DummyLLMClient()
+        llm_client.summary_response = "Complete summary."
+
+        agent = Agent(
+            name="test",
+            llm_client=llm_client,
+            log_high_water_tokens=100,
+        )
+        state = Versioned()
+
+        # Add TaskStartEvent
+        task_start = TaskStartEvent(
+            agent_name="test",
+            task_name="test_task",
+            inputs={},
+            message="Compute the answer",
+        )
+        add_event_to_log(state, task_start)
+
+        # Add setup event
+        setup_action = ActionEvent(
+            agent_name="test", thinking="Setup", code="import math", source="setup"
+        )
+        add_event_to_log(state, setup_action)
+
+        # Add regular events
+        for i in range(8):
+            event = ActionEvent(
+                agent_name="test", thinking=f"thought {i}", code=f"x = {i}"
+            )
+            add_event_to_log(state, event)
+
+        initial_events = get_events_from_log(state)
+        assert any(isinstance(e, TaskStartEvent) for e in initial_events)
+        assert any(
+            e.source == "setup" for e in initial_events if isinstance(e, ActionEvent)
+        )
+
+        maybe_summarize_event_log(agent, state)
+
+        # All old events including TaskStart and setup should be summarized
+        events = get_events_from_log(state)
+        assert isinstance(events[0], SummaryEvent)
+        assert (
+            events[0].summarized_event_count >= 3
+        )  # At least TaskStart + setup + some actions
+
+    def test_summarization_error_propagation(self):
+        """Test that LLM failures raise SummarizationError."""
+        # Configure client to fail
+        llm_client = DummyLLMClient()
+        llm_client.summary_exception = RuntimeError("LLM service unavailable")
+
+        agent = Agent(
+            name="test",
+            llm_client=llm_client,
+            log_high_water_tokens=50,
+        )
+        state = Versioned()
+
+        # Add events to trigger summarization
+        for i in range(5):
+            event = ActionEvent(
+                agent_name="test", thinking=f"thought {i}", code=f"x = {i}"
+            )
+            add_event_to_log(state, event)
+
+        # Should raise SummarizationError
+        with pytest.raises(SummarizationError, match="Failed to summarize .* events"):
+            maybe_summarize_event_log(agent, state)
+
+    def test_cascading_summarization(self):
+        """Test that summaries can themselves be summarized."""
+        llm_client = DummyLLMClient()
+        llm_client.summary_response = "Meta-summary of summaries and events."
+
+        agent = Agent(
+            name="test",
+            llm_client=llm_client,
+            log_high_water_tokens=100,
+            log_low_water_tokens=50,
+        )
+        state = Versioned()
+
+        # Add events and trigger first summarization
+        for i in range(10):
+            event = ActionEvent(
+                agent_name="test", thinking=f"thought {i}", code=f"x = {i}"
+            )
+            add_event_to_log(state, event)
+
+        maybe_summarize_event_log(agent, state)
+
+        events_after_first = get_events_from_log(state)
+        assert isinstance(events_after_first[0], SummaryEvent)
+
+        # Add more events to trigger second summarization
+        for i in range(10, 20):
+            event = ActionEvent(
+                agent_name="test", thinking=f"thought {i}", code=f"x = {i}"
+            )
+            add_event_to_log(state, event)
+
+        # Set new summary response
+        llm_client.summary_response = "Second level summary."
+        maybe_summarize_event_log(agent, state)
+
+        # Should have new summary that potentially includes the old summary
+        events_final = get_events_from_log(state)
+        assert isinstance(events_final[0], SummaryEvent)
+        # The new summary might have summarized the old summary + some new events
+
+    def test_summarization_validation_errors(self):
+        """Test Agent initialization validation for summarization params."""
+        llm_client = DummyLLMClient()
+
+        # Test: low without high should raise
+        with pytest.raises(
+            ValueError, match="log_low_water_tokens requires log_high_water_tokens"
+        ):
+            Agent(
+                name="test1",
+                llm_client=llm_client,
+                log_low_water_tokens=50,  # Missing high_water
+            )
+
+        # Test: low >= high should raise
+        with pytest.raises(ValueError, match="log_low_water_tokens .* must be <"):
+            Agent(
+                name="test2",
+                llm_client=llm_client,
+                log_high_water_tokens=100,
+                log_low_water_tokens=100,  # Equal to high
+            )
+
+        with pytest.raises(ValueError, match="log_low_water_tokens .* must be <"):
+            Agent(
+                name="test3",
+                llm_client=llm_client,
+                log_high_water_tokens=100,
+                log_low_water_tokens=150,  # Greater than high
+            )

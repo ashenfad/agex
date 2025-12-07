@@ -41,6 +41,10 @@ class DummyLLMClient(LLMClient):
         self.all_events: list[list[Event]] = []
         self.all_systems: list[str] = []
 
+        # For testing summarization
+        self.summary_response: str | None = None
+        self.summary_exception: Exception | None = None
+
     def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
         Return the next LLMResponse in the sequence, cycling through the list.
@@ -98,10 +102,26 @@ class DummyLLMClient(LLMClient):
 
         return response
 
-    def summarize(self, system: str, content: str, **kwargs) -> str:
+    def summarize(self, system: str, content: str | List[Event], **kwargs) -> str:
         """Return a deterministic plain text for testing."""
-        # Simple concatenation for testing
-        return f"{system} {content}".strip() or "dummy"
+        # Check for configured exception
+        if self.summary_exception is not None:
+            raise self.summary_exception
+
+        # Check for configured response
+        if self.summary_response is not None:
+            return self.summary_response
+
+        # Prepare content (handles both text and events)
+        is_multimodal, processed = self._prepare_summarization_content(content)
+
+        # For testing, just return a simple string
+        if is_multimodal:
+            # processed is messages list - count them
+            return f"Summary of {len(processed)} messages"
+        else:
+            # processed is plain text
+            return f"{system} {processed}".strip() or "dummy"
 
     @property
     def context_window(self) -> int:

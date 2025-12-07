@@ -207,10 +207,26 @@ class AnthropicClient(LLMClient):
         except Exception as e:
             raise RuntimeError(f"Anthropic streaming completion failed: {e}") from e
 
-    def summarize(self, system: str, content: str, **kwargs) -> str:
-        """Send a simple text summarization request to Anthropic."""
+    def summarize(self, system: str, content: str | List[Event], **kwargs) -> str:
+        """Send a summarization request to Anthropic (text or events with multimodal)."""
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
+
+        # Prepare content (text or events)
+        is_multimodal, processed = self._prepare_summarization_content(content)
+
+        if is_multimodal:
+            # processed is messages list from events
+            # Convert to Anthropic format
+            conversation_messages = [
+                _format_message_for_anthropic(index == len(processed) - 1, msg)
+                for index, msg in enumerate(processed)
+            ]
+        else:
+            # processed is plain text
+            conversation_messages = [
+                {"role": "user", "content": [{"type": "text", "text": processed}]}
+            ]
 
         try:
             if "max_tokens" not in request_kwargs:
@@ -219,9 +235,7 @@ class AnthropicClient(LLMClient):
             response = self.client.messages.create(
                 model=self._model,
                 system=system,
-                messages=[
-                    {"role": "user", "content": [{"type": "text", "text": content}]}
-                ],
+                messages=conversation_messages,
                 **request_kwargs,
             )
             # Concatenate text parts from content blocks
@@ -231,7 +245,7 @@ class AnthropicClient(LLMClient):
                     texts.append(getattr(block, "text", ""))
             return "".join(texts)
         except Exception as e:
-            raise RuntimeError(f"Anthropic text completion failed: {e}") from e
+            raise RuntimeError(f"Anthropic summarization failed: {e}") from e
 
     @property
     def model(self) -> str:
