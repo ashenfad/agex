@@ -70,7 +70,6 @@ class BaseAgent:
         primer: str | None,
         timeout_seconds: float,
         max_iterations: int,
-        max_tokens: int,
         # Agent identification
         name: str | None = None,
         # Optional curated capabilities primer (overrides rendered registrations when set)
@@ -90,7 +89,6 @@ class BaseAgent:
         self.capabilities_primer = capabilities_primer
         self.timeout_seconds = timeout_seconds
         self.max_iterations = max_iterations
-        self.max_tokens = max_tokens
 
         # Create LLM client using the resolved configuration
         self.llm_client = llm_client or connect_llm()
