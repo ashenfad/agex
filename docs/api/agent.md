@@ -9,7 +9,6 @@ Agent(
     primer: str | None = None,
     timeout_seconds: float = 5.0,
     max_iterations: int = 10,
-    max_tokens: int = 2**16,
     name: str | None = None,
     capabilities_primer: str | None = None,
     llm_client: LLMClient | None = None,
@@ -27,7 +26,6 @@ Agent(
 | `primer` | `str | None` | `None` | Instructions that guide the agent's behavior and personality |
 | `timeout_seconds` | `float` | `5.0` | Maximum time in seconds for task execution |
 | `max_iterations` | `int` | `10` | Maximum number of think-act cycles per task |
-| `max_tokens` | `int` | `65536` | Maximum tokens for context rendering |
 | `name` | `str | None` | `None` | Unique identifier for the agent (auto-generated if not provided) |
 | `capabilities_primer` | `str | None` | `None` | Optional curated text that replaces the default capabilities listing (rendered from registrations). If `None`, the agent renders capabilities from registrations; if empty string, the section is suppressed. |
 | `llm_client` | `LLMClient | None` | `None` | An instantiated `LLMClient` for the agent to use. If `None`, a default client is created. |
@@ -173,11 +171,6 @@ The maximum time in seconds allowed for a single block of agent-generated code t
 **Type:** `int`
 
 Maximum number of think-act cycles per task. If an agent doesn't complete a task within this limit, it will raise a `TaskTimeout`.
-
-### `.max_tokens`
-**Type:** `int`
-
-Maximum number of tokens to use when rendering the agent's context.
 
 
 ## Capabilities Primer Helper

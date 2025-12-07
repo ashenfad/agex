@@ -57,7 +57,6 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         primer: str | None = None,
         timeout_seconds: float = 5.0,
         max_iterations: int = 10,
-        max_tokens: int = 2**16,
         # Agent identification
         name: str | None = None,
         # Optional curated capabilities primer
@@ -78,7 +77,6 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             primer: A string to guide the agent's behavior.
             timeout_seconds: The maximum time in seconds for a single action evaluation.
             max_iterations: The maximum number of think-act cycles for a task.
-            max_tokens: The maximum number of tokens to use for context rendering.
             name: Unique identifier for this agent (for sub-agent namespacing).
             capabilities_primer: Optional curated capabilities primer.
             llm_client: An instantiated LLMClient for the agent to use.
@@ -91,7 +89,6 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             primer=primer,
             timeout_seconds=timeout_seconds,
             max_iterations=max_iterations,
-            max_tokens=max_tokens,
             name=name,
             capabilities_primer=capabilities_primer,
             llm_client=llm_client,
