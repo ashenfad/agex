@@ -86,6 +86,42 @@ When you use `Versioned` state, you get powerful features automatically:
 
 For a complete example, see [`examples/db.py`](https://github.com/ashenfad/agex/blob/main/examples/db.py) and the [Nearly Python documentation](../concepts/nearly-python.md#unpicklable-objects-automatic-handling) for detailed behavior.
 
+### Garbage Collection with `GCVersioned`
+
+For long-running agents with persistent state, memory can grow unbounded as variables accumulate. `GCVersioned` provides automatic garbage collection using a "high/low water mark" strategy to keep state bounded without manual intervention.
+
+**How it works:**
+- Tracks the total size of persisted user variables and the recency of access
+- When total size exceeds `high_water_bytes`, triggers garbage collection
+- Prunes coldest variables (oldest access, then largest) until size is below `low_water_bytes`
+- System keys (like event logs and metadata) are always retained
+
+```python
+from agex import GCVersioned, Disk
+
+# Create a garbage-collected state with 100MB high water, 80MB low water
+state = GCVersioned(
+    Disk("/path/to/storage"),
+    high_water_bytes=100 * 1024 * 1024,  # 100MB
+    low_water_bytes=80 * 1024 * 1024,    # 80MB (defaults to 80% of high if not specified)
+)
+
+# State automatically prunes old/large variables when exceeding high water
+result = my_task("long running analysis", state=state)
+```
+
+**Key features:**
+- **Automatic pruning**: Runs after each snapshot if high water exceeded
+- **LRU-based**: Removes least recently used (oldest access) variables first
+- **Size-aware**: Among equally old variables, removes largest first
+- **Preserves system data**: Event logs and metadata are never pruned
+- **Default low water**: If not specified, defaults to 80% of high water
+
+**Use cases:**
+- Long-running production agents that accumulate state over days/weeks
+- Agents with large intermediate data that doesn't need indefinite retention
+- Systems where you want automatic memory management without manual cleanup
+
 ## Inspecting Historical State
 
 A key feature of `Versioned` state is time-travel debugging. Every event is stamped with a `commit_hash`, allowing you to check out the agent's exact memory at that point in time.
