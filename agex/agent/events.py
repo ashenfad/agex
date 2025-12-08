@@ -72,6 +72,33 @@ def _render_object_as_html(obj: Any) -> str:
                 return f"<pre style='background: #fff; padding: 8px; border-radius: 3px; margin: 0; color: #24292e; font-family: monospace;'>{escaped_content}</pre>"
         # Check if object has _repr_html_ method (pandas DataFrames, plotly Figures, etc.)
         elif hasattr(obj, "_repr_html_"):
+            # For DataFrames, ensure we use pandas default display settings for HTML
+            # (not the temporarily-modified settings used for LLM token optimization)
+            from agex.render.primitives import is_dataframe
+
+            if is_dataframe(obj):
+                try:
+                    import pandas as pd
+
+                    # Save current settings
+                    old_max_rows = pd.options.display.max_rows
+                    old_min_rows = pd.options.display.min_rows
+
+                    # Restore pandas defaults for HTML rendering
+                    pd.options.display.max_rows = 60  # pandas default
+                    pd.options.display.min_rows = 10  # pandas default
+
+                    try:
+                        html_content = _suppress_stdout(lambda: obj._repr_html_())
+                        return f"<div style='margin: 5px 0;'>{html_content}</div>"
+                    finally:
+                        # Restore whatever settings were active
+                        pd.options.display.max_rows = old_max_rows
+                        pd.options.display.min_rows = old_min_rows
+                except ImportError:
+                    pass
+
+            # Non-DataFrame or pandas not available: use regular rendering
             # Suppress stdout during _repr_html_ call to prevent Plotly figures
             # (and other objects with IPython display hooks) from printing HTML to stdout
             # in NiceGUI/IPython environments
@@ -745,8 +772,6 @@ class SummaryEvent(BaseEvent):
 
     def _repr_html_(self) -> str:
         """Rich HTML representation for IPython/Jupyter environments."""
-        import html
-
         compression_ratio = (
             f"{self.original_tokens} → {self.full_detail_tokens} tokens"
             if self.full_detail_tokens > 0
@@ -755,7 +780,21 @@ class SummaryEvent(BaseEvent):
         header = (
             f"📊 Summary of {self.summarized_event_count} events ({compression_ratio})"
         )
-        content = _event_section(header, html.escape(self.summary), "#6a737d")
+
+        # Convert markdown summary to HTML for rich display
+        try:
+            import markdown
+
+            summary_html = markdown.markdown(
+                self.summary, extensions=["fenced_code", "nl2br", "sane_lists"]
+            )
+        except ImportError:
+            # Fallback to escaped text if markdown not available
+            import html
+
+            summary_html = f"<pre>{html.escape(self.summary)}</pre>"
+
+        content = _event_section(header, summary_html, "#6a737d")
 
         return _event_html_container(
             "📝",

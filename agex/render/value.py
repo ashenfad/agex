@@ -8,10 +8,17 @@ from ..eval.objects import AgexClass, AgexInstance, AgexObject, PrintAction
 class ValueRenderer:
     """Renders any Python value into a string suitable for an LLM prompt."""
 
-    def __init__(self, max_len: int = 2048, max_depth: int = 2, max_items: int = 50):
+    def __init__(
+        self,
+        max_len: int = 2048,
+        max_depth: int = 2,
+        max_items: int = 50,
+        token_budget: int | None = None,
+    ):
         self.max_len = max_len
         self.max_depth = max_depth
         self.max_items = max_items
+        self.token_budget = token_budget
 
     def render(self, value: Any, current_depth: int = 0, compact: bool = False) -> str:
         """
@@ -160,7 +167,7 @@ class ValueRenderer:
 
         # Try to get natural string representation
         try:
-            str_repr = str(value)
+            str_repr = self._render_with_display_options(value)
         except Exception:
             return self._render_metadata_fallback(value, type_name)
 
@@ -168,11 +175,29 @@ class ValueRenderer:
         if self._is_default_object_repr(str_repr, type_name):
             return self._render_metadata_fallback(value, type_name)
 
-        # Apply intelligent truncation if needed
+        # For DataFrames with token budget: skip char-based truncation
+        # (already handled by iterative token-counting in _render_with_display_options)
+        from agex.render.primitives import is_dataframe
+
+        if is_dataframe(value) and self.token_budget is not None:
+            return str_repr  # Already optimally rendered
+
+        # Apply intelligent truncation if needed for other values
         if len(str_repr) <= self.max_len:
             return str_repr
 
         return self._truncate_intelligently(str_repr)
+
+    def _render_with_display_options(self, value: Any) -> str:
+        """
+        Render value to string, with special handling for DataFrames.
+        """
+        from agex.render.primitives import is_dataframe, render_dataframe_with_budget
+
+        if is_dataframe(value):
+            return render_dataframe_with_budget(value, self.token_budget)
+        else:
+            return str(value)
 
     def _render_compact_metadata(self, value: Any, type_name: str) -> str:
         """Render compact metadata using introspection."""
