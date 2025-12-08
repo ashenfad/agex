@@ -100,6 +100,22 @@ def replace_oldest_events_with_summary(
     # Keep newer events (everything after the first `count`)
     kept_refs = event_refs[count:]
 
+    # Set commit_hash and full_namespace on summary event (same as add_event_to_log)
+    # If the root state is versioned, stamp the current commit hash on the event
+    root_state = state.base_store
+    if isinstance(root_state, Versioned) and root_state.current_commit:
+        summary.commit_hash = root_state.current_commit
+
+    # Set the full_namespace based on the state context
+    from agex.state.namespaced import Namespaced
+
+    if isinstance(state, Namespaced):
+        # Use the full namespace path from the Namespaced state
+        summary.full_namespace = state.namespace
+    else:
+        # For root-level states (Versioned, Live), full_namespace equals agent_name
+        summary.full_namespace = summary.agent_name
+
     # Generate unique timestamp-based key for summary
     timestamp_microseconds = int(summary.timestamp.timestamp() * 1_000_000)
     summary_key = f"_event_{timestamp_microseconds}_"

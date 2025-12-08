@@ -9,7 +9,7 @@ from agex.agent.summarization import (
     maybe_summarize_event_log,
 )
 from agex.llm.dummy_client import DummyLLMClient
-from agex.state import Versioned
+from agex.state import Namespaced, Versioned
 from agex.state.log import add_event_to_log, get_events_from_log
 
 
@@ -288,3 +288,90 @@ class TestEventLogSummarization:
                 log_high_water_tokens=100,
                 log_low_water_tokens=150,  # Greater than high
             )
+
+    def test_summary_event_has_full_namespace_and_commit_hash(self):
+        """Test that SummaryEvent gets full_namespace and commit_hash set correctly."""
+        llm_client = DummyLLMClient()
+        llm_client.summary_response = "Events were summarized."
+
+        agent = Agent(
+            name="test_agent",
+            llm_client=llm_client,
+            log_high_water_tokens=100,
+            log_low_water_tokens=50,
+        )
+        state = Versioned()
+
+        # Snapshot to create a commit
+        state.snapshot()
+
+        # Add events to exceed threshold
+        for i in range(10):
+            event = ActionEvent(
+                agent_name="test_agent",
+                thinking=f"thinking {i}",
+                code=f"x = {i}",
+            )
+            add_event_to_log(state, event)
+
+        # Snapshot to commit events
+        state.snapshot()
+        commit_before = state.current_commit
+
+        # Run summarization
+        maybe_summarize_event_log(agent, state)
+
+        # Get the summary event
+        events = get_events_from_log(state)
+        summary = events[0]
+        assert isinstance(summary, SummaryEvent)
+
+        # Verify full_namespace is set to agent name (not empty string)
+        assert summary.full_namespace == "test_agent"
+        assert summary.full_namespace != ""
+
+        # Verify commit_hash is set
+        assert summary.commit_hash is not None
+        assert summary.commit_hash == commit_before
+
+    def test_summary_event_has_namespaced_full_namespace(self):
+        """Test that SummaryEvent in namespaced state gets correct full_namespace."""
+        llm_client = DummyLLMClient()
+        llm_client.summary_response = "Sub-agent events summarized."
+
+        agent = Agent(
+            name="sub_agent",
+            llm_client=llm_client,
+            log_high_water_tokens=100,
+            log_low_water_tokens=50,
+        )
+
+        # Create nested namespaced state (simulating hierarchical agents)
+        state = Versioned()
+        parent_state = Namespaced(state, "parent")
+        ns_state = Namespaced(parent_state, "sub_agent")
+
+        # Add events to exceed threshold
+        for i in range(10):
+            event = ActionEvent(
+                agent_name="sub_agent",
+                thinking=f"thinking {i}",
+                code=f"x = {i}",
+            )
+            add_event_to_log(ns_state, event)
+
+        # Verify events have the namespaced full_namespace
+        initial_events = get_events_from_log(ns_state)
+        assert all(e.full_namespace == "parent/sub_agent" for e in initial_events)
+
+        # Run summarization
+        maybe_summarize_event_log(agent, ns_state)
+
+        # Get the summary event
+        events = get_events_from_log(ns_state)
+        summary = events[0]
+        assert isinstance(summary, SummaryEvent)
+
+        # Verify full_namespace is set to the full namespace path (not just agent name)
+        assert summary.full_namespace == "parent/sub_agent"
+        assert summary.agent_name == "sub_agent"
