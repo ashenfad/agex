@@ -37,6 +37,99 @@ HI_DETAIL_BUDGET = 8192
 LOW_DETAIL_BUDGET = 1024
 
 
+# ============================================================================
+# Shared DataFrame utilities
+# ============================================================================
+
+
+def is_dataframe(value: Any) -> bool:
+    """
+    Check if a value is a pandas DataFrame.
+
+    Uses duck-typing to avoid hard pandas dependency.
+    Excludes list/dict/set/tuple which might have shape/columns attributes.
+
+    Args:
+        value: Value to check
+
+    Returns:
+        True if value appears to be a pandas DataFrame
+    """
+    return (
+        hasattr(value, "shape")
+        and hasattr(value, "columns")
+        and not isinstance(value, (list, dict, set, tuple))
+    )
+
+
+def render_dataframe_with_budget(value: Any, token_budget: int | None) -> str:
+    """
+    Render a DataFrame to string with optimal pandas display settings.
+
+    Uses iterative token counting to find the best row limit within budget.
+    This is a shared utility used by both ValueRenderer classes.
+
+    Args:
+        value: The DataFrame to render
+        token_budget: Optional token budget for optimization. If None, uses
+                     conservative column-based defaults.
+
+    Returns:
+        String representation of the DataFrame
+    """
+    try:
+        import pandas as pd
+    except ImportError:
+        return str(value)
+
+    old_max_rows = pd.options.display.max_rows
+    old_min_rows = pd.options.display.min_rows
+
+    try:
+        if token_budget is not None:
+            # Iterative token-counting approach
+            tokenizer = get_tokenizer("gpt-4")
+            num_rows = getattr(value, "shape")[0]
+
+            # Generate smart candidates based on DataFrame size
+            # Always include actual row count as first candidate
+            if num_rows <= 100:
+                candidates = [num_rows, 80, 60, 40, 20]
+            elif num_rows <= 200:
+                candidates = [num_rows, 200, 150, 100, 60, 40]
+            else:
+                candidates = [200, 150, 120, 80, 60, 40]
+
+            # Try candidates from largest to smallest
+            best_limit = 40
+            for limit in candidates:
+                if limit > num_rows:
+                    continue
+
+                pd.options.display.max_rows = limit
+                pd.options.display.min_rows = limit
+                test_str = str(value)
+                test_tokens = len(tokenizer.encode(test_str))
+
+                if test_tokens <= token_budget:
+                    best_limit = limit
+                    break
+
+            pd.options.display.max_rows = best_limit
+            pd.options.display.min_rows = best_limit
+        else:
+            # No budget: use conservative defaults based on column count
+            num_cols = len(getattr(value, "columns"))
+            limit = 200 if num_cols <= 5 else 120 if num_cols <= 10 else 60
+            pd.options.display.max_rows = limit
+            pd.options.display.min_rows = limit
+
+        return str(value)
+    finally:
+        pd.options.display.max_rows = old_max_rows
+        pd.options.display.min_rows = old_min_rows
+
+
 def count_tokens(text: str) -> int:
     """
     Count tokens using tiktoken with gpt-4 encoding.
@@ -176,10 +269,17 @@ def get_image_error_message(image: Any) -> str:
 class ValueRenderer:
     """Renders any Python value into a string suitable for an LLM prompt."""
 
-    def __init__(self, max_len: int = 2048, max_depth: int = 2, max_items: int = 50):
+    def __init__(
+        self,
+        max_len: int = 2048,
+        max_depth: int = 2,
+        max_items: int = 50,
+        token_budget: int | None = None,
+    ):
         self.max_len = max_len
         self.max_depth = max_depth
         self.max_items = max_items
+        self.token_budget = token_budget  # Optional token budget for smart rendering
 
     def render(self, value: Any, current_depth: int = 0, compact: bool = False) -> str:
         """
@@ -329,7 +429,7 @@ class ValueRenderer:
 
         # Try to get natural string representation
         try:
-            str_repr = str(value)
+            str_repr = self._render_with_display_options(value)
         except Exception:
             return self._render_metadata_fallback(value, type_name)
 
@@ -337,11 +437,25 @@ class ValueRenderer:
         if self._is_default_object_repr(str_repr, type_name):
             return self._render_metadata_fallback(value, type_name)
 
-        # Apply intelligent truncation if needed
+        # For DataFrames with token budget: skip char-based truncation
+        # (already handled by iterative token-counting in _render_with_display_options)
+        if is_dataframe(value) and self.token_budget is not None:
+            return str_repr  # Already optimally rendered
+
+        # Apply intelligent truncation if needed for other values
         if len(str_repr) <= self.max_len:
             return str_repr
 
         return self._truncate_intelligently(str_repr)
+
+    def _render_with_display_options(self, value: Any) -> str:
+        """
+        Render value to string, with special handling for DataFrames.
+        """
+        if is_dataframe(value):
+            return render_dataframe_with_budget(value, self.token_budget)
+        else:
+            return str(value)
 
     def _render_compact_metadata(self, value: Any, type_name: str) -> str:
         """Render compact metadata using introspection."""
@@ -676,10 +790,20 @@ def render_output_parts_full(
     tokenizer = get_tokenizer("gpt-4")
 
     # Adjust rendering parameters based on budget
+    # Use ~4 chars per token as rough estimate for max_len
     if budget == LOW_DETAIL_BUDGET:
-        render_func = ValueRenderer(max_len=1024, max_depth=2, max_items=10).render
+        render_func = ValueRenderer(
+            max_len=budget * 4,  # 1024 tokens → 4K chars
+            max_depth=2,
+            max_items=10,
+            token_budget=budget,
+        ).render
     else:
-        render_func = ValueRenderer(max_len=4096, max_depth=4).render
+        render_func = ValueRenderer(
+            max_len=budget * 4,  # 8192 tokens → 32K chars
+            max_depth=4,
+            token_budget=budget,
+        ).render
 
     # Store tuples of (ContentPart, cost) to manage budget.
     parts_with_cost: list[tuple[ContentPart, int]] = []
