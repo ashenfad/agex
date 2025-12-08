@@ -9,6 +9,7 @@ from .agent.events import (
     FailEvent,
     OutputEvent,
     SuccessEvent,
+    SummaryEvent,
     TaskStartEvent,
 )
 from .llm import LLMClient, connect_llm
@@ -42,6 +43,7 @@ __all__ = [
     "FailEvent",
     "ClarifyEvent",
     "ErrorEvent",
+    "SummaryEvent",
     # Agent Registry
     "clear_agent_registry",
     # LLM Client Factory
