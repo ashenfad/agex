@@ -150,14 +150,48 @@ class LLMClient(ABC):
         Returns:
             (is_multimodal, processed_content)
             - If text: (False, text_string)
-            - If events: (True, rendered_messages)
+            - If events: (True, conversation_transcript_as_string)
         """
         if isinstance(content, list):
             # Import here to avoid circular dependency
             from agex.render.events import render_events_as_markdown
 
             messages = render_events_as_markdown(content)
-            return (True, messages)
+
+            # Format as a transcript for summarization
+            # Instead of sending alternating user/assistant messages (confusing),
+            # send the entire conversation as a single text block to summarize
+            transcript_parts = []
+            for msg in messages:
+                role = msg.get("role", "unknown").upper()
+                content_value = msg.get("content", "")
+
+                # Handle both string and list content
+                if isinstance(content_value, list):
+                    # Extract text from content parts
+                    text_parts = []
+                    for part in content_value:
+                        if isinstance(part, dict) and part.get("type") == "text":
+                            text_parts.append(part.get("text", ""))
+                    content_value = "\n".join(text_parts)
+
+                transcript_parts.append(f"[{role}]:\n{content_value}\n")
+
+            transcript = "\n".join(transcript_parts)
+            framed_content = f"""You are an external observer summarizing a completed interaction. 
+DO NOT respond as if you are the agent in this conversation.
+DO NOT continue the conversation or take actions.
+
+Below is the HISTORICAL TRANSCRIPT to summarize:
+
+---BEGIN TRANSCRIPT---
+{transcript}
+---END TRANSCRIPT---
+
+Write your summary of what happened in this interaction."""
+
+            # Return as text (False) since we've converted it to a transcript
+            return (False, framed_content)
         else:
             return (False, content)
 
