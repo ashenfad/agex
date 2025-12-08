@@ -212,7 +212,7 @@ class TaskLoopMixin(BaseAgent):
         # Main task loop
         for _ in range(self.max_iterations):
             # Check if event log needs summarization before querying LLM
-            maybe_summarize_event_log(self, exec_state)
+            maybe_summarize_event_log(self, exec_state, on_event)
 
             # Get all events from state for LLM
             from agex.state.log import get_events_from_log
