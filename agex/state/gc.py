@@ -14,7 +14,16 @@ from agex.state.versioned import (
 
 
 def _is_system_key(key: str) -> bool:
-    return key.startswith("__")
+    """
+    Check if a key is a system key (starts with __).
+
+    Handles both direct keys ("__event_log__") and namespaced keys
+    ("agent_name/__event_log__") by extracting the base key name.
+    """
+    # Extract base key name after any namespace prefix
+    # e.g., "agent_name/__event_log__" -> "__event_log__"
+    base_key = key.split("/")[-1] if "/" in key else key
+    return base_key.startswith("__")
 
 
 @dataclass(frozen=True)
