@@ -96,9 +96,12 @@ def _smart_render_for_task_input(value: Any) -> str:
     rich content like DataFrames, arrays, and other complex objects
     in their natural representation when possible.
     """
+    from agex.render.primitives import HI_DETAIL_BUDGET
+
     renderer = ValueRenderer(
-        max_len=4096,  # Generous limit for rich task display
-        max_depth=4,  # Deep enough for complex nested objects
-        max_items=50,  # Show more items than default for task context
+        max_len=HI_DETAIL_BUDGET * 4,  # Align with token budget (~32K chars)
+        max_depth=4,
+        max_items=50,
+        token_budget=HI_DETAIL_BUDGET,  # Enable iterative DataFrame rendering
     )
     return renderer.render(value, compact=False)

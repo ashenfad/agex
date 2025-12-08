@@ -21,24 +21,47 @@ class SummarizationError(Exception):
     pass
 
 
-SUMMARIZATION_SYSTEM_MESSAGE = """You are summarizing AI agent execution history.
+SUMMARIZATION_SYSTEM_MESSAGE = """You are summarizing what happened in a completed AI agent interaction.
 
-The agent operates in a Python REPL environment where it:
-- Thinks through problems step-by-step
-- Writes and executes Python code
-- Observes results and adjusts its approach
-- Signals completion with task control functions (task_success, task_continue, task_fail, task_clarify)
+You will see a transcript showing:
+- What the user requested
+- The agent's thinking and code execution
+- Results and outputs
+- Task completion
 
-Your task is to provide a concise summary that captures:
-- Key actions the agent took and why
-- Important decisions and reasoning
-- Outcomes and results
-- Any errors or issues encountered
+YOUR ROLE: You are an EXTERNAL OBSERVER writing a summary. You are NOT the agent. Do not respond as if you are continuing the agent's work.
 
-Focus on what the agent accomplished and learned. Be concise but preserve essential context for future actions."""
+YOUR JOB: Write a detailed summary describing what the agent accomplished. Use THIRD PERSON ("The agent did X" or "The system did X").
+
+REQUIRED FORMAT - Write prose like this:
+"The user requested X. The agent retrieved Y data from Z API/source. It found W results with N items/records. [Any issues encountered and how they were resolved]."
+
+EXAMPLES OF GOOD SUMMARIES:
+- "The user requested upcoming kids' calendar events. The agent queried the Google Calendar API and retrieved 61 events spanning 3 months. It filtered for school and sports activities, identified 3 scheduling conflicts, and presented them in a DataFrame showing dates, event types, and locations."
+- "The user asked to analyze sales data. The agent loaded a CSV with 1,247 transactions, calculated monthly totals, and identified the top 3 performing products (generating $45K in revenue). It created a visualization showing the sales trend over time."
+- "The user wanted to send an email. The agent encountered an authentication error with the primary API, switched to a different endpoint, and successfully sent the message to 5 recipients with delivery confirmation."
+
+EXAMPLES OF BAD SUMMARIES (DO NOT DO THIS):
+❌ "Task completed" - too vague, no information
+❌ "✅ Task completed" - just an emoji, tells nothing  
+❌ "I will now..." - WRONG! You are not the agent, don't continue the conversation
+❌ "Let me check the calendar..." - WRONG! Don't act as the agent
+❌ "OutputEvent with DataFrame" - technical jargon, not narrative
+
+BE SPECIFIC about:
+- What the user wanted
+- What data/APIs/resources the agent accessed
+- What concrete results were produced (counts, values, outcomes)
+- Any problems the agent solved
+
+Write in PAST TENSE, THIRD PERSON ("The agent did...", "It found..."), ACTIVE VOICE.
+
+If a pre-existing summary is provided, include it in your summary as well.
+
+Remember: You are summarizing a COMPLETED interaction, not participating in it."""
 
 
-def maybe_summarize_event_log(agent: "BaseAgent", state: State) -> None:
+def maybe_summarize_event_log(agent: "BaseAgent", state: State, on_event=None) -> None:
     """
     Check if event log needs summarization and perform it if necessary.
 
@@ -50,6 +73,7 @@ def maybe_summarize_event_log(agent: "BaseAgent", state: State) -> None:
     Args:
         agent: Agent with llm_client and watermark configuration
         state: State containing the event log
+        on_event: Optional callback to notify about the SummaryEvent
 
     Raises:
         SummarizationError: If LLM summarization call fails
@@ -116,10 +140,12 @@ def maybe_summarize_event_log(agent: "BaseAgent", state: State) -> None:
     original_tokens = sum(e.full_detail_tokens for e in events_to_summarize)
 
     # Call LLM to generate summary (pass events directly for multimodal support)
+    # Use same max_tokens as normal completions for detailed summaries
     try:
         summary_text = agent.llm_client.summarize(
             system=SUMMARIZATION_SYSTEM_MESSAGE,
             content=events_to_summarize,
+            max_tokens=16384,  # Same as normal completions (16K tokens)
         )
     except Exception as e:
         raise SummarizationError(
@@ -137,3 +163,7 @@ def maybe_summarize_event_log(agent: "BaseAgent", state: State) -> None:
 
     # Replace old events with summary
     replace_oldest_events_with_summary(state, num_to_summarize, summary)
+
+    # Notify event handler if provided
+    if on_event is not None:
+        on_event(summary)
