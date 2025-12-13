@@ -2,7 +2,7 @@
 
 agex agents generate and execute code in a secure sandbox that looks and feels like Python—but with some important differences. This guide helps you understand what constraints agents face when writing code, so you can design better integrations and understand agent behavior.
 
-To that effect, all code samples in this document are specifically for the sandboxed Python-esque DSL that agex agents generate.
+To that effect, all code samples in this document are for the sandboxed Python-esque DSL that agex agents generate.
 
 **State Choice Affects Constraints**: Some limitations depend on whether you use live state (default, no persistence) or persistent state (remembers variables between task calls). Live state is more flexible but doesn't persist memory; persistent state has more constraints but enables complex multi-step workflows.
 
@@ -204,7 +204,7 @@ def increment_with_state():
 
 **Future**: Unlikely to change - would break the sandbox security model.
 
-### Unpicklable Objects - Automatic Handling ✨
+### Unpicklable Objects - Automatic Handling
 
 **When using `Versioned` state, unpicklable objects (like database cursors, file handles, network connections) are automatically detected and handled gracefully.**
 

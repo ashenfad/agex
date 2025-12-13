@@ -8,13 +8,13 @@ The security model of `agex` is best understood as a **"walled garden,"** not an
 
 This approach is a deliberate trade-off. While a fully isolated Virtual Machine (VM) offers a higher degree of theoretical security, it comes at a cost to ease of integration.
 
-`agex` is significantly safer than frameworks that rely on direct `exec()` calls but is not intended to be a substitute for a VM when running fully untrusted code from unknown sources.
+`agex` is significantly safer than frameworks that rely on direct `exec()` calls, but is not intended to be a substitute for a VM when running fully untrusted code from unknown sources.
 
 ## Core Security Strategy
 
 The `agex` sandbox uses a **whitelist-based security model** with these key components:
 
-- **AST-level validation**: All Python code is parsed and validated before execution to block dangerous language features.
+- **AST-level validation**: All Python code is parsed and validated by the execution engine to block dangerous language features.
 - **Attribute access control**: Only explicitly whitelisted attributes and methods are accessible.
 - **Data Isolation**: When using `Versioned` state, all data is serialized at the boundary of an agent task. Agents never get a direct reference to host objects, preventing accidental or malicious mutation.
 - **Type system isolation**: Safe type placeholders prevent access to dangerous methods on type objects.
@@ -57,6 +57,6 @@ type(42).__mro__           # Method resolution order
 
 ### Introspection Functions
 
-The built-in `dir()` and `help()` functions are overridden to only show the attributes and methods that have been explicitly whitelisted for the agent. This allows for useful introspection without leaking access to sensitive internal methods or private attributes (those prefixed with `_`).
+The built-in `dir()` and `help()` functions are overridden to show only the attributes and methods that have been explicitly whitelisted for the agent. This allows for useful introspection without leaking access to sensitive internal methods or private attributes (those prefixed with `_`).
 
 For a complete overview of all sandbox limitations, see our [Nearly Python guide](./nearly-python.md).

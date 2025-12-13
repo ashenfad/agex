@@ -2,6 +2,19 @@
 
 **`agex`** (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to work directly with your existing libraries and codebase.
 
+## Core Concepts
+
+`agex` executes sandboxed Python directly in your process, bypassing JSON serialization to let complex objects flow freely. You define a safe, focused environment by whitelisting exactly which capabilities are available.
+
+In agex, agents are just Python functions:
+- **Defined by Signature**: Input/output types are enforced by standard type hints.
+- **Powered by Code**: Agents write and execute Python in a secure sandbox to fulfill that signature.
+- **Curated Scope**: You whitelist exactly which modules and classes are available.
+- **Stateful Memory**: The entire workspace is versioned, enabling time-travel debugging and serverless-style background execution.
+- **Unified Observability**: Complete visibility into agent thought and action with real-time event & token streaming.
+- **Multi-Agent Orchestration**: Coordinate hierarchical or peer agents with natural Python control flow.
+- **Integrated Benchmarking**: A built-in framework for data-driven agent evaluation.
+
 ![agex demo gif](docs/assets/teaser.gif)
 
 **This works because** `agex` agents can accept and return complex types like `pandas.DataFrame` and `plotly.Figure` objects without intermediate JSON serialization. For a deeper dive, check out the full **[agex101.ipynb tutorial](https://ashenfad.github.io/agex/examples/agex101/)** or see **[geospatial routing with OSMnx](https://ashenfad.github.io/agex/examples/routing/)** for advanced multi-library integration.
@@ -9,17 +22,7 @@
 For a full demo app where agex integrates with NiceGUI, see [`agex-ui`](https://github.com/ashenfad/agex-ui).
 
 
-## What Makes This Different
 
-`agex` uses a subset of Python as the agent action space, executing actions in a sandboxed environment within your process. This approach avoids the complexity of JSON serialization and allows complex objects to flow directly between your code and the agent. You control exactly what functions, classes, and modules are available, creating a safe and focused
-environment for the agent.
-
--   **Code-as-Action**: Secure, sandboxed Python execution for agents.
--   **Library Integration**: Use your existing code directly, no tool-making required.
--   **Workspace Persistence**: Git-like versioning for agent state and memory.
--   **Multi-Agent**: Orchestrate agents with natural Python control flow.
--   **Event Streams**: Real-time, notebook-friendly observability.
--   **Benchmarking**: A framework for data-driven agent evaluation.
 
 ## Documentation
 

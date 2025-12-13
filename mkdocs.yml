@@ -44,7 +44,6 @@ nav:
   - Concepts:
     - Overview: concepts/overview.md
     - The Big Picture: concepts/big-picture.md
-    - A Note on MCP: concepts/agex-and-mcp.md
     - Security: concepts/security.md
     - Nearly Python: concepts/nearly-python.md
   - Examples:
