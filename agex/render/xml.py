@@ -18,7 +18,7 @@ from agex.agent.events import (
     TaskStartEvent,
 )
 from agex.llm.core import ContentPart, ImagePart, TextPart
-from agex.llm.xml import TAG_PYTHON, TAG_THINKING, TAG_TITLE
+from agex.llm.xml import TAG_OBSERVATION, TAG_PYTHON, TAG_THINKING, TAG_TITLE
 from agex.render.primitives import (
     HI_DETAIL_BUDGET,
     LOW_DETAIL_BUDGET,
@@ -86,29 +86,31 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             content_parts, _ = render_output_parts_full(event.parts, budget=budget)
 
             if content_parts:
-                # Add "Agent stdout:" header
-                header = TextPart(text="Agent stdout:")
-                all_parts = [header] + content_parts
-
                 # Check for images
-                has_images = any(isinstance(p, ImagePart) for p in all_parts)
+                has_images = any(isinstance(p, ImagePart) for p in content_parts)
 
                 if has_images:
-                    # Multimodal message - return structured content
+                    # Multimodal message - wrap in OBSERVATION tags
                     messages.append(
                         {
                             "role": "user",
                             "content": [
-                                _content_part_to_dict(part) for part in all_parts
+                                {"type": "text", "text": f"<{TAG_OBSERVATION}>"},
+                                *[
+                                    _content_part_to_dict(part)
+                                    for part in content_parts
+                                ],
+                                {"type": "text", "text": f"</{TAG_OBSERVATION}>"},
                             ],
                         }
                     )
                 else:
-                    # Text-only message (all parts are TextPart since has_images is False)
+                    # Text-only message
                     text = "\n".join(
-                        p.text for p in all_parts if isinstance(p, TextPart)
+                        p.text for p in content_parts if isinstance(p, TextPart)
                     )
-                    messages.append({"role": "user", "content": text})
+                    content = f"<{TAG_OBSERVATION}>{text}</{TAG_OBSERVATION}>"
+                    messages.append({"role": "user", "content": content})
 
         elif isinstance(event, SuccessEvent):
             # Render success marker with appropriate budget

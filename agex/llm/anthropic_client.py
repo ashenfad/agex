@@ -5,7 +5,7 @@ from anthropic.types import TextBlockParam
 
 from agex.agent.events import Event
 from agex.llm.core import LLMClient, LLMResponse, TokenChunk
-from agex.llm.xml import XML_FORMAT_PRIMER, tokenize_xml_stream
+from agex.llm.xml import TAG_TITLE, XML_FORMAT_PRIMER, tokenize_xml_stream
 
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key", "timeout"}
@@ -182,6 +182,15 @@ class AnthropicClient(LLMClient):
             cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
         )
 
+        # Pre-fill response with opening tag to enforce XML structure
+        prefill_text = f"<{TAG_TITLE}>"
+        conversation_messages.append(
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": prefill_text}],
+            }
+        )
+
         try:
             # Set default max_tokens if not provided
             if "max_tokens" not in request_kwargs:
@@ -197,6 +206,8 @@ class AnthropicClient(LLMClient):
 
             # Generator for raw text chunks from Anthropic
             def raw_chunks() -> Iterator[str]:
+                # Yield the pre-filled text first so the parser sees it
+                yield prefill_text
                 with stream as message_stream:
                     for text in message_stream.text_stream:
                         yield text
