@@ -11,7 +11,7 @@ The key insight is that **code is language made formal enough to get stuff done*
 - **REPLs** for interactive exploration and step-by-step reasoning
 - **`dir()` and `help()`** for discovering capabilities  
 - **State inspection** like `print` for understanding structure
- - **Imports for whitelisted modules** for accessing functionality
+- **Imports for whitelisted modules** for accessing functionality
 - **Function definitions** for building reusable tools
 
 Instead of inventing new agent interaction patterns, `agex` adapts the proven tools developers have used for decades. This makes agents more effective and their behavior more predictable.
@@ -22,7 +22,7 @@ This philosophy shapes how agex works:
 
 - **REPL-Like Environment** - Agents operate in familiar, persistent environments where they can introspect (`help`, `dir`), see their own output (`print`, `view_image`), and build solutions iteratively
 - **Natural Error Handling** - Validation errors and exceptions appear in the agent's stdout just like in a real Python environment, creating natural debugging loops
-- **Flexible State Management** - Tasks can run in live mode or with persistent state that captures the agent's entire workspace, enabling both simple single-shot tasks and complex workflows where agents keep and re-use their own functions
+- **Flexible State Management** - Tasks can run in live mode or with persistent state that captures the agent's entire workspace, enabling both simple single-shot tasks and complex workflows where agents keep and reuse their own functions
 
 
 ## The Middle Road: Guidance Through a Curated Environment
@@ -35,7 +35,7 @@ The whitelist registration system is more than just a security feature; it is a 
 
 This curated environment helps guide the agent toward a correct solution by limiting its scope of action to only the most relevant capabilities. It prevents the agent from getting lost in the vastness of a full compute environment and encourages it to compose the building blocks you provide. This "micro-DSL" can be as small or as large as you need, from a handful of functions to broad access to a library, giving you fine-grained control over the balance of guidance and freedom.
 
-This philosophy of providing guidance through a curated environment is the primary design principle. A powerful and welcome side-effect of this approach is a robust security model. By limiting the agent's world to only the capabilities you provide, you inherently prevent it from accessing unintended, and potentially unsafe, parts of your system. Security becomes a natural outcome of thoughtful agent design.
+This philosophy of providing guidance through a curated environment is the primary design principle. A powerful and welcome side-effect of this approach is a robust security model. By limiting the agent's world to only the capabilities you provide, you inherently prevent it from accessing unintended and potentially unsafe parts of your system. Security becomes a natural outcome of thoughtful agent design.
 
 ### Registration, Not Tool-Making
 
@@ -50,7 +50,13 @@ agent.module(pd)
 
 Your existing codebase *is* the toolset. The registration system acts as a secure and targeted bridge between your code and the agent, without forcing you to create and maintain a parallel set of tool abstractions.
 
-For a more detailed comparison of this approach to industry-standard tooling models like MCP, see our full **[note on this philosophy](agex-and-mcp.md)**.
+#### PyPI is the Ultimate Toolset
+
+`agex` is built on a simple premise:
+
+> The richest, most mature, and most capable ecosystem of "tools" for a Python agent already exists. **It's called the Python Package Index (PyPI).**
+
+Instead of requiring developers to wrap their logic in new schemas for a new ecosystem, `agex` enables agents to directly use the 500,000+ libraries that the Python community has spent decades building, testing, and perfecting.
 
 ## Security Through Design
 
