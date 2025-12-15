@@ -285,3 +285,82 @@ def test_mutation_updates_touch_and_size():
 
     assert touch2 > touch1  # mutation counts as a touch
     assert size2 > size1  # serialized size grows with added element
+
+
+def test_base_commit_tracks_branch_start():
+    """Test that base_commit is set correctly on init and updated after merge."""
+    store = kv.Memory()
+    state = Versioned(store)
+
+    initial = state.current_commit
+    assert state.base_commit == initial
+
+    # Snapshot doesn't change base_commit
+    state.set("a", 1)
+    state.snapshot()
+    assert state.base_commit == initial
+    assert state.current_commit != initial
+
+    # Merge updates base_commit to match current_commit
+    state.merge()
+    assert state.base_commit == state.current_commit
+
+
+def test_snapshot_does_not_update_head():
+    """Test that snapshot() does not update HEAD in the store."""
+    import pickle
+
+    from agex.state.versioned import HEAD_COMMIT
+
+    store = kv.Memory()
+    state = Versioned(store)
+    initial = state.current_commit
+
+    state.set("a", 1)
+    state.snapshot()
+
+    # HEAD should still be at initial
+    head = pickle.loads(store.get(HEAD_COMMIT))
+    assert head == initial
+    assert state.current_commit != initial
+
+
+def test_merge_updates_head():
+    """Test that merge() updates HEAD in the store."""
+    import pickle
+
+    from agex.state.versioned import HEAD_COMMIT
+
+    store = kv.Memory()
+    state = Versioned(store)
+
+    state.set("a", 1)
+    state.snapshot()
+    state.merge()
+
+    # HEAD should now match current_commit
+    head = pickle.loads(store.get(HEAD_COMMIT))
+    assert head == state.current_commit
+
+
+def test_reset_reloads_from_head():
+    """Test that reset() reloads state from current HEAD."""
+    store = kv.Memory()
+    state1 = Versioned(store)
+    state2 = Versioned(store)
+
+    # State1 makes changes and merges
+    state1.set("a", 1)
+    state1.snapshot()
+    state1.merge()
+
+    # State2 has local changes but calls reset
+    state2.set("b", 2)
+    state2.snapshot()
+    state2.reset()
+
+    # State2 should now see state1's data
+    assert state2.get("a") == 1
+    assert state2.get("b") is None
+    assert state2.current_commit == state1.current_commit
+    assert state2.base_commit == state1.current_commit

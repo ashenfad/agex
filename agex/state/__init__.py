@@ -9,7 +9,7 @@ from .kv import KVStore
 from .live import Live
 from .namespaced import Namespaced
 from .scoped import Scoped
-from .versioned import Versioned
+from .versioned import ConcurrencyError, Versioned
 
 __all__ = [
     "State",
@@ -19,6 +19,7 @@ __all__ = [
     "Namespaced",
     "Scoped",
     "Versioned",
+    "ConcurrencyError",
     "RebaseResult",
     "GCVersioned",
 ]

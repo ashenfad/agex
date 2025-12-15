@@ -35,6 +35,18 @@ class SnapshotResult:
     unsaved_keys: list[str]
 
 
+class ConcurrencyError(Exception):
+    """
+    Raised when a concurrent write conflict occurs during snapshot.
+
+    This happens when another process updated HEAD between when we started
+    building our commit and when we tried to atomically update HEAD via CAS.
+    The caller should reload state and retry the operation.
+    """
+
+    pass
+
+
 def _get_commit_hash() -> str:
     return secrets.token_hex(8)
 
@@ -77,6 +89,7 @@ class Versioned(State):
                 store.set_many(**initial_metadata)
 
         self.current_commit = commit_hash
+        self.base_commit = commit_hash  # Track where this branch started for CAS
 
         # Track accessed objects for mutation detection
         # key -> (original_hash, object_reference)
@@ -351,10 +364,9 @@ class Versioned(State):
                             ),
                         )
 
-        # Serialize commit metadata and update HEAD
+        # Serialize commit metadata (but don't include HEAD yet)
         diffs[COMMIT_KEYSET % new_hash] = pickle.dumps(new_commit_keys)
         diffs[PARENT_COMMIT % new_hash] = pickle.dumps(self.current_commit)
-        diffs[HEAD_COMMIT] = pickle.dumps(new_hash)
 
         # Persist GC/rebase metadata for this commit
         diffs[META_KEY % new_hash] = pickle.dumps(new_meta)
@@ -363,7 +375,10 @@ class Versioned(State):
         )
         diffs[TOTAL_VAR_SIZE_KEY % new_hash] = pickle.dumps(total_var_size)
 
+        # Write all commit data (data, metadata, blobs)
         self.long_term.set_many(**diffs)
+
+        # Update in-memory state (branch only - HEAD not updated)
         self.commit_keys = new_commit_keys
         self.current_commit = new_hash
         self.removed = set()
@@ -372,6 +387,90 @@ class Versioned(State):
         self.meta = new_meta
 
         return SnapshotResult(new_hash, unsaved_keys)
+
+    def merge(self, on_conflict: str = "raise") -> bool:
+        """
+        Atomically update HEAD to this branch's tip commit using CAS.
+
+        This should be called after all snapshots for a task are complete.
+        Uses compare-and-swap to ensure no concurrent modifications.
+
+        Args:
+            on_conflict: Strategy when HEAD has diverged since branch started.
+                'raise' - Raise ConcurrencyError (caller should reload and retry)
+                'abandon' - Return False and leave commits as orphans (for GC)
+
+        Returns:
+            True if HEAD was successfully updated to this branch's tip.
+            False if on_conflict='abandon' and HEAD had diverged.
+
+        Raises:
+            ConcurrencyError: If on_conflict='raise' and HEAD diverged.
+        """
+        if self.current_commit == self.base_commit:
+            # No commits on this branch, nothing to merge
+            return True
+
+        expected_head = pickle.dumps(self.base_commit)
+        new_head = pickle.dumps(self.current_commit)
+
+        cas_success = self.long_term.cas(HEAD_COMMIT, new_head, expected=expected_head)
+
+        if cas_success:
+            # Successfully merged - update base for potential future work
+            self.base_commit = self.current_commit
+            return True
+
+        if on_conflict == "abandon":
+            # Leave our commits as orphans (will be cleaned by GC)
+            return False
+
+        # Default: raise error for caller to handle
+        raise ConcurrencyError(
+            f"Concurrent modification detected: HEAD changed from {self.base_commit}. "
+            f"Reload state and retry."
+        )
+
+    def reset(self) -> None:
+        """
+        Abandon local branch and reload from current HEAD.
+
+        Use this after a ConcurrencyError to start fresh with the latest state.
+        """
+        head_bytes = self.long_term.get(HEAD_COMMIT)
+        if head_bytes is None:
+            raise ValueError("No HEAD commit found in store")
+
+        commit_hash = pickle.loads(head_bytes)
+        self.current_commit = commit_hash
+        self.base_commit = commit_hash
+
+        # Reload commit keys
+        commit_keyset_bytes = self.long_term.get(COMMIT_KEYSET % commit_hash)
+        if commit_keyset_bytes is not None:
+            self.commit_keys = pickle.loads(commit_keyset_bytes)
+        else:
+            self.commit_keys = {}
+
+        # Reload metadata
+        meta_bytes = self.long_term.get(META_KEY % commit_hash)
+        if meta_bytes is not None:
+            try:
+                self.meta = pickle.loads(meta_bytes)
+            except Exception:
+                self.meta = {}
+        else:
+            self.meta = {}
+
+        # Reset working state
+        self.live = Live()
+        self.removed = set()
+        self.accessed_objects.clear()
+        self._touch_counter = (
+            max((entry.last_touch for entry in self.meta.values()), default=0)
+            if self.meta
+            else 0
+        )
 
     def checkout(self, commit_hash: str) -> "Versioned | None":
         """
