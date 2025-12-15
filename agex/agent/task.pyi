@@ -59,11 +59,17 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         *,
         primer: str | None = None,
         setup: str | None = None,
+        on_conflict: str = "retry",
+        max_conflict_retries: int = 3,
     ) -> Union[TaskCallable[T], Callable[[Callable[..., T]], TaskCallable[T]]]:
         """
         Decorator to mark a function as an agent task.
 
         The return type is preserved from the original function.
+
+        Args:
+            on_conflict: How to handle concurrency conflicts ('retry' or 'abandon')
+            max_conflict_retries: Max retry attempts for 'retry' strategy (default: 3)
         """
         ...
 

@@ -76,6 +76,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         *,
         primer: str | None = None,
         setup: str | None = None,
+        on_conflict: str = "retry",
+        max_conflict_retries: int = 3,
     ) -> Callable:
         """
         Decorator to mark a function as an agent task.
@@ -113,6 +115,10 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             primer: Keyword-only primer argument (alternative to positional)
             setup: Optional code string to execute before the task for context discovery.
                    This runs automatically and doesn't count against iteration limits.
+            on_conflict: How to handle concurrency conflicts when merging Versioned state.
+                'retry' (default) - Automatically retry the task with fresh state
+                'abandon' - Silently abandon the work (commits become orphans for GC)
+            max_conflict_retries: Maximum number of retry attempts (default: 3)
 
         Returns:
             Either the decorated function (naked) or a decorator function (parameterized)
@@ -161,7 +167,11 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     effective_primer = primer_or_func
 
                 return self._create_task_wrapper(
-                    func, primer=effective_primer, setup=setup
+                    func,
+                    primer=effective_primer,
+                    setup=setup,
+                    on_conflict=on_conflict,
+                    max_conflict_retries=max_conflict_retries,
                 )
 
         # If the decorator is used without parentheses (@agent.task), the function
@@ -196,7 +206,12 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             )
 
     def _create_task_wrapper(
-        self, func: Callable, primer: str | None, setup: str | None = None
+        self,
+        func: Callable,
+        primer: str | None,
+        setup: str | None = None,
+        on_conflict: str = "retry",
+        max_conflict_retries: int = 3,
     ) -> Callable:
         """
         Creates the actual task wrapper function.
@@ -204,6 +219,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         Args:
             func: The original function to wrap
             primer: Agent instructions for implementing the task (None to use docstring)
+            on_conflict: How to handle concurrency conflicts ('retry' or 'abandon')
+            max_conflict_retries: Maximum retry attempts for 'retry' strategy
 
         Returns:
             The wrapped function
@@ -348,6 +365,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 on_event=on_event,
                 on_token=on_token,
                 setup=setup,
+                on_conflict=on_conflict,
+                max_conflict_retries=max_conflict_retries,
             )
 
         def stream(*args, **kwargs):
@@ -412,6 +431,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         on_event=_handler,
                         on_token=on_token,
                         setup=setup,
+                        on_conflict=on_conflict,
+                        max_conflict_retries=max_conflict_retries,
                     )
                 except BaseException as e:
                     # Emit the exception into the queue so the consumer can re-raise

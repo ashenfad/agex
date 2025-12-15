@@ -136,6 +136,58 @@ result2 = my_function(x=20, y="world", state=shared_state)  # Remembers previous
 
 See [State](state.md) for more details on state management.
 
+### Concurrency Control
+
+When using `Versioned` state with concurrent tasks (e.g., multiple workers, background jobs), tasks may conflict when trying to merge their changes. The `on_conflict` parameter controls how these conflicts are handled:
+
+```python
+# Foreground task - retry on conflict (default)
+@agent.task(on_conflict='retry')
+def interactive_task(query: str) -> str:  # type: ignore[return-value]
+    """Process user query with automatic retry."""
+    pass
+
+# Background task - abandon work on conflict
+@agent.task(on_conflict='abandon')
+def background_indexing() -> None:  # type: ignore[return-value]
+    """Rebuild search index in background."""
+    pass
+
+# Custom retry limit
+@agent.task(on_conflict='retry', max_conflict_retries=5)
+def critical_task() -> dict:  # type: ignore[return-value]
+    """Important task that needs more retry attempts."""
+    pass
+```
+
+**Conflict Strategies:**
+
+| Strategy | Behavior | Use Case |
+|----------|----------|----------|
+| `retry` (default) | Resets state and reruns task (up to `max_conflict_retries` times) | Interactive/foreground tasks |
+| `abandon` | Silently returns `None` on conflict | Background/non-critical tasks |
+
+**How it works:**
+1. Task executes and calls `snapshot()` internally after each turn
+2. On completion, task attempts to `merge()` its branch to HEAD
+3. If another task modified HEAD concurrently, merge fails
+4. With `retry`: state is reset and task reruns from scratch
+5. With `abandon`: task returns `None` and work is discarded
+
+> [!CAUTION]
+> **Side Effects and Conflicts**: Conflict handling only resets the `Versioned` state - external side effects cannot be undone. If your task calls functions that modify external systems (databases, APIs, file systems), those changes persist even when:
+> - **Retry**: Task reruns from scratch (side effects from first attempt remain)
+> - **Abandon**: Work is discarded (side effects already happened)
+>
+> This can lead to duplicate operations, orphaned data, or inconsistent state. For tasks with side effects:
+> - **Prefer functional patterns**: Have agents return results that the caller uses to update external systems (after successful merge). This avoids side effects entirely.
+> - Design functions to be idempotent (safe to retry/re-execute)
+> - Use transactional patterns with explicit rollback
+> - Consider deferring side effects until after successful merge
+> - Log all external operations for manual reconciliation
+
+See [State - Concurrent Task Handling](state.md#concurrent-task-handling) for implementation details.
+
 ### on_event Parameter
 
 - **Optional**: `on_event: Callable[[BaseEvent], None] | None = None`
