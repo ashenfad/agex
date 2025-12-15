@@ -365,3 +365,230 @@ class TestMemoryRemove:
         assert store.get("a") is None
         store.remove_many("b", "missing")
         assert "b" not in store
+
+
+class TestMemoryCAS:
+    """Test compare-and-swap operations for Memory store."""
+
+    def test_memory_cas_success(self):
+        store = Memory()
+        store.set("key", b"old")
+
+        # CAS should succeed when expected matches
+        success = store.cas("key", b"new", expected=b"old")
+        assert success is True
+        assert store.get("key") == b"new"
+
+    def test_memory_cas_failure(self):
+        store = Memory()
+        store.set("key", b"value")
+
+        # CAS should fail when expected doesn't match
+        success = store.cas("key", b"new", expected=b"wrong")
+        assert success is False
+        assert store.get("key") == b"value"  # Value unchanged
+
+    def test_memory_cas_create_only(self):
+        store = Memory()
+
+        # CAS with expected=None should create if key doesn't exist
+        success = store.cas("new_key", b"value", expected=None)
+        assert success is True
+        assert store.get("new_key") == b"value"
+
+        # CAS with expected=None should fail if key exists
+        success = store.cas("new_key", b"updated", expected=None)
+        assert success is False
+        assert store.get("new_key") == b"value"  # Value unchanged
+
+    def test_memory_cas_type_validation(self):
+        store = Memory()
+
+        # CAS should reject non-bytes values
+        with pytest.raises(TypeError, match="Expected bytes, got str"):
+            store.cas("key", "not bytes", expected=None)  # type: ignore
+
+    def test_memory_cas_thread_safety(self):
+        """Test that CAS is atomic even with threading."""
+        import threading
+
+        store = Memory()
+        store.set("counter", b"0")
+        success_count = [0]
+        failure_count = [0]
+
+        def increment():
+            # Try to increment the counter using CAS
+            for _ in range(10):
+                current = store.get("counter")
+                if current:
+                    new_value = str(int(current.decode()) + 1).encode()
+                    if store.cas("counter", new_value, expected=current):
+                        success_count[0] += 1
+                    else:
+                        failure_count[0] += 1
+
+        # Run multiple threads trying to increment
+        threads = [threading.Thread(target=increment) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Final value should be 50 (5 threads * 10 increments each)
+        assert store.get("counter") == b"50"
+        assert success_count[0] == 50
+
+
+class TestDiskCAS:
+    """Test compare-and-swap operations for Disk store."""
+
+    def setup_method(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.store = Disk(self.temp_dir)
+
+    def teardown_method(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_disk_cas_success(self):
+        self.store.set("key", b"old")
+
+        success = self.store.cas("key", b"new", expected=b"old")
+        assert success is True
+        assert self.store.get("key") == b"new"
+
+    def test_disk_cas_failure(self):
+        self.store.set("key", b"value")
+
+        success = self.store.cas("key", b"new", expected=b"wrong")
+        assert success is False
+        assert self.store.get("key") == b"value"
+
+    def test_disk_cas_create_only(self):
+        success = self.store.cas("new_key", b"value", expected=None)
+        assert success is True
+        assert self.store.get("new_key") == b"value"
+
+        success = self.store.cas("new_key", b"updated", expected=None)
+        assert success is False
+        assert self.store.get("new_key") == b"value"
+
+    def test_disk_cas_type_validation(self):
+        with pytest.raises(TypeError, match="Expected bytes, got str"):
+            self.store.cas("key", "not bytes", expected=None)  # type: ignore
+
+    def test_disk_cas_transaction_atomicity(self):
+        """Test that CAS transaction is atomic - either succeeds completely or fails."""
+        self.store.set("key", b"initial")
+
+        # Successful CAS should persist
+        self.store.cas("key", b"updated", expected=b"initial")
+
+        # Create new store instance to verify persistence
+        new_store = Disk(self.temp_dir)
+        assert new_store.get("key") == b"updated"
+
+
+class TestCacheCAS:
+    """Test compare-and-swap operations for Cache store."""
+
+    def test_cache_cas_success_updates_cache(self):
+        backing = Memory()
+        cache = Cache(backing, max_bytes=1024)
+
+        cache.set("key", b"old")
+        assert "key" in cache.cache
+
+        success = cache.cas("key", b"new", expected=b"old")
+        assert success is True
+        assert cache.get("key") == b"new"
+        assert cache.cache["key"] == b"new"  # Cache updated
+
+    def test_cache_cas_failure_invalidates_cache(self):
+        backing = Memory()
+        cache = Cache(backing, max_bytes=1024)
+
+        cache.set("key", b"value")
+        assert "key" in cache.cache
+
+        success = cache.cas("key", b"new", expected=b"wrong")
+        assert success is False
+        # Cache should be invalidated to prevent stale reads
+        assert "key" not in cache.cache
+
+    def test_cache_cas_delegated_to_backing(self):
+        backing = Memory()
+        cache = Cache(backing, max_bytes=1024)
+
+        # Put data in backing store only (not in cache)
+        backing.set("key", b"old")
+        assert "key" not in cache.cache
+
+        # CAS should work even though cache doesn't have it
+        success = cache.cas("key", b"new", expected=b"old")
+        assert success is True
+        assert backing.get("key") == b"new"
+
+    def test_cache_cas_create_only(self):
+        backing = Memory()
+        cache = Cache(backing, max_bytes=1024)
+
+        success = cache.cas("new_key", b"value", expected=None)
+        assert success is True
+        assert cache.get("new_key") == b"value"
+        assert "new_key" in cache.cache
+
+
+class TestWriteBehindCAS:
+    """Test compare-and-swap operations for WriteBehind store."""
+
+    def test_write_behind_cas_flushes_first(self):
+        backing = Memory()
+        wb = WriteBehind(backing)
+
+        # Queue a write
+        wb.set("key", b"old")
+
+        # CAS should flush pending writes first
+        success = wb.cas("key", b"new", expected=b"old")
+        assert success is True
+
+        # Verify in backing store (proves flush happened)
+        assert backing.get("key") == b"new"
+
+    def test_write_behind_cas_failure(self):
+        backing = Memory()
+        wb = WriteBehind(backing)
+
+        wb.set("key", b"value")
+        wb.flush()
+
+        success = wb.cas("key", b"new", expected=b"wrong")
+        assert success is False
+        assert wb.get("key") == b"value"
+
+    def test_write_behind_cas_with_pending_writes(self):
+        backing = Memory()
+        wb = WriteBehind(backing)
+
+        # Queue multiple writes
+        wb.set("key1", b"value1")
+        wb.set("key2", b"value2")
+        wb.set("key3", b"value3")
+
+        # CAS should flush everything
+        success = wb.cas("key2", b"updated", expected=b"value2")
+        assert success is True
+
+        # All queued writes should be in backing store
+        assert backing.get("key1") == b"value1"
+        assert backing.get("key2") == b"updated"
+        assert backing.get("key3") == b"value3"
+
+    def test_write_behind_cas_create_only(self):
+        backing = Memory()
+        wb = WriteBehind(backing)
+
+        success = wb.cas("new_key", b"value", expected=None)
+        assert success is True
+        assert wb.get("new_key") == b"value"
