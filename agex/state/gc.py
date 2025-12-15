@@ -1,4 +1,5 @@
 import pickle
+import time
 from dataclasses import dataclass
 
 from agex.state.versioned import (
@@ -7,6 +8,7 @@ from agex.state.versioned import (
     META_KEY,
     PARENT_COMMIT,
     TOTAL_VAR_SIZE_KEY,
+    MetaEntry,
     SnapshotResult,
     Versioned,
     get_commit_hash,
@@ -34,6 +36,7 @@ class RebaseResult:
     kept_keys: tuple[str, ...]
     total_size_before: int
     total_size_after: int
+    orphans_cleaned: int = 0
 
 
 class GCVersioned(Versioned):
@@ -110,7 +113,7 @@ class GCVersioned(Versioned):
 
         meta = self._load_meta(current_commit)
         total_before = self._load_total_size(
-            default=sum(s or 0 for _, s in meta.values())
+            default=sum(entry.size or 0 for entry in meta.values())
         )
 
         # Identify system and user keys
@@ -123,14 +126,14 @@ class GCVersioned(Versioned):
         unref_events = event_keys - event_refs
 
         retained_keys = set(system_keys.keys()) | set(user_meta.keys())
-        total = sum(s or 0 for _, s in user_meta.values())
+        total = sum(entry.size or 0 for entry in user_meta.values())
         dropped: list[str] = []
 
         for key in unref_events:
             if key in retained_keys:
                 retained_keys.discard(key)
             if key in user_meta:
-                size = user_meta[key][1] or 0
+                size = user_meta[key].size or 0
                 total -= size
                 user_meta.pop(key, None)
             dropped.append(key)
@@ -140,22 +143,22 @@ class GCVersioned(Versioned):
 
         # Calculate drop list ordered by oldest touch then largest size
         # Exclude referenced events from candidates to prevent them from being dropped
-        candidates: list[tuple[str, tuple[int, int | None]]] = sorted(
+        candidates: list[tuple[str, MetaEntry]] = sorted(
             ((k, v) for k, v in user_meta.items() if k not in event_refs),
-            key=lambda kv: (kv[1][0], -(kv[1][1] or 0)),
+            key=lambda kv: (kv[1].last_touch, -(kv[1].size or 0)),
         )
 
-        for key, (_touch, size) in candidates:
+        for key, entry in candidates:
             if total <= self.low_water:
                 break
             retained_keys.discard(key)
             dropped.append(key)
-            total -= size or 0
+            total -= entry.size or 0
 
         # Build new commit
         new_hash = get_commit_hash()
         new_commit_keys: dict[str, str] = {}
-        new_meta: dict[str, tuple[int, int | None]] = {}
+        new_meta: dict[str, MetaEntry] = {}
         diffs: dict[str, bytes] = {}
 
         # Carry system keys as-is
@@ -193,7 +196,7 @@ class GCVersioned(Versioned):
         diffs[PARENT_COMMIT % new_hash] = pickle.dumps(None)
         diffs[HEAD_COMMIT] = pickle.dumps(new_hash)
         diffs[META_KEY % new_hash] = pickle.dumps(new_meta)
-        total_after = sum(size or 0 for _, size in new_meta.values())
+        total_after = sum(entry.size or 0 for entry in new_meta.values())
         diffs[TOTAL_VAR_SIZE_KEY % new_hash] = pickle.dumps(total_after)
 
         self.long_term.set_many(**diffs)
@@ -215,6 +218,9 @@ class GCVersioned(Versioned):
         self.accessed_objects.clear()
         self.meta = new_meta
 
+        # Clean orphaned commits (from failed CAS attempts)
+        orphans_cleaned = self.clean_orphans(min_age_seconds=3600)
+
         return RebaseResult(
             performed=True,
             new_commit=new_hash,
@@ -222,6 +228,7 @@ class GCVersioned(Versioned):
             kept_keys=tuple(retained_keys),
             total_size_before=total_before,
             total_size_after=total_after,
+            orphans_cleaned=orphans_cleaned,
         )
 
     def snapshot(self) -> SnapshotResult:
@@ -235,12 +242,35 @@ class GCVersioned(Versioned):
 
         return result
 
-    def _load_meta(self, commit_hash: str) -> dict[str, tuple[int, int | None]]:
+    def _load_meta(self, commit_hash: str) -> dict[str, MetaEntry]:
         meta_bytes = self.long_term.get(META_KEY % commit_hash)
         if meta_bytes is None:
             return {}
         try:
-            return pickle.loads(meta_bytes)
+            loaded_meta = pickle.loads(meta_bytes)
+            # Handle legacy 2-tuple format by converting to MetaEntry
+            if loaded_meta and isinstance(next(iter(loaded_meta.values())), tuple):
+                first_entry = next(iter(loaded_meta.values()))
+                if len(first_entry) == 2:
+                    # Legacy format: convert to MetaEntry
+                    return {
+                        k: MetaEntry(touch, size, time.time())
+                        for k, (touch, size) in loaded_meta.items()
+                    }
+            # Already in MetaEntry format or new 3-tuple format
+            if loaded_meta and isinstance(next(iter(loaded_meta.values())), tuple):
+                # Convert 3-tuple to MetaEntry
+                result = {}
+                for k, v in loaded_meta.items():
+                    if isinstance(v, MetaEntry):
+                        result[k] = v
+                    elif len(v) == 3:
+                        result[k] = MetaEntry(v[0], v[1], v[2])
+                    else:
+                        # Shouldn't happen, but handle gracefully
+                        result[k] = MetaEntry(v[0], v[1], time.time())
+                return result
+            return loaded_meta
         except Exception:
             return {}
 
@@ -254,3 +284,83 @@ class GCVersioned(Versioned):
             return pickle.loads(total_bytes)
         except Exception:
             return default
+
+    def _find_all_commit_hashes(self) -> list[str]:
+        """Find all commit hashes in the store by scanning for metadata keys."""
+        meta_prefix = META_KEY.replace("%s", "")
+        commit_hashes = []
+
+        for key in self.long_term.keys():
+            if key.startswith(meta_prefix):
+                # Extract commit hash from key like "__meta__abc123"
+                commit_hash = key.replace(meta_prefix, "")
+                if commit_hash:
+                    commit_hashes.append(commit_hash)
+
+        return commit_hashes
+
+    def _get_commit_created_at(self, commit_hash: str) -> float | None:
+        """Get the creation timestamp for a commit, or None if unavailable."""
+        meta = self._load_meta(commit_hash)
+        if not meta:
+            return None
+
+        # All keys in a commit have the same created_at timestamp
+        first_entry = next(iter(meta.values()), None)
+        if first_entry:
+            return first_entry.created_at
+
+        return None
+
+    def clean_orphans(self, min_age_seconds: int = 3600) -> int:
+        """
+        Remove orphaned commits unreachable from HEAD and older than min_age.
+
+        Args:
+            min_age_seconds: Only delete orphans older than this (default 1 hour)
+
+        Returns:
+            Number of orphaned commits cleaned
+        """
+        if self.current_commit is None:
+            return 0
+
+        # Mark phase: Find all reachable commits
+        reachable = set(self.history())
+
+        # Sweep phase: Find old orphaned commits
+        cutoff_time = time.time() - min_age_seconds
+        orphans_to_clean = []
+
+        for commit_hash in self._find_all_commit_hashes():
+            if commit_hash in reachable:
+                continue
+
+            created_at = self._get_commit_created_at(commit_hash)
+            if created_at and created_at < cutoff_time:
+                orphans_to_clean.append(commit_hash)
+
+        # Delete orphaned commits
+        for orphan_hash in orphans_to_clean:
+            # Remove all keys associated with this orphaned commit
+            keyset_key = COMMIT_KEYSET % orphan_hash
+            keyset_bytes = self.long_term.get(keyset_key)
+            if keyset_bytes:
+                try:
+                    keyset = pickle.loads(keyset_bytes)
+                    # Remove all versioned data blobs
+                    versioned_keys = list(keyset.values())
+                    if versioned_keys:
+                        self.long_term.remove_many(*versioned_keys)
+                except Exception:
+                    pass
+
+            # Remove metadata for this commit
+            self.long_term.remove_many(
+                META_KEY % orphan_hash,
+                COMMIT_KEYSET % orphan_hash,
+                PARENT_COMMIT % orphan_hash,
+                TOTAL_VAR_SIZE_KEY % orphan_hash,
+            )
+
+        return len(orphans_to_clean)
