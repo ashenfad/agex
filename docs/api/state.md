@@ -122,6 +122,54 @@ result = my_task("long running analysis", state=state)
 - Agents with large intermediate data that doesn't need indefinite retention
 - Systems where you want automatic memory management without manual cleanup
 
+### Concurrent Task Handling
+
+`Versioned` state uses a branch-based model designed for safe concurrent execution across multiple workers (e.g., serverless deployments, background tasks).
+
+**How it works:**
+
+1. **Branch creation**: When you create a `Versioned` instance, it starts a branch from the current HEAD
+2. **Local commits**: `snapshot()` commits to your local branch without touching HEAD
+3. **Atomic merge**: `merge()` uses compare-and-swap (CAS) to atomically update HEAD to your branch tip
+
+This prevents interleaved commit history when multiple tasks run concurrently.
+
+```python
+from agex import Versioned, ConcurrencyError
+
+# Task creates a branch at HEAD
+state = Versioned(store)
+
+# Multiple snapshots build the branch (HEAD unchanged)
+for turn in range(num_turns):
+    state.set("result", process_turn())
+    state.snapshot()  # Commits to branch only
+
+# At task end, merge branch to HEAD atomically
+try:
+    state.merge()  # Raises ConcurrencyError if HEAD diverged
+except ConcurrencyError:
+    state.reset()  # Reload from HEAD
+    # Retry task from scratch
+```
+
+**Conflict strategies:**
+
+- `merge(on_conflict='raise')` (default) - Raises `ConcurrencyError` for caller to handle
+- `merge(on_conflict='abandon')` - Returns `False` and leaves branch as orphan (cleaned by GC)
+
+| Strategy | Use Case |
+|----------|----------|
+| `raise` | Foreground/interactive tasks that should retry |
+| `abandon` | Background tasks where losing work is acceptable |
+
+**Key methods:**
+
+- `snapshot()` - Commit changes to local branch (HEAD unchanged)
+- `merge()` - Atomically update HEAD to branch tip via CAS
+- `reset()` - Abandon branch and reload from current HEAD
+
+
 ## Inspecting Historical State
 
 A key feature of `Versioned` state is time-travel debugging. Every event is stamped with a `commit_hash`, allowing you to check out the agent's exact memory at that point in time.
