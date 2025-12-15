@@ -475,10 +475,11 @@ class TaskLoopMixin(BaseAgent):
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
         setup: str | None = None,
+        on_conflict: str = "retry",
+        max_conflict_retries: int = 3,
     ):
         """
-        Execute the agent task loop.
-        This now consumes the generator to provide identical behavior to the streaming version.
+        Execute the agent task loop with automatic retry on concurrency conflicts.
 
         Args:
             task_name: Name of the task function
@@ -487,33 +488,78 @@ class TaskLoopMixin(BaseAgent):
             inputs_instance: Instance of the inputs dataclass with actual values
             return_type: Expected return type for validation
             state: Optional persistent state
+            on_conflict: How to handle ConcurrencyError ('retry' or 'abandon')
+            max_conflict_retries: Max retry attempts for 'retry' strategy
 
         Returns:
             The validated result from the agent
 
         Raises:
             TaskFail: If agent calls task_fail()
+            ConcurrencyError: If conflicts exhaust retry attempts
         """
-        generator = self._task_loop_generator(
-            task_name,
-            docstring,
-            inputs_dataclass,
-            inputs_instance,
-            return_type,
-            state,
-            on_event=on_event,
-            on_token=on_token,
-            setup=setup,
-        )
+        from agex.state import ConcurrencyError
 
-        try:
-            # Consume all events until completion
-            while True:
-                next(generator)
-        except StopIteration as e:
-            return e.value  # Generator's return value
-        except (TaskFail, TaskClarify):
-            raise  # Let TaskFail and TaskClarify propagate normally
+        # Get the versioned state if applicable (for merge/reset)
+        versioned_state: Versioned | None = None
+        if isinstance(state, Versioned):
+            versioned_state = state
+        elif isinstance(state, Namespaced):
+            base = state.base_store
+            if isinstance(base, Versioned):
+                versioned_state = base
+
+        for attempt in range(max_conflict_retries + 1):
+            try:
+                generator = self._task_loop_generator(
+                    task_name,
+                    docstring,
+                    inputs_dataclass,
+                    inputs_instance,
+                    return_type,
+                    state,
+                    on_event=on_event,
+                    on_token=on_token,
+                    setup=setup,
+                )
+
+                try:
+                    # Consume all events until completion
+                    while True:
+                        next(generator)
+                except StopIteration as e:
+                    result = e.value  # Generator's return value
+
+                # Task completed - now merge if using Versioned state
+                if versioned_state is not None:
+                    if on_conflict == "abandon":
+                        versioned_state.merge(on_conflict="abandon")
+                    else:
+                        versioned_state.merge()  # Raises ConcurrencyError if diverged
+
+                return result
+
+            except ConcurrencyError:
+                if on_conflict == "abandon":
+                    return None  # Silently abandon
+                if attempt >= max_conflict_retries:
+                    raise  # Exhausted retries
+                # Reset state and retry
+                if versioned_state is not None:
+                    versioned_state.reset()
+
+            except (TaskFail, TaskClarify):
+                # Merge before propagating completion signals
+                if versioned_state is not None:
+                    try:
+                        if on_conflict == "abandon":
+                            versioned_state.merge(on_conflict="abandon")
+                        else:
+                            versioned_state.merge()
+                    except ConcurrencyError:
+                        if on_conflict != "abandon":
+                            raise
+                raise
 
     def _build_system_message(self) -> str:
         """Build the system message with builtin primer, capabilities primer (or registrations), and agent primer."""

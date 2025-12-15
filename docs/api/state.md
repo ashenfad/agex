@@ -130,45 +130,39 @@ result = my_task("long running analysis", state=state)
 
 1. **Branch creation**: When you create a `Versioned` instance, it starts a branch from the current HEAD
 2. **Local commits**: `snapshot()` commits to your local branch without touching HEAD
-3. **Atomic merge**: `merge()` uses compare-and-swap (CAS) to atomically update HEAD to your branch tip
+3. **Atomic merge**: At task completion, `merge()` uses compare-and-swap (CAS) to atomically update HEAD
 
-This prevents interleaved commit history when multiple tasks run concurrently.
+The task loop handles this automatically via the `on_conflict` parameter:
 
 ```python
-from agex import Versioned, ConcurrencyError
+# Foreground task - automatically retries on conflict (default)
+@agent.task
+def analyze(query: str) -> str:
+    '''Analyze the query.'''
+    pass
 
-# Task creates a branch at HEAD
-state = Versioned(store)
-
-# Multiple snapshots build the branch (HEAD unchanged)
-for turn in range(num_turns):
-    state.set("result", process_turn())
-    state.snapshot()  # Commits to branch only
-
-# At task end, merge branch to HEAD atomically
-try:
-    state.merge()  # Raises ConcurrencyError if HEAD diverged
-except ConcurrencyError:
-    state.reset()  # Reload from HEAD
-    # Retry task from scratch
+# Background task - silently abandons work on conflict
+@agent.task(on_conflict='abandon')
+def rebuild_index() -> None:
+    '''Rebuild search index in the background.'''
+    pass
 ```
 
 **Conflict strategies:**
 
-- `merge(on_conflict='raise')` (default) - Raises `ConcurrencyError` for caller to handle
-- `merge(on_conflict='abandon')` - Returns `False` and leaves branch as orphan (cleaned by GC)
+| Strategy | Behavior | Use Case |
+|----------|----------|----------|
+| `retry` (default) | Resets state and reruns task (up to 3 times) | Foreground/interactive tasks |
+| `abandon` | Silently abandons work, returns `None` | Background tasks |
 
-| Strategy | Use Case |
-|----------|----------|
-| `raise` | Foreground/interactive tasks that should retry |
-| `abandon` | Background tasks where losing work is acceptable |
+**Customizing retry attempts:**
 
-**Key methods:**
-
-- `snapshot()` - Commit changes to local branch (HEAD unchanged)
-- `merge()` - Atomically update HEAD to branch tip via CAS
-- `reset()` - Abandon branch and reload from current HEAD
-
+```python
+@agent.task(on_conflict='retry', max_conflict_retries=5)
+def critical_task() -> dict:
+    '''Task that needs more retry attempts.'''
+    pass
+```
 
 ## Inspecting Historical State
 
