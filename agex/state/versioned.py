@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pickle
 import secrets
+import time
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -18,8 +19,14 @@ HEAD_COMMIT = "__head_commit__"
 META_KEY = "__meta__%s"
 TOTAL_VAR_SIZE_KEY = "__total_var_size__%s"
 
-# key -> (last_touch_counter, size_bytes)
-MetaEntry = tuple[int, int | None]
+
+@dataclass
+class MetaEntry:
+    """Metadata for a single key in versioned state."""
+
+    last_touch: int
+    size: int | None
+    created_at: float
 
 
 @dataclass
@@ -96,7 +103,7 @@ class Versioned(State):
             except Exception:
                 self.meta = {}
         self._touch_counter = (
-            max((entry[0] for entry in self.meta.values()), default=0)
+            max((entry.last_touch for entry in self.meta.values()), default=0)
             if self.meta
             else 0
         )
@@ -118,14 +125,20 @@ class Versioned(State):
             return
         # Always move the touch counter forward for the key
         last_touch = self._next_touch()
-        _, size = self.meta.get(key, (last_touch, None))
-        self.meta[key] = (last_touch, size)
+        existing = self.meta.get(key)
+        if existing:
+            self.meta[key] = MetaEntry(last_touch, existing.size, existing.created_at)
+        else:
+            self.meta[key] = MetaEntry(last_touch, None, time.time())
 
     def _note_size(self, key: str, size: int) -> None:
         if not self._is_user_key(key):
             return
-        last_touch, _ = self.meta.get(key, (self._next_touch(), None))
-        self.meta[key] = (last_touch, size)
+        existing = self.meta.get(key)
+        if existing:
+            self.meta[key] = MetaEntry(existing.last_touch, size, existing.created_at)
+        else:
+            self.meta[key] = MetaEntry(self._next_touch(), size, time.time())
 
     def _versioned_key(self, key: str, commit_hash: str | None = None) -> str:
         return f"{commit_hash or self.current_commit}:{key}"
@@ -332,7 +345,10 @@ class Versioned(State):
                     else:
                         # _note_size will have seeded the meta entry if missing
                         new_meta[key] = self.meta.get(
-                            key, (self._touch_counter, len(serialized_value))
+                            key,
+                            MetaEntry(
+                                self._touch_counter, len(serialized_value), time.time()
+                            ),
                         )
 
         # Serialize commit metadata and update HEAD
@@ -342,7 +358,9 @@ class Versioned(State):
 
         # Persist GC/rebase metadata for this commit
         diffs[META_KEY % new_hash] = pickle.dumps(new_meta)
-        total_var_size = sum(size for _, size in new_meta.values() if size is not None)
+        total_var_size = sum(
+            entry.size for entry in new_meta.values() if entry.size is not None
+        )
         diffs[TOTAL_VAR_SIZE_KEY % new_hash] = pickle.dumps(total_var_size)
 
         self.long_term.set_many(**diffs)

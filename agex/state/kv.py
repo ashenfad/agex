@@ -40,6 +40,11 @@ class KVStore(ABC):
         pass
 
     @abstractmethod
+    def keys(self) -> Iterable[str]:
+        """Iterate over all keys."""
+        pass
+
+    @abstractmethod
     def __contains__(self, key: str) -> bool:
         """Check if key exists in store."""
         pass
@@ -107,6 +112,9 @@ class Memory(KVStore):
 
     def items(self) -> Iterable[tuple[str, bytes]]:
         return self.memory.items()
+
+    def keys(self) -> Iterable[str]:
+        return self.memory.keys()
 
     def __contains__(self, key: str) -> bool:
         return key in self.memory
@@ -179,6 +187,9 @@ class Cache(KVStore):
 
     def items(self) -> Iterable[tuple[str, bytes]]:
         return self.store.items()
+
+    def keys(self) -> Iterable[str]:
+        return self.store.keys()
 
     def __contains__(self, key: str) -> bool:
         return key in self.cache or key in self.store
@@ -254,6 +265,10 @@ class WriteBehind(KVStore):
         self.flush()
         return self.store.items()
 
+    def keys(self) -> Iterable[str]:
+        self.flush()
+        return self.store.keys()
+
     def __contains__(self, key: str) -> bool:
         self.flush()
         return key in self.store
@@ -312,6 +327,10 @@ class Disk(KVStore):
     def items(self) -> Iterable[tuple[str, bytes]]:
         for key in self.store.iterkeys():
             yield str(key), cast(bytes, self.store[key])
+
+    def keys(self) -> Iterable[str]:
+        for key in self.store.iterkeys():
+            yield str(key)
 
     def __contains__(self, key: str) -> bool:
         return key in self.store
