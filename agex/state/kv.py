@@ -54,12 +54,39 @@ class KVStore(ABC):
         """Remove multiple keys."""
         pass
 
+    @abstractmethod
+    def cas(self, key: str, value: bytes, expected: bytes | None) -> bool:
+        """
+        Atomic compare-and-swap operation.
+
+        Set value only if current value equals expected.
+        This is required for safe concurrent access to state.
+
+        Args:
+            key: The key to update
+            value: The new value to set
+            expected: The expected current value. None means "must not exist".
+
+        Returns:
+            True if swap succeeded (current == expected and value was set)
+            False if swap failed (current != expected)
+
+        Example:
+            # Only update if value is currently b'old'
+            success = store.cas('my_key', b'new', expected=b'old')
+
+            # Create only if key doesn't exist
+            success = store.cas('my_key', b'initial', expected=None)
+        """
+        pass
+
 
 class Memory(KVStore):
     """A memory-backed KV store that stores values as bytes."""
 
     def __init__(self):
         self.memory: dict[str, bytes] = {}
+        self._lock = threading.Lock()  # For free-threaded Python safety
 
     def get(self, key: str) -> bytes | None:
         return self.memory.get(key)
@@ -90,6 +117,18 @@ class Memory(KVStore):
     def remove_many(self, *keys: str) -> None:
         for key in keys:
             self.memory.pop(key, None)
+
+    def cas(self, key: str, value: bytes, expected: bytes | None) -> bool:
+        """Atomic compare-and-swap using a lock for thread safety."""
+        if not isinstance(value, bytes):
+            raise TypeError(f"Expected bytes, got {type(value).__name__}")
+
+        with self._lock:
+            current = self.memory.get(key)
+            if current == expected:
+                self.memory[key] = value
+                return True
+            return False
 
 
 SIXTY_FOUR_MB = 64 * 1024 * 1024
@@ -152,6 +191,18 @@ class Cache(KVStore):
         for key in keys:
             self.cache.pop(key, None)
         self.store.remove_many(*keys)
+
+    def cas(self, key: str, value: bytes, expected: bytes | None) -> bool:
+        """Delegate CAS to underlying store and invalidate cache on success."""
+        success = self.store.cas(key, value, expected)
+        if success:
+            # Update cache with new value
+            self.cache[key] = value
+            self._evict()
+        else:
+            # CAS failed - invalidate cache to force re-read
+            self.cache.pop(key, None)
+        return success
 
 
 class WriteBehind(KVStore):
@@ -217,6 +268,16 @@ class WriteBehind(KVStore):
         """Wait for all pending writes to complete."""
         self._queue.join()
 
+    def cas(self, key: str, value: bytes, expected: bytes | None) -> bool:
+        """
+        CAS requires synchronous execution - flush pending writes first.
+
+        This ensures we're comparing against the true current value,
+        not a value that has pending writes in the queue.
+        """
+        self.flush()
+        return self.store.cas(key, value, expected)
+
 
 class Disk(KVStore):
     def __init__(self, directory: str, size_limit: int = ONE_GB):
@@ -265,3 +326,15 @@ class Disk(KVStore):
         with self.store.transact():
             for key in keys:
                 self.store.delete(key, retry=False)
+
+    def cas(self, key: str, value: bytes, expected: bytes | None) -> bool:
+        """Atomic compare-and-swap using diskcache transactions."""
+        if not isinstance(value, bytes):
+            raise TypeError(f"Expected bytes, got {type(value).__name__}")
+
+        with self.store.transact():
+            current = cast(bytes | None, self.store.get(key))
+            if current == expected:
+                self.store[key] = value
+                return True
+            return False

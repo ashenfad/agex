@@ -205,11 +205,18 @@ class RedisStore(KVStore):
         # Store bytes in Redis
         pass
     
-    # ... implement remaining abstract methods
+    def cas(self, key: str, value: bytes, expected: bytes | None) -> bool:
+        # Atomic compare-and-swap for multi-worker safety
+        pass
+    
+    # ... implement remaining abstract methods (get_many, set_many, 
+    # items, remove, remove_many, __contains__)
 
 # Use with your agent
 state = Versioned(RedisStore("redis://localhost:6379"))
 ```
+
+**Note on `cas()`**: The compare-and-swap method is required for safe concurrent access when multiple workers (e.g., in serverless or distributed deployments) update the same agent state. Most storage backends support this natively (Redis WATCH/MULTI, DynamoDB conditional writes, SQL UPDATE...WHERE).
 
 ## Quick Reference
 
