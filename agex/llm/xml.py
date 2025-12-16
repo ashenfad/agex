@@ -16,8 +16,6 @@ from agex.llm.core import ResponseParseError, TokenChunk
 # XML tag names as constants
 TAG_THINKING = "THINKING"
 TAG_PYTHON = "PYTHON"
-TAG_THINKING = "THINKING"
-TAG_PYTHON = "PYTHON"
 TAG_TITLE = "TITLE"
 TAG_OBSERVATION = "OBSERVATION"
 
