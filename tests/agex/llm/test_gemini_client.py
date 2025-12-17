@@ -202,8 +202,14 @@ def test_gemini_client_complete_stream():
 
         # Verify generate_content was called with stream=True
         mock_client.generate_content.assert_called_once()
-        call_kwargs = mock_client.generate_content.call_args[1]
+        call_args = mock_client.generate_content.call_args
+        call_kwargs = call_args[1]
         assert call_kwargs.get("stream") is True
+
+        # Verify that pre-fill message was appended
+        gemini_messages = call_args[0][0]
+        assert gemini_messages[-1]["role"] == "model"
+        assert "<TITLE>" in gemini_messages[-1]["parts"][0]["text"]
 
         # Verify calling arguments to ensure no extra args were passed to internal helpers
         # (This indirectly validates render_events_as_xml call didn't crash)
