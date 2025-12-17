@@ -173,3 +173,38 @@ def test_gemini_client_empty_response():
 
         with pytest.raises(RuntimeError, match="Gemini returned empty response"):
             client.complete(system, events)
+
+
+def test_gemini_client_complete_stream():
+    """Test that complete_stream properly converts events and streams tokens."""
+    client = GeminiClient()
+
+    # Create a mock response that behaves like an iterator
+    mock_chunk = MagicMock()
+    # Must use valid XML tags for tokenize_xml_stream to yield chunks
+    mock_chunk.text = "<THINKING>Some thinking</THINKING>"
+
+    mock_response = MagicMock()
+    mock_response.__iter__.return_value = [mock_chunk]
+
+    with patch.object(client, "client") as mock_client:
+        mock_client.generate_content.return_value = mock_response
+
+        system = "System prompt"
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        # Use complete_stream and consume the generator
+        chunks = list(client.complete_stream(system, events))
+
+        # Verify generate_content was called with stream=True
+        mock_client.generate_content.assert_called_once()
+        call_kwargs = mock_client.generate_content.call_args[1]
+        assert call_kwargs.get("stream") is True
+
+        # Verify calling arguments to ensure no extra args were passed to internal helpers
+        # (This indirectly validates render_events_as_xml call didn't crash)
+        assert len(chunks) > 0

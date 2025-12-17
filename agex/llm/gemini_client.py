@@ -111,8 +111,7 @@ class GeminiClient(LLMClient):
         request_kwargs = {**self._kwargs, **kwargs}
 
         # Use XML rendering for streaming (instead of structured outputs)
-        max_tokens = request_kwargs.get("max_tokens", 4096)
-        messages_dicts = render_events_as_xml(events, self._model, max_tokens)
+        messages_dicts = render_events_as_xml(events)
 
         # Add system message with XML format instructions
         system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
