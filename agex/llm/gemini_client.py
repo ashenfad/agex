@@ -5,7 +5,7 @@ import google.generativeai as genai
 
 from agex.agent.events import Event
 from agex.llm.core import LLMClient, LLMResponse, TokenChunk
-from agex.llm.xml import XML_FORMAT_PRIMER, tokenize_xml_stream
+from agex.llm.xml import TAG_TITLE, XML_FORMAT_PRIMER, tokenize_xml_stream
 
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key"}
@@ -121,6 +121,10 @@ class GeminiClient(LLMClient):
             system_with_format, messages_dicts
         )
 
+        # Pre-fill response with opening tag to enforce XML structure
+        prefill_text = f"<{TAG_TITLE}>"
+        gemini_messages.append({"role": "model", "parts": [{"text": prefill_text}]})
+
         try:
             # Use streaming API
             response = self.client.generate_content(
@@ -131,6 +135,8 @@ class GeminiClient(LLMClient):
 
             # Generator for raw text chunks from Gemini
             def raw_chunks() -> Iterator[str]:
+                # Yield the pre-filled text first so the parser sees it
+                yield prefill_text
                 for chunk in response:
                     if chunk.text:
                         yield chunk.text
