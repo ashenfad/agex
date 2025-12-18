@@ -565,8 +565,11 @@ class TaskLoopMixin(BaseAgent):
         """Build the system message with builtin primer, capabilities primer (or registrations), and agent primer."""
         parts = []
 
-        # Add builtin primer first (foundation)
-        parts.append(BUILTIN_PRIMER)
+        # Add builtin primer (or override) first (foundation)
+        if self.agex_primer_override is not None:
+            parts.append(self.agex_primer_override)
+        else:
+            parts.append(BUILTIN_PRIMER)
 
         # Add capabilities section: prefer explicit capabilities primer when set.
         cap_text = getattr(self, "capabilities_primer", None)

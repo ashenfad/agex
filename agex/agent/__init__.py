@@ -69,6 +69,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
+        # Advanced: Override the builtin system instructions
+        agex_primer_override: str | None = None,
     ):
         """
         An agent that can be used to execute tasks.
@@ -84,6 +86,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
                 exceed this threshold. If None, no summarization is performed.
             log_low_water_tokens: Target token count after summarization. Defaults to
                 50% of log_high_water_tokens if not specified.
+            agex_primer_override: (Advanced) Override the built-in system instructions
+                that define the agent's core behavior and event protocol.
         """
         super().__init__(
             primer=primer,
@@ -96,4 +100,5 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             llm_retry_backoff=llm_retry_backoff,
             log_high_water_tokens=log_high_water_tokens,
             log_low_water_tokens=log_low_water_tokens,
+            agex_primer_override=agex_primer_override,
         )
