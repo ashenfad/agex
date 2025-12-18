@@ -1,18 +1,19 @@
 import json
-from typing import Any, Iterator, List, cast
+from typing import Iterator, List
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from agex.agent.events import Event
 from agex.llm.core import LLMClient, LLMResponse, TokenChunk
 from agex.llm.xml import TAG_TITLE, XML_FORMAT_PRIMER, tokenize_xml_stream
 
 # Define keys for client setup vs. completion
-CLIENT_CONFIG_KEYS = {"api_key"}
+CLIENT_CONFIG_KEYS = {"api_key", "vertexai"}
 
 
 class GeminiClient(LLMClient):
-    """Client for Google's Gemini API with structured outputs."""
+    """Client for Google's Gemini API (google-genai SDK) with structured outputs."""
 
     def __init__(self, model: str = "gemini-1.5-flash", **kwargs):
         kwargs = kwargs.copy()
@@ -30,11 +31,9 @@ class GeminiClient(LLMClient):
         self._model = model
         self._kwargs = completion_kwargs
 
-        # Configure API key if provided (note: this affects global state)
-        if "api_key" in client_kwargs:
-            genai.configure(api_key=client_kwargs["api_key"])  # type: ignore[attr-defined]
-
-        self.client = genai.GenerativeModel(model_name=model)  # type: ignore[attr-defined]
+        # Initialize the unified Client.
+        # Supports both API Key (AI Studio) and Vertex AI via explicit kwargs or environment variables.
+        self.client = genai.Client(**client_kwargs)
 
     def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
@@ -45,15 +44,17 @@ class GeminiClient(LLMClient):
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
 
+        # Remap standard params if needed (google-genai uses config object)
+        if "max_tokens" in request_kwargs:
+            request_kwargs["max_output_tokens"] = request_kwargs.pop("max_tokens")
+
         # Use rendering helper to convert events to markdown messages
         messages_dicts = render_events_as_markdown(events)
 
-        # Convert to Gemini format (with system prepended)
-        gemini_messages = self._convert_messages_to_gemini_format(
-            system, messages_dicts
-        )
+        # Convert to Gemini format
+        gemini_contents = self._convert_messages_to_gemini_format(messages_dicts)
 
-        # Define the structured output schema
+        # Define schema for structured output
         response_schema = {
             "type": "object",
             "properties": {
@@ -67,16 +68,19 @@ class GeminiClient(LLMClient):
         }
 
         try:
-            # Configure generation with structured output
-            generation_config = genai.GenerationConfig(  # type: ignore
+            # Create config
+            config = types.GenerateContentConfig(
+                system_instruction=system,
                 response_mime_type="application/json",
                 response_schema=response_schema,
                 **request_kwargs,
             )
+
             # Generate response
-            # Gemini expects a chat-style list of dict parts; typing stubs may not align.
-            response = self.client.generate_content(
-                cast(Any, gemini_messages), generation_config=generation_config
+            response = self.client.models.generate_content(
+                model=self._model,
+                contents=gemini_contents,
+                config=config,
             )
 
             # Parse the JSON response
@@ -102,123 +106,114 @@ class GeminiClient(LLMClient):
     ) -> Iterator[TokenChunk]:
         """
         Stream tokens from Gemini using XML format.
-
-        Uses standard streaming API with XML parsing for token-level updates.
         """
         from agex.render.xml import render_events_as_xml
 
-        # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
+        if "max_tokens" in request_kwargs:
+            request_kwargs["max_output_tokens"] = request_kwargs.pop("max_tokens")
 
-        # Use XML rendering for streaming (instead of structured outputs)
         messages_dicts = render_events_as_xml(events)
 
         # Add system message with XML format instructions
         system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
 
         # Convert to Gemini format
-        gemini_messages = self._convert_messages_to_gemini_format(
-            system_with_format, messages_dicts
+        gemini_contents = self._convert_messages_to_gemini_format(messages_dicts)
+
+        # Pre-fill response
+        prefill_text = f"<{TAG_TITLE}>"
+        gemini_contents.append(
+            types.Content(role="model", parts=[types.Part(text=prefill_text)])
         )
 
-        # Pre-fill response with opening tag to enforce XML structure
-        prefill_text = f"<{TAG_TITLE}>"
-        gemini_messages.append({"role": "model", "parts": [{"text": prefill_text}]})
-
         try:
-            # Use streaming API
-            response = self.client.generate_content(
-                cast(Any, gemini_messages),
-                stream=True,
-                **request_kwargs,
+            config = types.GenerateContentConfig(
+                system_instruction=system_with_format, **request_kwargs
             )
 
-            # Generator for raw text chunks from Gemini
+            # Streaming call
+            response_stream = self.client.models.generate_content_stream(
+                model=self._model,
+                contents=gemini_contents,
+                config=config,
+            )
+
             def raw_chunks() -> Iterator[str]:
-                # Yield the pre-filled text first so the parser sees it
                 yield prefill_text
-                for chunk in response:
+                for chunk in response_stream:
                     if chunk.text:
                         yield chunk.text
 
-            # Parse XML stream into TokenChunks
             yield from tokenize_xml_stream(raw_chunks())
 
         except Exception as e:
             raise RuntimeError(f"Gemini streaming completion failed: {e}") from e
 
     def summarize(self, system: str, content: str | List[Event], **kwargs) -> str:
-        """Send a summarization request to Gemini (text or events with multimodal)."""
+        """Send a summarization request to Gemini."""
         request_kwargs = {**self._kwargs, **kwargs}
+        if "max_tokens" in request_kwargs:
+            request_kwargs["max_output_tokens"] = request_kwargs.pop("max_tokens")
 
-        # Prepare content (text or events)
         is_multimodal, processed = self._prepare_summarization_content(content)
 
         if is_multimodal:
-            # processed is messages list from events
-            # Use the existing converter that handles multimodal content
-            gemini_messages = self._convert_messages_to_gemini_format(system, processed)
+            gemini_contents = self._convert_messages_to_gemini_format(processed)
         else:
-            # processed is plain text
-            gemini_messages = [
-                {
-                    "role": "user",
-                    "parts": [{"text": f"System: {system}\n\n{processed}"}],
-                }
+            gemini_contents = [
+                types.Content(role="user", parts=[types.Part(text=str(processed))])
             ]
 
         try:
-            response = self.client.generate_content(
-                cast(Any, gemini_messages), **request_kwargs
+            config = types.GenerateContentConfig(
+                system_instruction=system, **request_kwargs
+            )
+            response = self.client.models.generate_content(
+                model=self._model,
+                contents=gemini_contents,
+                config=config,
             )
             return response.text or ""
         except Exception as e:
             raise RuntimeError(f"Gemini summarization failed: {e}") from e
 
     def _convert_messages_to_gemini_format(
-        self, system: str, messages_dicts: List[dict]
-    ) -> List[dict]:
+        self, messages_dicts: List[dict]
+    ) -> List[types.Content]:
         """
-        Convert generic message dicts to Gemini's expected format.
-
-        Note: All images are converted to PNG format by the rendering layer
-        (StreamRenderer._serialize_image_to_base64) before reaching this function.
+        Convert generic message dicts to Gemini's types.Content objects.
         """
-        gemini_messages = []
-        system_prepended = False
+        gemini_contents = []
 
         for message_dict in messages_dicts:
             role = "user" if message_dict["role"] == "user" else "model"
             parts = []
 
-            # Prepend system content to the first user message
-            if role == "user" and not system_prepended:
-                parts.append({"text": f"System: {system}"})
-                system_prepended = True
-
-            # Process message content
             content = message_dict["content"]
             if isinstance(content, list):
-                # Multimodal message
+                # Multimodal
                 for part in content:
                     if part["type"] == "text":
-                        parts.append({"text": part["text"]})
+                        parts.append(types.Part(text=part["text"]))
                     elif part["type"] == "image":
+                        # Updated SDK uses explicit Part types usually, or dicts.
+                        # inline_data matches legacy but let's see if types.Part supports it nicely.
+                        # types.Part(inline_data=types.Blob(mime_type=..., data=...))
                         parts.append(
-                            {
-                                "inline_data": {
-                                    "mime_type": "image/png",
-                                    "data": part["image_data"],
-                                }
-                            }
+                            types.Part(
+                                inline_data=types.Blob(
+                                    mime_type="image/png",
+                                    data=part["image_data"],
+                                )
+                            )
                         )
             else:
-                # Text message
-                parts.append({"text": content})
+                parts.append(types.Part(text=content))
 
-            gemini_messages.append({"role": role, "parts": parts})
+            gemini_contents.append(types.Content(role=role, parts=parts))
 
-        return gemini_messages
+        return gemini_contents
 
     @property
     def model(self) -> str:

@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.genai import types
 
 from agex.agent.events import ActionEvent, TaskStartEvent
 from agex.llm.core import LLMResponse
@@ -9,27 +10,33 @@ from agex.llm.gemini_client import GeminiClient
 
 def test_gemini_client_initialization():
     """Test that GeminiClient can be initialized with default parameters."""
-    client = GeminiClient()
-    assert client.model == "gemini-1.5-flash"
-    assert client.provider_name == "Google Gemini"
+    with patch("google.genai.Client") as MockClient:
+        client = GeminiClient()
+        assert client.model == "gemini-1.5-flash"
+        assert client.provider_name == "Google Gemini"
+        MockClient.assert_called_once()
 
 
 def test_gemini_client_custom_model():
     """Test that GeminiClient can be initialized with custom model."""
-    client = GeminiClient(model="gemini-1.5-pro")
-    assert client.model == "gemini-1.5-pro"
+    with patch("google.genai.Client"):
+        client = GeminiClient(model="gemini-1.5-pro")
+        assert client.model == "gemini-1.5-pro"
 
 
 def test_gemini_client_event_handling():
     """Test that events are properly converted to Gemini format."""
-    client = GeminiClient()
+    with patch("google.genai.Client") as MockClient:
+        # Mock instance and models service
+        mock_client_instance = MockClient.return_value
+        mock_models = mock_client_instance.models
 
-    # Mock the response
-    mock_response = MagicMock()
-    mock_response.text = '{"thinking": "Test thinking", "code": "print(\'hello\')"}'
+        # Mock the response
+        mock_response = MagicMock()
+        mock_response.text = '{"thinking": "Test thinking", "code": "print(\'hello\')"}'
+        mock_models.generate_content.return_value = mock_response
 
-    with patch.object(client, "client") as mock_client:
-        mock_client.generate_content.return_value = mock_response
+        client = GeminiClient()
 
         system = "You are a helpful assistant."
         events = [
@@ -44,18 +51,21 @@ def test_gemini_client_event_handling():
         response = client.complete(system, events)
 
         # Verify the call was made correctly
-        mock_client.generate_content.assert_called_once()
-        call_args = mock_client.generate_content.call_args
+        mock_models.generate_content.assert_called_once()
+        call_kwargs = mock_models.generate_content.call_args.kwargs
 
-        # Check the converted messages
-        gemini_messages = call_args[0][0]  # First positional argument
+        # Check model and contents
+        assert call_kwargs["model"] == "gemini-1.5-flash"
+        gemini_contents = call_kwargs["contents"]
+        assert len(gemini_contents) >= 1
+        assert isinstance(gemini_contents[0], types.Content)
+        assert gemini_contents[0].role == "user"
 
-        # Should have messages with system prepended to first user message
-        assert len(gemini_messages) >= 1
-
-        # First message should contain system message prepended as a separate part
-        assert gemini_messages[0]["role"] == "user"
-        assert "System:" in gemini_messages[0]["parts"][0]["text"]
+        # Check config
+        config = call_kwargs["config"]
+        assert isinstance(config, types.GenerateContentConfig)
+        assert config.system_instruction == system
+        assert config.response_mime_type == "application/json"
 
         # Check response parsing
         assert isinstance(response, LLMResponse)
@@ -64,46 +74,42 @@ def test_gemini_client_event_handling():
 
 
 def test_gemini_client_system_message():
-    """Test that system message is properly prepended to first user message."""
-    client = GeminiClient()
+    """Test that system message is passed in config."""
+    with patch("google.genai.Client") as MockClient:
+        mock_client_instance = MockClient.return_value
+        mock_models = mock_client_instance.models
 
-    mock_response = MagicMock()
-    mock_response.text = '{"thinking": "Test thinking", "code": "print(\'hello\')"}'
+        mock_response = MagicMock()
+        mock_response.text = '{"thinking": "Test thinking", "code": "print(\'hello\')"}'
+        mock_models.generate_content.return_value = mock_response
 
-    with patch.object(client, "client") as mock_client:
-        mock_client.generate_content.return_value = mock_response
+        client = GeminiClient()
 
-        system = "You are a helpful assistant. You are also very knowledgeable."
+        system = "System Instructions"
         events = [
             TaskStartEvent(
                 agent_name="test", task_name="test", inputs={}, message="Hello"
             )
         ]
 
-        response = client.complete(system, events)
+        client.complete(system, events)
 
-        # Verify we got a response
-        assert response is not None
-        assert isinstance(response, LLMResponse)
-
-        # Verify system message was prepended in the first user message
-        call_args = mock_client.generate_content.call_args
-        gemini_messages = call_args[0][0]
-
-        first_message_parts = gemini_messages[0]["parts"]
-        assert first_message_parts[0]["text"] == f"System: {system}"
+        # Verify system passed in config
+        call_kwargs = mock_models.generate_content.call_args.kwargs
+        config = call_kwargs["config"]
+        assert config.system_instruction == system
 
 
 def test_gemini_client_structured_output_config():
     """Test that structured output configuration is properly set."""
-    client = GeminiClient()
+    with patch("google.genai.Client") as MockClient:
+        mock_models = MockClient.return_value.models
 
-    mock_response = MagicMock()
-    mock_response.text = '{"thinking": "Test thinking", "code": "print(\'hello\')"}'
+        mock_response = MagicMock()
+        mock_response.text = '{"thinking": "Test thinking", "code": "print(\'hello\')"}'
+        mock_models.generate_content.return_value = mock_response
 
-    with patch.object(client, "client") as mock_client:
-        mock_client.generate_content.return_value = mock_response
-
+        client = GeminiClient()
         system = "Test"
         events = [
             TaskStartEvent(
@@ -111,38 +117,22 @@ def test_gemini_client_structured_output_config():
             )
         ]
 
-        response = client.complete(system, events)
+        client.complete(system, events)
 
-        # Verify we got a response
-        assert response is not None
-        assert isinstance(response, LLMResponse)
-
-        # Verify generation config was set correctly
-        call_args = mock_client.generate_content.call_args
-        generation_config = call_args[1]["generation_config"]
-
-        # Check structured output settings
-        assert generation_config.response_mime_type == "application/json"
-        assert generation_config.response_schema is not None
-
-        # Check schema structure
-        schema = generation_config.response_schema
-        assert schema["type"] == "object"
-        assert "thinking" in schema["properties"]
-        assert "code" in schema["properties"]
-        assert schema["required"] == ["thinking", "code"]
+        # Verify config
+        call_kwargs = mock_models.generate_content.call_args.kwargs
+        config = call_kwargs["config"]
+        assert config.response_schema is not None
+        assert config.response_schema["required"] == ["thinking", "code"]
 
 
 def test_gemini_client_json_parsing_error():
     """Test proper error handling for invalid JSON responses."""
-    client = GeminiClient()
+    with patch("google.genai.Client") as MockClient:
+        mock_models = MockClient.return_value.models
+        mock_models.generate_content.return_value.text = "invalid json"
 
-    mock_response = MagicMock()
-    mock_response.text = "invalid json"
-
-    with patch.object(client, "client") as mock_client:
-        mock_client.generate_content.return_value = mock_response
-
+        client = GeminiClient()
         system = "Test"
         events = [
             TaskStartEvent(
@@ -156,14 +146,11 @@ def test_gemini_client_json_parsing_error():
 
 def test_gemini_client_empty_response():
     """Test proper error handling for empty responses."""
-    client = GeminiClient()
+    with patch("google.genai.Client") as MockClient:
+        mock_models = MockClient.return_value.models
+        mock_models.generate_content.return_value.text = ""
 
-    mock_response = MagicMock()
-    mock_response.text = ""
-
-    with patch.object(client, "client") as mock_client:
-        mock_client.generate_content.return_value = mock_response
-
+        client = GeminiClient()
         system = "Test"
         events = [
             TaskStartEvent(
@@ -177,19 +164,16 @@ def test_gemini_client_empty_response():
 
 def test_gemini_client_complete_stream():
     """Test that complete_stream properly converts events and streams tokens."""
-    client = GeminiClient()
+    with patch("google.genai.Client") as MockClient:
+        mock_models = MockClient.return_value.models
 
-    # Create a mock response that behaves like an iterator
-    mock_chunk = MagicMock()
-    # Must use valid XML tags for tokenize_xml_stream to yield chunks
-    mock_chunk.text = "<THINKING>Some thinking</THINKING>"
+        # Create a mock response stream
+        mock_chunk = MagicMock()
+        mock_chunk.text = "<THINKING>Some thinking</THINKING>"
+        mock_response_stream = [mock_chunk]
+        mock_models.generate_content_stream.return_value = mock_response_stream
 
-    mock_response = MagicMock()
-    mock_response.__iter__.return_value = [mock_chunk]
-
-    with patch.object(client, "client") as mock_client:
-        mock_client.generate_content.return_value = mock_response
-
+        client = GeminiClient()
         system = "System prompt"
         events = [
             TaskStartEvent(
@@ -200,17 +184,39 @@ def test_gemini_client_complete_stream():
         # Use complete_stream and consume the generator
         chunks = list(client.complete_stream(system, events))
 
-        # Verify generate_content was called with stream=True
-        mock_client.generate_content.assert_called_once()
-        call_args = mock_client.generate_content.call_args
-        call_kwargs = call_args[1]
-        assert call_kwargs.get("stream") is True
+        # Verify generate_content_stream was called
+        mock_models.generate_content_stream.assert_called_once()
+        call_kwargs = mock_models.generate_content_stream.call_args.kwargs
 
-        # Verify that pre-fill message was appended
-        gemini_messages = call_args[0][0]
-        assert gemini_messages[-1]["role"] == "model"
-        assert "<TITLE>" in gemini_messages[-1]["parts"][0]["text"]
+        # Verify pre-fill
+        gemini_contents = call_kwargs["contents"]
+        assert gemini_contents[-1].role == "model"
+        assert "<TITLE>" in gemini_contents[-1].parts[0].text
 
-        # Verify calling arguments to ensure no extra args were passed to internal helpers
-        # (This indirectly validates render_events_as_xml call didn't crash)
+        # Verify system format update
+        config = call_kwargs["config"]
+        assert "<TITLE>" in config.system_instruction
+
         assert len(chunks) > 0
+
+
+def test_gemini_client_summarize_with_config():
+    """Test that summarize handles config parameters like max_tokens correctly."""
+    with patch("google.genai.Client") as MockClient:
+        mock_models = MockClient.return_value.models
+        mock_models.generate_content.return_value.text = "Summary text"
+
+        client = GeminiClient()
+        system = "Summarize this"
+        content = "Some long content"
+
+        # Call summarize with max_tokens
+        client.summarize(system, content, max_tokens=100, temperature=0.5)
+
+        # Verify generate_content was called with correct config
+        mock_models.generate_content.assert_called_once()
+        call_kwargs = mock_models.generate_content.call_args.kwargs
+
+        config = call_kwargs["config"]
+        assert config.max_output_tokens == 100
+        assert config.temperature == 0.5
