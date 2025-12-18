@@ -34,7 +34,7 @@ class TestEventLogSummarization:
             add_event_to_log(state, event)
 
         # Should not summarize (no high_water set)
-        maybe_summarize_event_log(agent, state)
+        maybe_summarize_event_log(agent, state, system_message="")
 
         events = get_events_from_log(state)
         assert len(events) == 10
@@ -61,7 +61,7 @@ class TestEventLogSummarization:
         assert total_tokens < 10000
 
         # Should not summarize
-        maybe_summarize_event_log(agent, state)
+        maybe_summarize_event_log(agent, state, system_message="")
 
         events = get_events_from_log(state)
         assert len(events) == 3
@@ -98,7 +98,7 @@ class TestEventLogSummarization:
         assert total_tokens > 100
 
         # Run summarization
-        maybe_summarize_event_log(agent, state)
+        maybe_summarize_event_log(agent, state, system_message="")
 
         # Verify summarization occurred
         events = get_events_from_log(state)
@@ -137,7 +137,7 @@ class TestEventLogSummarization:
             )
             add_event_to_log(state, event)
 
-        maybe_summarize_event_log(agent, state)
+        maybe_summarize_event_log(agent, state, system_message="")
 
         # Should be under or near 50 tokens now (may be slightly over due to summary overhead)
         events = get_events_from_log(state)
@@ -184,7 +184,7 @@ class TestEventLogSummarization:
             e.source == "setup" for e in initial_events if isinstance(e, ActionEvent)
         )
 
-        maybe_summarize_event_log(agent, state)
+        maybe_summarize_event_log(agent, state, system_message="")
 
         # All old events including TaskStart and setup should be summarized
         events = get_events_from_log(state)
@@ -215,7 +215,7 @@ class TestEventLogSummarization:
 
         # Should raise SummarizationError
         with pytest.raises(SummarizationError, match="Failed to summarize .* events"):
-            maybe_summarize_event_log(agent, state)
+            maybe_summarize_event_log(agent, state, system_message="")
 
     def test_cascading_summarization(self):
         """Test that summaries can themselves be summarized."""
@@ -237,7 +237,7 @@ class TestEventLogSummarization:
             )
             add_event_to_log(state, event)
 
-        maybe_summarize_event_log(agent, state)
+        maybe_summarize_event_log(agent, state, system_message="")
 
         events_after_first = get_events_from_log(state)
         assert isinstance(events_after_first[0], SummaryEvent)
@@ -251,7 +251,7 @@ class TestEventLogSummarization:
 
         # Set new summary response
         llm_client.summary_response = "Second level summary."
-        maybe_summarize_event_log(agent, state)
+        maybe_summarize_event_log(agent, state, system_message="")
 
         # Should have new summary that potentially includes the old summary
         events_final = get_events_from_log(state)
@@ -319,7 +319,7 @@ class TestEventLogSummarization:
         commit_before = state.current_commit
 
         # Run summarization
-        maybe_summarize_event_log(agent, state)
+        maybe_summarize_event_log(agent, state, system_message="")
 
         # Get the summary event
         events = get_events_from_log(state)
@@ -365,7 +365,7 @@ class TestEventLogSummarization:
         assert all(e.full_namespace == "parent/sub_agent" for e in initial_events)
 
         # Run summarization
-        maybe_summarize_event_log(agent, ns_state)
+        maybe_summarize_event_log(agent, ns_state, system_message="")
 
         # Get the summary event
         events = get_events_from_log(ns_state)
