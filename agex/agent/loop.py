@@ -210,7 +210,7 @@ class TaskLoopMixin(BaseAgent):
             )
 
         # Main task loop
-        for _ in range(self.max_iterations):
+        for iteration in range(self.max_iterations):
             # Check if event log needs summarization before querying LLM
             maybe_summarize_event_log(self, exec_state, system_message, on_event)
 
@@ -219,9 +219,17 @@ class TaskLoopMixin(BaseAgent):
 
             all_events = get_events_from_log(exec_state)
 
+            # Generate transient forefront message (e.g. iteration pressure)
+            forefront_msg = self._get_forefront_message(iteration)
+
             # Get LLM response with built-in retry and event emission
             llm_response = self._get_llm_response(
-                system_message, all_events, exec_state, on_event, on_token
+                system_message,
+                all_events,
+                exec_state,
+                on_event,
+                on_token,
+                transient_message=forefront_msg,
             )
             # Sanitize common markdown code-fence wrappers if present
             llm_response.code = self._strip_markdown_code_fence(llm_response.code)
@@ -572,7 +580,7 @@ class TaskLoopMixin(BaseAgent):
             parts.append(BUILTIN_PRIMER)
 
         # Add capabilities section: prefer explicit capabilities primer when set.
-        cap_text = getattr(self, "capabilities_primer", None)
+        cap_text = self.capabilities_primer
         if cap_text is not None:
             # If explicitly set to empty string, suppress capabilities section entirely
             if cap_text.strip():
@@ -603,7 +611,33 @@ class TaskLoopMixin(BaseAgent):
             docstring, inputs_dataclass, inputs_instance, return_type
         )
 
-    def _get_llm_response(self, system_message, events, exec_state, on_event, on_token):
+    def _get_forefront_message(self, iteration: int) -> str | None:
+        """
+        Get a transient 'forefront' message to be injected into the LLM context.
+        This is a great place to put iteration reminders or 'System Notes'.
+        """
+        # Iteration-based pressure: only notify when nearing the limit (last 20%)
+        # or if we're very close (last 3 iterations) for short tasks.
+        threshold_idx = int(self.max_iterations * 0.8)
+
+        # Always warn on the exact last few steps if max_iterations is small
+        if self.max_iterations < 10:
+            threshold_idx = max(0, self.max_iterations - 3)
+
+        if iteration >= threshold_idx:
+            return f"System Note: You are on iteration {iteration + 1} of {self.max_iterations}. Please wrap up."
+
+        return None
+
+    def _get_llm_response(
+        self,
+        system_message,
+        events,
+        exec_state,
+        on_event,
+        on_token,
+        transient_message: str | None = None,
+    ):
         """Get structured response with retry; emit ErrorEvent per attempt."""
         import time
 
@@ -617,6 +651,24 @@ class TaskLoopMixin(BaseAgent):
 
         # Check if streaming is requested (on_token handler provided)
         use_streaming = on_token is not None
+
+        # Prepare messages, injecting transient message if present
+        messages_to_send = list(events)
+        if transient_message:
+            # We use a dummy TaskStartEvent to represent a transient user system note
+            # This renders as a User message in most LLM clients
+            from agex.agent.events import SystemNoteEvent
+
+            # Using a distinct task name helps debugging if it ever leaks
+            transient_event = SystemNoteEvent(
+                agent_name="System",  # Distinct from self.name
+                message=transient_message,
+            )
+            # Override timestamp to be slightly after the last event to ensure order
+            if messages_to_send:
+                transient_event.timestamp = messages_to_send[-1].timestamp
+
+            messages_to_send.append(transient_event)
 
         attempt = 0
         while True:
@@ -633,7 +685,7 @@ class TaskLoopMixin(BaseAgent):
                     }
 
                     for token in self.llm_client.complete_stream(
-                        system_message, events
+                        system_message, messages_to_send
                     ):
                         start_flag = (
                             not token.done
@@ -674,7 +726,7 @@ class TaskLoopMixin(BaseAgent):
                     )
                 else:
                     # Non-streaming path (backwards compatible)
-                    return self.llm_client.complete(system_message, events)
+                    return self.llm_client.complete(system_message, messages_to_send)
 
             except (ResponseParseError, RuntimeError) as e:
                 is_last = attempt >= max_retries

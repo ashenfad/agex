@@ -15,6 +15,7 @@ from agex.agent.events import (
     OutputEvent,
     SuccessEvent,
     SummaryEvent,
+    SystemNoteEvent,
     TaskStartEvent,
 )
 from agex.llm.core import ContentPart, ImagePart, TextPart
@@ -125,6 +126,10 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
                 event.summary, event.summarized_event_count, event.original_tokens
             )
             messages.append({"role": "user", "content": text})
+
+        elif isinstance(event, SystemNoteEvent):
+            # Render system note as a user message (transient context)
+            messages.append({"role": "user", "content": event.message})
 
     return messages
 
