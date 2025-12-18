@@ -256,6 +256,29 @@ def _code_section(title: str, code: str, color: str = "#28a745") -> str:
         """
 
 
+def _render_markdown_html(text: str) -> str:
+    """
+    Helper function to render markdown text to HTML with a fallback.
+
+    Args:
+        text: The markdown text to render
+
+    Returns:
+        HTML string
+    """
+    try:
+        import markdown
+
+        return markdown.markdown(
+            text, extensions=["fenced_code", "nl2br", "sane_lists"]
+        )
+    except ImportError:
+        # Fallback to escaped text wrapped in pre to preserve formatting
+        import html
+
+        return f"<pre style='white-space: pre-wrap; margin: 0; font-family: inherit;'>{html.escape(text)}</pre>"
+
+
 class BaseEvent(BaseModel):
     """Base class for all agent events with common fields."""
 
@@ -443,9 +466,9 @@ class ActionEvent(BaseEvent):
             )
 
         # Create the thinking and code sections
-        thinking_section = _event_section(
-            "💭 Thinking:", html.escape(self.thinking), "#0366d6"
-        )
+        thinking_html = _render_markdown_html(self.thinking)
+
+        thinking_section = _event_section("💭 Thinking:", thinking_html, "#0366d6")
         code_section = _code_section("🐍 Code:", self.code, "#28a745")
 
         sections.extend([thinking_section, code_section])
@@ -782,17 +805,7 @@ class SummaryEvent(BaseEvent):
         )
 
         # Convert markdown summary to HTML for rich display
-        try:
-            import markdown
-
-            summary_html = markdown.markdown(
-                self.summary, extensions=["fenced_code", "nl2br", "sane_lists"]
-            )
-        except ImportError:
-            # Fallback to escaped text if markdown not available
-            import html
-
-            summary_html = f"<pre>{html.escape(self.summary)}</pre>"
+        summary_html = _render_markdown_html(self.summary)
 
         content = _event_section(header, summary_html, "#6a737d")
 
