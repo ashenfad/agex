@@ -82,11 +82,15 @@ class BaseAgent:
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
+        # Advanced: Override the builtin system instructions
+        agex_primer_override: str | None = None,
     ):
         self.name = name or _random_name()
         self.primer = primer
         # If set, used instead of rendered registrations in system context
         self.capabilities_primer = capabilities_primer
+        # Advanced: Override the builtin system instructions
+        self.agex_primer_override = agex_primer_override
         self.timeout_seconds = timeout_seconds
         self.max_iterations = max_iterations
 

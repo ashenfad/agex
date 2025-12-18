@@ -33,6 +33,7 @@ Agent(
 | `llm_retry_backoff` | `float` | `0.25` | Initial backoff (seconds) between retries. Backoff grows exponentially per attempt. |
 | `log_high_water_tokens` | `int | None` | `None` | Trigger event log summarization when total tokens exceed this threshold. If `None`, no automatic summarization occurs. |
 | `log_low_water_tokens` | `int | None` | `None` | Target token count after summarization. Defaults to 50% of `log_high_water_tokens` if not specified. Must be less than `log_high_water_tokens`. |
+| `agex_primer_override` | `str | None` | `None` | **Advanced:** Override the built-in system instructions that define the agent's core behavior and event protocol. Use with caution. |
 
 ### Examples
 
@@ -121,7 +122,22 @@ client = connect_llm(
     top_p=0.9,
 )
 ```
+### 5. Advanced: Customizing System Instructions
 
+By default, agex injects a carefully crafted system prompt (the "Agex Primer") that teaches the model how to use tools, manage memory, and follow the event protocol. For advanced use cases—such as **benchmarking** different system prompts or implementing highly specialized agent architectures—you can override this builtin primer.
+
+```python
+# WARNING: Overriding this removes all built-in safety rails and protocol instructions.
+# You must ensure your custom primer adequately instructs the model to generate
+# valid ActionEvent XML or the agent will fail to execute code.
+experiment_agent = Agent(
+    agex_primer_override="You are a specialized agent that speaks only JSON..."
+)
+```
+
+This is primarily useful for:
+-   **A/B Testing**: Evaluating how changes to the core system prompt affect agent performance.
+-   **Model-Specific Optimizations**: Tailoring the protocol instructions for models that struggle with the default XML format.
 
 ## Properties
 
