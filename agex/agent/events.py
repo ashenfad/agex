@@ -1,3 +1,4 @@
+import html
 from datetime import datetime, timezone
 from typing import Any, Callable, Literal
 
@@ -56,8 +57,6 @@ def _render_object_as_html(obj: Any) -> str:
             return f"<div style='margin: 5px 0;'>{html_content}</div>"
         # Handle PrintAction objects by joining their content
         elif isinstance(obj, PrintAction):
-            import html
-
             # Join the PrintAction tuple content with spaces, like print() does
             content = " ".join(str(item) for item in obj)
             escaped_content = html.escape(content)
@@ -116,20 +115,14 @@ def _render_object_as_html(obj: Any) -> str:
                 return f"<div style='margin: 5px 0;'>{bundle['text/html']}</div>"
             else:
                 # Fall back to escaped string representation
-                import html
-
                 escaped_obj = html.escape(str(obj))
                 return f"<pre style='background: #fff; padding: 8px; border-radius: 3px; margin: 0; color: #24292e; font-family: monospace;'>{escaped_obj}</pre>"
         else:
             # Default to escaped string representation
-            import html
-
             escaped_obj = html.escape(str(obj))
             return f"<pre style='background: #fff; padding: 8px; border-radius: 3px; margin: 0; color: #24292e; font-family: monospace;'>{escaped_obj}</pre>"
     except Exception:
         # Fallback to string if anything goes wrong
-        import html
-
         escaped_obj = html.escape(str(obj))
         return f"<pre style='background: #fff; padding: 8px; border-radius: 3px; margin: 0; color: #24292e; font-family: monospace;'>{escaped_obj}</pre>"
 
@@ -242,10 +235,7 @@ def _code_section(title: str, code: str, color: str = "#28a745") -> str:
         """
     except ImportError:
         # Fallback to plain HTML escaping if pygments is not available
-        import html
-
         escaped_code = html.escape(code)
-
         return f"""
         <div>
             <div style="font-weight: 600; margin-bottom: 6px; color: {color}; font-size: 13px;">
@@ -274,8 +264,6 @@ def _render_markdown_html(text: str) -> str:
         )
     except ImportError:
         # Fallback to escaped text wrapped in pre to preserve formatting
-        import html
-
         return f"<pre style='white-space: pre-wrap; margin: 0; font-family: inherit;'>{html.escape(text)}</pre>"
 
 
@@ -457,8 +445,6 @@ class ActionEvent(BaseEvent):
 
     def _repr_html_(self) -> str:
         """Rich HTML representation for IPython/Jupyter environments."""
-        import html
-
         sections = []
         if self.title:
             sections.append(
@@ -585,8 +571,6 @@ class ErrorEvent(BaseEvent):
 
     def _repr_html_(self) -> str:
         """Rich HTML representation for IPython/Jupyter environments."""
-        import html
-
         error_name = (
             type(self.error).__name__
             if hasattr(self.error, "__class__")
@@ -688,8 +672,6 @@ class FailEvent(BaseEvent):
 
     def _repr_html_(self) -> str:
         """Rich HTML representation for IPython/Jupyter environments."""
-        import html
-
         content = _event_section(
             "💥 Failure Message:", html.escape(self.message), "#d73a49"
         )
@@ -734,8 +716,6 @@ class ClarifyEvent(BaseEvent):
 
     def _repr_html_(self) -> str:
         """Rich HTML representation for IPython/Jupyter environments."""
-        import html
-
         content = _event_section(
             "❓ Clarification Request:", html.escape(self.message), "#fb8500"
         )
@@ -743,6 +723,47 @@ class ClarifyEvent(BaseEvent):
         return _event_html_container(
             "🤔",
             "ClarifyEvent",
+            self.full_namespace,
+            self.timestamp,
+            content,
+            self.commit_hash,
+        )
+
+
+class SystemNoteEvent(BaseEvent):
+    """Fired when the system injects a transient note (e.g. iteration warning)."""
+
+    message: str
+
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        tokens = count_tokens(self.message)
+        self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens
+        return self
+
+    def __str__(self) -> str:
+        """Detailed string."""
+        base = super().__str__()
+        return f"{base}\n  Message: {self.message}"
+
+    def _repr_markdown_(self) -> str:
+        """Rich markdown."""
+        base = super()._repr_markdown_()
+        return f"""{base}  
+**System Note:**
+```
+{self.message}
+```"""
+
+    def _repr_html_(self) -> str:
+        """Rich HTML."""
+        content = _event_section(
+            "🔔 System Note:", html.escape(self.message), "#0366d6"
+        )
+        return _event_html_container(
+            "🔔",
+            "SystemNoteEvent",
             self.full_namespace,
             self.timestamp,
             content,
