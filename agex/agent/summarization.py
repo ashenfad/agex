@@ -61,7 +61,9 @@ If a pre-existing summary is provided, include it in your summary as well.
 Remember: You are summarizing a COMPLETED interaction, not participating in it."""
 
 
-def maybe_summarize_event_log(agent: "BaseAgent", state: State, on_event=None) -> None:
+def maybe_summarize_event_log(
+    agent: "BaseAgent", state: State, system_message: str, on_event=None
+) -> None:
     """
     Check if event log needs summarization and perform it if necessary.
 
@@ -73,6 +75,7 @@ def maybe_summarize_event_log(agent: "BaseAgent", state: State, on_event=None) -
     Args:
         agent: Agent with llm_client and watermark configuration
         state: State containing the event log
+        system_message: The current systems message (for token accounting)
         on_event: Optional callback to notify about the SummaryEvent
 
     Raises:
@@ -93,7 +96,12 @@ def maybe_summarize_event_log(agent: "BaseAgent", state: State, on_event=None) -
     if len(events) < 2:
         return
 
-    total_tokens = sum(event.full_detail_tokens for event in events)
+    # Account for system message overhead
+    from agex.render.primitives import count_tokens
+
+    system_tokens = count_tokens(system_message)
+    event_tokens = sum(event.full_detail_tokens for event in events)
+    total_tokens = system_tokens + event_tokens
 
     # Check if we've exceeded high water mark
     if total_tokens <= agent.log_high_water_tokens:
@@ -111,18 +119,20 @@ def maybe_summarize_event_log(agent: "BaseAgent", state: State, on_event=None) -
     # Work backwards from newest, keeping events until we're under low_water
     # Use correct token counts: low_detail for old events, full_detail for new events
     events_to_keep = []
-    kept_tokens = 0
+
+    # We must reserve space for the system message in our *target* budget too
+    kept_tokens = system_tokens
 
     for event in reversed(events):
         # Use low_detail_tokens if event is older than threshold
         if low_detail_threshold and event.timestamp < low_detail_threshold:
-            event_tokens = event.low_detail_tokens
+            current_event_tokens = event.low_detail_tokens
         else:
-            event_tokens = event.full_detail_tokens
+            current_event_tokens = event.full_detail_tokens
 
-        if kept_tokens + event_tokens <= agent.log_low_water_tokens:
+        if kept_tokens + current_event_tokens <= agent.log_low_water_tokens:
             events_to_keep.insert(0, event)
-            kept_tokens += event_tokens
+            kept_tokens += current_event_tokens
         else:
             break
 
