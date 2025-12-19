@@ -220,7 +220,7 @@ class TaskLoopMixin(BaseAgent):
             all_events = get_events_from_log(exec_state)
 
             # Generate transient forefront message (e.g. iteration pressure)
-            forefront_msg = self._get_forefront_message(iteration)
+            forefront_msg = self._get_forefront_message(iteration, exec_state)
 
             # Get LLM response with built-in retry and event emission
             llm_response = self._get_llm_response(
@@ -611,11 +611,58 @@ class TaskLoopMixin(BaseAgent):
             docstring, inputs_dataclass, inputs_instance, return_type
         )
 
-    def _get_forefront_message(self, iteration: int) -> str | None:
+    def _get_forefront_message(self, iteration: int, exec_state) -> str | None:
         """
         Get a transient 'forefront' message to be injected into the LLM context.
         This is a great place to put iteration reminders or 'System Notes'.
         """
+        messages = []
+
+        # 1. User Functions (always show if present)
+        # We use a shadow set to avoid iterating the entire state
+        fn_names = exec_state.get("__sys_user_fn_names__", set())
+        if fn_names:
+            import inspect
+
+            from agex.eval.functions import UserFunction
+
+            user_fns = []
+            missing_names = set()
+
+            # Sort for stability
+            for name in sorted(fn_names):
+                obj = exec_state.peek(name)
+                if isinstance(obj, UserFunction):
+                    try:
+                        sig = str(obj.__signature__)
+                    except Exception:
+                        sig = "(...)"
+
+                    doc = inspect.getdoc(obj) or ""
+                    # Truncate docstring if too long
+                    if len(doc) > 100:
+                        doc = doc[:97] + "..."
+
+                    user_fns.append(f"- {name}{sig}: {doc}")
+                else:
+                    # Object is missing or replaced by something else -> clean up
+                    missing_names.add(name)
+
+            # Lazy cleanup of shadow set
+            if missing_names:
+                new_names = fn_names - missing_names
+                exec_state.set("__sys_user_fn_names__", new_names)
+
+            if user_fns:
+                messages.append(
+                    "## User Defined Functions\n"
+                    "The following functions are ALREADY DEFINED in your global scope.\n"
+                    "**GUARANTEE**: These functions are LIVE in memory and GUARANTEED to work.\n"
+                    "**PERFORMANCE**: Reuse them to reduce token usage and speed up execution.\n"
+                    "**DO NOT** redefine them.\n" + "\n".join(user_fns)
+                )
+
+        # 2. Iteration Warnings (conditional)
         # Iteration-based pressure: only notify when nearing the limit (last 20%)
         # or if we're very close (last 3 iterations) for short tasks.
         threshold_idx = int(self.max_iterations * 0.8)
@@ -625,9 +672,14 @@ class TaskLoopMixin(BaseAgent):
             threshold_idx = max(0, self.max_iterations - 3)
 
         if iteration >= threshold_idx:
-            return f"System Note: You are on iteration {iteration + 1} of {self.max_iterations}. Please wrap up."
+            messages.append(
+                f"System Note: You are on iteration {iteration + 1} of {self.max_iterations}. Please wrap up."
+            )
 
-        return None
+        if not messages:
+            return None
+
+        return "\n\n".join(messages)
 
     def _get_llm_response(
         self,

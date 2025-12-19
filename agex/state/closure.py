@@ -62,6 +62,31 @@ class LiveClosureState(State):
 
         return default
 
+    def peek(self, key: str, default: Any = None) -> Any:
+        # If we're in frozen state, use the frozen store
+        if self._frozen_store is not None:
+            return self._frozen_store.get(key, default)
+
+        assert self._source is not None
+
+        # Allow access to system variables (starting with __) even if not captured
+        if key.startswith("__"):
+            return self._source.peek(key, default)
+
+        # If the key is in our captured variables, get it from source first
+        if key in self._keys:
+            return self._source.peek(key, default)
+
+        # If not a captured variable, check builtins
+        from ..eval.builtins import BUILTINS, STATEFUL_BUILTINS
+
+        if key in BUILTINS:
+            return BUILTINS[key]
+        if key in STATEFUL_BUILTINS:
+            return STATEFUL_BUILTINS[key]
+
+        return default
+
     def set(self, key: str, value: Any) -> None:
         raise TypeError("Closures are read-only.")
 

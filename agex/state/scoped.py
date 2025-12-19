@@ -34,6 +34,11 @@ class Scoped(State):
             return self._local_store.get(key, default)
         return self._parent_store.get(key, default)
 
+    def peek(self, key: str, default: Any = None) -> Any:
+        if key in self._local_store:
+            return self._local_store.peek(key, default)
+        return self._parent_store.peek(key, default)
+
     def set(self, key: str, value: Any) -> None:
         self._local_store.set(key, value)
 

@@ -202,6 +202,31 @@ class Versioned(State):
 
         return default
 
+    def peek(self, key: str, default: Any = None) -> Any:
+        # First check live (in-memory changes)
+        if key in self.live:
+            return self.live.peek(key)
+
+        # Then check committed state
+        if (
+            key not in self.removed
+            and (versioned_key := self.commit_keys.get(key)) is not None
+        ):
+            # Get serialized bytes from KV store
+            serialized_bytes = self.long_term.get(versioned_key)
+            if serialized_bytes is not None:
+                # Deserialize the object - we do NOT wrap in Unpicklable check/error here
+                # because we are peeking. If it fails, that's fine.
+                try:
+                    value = pickle.loads(serialized_bytes)
+                except Exception:
+                    # If we can't unpickle, return default (or maybe raise? default is safer for peek)
+                    return default
+
+                return value
+
+        return default
+
     def set(self, key: str, value: Any) -> None:
         self.live.set(key, value)
         self.removed.discard(key)

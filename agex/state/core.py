@@ -14,6 +14,11 @@ class State(ABC):
         pass
 
     @abstractmethod
+    def peek(self, key: str, default: Any = None) -> Any:
+        """Get value without updating access stats (e.g., for system use)."""
+        pass
+
+    @abstractmethod
     def set(self, key: str, value: Any) -> None:
         pass
 

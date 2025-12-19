@@ -71,13 +71,16 @@ def test_transient_message_injection():
 def test_forefront_logic_thresholds():
     """Unit test for the threshold logic."""
     agent = Agent(name="tester", max_iterations=10)
-    # Threshold = 10 * 0.8 = 8.
+    # Mock state
+    from agex.state import Live, Namespaced
+
+    state = Namespaced(Live(), "test")
 
     # Iteration 7: No message
-    assert agent._get_forefront_message(7) is None
+    assert agent._get_forefront_message(7, state) is None
 
     # Iteration 8: Message
-    msg = agent._get_forefront_message(8)
+    msg = agent._get_forefront_message(8, state)
     assert msg is not None
     assert "iteration 9 of 10" in msg
 
@@ -85,5 +88,52 @@ def test_forefront_logic_thresholds():
     agent.max_iterations = 5
     # Threshold = max(0, 5-3) = 2.
 
-    assert agent._get_forefront_message(1) is None
-    assert "iteration 3 of 5" in agent._get_forefront_message(2)
+    assert agent._get_forefront_message(1, state) is None
+    assert "iteration 3 of 5" in agent._get_forefront_message(2, state)
+
+
+def test_forefront_user_functions():
+    """Test that user defined functions appear in the system note."""
+    from unittest.mock import Mock
+
+    from agex.eval.functions import UserFunction
+    from agex.state import Live, Namespaced
+
+    agent = Agent(name="tester", max_iterations=10)
+    state = Namespaced(Live(), "test_namespace")
+
+    # Mock a UserFunction in the agent's state
+    # We need to set it in both the object store AND the shadow set
+    mock_func = Mock(spec=UserFunction)
+    mock_func.__class__ = UserFunction  # Hack to pass isinstance check
+    mock_func.__signature__ = "(x, y=1)"
+
+    # Set in state
+    state.set("my_func", mock_func)
+    state.set("__sys_user_fn_names__", {"my_func"})
+
+    # Run _get_forefront_message for an early iteration (0)
+    # Should contain user functions even if iteration warning is not triggered
+    msg = agent._get_forefront_message(0, state)
+
+    assert msg is not None
+    assert "User Defined Functions" in msg
+    assert "GUARANTEE" in msg
+    assert "PERFORMANCE" in msg
+    assert "DO NOT" in msg
+    assert "my_func(x, y=1)" in msg
+
+    # Test lazy cleanup
+    # Remove function from state but keep in shadow set
+    state.remove("my_func")
+    # shadow set still has "my_func"
+    assert "my_func" in state.get("__sys_user_fn_names__")
+
+    # Call again -> should trigger cleanup
+    msg = agent._get_forefront_message(0, state)
+
+    # Should be None because no functions found and iteration is early
+    assert msg is None
+
+    # Shadow set should be updated
+    assert "my_func" not in state.get("__sys_user_fn_names__")

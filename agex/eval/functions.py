@@ -420,6 +420,14 @@ class FunctionEvaluator(BaseEvaluator):
         func.__doc__ = docstring
         self.state.set(node.name, func)
 
+        # Track user function names for system prompts (shadow set)
+        # We use a shadow set to avoid iterating the entire state to find functions.
+        current_names = self.state.get("__sys_user_fn_names__", set())
+        if node.name not in current_names:
+            # Create new set to ensure we trigger state update
+            new_names = current_names | {node.name}
+            self.state.set("__sys_user_fn_names__", new_names)
+
     def visit_Lambda(self, node: ast.Lambda) -> UserFunction:
         """Handles lambda expressions."""
         free_vars = get_free_variables(node)
