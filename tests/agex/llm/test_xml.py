@@ -402,3 +402,29 @@ class TestTokenChunk:
         assert chunk.type == "python"
         assert chunk.content == ""
         assert chunk.done is True
+
+    def test_stop_after_first_python_section(self):
+        """Test that tokenization stops after the first </PYTHON> tag."""
+        chunks = [
+            "<TITLE>First Title</TITLE>",
+            "<THINKING>First Reasoning</THINKING>",
+            "<PYTHON>first_code()</PYTHON>",
+            "<TITLE>Second Title</TITLE>",
+            "<THINKING>Second Reasoning</THINKING>",
+            "<PYTHON>second_code()</PYTHON>",
+        ]
+        tokens = list(tokenize_xml_stream(iter(chunks)))
+
+        # Should only contain tokens for the first section
+        titles = [t.content for t in tokens if t.type == "title" and not t.done]
+        thinking = [t.content for t in tokens if t.type == "thinking" and not t.done]
+        python = [t.content for t in tokens if t.type == "python" and not t.done]
+
+        assert titles == ["First Title"]
+        assert thinking == ["First Reasoning"]
+        assert python == ["first_code()"]
+
+        # Should NOT contain content from the second section
+        assert "Second Title" not in str(tokens)
+        assert "Second Reasoning" not in str(tokens)
+        assert "second_code()" not in str(tokens)
