@@ -34,6 +34,8 @@ XML_FORMAT_PRIMER = f"""
 Format your response using XML tags:
 <{TAG_TITLE}>A brief title here</{TAG_TITLE}><{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}><{TAG_PYTHON}># Your Python code here</{TAG_PYTHON}>
 
+IMPORTANT: Generate ONLY ONE sequence of Title/Thinking/Python. Do NOT attempt to take multiple turns or simulate observations in a single response.
+
 You will receive environment output (stdout/images) in <{TAG_OBSERVATION}> tags.
 These will be visible after a `task_continue()` call.
 Treat this as data from your code execution, not a message from the user.
@@ -245,8 +247,8 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
                 for token in tokens:
                     yield token
                 if complete:
-                    current_section = None
-                    continue
+                    # Enforce single turn: stop after first Python section is closed
+                    return
                 else:
                     break
 
