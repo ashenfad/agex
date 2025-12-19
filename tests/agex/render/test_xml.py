@@ -108,3 +108,14 @@ class TestRenderEventsAsXML:
         assert messages[1]["role"] == "assistant"
         assert messages[2]["role"] == "user"
         assert messages[3]["role"] == "assistant"
+
+    def test_system_note_event(self):
+        """Test rendering SystemNoteEvent (regression test)."""
+        from agex.agent.events import SystemNoteEvent
+
+        events = [SystemNoteEvent(agent_name="System", message="FOREFRONT NOTE")]
+        messages = render_events_as_xml(events)
+
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"] == "FOREFRONT NOTE"

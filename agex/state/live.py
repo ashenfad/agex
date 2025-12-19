@@ -19,6 +19,10 @@ class Live(State):
     def get(self, key: str, default: Any = None) -> Any:
         return self.store.get(key, default)
 
+    def peek(self, key: str, default: Any = None) -> Any:
+        # Live state has no GC/touch tracking, so peek == get
+        return self.store.get(key, default)
+
     def set(self, key: str, value: Any) -> None:
         self.store[key] = value
 

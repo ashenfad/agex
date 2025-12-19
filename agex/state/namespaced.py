@@ -44,6 +44,9 @@ class Namespaced(State):
     def get(self, key: str, default: Any = None) -> Any:
         return self.base_store.get(f"{self.namespace}/{key}", default)
 
+    def peek(self, key: str, default: Any = None) -> Any:
+        return self.base_store.peek(f"{self.namespace}/{key}", default)
+
     def set(self, key: str, value: Any) -> None:
         return self.base_store.set(f"{self.namespace}/{key}", value)
 
