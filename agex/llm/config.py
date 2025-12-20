@@ -27,21 +27,12 @@ def get_llm_config(**overrides: Any) -> Dict[str, Any]:
     env_mapping = {
         "AGEX_LLM_PROVIDER": "provider",
         "AGEX_LLM_MODEL": "model",
-        "AGEX_LLM_TEMPERATURE": "temperature",
-        "AGEX_LLM_MAX_TOKENS": "max_tokens",
-        "AGEX_LLM_TOP_P": "top_p",
     }
 
     for env_var, config_key in env_mapping.items():
         env_value = os.getenv(env_var)
         if env_value is not None:
-            # Handle type conversion for numeric values
-            if config_key in ("temperature", "top_p"):
-                config[config_key] = float(env_value)
-            elif config_key == "max_tokens":
-                config[config_key] = int(env_value)
-            else:
-                config[config_key] = env_value
+            config[config_key] = env_value
 
     # Apply overrides (highest priority)
     # Filter out None values to allow selective overrides
