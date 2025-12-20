@@ -1,5 +1,5 @@
 import json
-from typing import Iterator, List
+from typing import Any, Iterator, List
 
 from google import genai
 from google.genai import types
@@ -8,6 +8,14 @@ from agex.agent.events import Event
 from agex.llm.core import LLMClient, LLMResponse, TokenChunk
 from agex.llm.xml import TAG_TITLE, XML_FORMAT_PRIMER, tokenize_xml_stream
 
+GROUNDING_PRIMER = """
+# Search Grounding Enabled
+You have access to Google Search for grounding.
+
+If you use it, please make a detailed summary of what you learn and include it in your
+<THINKING></THINKING> section. This will enable you to remember the summary long-term.
+"""
+
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key", "vertexai"}
 
@@ -15,7 +23,12 @@ CLIENT_CONFIG_KEYS = {"api_key", "vertexai"}
 class GeminiClient(LLMClient):
     """Client for Google's Gemini API (google-genai SDK) with structured outputs."""
 
-    def __init__(self, model: str = "gemini-1.5-flash", **kwargs):
+    def __init__(
+        self,
+        model: str = "gemini-1.5-flash",
+        search_grounding: bool = False,
+        **kwargs,
+    ):
         kwargs = kwargs.copy()
         kwargs.pop("provider", None)
 
@@ -30,6 +43,7 @@ class GeminiClient(LLMClient):
 
         self._model = model
         self._kwargs = completion_kwargs
+        self._search_grounding = search_grounding
 
         # Initialize the unified Client.
         # Supports both API Key (AI Studio) and Vertex AI via explicit kwargs or environment variables.
@@ -69,10 +83,16 @@ class GeminiClient(LLMClient):
 
         try:
             # Create config
+            tools = []
+            if self._search_grounding:
+                tools.append(types.Tool(google_search=types.GoogleSearch()))
+                system = f"{GROUNDING_PRIMER}\n\n{system}"
+
             config = types.GenerateContentConfig(
                 system_instruction=system,
                 response_mime_type="application/json",
                 response_schema=response_schema,
+                tools=tools if tools else None,
                 **request_kwargs,
             )
 
@@ -95,7 +115,6 @@ class GeminiClient(LLMClient):
             # Extract thinking and code
             thinking = parsed_response.get("thinking", "")
             code = parsed_response.get("code", "")
-
             return LLMResponse(thinking=thinking, code=code)
 
         except Exception as e:
@@ -118,18 +137,28 @@ class GeminiClient(LLMClient):
         # Add system message with XML format instructions
         system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
 
+        if self._search_grounding:
+            system_with_format = f"{GROUNDING_PRIMER}\n\n{system_with_format}"
+
         # Convert to Gemini format
         gemini_contents = self._convert_messages_to_gemini_format(messages_dicts)
 
-        # Pre-fill response
+        # Pre-fill response (only if not grounding, as pre-fill can suppress grounding tools)
         prefill_text = f"<{TAG_TITLE}>"
-        gemini_contents.append(
-            types.Content(role="model", parts=[types.Part(text=prefill_text)])
-        )
+        if not self._search_grounding:
+            gemini_contents.append(
+                types.Content(role="model", parts=[types.Part(text=prefill_text)])
+            )
 
         try:
+            tools = []
+            if self._search_grounding:
+                tools.append(types.Tool(google_search=types.GoogleSearch()))
+
             config = types.GenerateContentConfig(
-                system_instruction=system_with_format, **request_kwargs
+                system_instruction=system_with_format,
+                tools=tools if tools else None,
+                **request_kwargs,
             )
 
             # Streaming call
@@ -139,11 +168,13 @@ class GeminiClient(LLMClient):
                 config=config,
             )
 
-            def raw_chunks() -> Iterator[str]:
-                yield prefill_text
+            def raw_chunks() -> Iterator[Any]:
+                if not self._search_grounding:
+                    yield prefill_text
+
                 for chunk in response_stream:
-                    if chunk.text:
-                        yield chunk.text
+                    text = chunk.text or ""
+                    yield text
 
             yield from tokenize_xml_stream(raw_chunks())
 
