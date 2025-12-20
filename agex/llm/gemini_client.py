@@ -26,7 +26,7 @@ class GeminiClient(LLMClient):
     def __init__(
         self,
         model: str = "gemini-1.5-flash",
-        search_grounding: bool = False,
+        google_search: bool = False,
         **kwargs,
     ):
         kwargs = kwargs.copy()
@@ -43,7 +43,7 @@ class GeminiClient(LLMClient):
 
         self._model = model
         self._kwargs = completion_kwargs
-        self._search_grounding = search_grounding
+        self._google_search = google_search
 
         # Initialize the unified Client.
         # Supports both API Key (AI Studio) and Vertex AI via explicit kwargs or environment variables.
@@ -84,7 +84,7 @@ class GeminiClient(LLMClient):
         try:
             # Create config
             tools = []
-            if self._search_grounding:
+            if self._google_search:
                 tools.append(types.Tool(google_search=types.GoogleSearch()))
                 system = f"{GROUNDING_PRIMER}\n\n{system}"
 
@@ -137,7 +137,7 @@ class GeminiClient(LLMClient):
         # Add system message with XML format instructions
         system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
 
-        if self._search_grounding:
+        if self._google_search:
             system_with_format = f"{GROUNDING_PRIMER}\n\n{system_with_format}"
 
         # Convert to Gemini format
@@ -145,14 +145,14 @@ class GeminiClient(LLMClient):
 
         # Pre-fill response (only if not grounding, as pre-fill can suppress grounding tools)
         prefill_text = f"<{TAG_TITLE}>"
-        if not self._search_grounding:
+        if not self._google_search:
             gemini_contents.append(
                 types.Content(role="model", parts=[types.Part(text=prefill_text)])
             )
 
         try:
             tools = []
-            if self._search_grounding:
+            if self._google_search:
                 tools.append(types.Tool(google_search=types.GoogleSearch()))
 
             config = types.GenerateContentConfig(
@@ -169,7 +169,7 @@ class GeminiClient(LLMClient):
             )
 
             def raw_chunks() -> Iterator[Any]:
-                if not self._search_grounding:
+                if not self._google_search:
                     yield prefill_text
 
                 for chunk in response_stream:
