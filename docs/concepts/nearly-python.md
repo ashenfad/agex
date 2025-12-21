@@ -349,6 +349,9 @@ async def fetch_data(url: str) -> dict:
 
 The framework automatically awaits async results using `run_coroutine_threadsafe()`, so agents receive resolved values without needing async syntax.
 
+> [!IMPORTANT]
+> Async bridging only works in async task context. If an agent calls an async function from a **sync** task, it will see a clear error: *"'fn_name' is an async function and cannot be called from a sync task."* The agent can then use a synchronous alternative or report the limitation. Use async tasks when you need to call async registered functions.
+
 ### Layer 3: Sandbox Execution (always sync)
 
 Agent-generated code runs in a synchronous sandbox. This is intentional:

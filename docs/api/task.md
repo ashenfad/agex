@@ -91,6 +91,9 @@ print(f"Result: {result}")
 
 All execution modes (`.stream()`, `on_event`, `on_token`) work with async tasks.
 
+> [!NOTE]
+> Async registered functions (via `@agent.fn`) are only available in async tasks. If an agent tries to call an async function from a sync task, it will see an error and can adapt. Use async tasks when your registered functions include async code.
+
 ### 2. Streaming Execution with `.stream()`
 
 For interactive scenarios like Jupyter notebooks, you can use the `.stream()` method. This returns a **generator** that yields events as they happen, allowing you to see the agent's progress in real time.
