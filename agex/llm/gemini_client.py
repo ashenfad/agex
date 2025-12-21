@@ -8,16 +8,33 @@ from agex.agent.events import Event
 from agex.llm.core import LLMClient, LLMResponse, TokenChunk
 from agex.llm.xml import TAG_TITLE, XML_FORMAT_PRIMER, tokenize_xml_stream
 
-GROUNDING_PRIMER = """
-# Search Grounding Enabled
-You have access to Google Search for grounding.
+CLIENT_CONFIG_KEYS = {"api_key", "vertexai"}
 
-If you use it, please make a detailed summary of what you learn and include it in your
+GROUNDING_PRIMER_TEMPLATE = """
+# Grounding Tools Enabled
+You have access to the following tools for grounding:
+{tools_str}
+
+If you use them, please make a detailed summary of what you learn and include it in your
 <THINKING></THINKING> section. This will enable you to remember the summary long-term.
 """
 
-# Define keys for client setup vs. completion
-CLIENT_CONFIG_KEYS = {"api_key", "vertexai"}
+
+def _get_grounding_primer(google_search: bool, url_context: bool) -> str:
+    """
+    Generate the grounding primer based on enabled tools.
+    """
+    if not (google_search or url_context):
+        return ""
+
+    tools_list = []
+    if google_search:
+        tools_list.append("- Google Search")
+    if url_context:
+        tools_list.append("- URL Context (access to content of provided URLs)")
+
+    tools_str = "\n".join(tools_list)
+    return GROUNDING_PRIMER_TEMPLATE.format(tools_str=tools_str)
 
 
 class GeminiClient(LLMClient):
@@ -27,6 +44,7 @@ class GeminiClient(LLMClient):
         self,
         model: str = "gemini-1.5-flash",
         google_search: bool = False,
+        url_context: bool = False,
         **kwargs,
     ):
         kwargs = kwargs.copy()
@@ -44,6 +62,7 @@ class GeminiClient(LLMClient):
         self._model = model
         self._kwargs = completion_kwargs
         self._google_search = google_search
+        self._url_context = url_context
 
         # Initialize the unified Client.
         # Supports both API Key (AI Studio) and Vertex AI via explicit kwargs or environment variables.
@@ -86,7 +105,17 @@ class GeminiClient(LLMClient):
             tools = []
             if self._google_search:
                 tools.append(types.Tool(google_search=types.GoogleSearch()))
-                system = f"{GROUNDING_PRIMER}\n\n{system}"
+
+            if self._url_context:
+                # Based on documentation, pass as a dict or dynamic type
+                tools.append({"url_context": {}})
+
+            if tools:
+                grounding_primer = _get_grounding_primer(
+                    self._google_search, self._url_context
+                )
+                if grounding_primer:
+                    system = f"{grounding_primer}\n\n{system}"
 
             config = types.GenerateContentConfig(
                 system_instruction=system,
@@ -137,15 +166,16 @@ class GeminiClient(LLMClient):
         # Add system message with XML format instructions
         system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
 
-        if self._google_search:
-            system_with_format = f"{GROUNDING_PRIMER}\n\n{system_with_format}"
+        grounding_primer = _get_grounding_primer(self._google_search, self._url_context)
+        if grounding_primer:
+            system_with_format = f"{grounding_primer}\n\n{system_with_format}"
 
         # Convert to Gemini format
         gemini_contents = self._convert_messages_to_gemini_format(messages_dicts)
 
         # Pre-fill response (only if not grounding, as pre-fill can suppress grounding tools)
         prefill_text = f"<{TAG_TITLE}>"
-        if not self._google_search:
+        if not self._google_search and not self._url_context:
             gemini_contents.append(
                 types.Content(role="model", parts=[types.Part(text=prefill_text)])
             )
@@ -154,6 +184,9 @@ class GeminiClient(LLMClient):
             tools = []
             if self._google_search:
                 tools.append(types.Tool(google_search=types.GoogleSearch()))
+
+            if self._url_context:
+                tools.append({"url_context": {}})
 
             config = types.GenerateContentConfig(
                 system_instruction=system_with_format,
@@ -169,11 +202,13 @@ class GeminiClient(LLMClient):
             )
 
             def raw_chunks() -> Iterator[Any]:
-                if not self._google_search:
+                if not self._google_search and not self._url_context:
                     yield prefill_text
 
                 for chunk in response_stream:
                     text = chunk.text or ""
+                    if text:
+                        print(f"ADAM - text: {text}")
                     yield text
 
             yield from tokenize_xml_stream(raw_chunks())
