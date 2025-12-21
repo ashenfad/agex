@@ -220,3 +220,135 @@ def test_gemini_client_summarize_with_config():
         config = call_kwargs["config"]
         assert config.max_output_tokens == 100
         assert config.temperature == 0.5
+
+
+def test_gemini_client_google_search_enabled():
+    """Test that google_search parameter enables the Google Search tool."""
+    with patch("google.genai.Client") as MockClient:
+        mock_models = MockClient.return_value.models
+        mock_response = MagicMock()
+        mock_response.text = '{"thinking": "Test", "code": "pass"}'
+        mock_models.generate_content.return_value = mock_response
+
+        # Initialize with google_search=True
+        client = GeminiClient(google_search=True)
+
+        system = "Test System"
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        client.complete(system, events)
+
+        # Verify generate_content was called
+        mock_models.generate_content.assert_called_once()
+        call_kwargs = mock_models.generate_content.call_args.kwargs
+
+        # Verify config has tools
+        config = call_kwargs["config"]
+        assert config.tools is not None
+        assert len(config.tools) == 1
+
+        # Verify system prompt has grounding primer
+        assert "# Grounding Tools Enabled" in config.system_instruction
+        assert "- Google Search" in config.system_instruction
+
+
+def test_gemini_client_google_search_stream():
+    """Test that google_search parameter affects streaming."""
+    with patch("google.genai.Client") as MockClient:
+        mock_models = MockClient.return_value.models
+
+        # Mock stream response
+        mock_chunk = MagicMock()
+        mock_chunk.text = "<THINKING>Thinking</THINKING>"
+        mock_models.generate_content_stream.return_value = [mock_chunk]
+
+        client = GeminiClient(google_search=True)
+        system = "Test"
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        # Consume stream
+        list(client.complete_stream(system, events))
+
+        # Verify config
+        call_kwargs = mock_models.generate_content_stream.call_args.kwargs
+        config = call_kwargs["config"]
+
+        assert config.tools is not None
+        assert "# Grounding Tools Enabled" in config.system_instruction
+        assert "- Google Search" in config.system_instruction
+
+
+def test_gemini_client_url_context():
+    """Test that url_context parameter passes the correct tool config."""
+    with patch("google.genai.Client") as MockClient:
+        mock_models = MockClient.return_value.models
+        mock_response = MagicMock()
+        mock_response.text = '{"thinking": "Test", "code": "pass"}'
+        mock_models.generate_content.return_value = mock_response
+
+        # Initialize with url_context=True
+        client = GeminiClient(url_context=True)
+
+        system = "Test System"
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        client.complete(system, events)
+
+        # Verify generate_content was called
+        mock_models.generate_content.assert_called_once()
+        call_kwargs = mock_models.generate_content.call_args.kwargs
+
+        # Verify config has tools
+        config = call_kwargs["config"]
+        assert config.tools is not None
+        # Check that one of the tools has url_context configured
+        # The SDK converts the dict to a Tool object with a url_context attribute
+        assert any(
+            getattr(tool, "url_context", None) is not None for tool in config.tools
+        )
+
+        # Verify system prompt has grounding primer
+        assert "# Grounding Tools Enabled" in config.system_instruction
+        assert "- URL Context" in config.system_instruction
+
+
+def test_gemini_client_url_context_stream_prefill():
+    """Test that url_context disables pre-fill in streaming."""
+    with patch("google.genai.Client") as MockClient:
+        mock_models = MockClient.return_value.models
+
+        # Mock stream response
+        mock_chunk = MagicMock()
+        mock_chunk.text = "<THINKING>Thinking</THINKING>"
+        mock_models.generate_content_stream.return_value = [mock_chunk]
+
+        client = GeminiClient(url_context=True)
+        system = "Test"
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        # Consume stream
+        list(client.complete_stream(system, events))
+
+        # Verify generate_content_stream call arguments
+        call_kwargs = mock_models.generate_content_stream.call_args.kwargs
+        gemini_contents = call_kwargs["contents"]
+
+        # Check that pre-fill content was NOT added to the request
+        # The last message should be the user message, not a model pre-fill
+        assert gemini_contents[-1].role == "user"
