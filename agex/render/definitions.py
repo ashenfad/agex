@@ -703,8 +703,8 @@ def _render_function(
 
     try:
         signature = inspect.signature(fn)
-    except ValueError:
-        signature = None  # Fallback for builtins with no signature
+    except (ValueError, TypeError):
+        signature = None  # Fallback for builtins or non-callables with no signature
 
     if inspect.iscoroutinefunction(fn) or inspect.iscoroutine(fn):
         prefix += "async def "

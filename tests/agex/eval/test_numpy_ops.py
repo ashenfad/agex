@@ -56,8 +56,8 @@ result_mul = (arr1 + arr2) * 10
     assert isinstance(agent_view, str)
     assert "module np:" in agent_view
     # Check for a couple of representative numpy functions
-    assert "def array(...)" in agent_view
-    assert "def mean(...)" in agent_view
+    assert "def array(" in agent_view
+    assert "def mean(" in agent_view
 
     # 7. Check the rendered view of the STATE
     state_view = view(state, focus="full")
