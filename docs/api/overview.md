@@ -96,6 +96,10 @@ The three-tier visibility system (`high`/`medium`/`low`) addresses the core chal
 
 This allows agents to have access to extensive capabilities while keeping their context focused on the most relevant tools.
 
+### Async Support
+
+Tasks can be defined as sync or async—agex handles both transparently. Async registered functions are bridged so agents call them synchronously while the framework handles the async execution underneath. For details, see [Async Architecture](../concepts/nearly-python.md#async-architecture).
+
 ## Framework Status
 
 !!! warning "Alpha"

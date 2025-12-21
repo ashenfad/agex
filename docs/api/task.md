@@ -74,6 +74,23 @@ result = solve_equation("2*x + 5 = 15")
 print(f"Result: {result}")
 ```
 
+### Async Execution
+
+Tasks decorated on agents work seamlessly with Python's `async`/`await`. Define the task function as `async def` and `await` the result:
+
+```python
+@agent.task
+async def solve_equation(equation: str) -> float:  # type: ignore[return-value]
+    """Solve a mathematical equation and return the result."""
+    pass
+
+# Use with await in async context
+result = await solve_equation("2*x + 5 = 15")
+print(f"Result: {result}")
+```
+
+All execution modes (`.stream()`, `on_event`, `on_token`) work with async tasks.
+
 ### 2. Streaming Execution with `.stream()`
 
 For interactive scenarios like Jupyter notebooks, you can use the `.stream()` method. This returns a **generator** that yields events as they happen, allowing you to see the agent's progress in real time.
