@@ -261,3 +261,190 @@ async def test_async_recursive_task():
 
     result = await main_task()
     assert result == 15  # 5 * 3
+
+
+# =============================================================================
+# Async Bridge Integration Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_fn_error_propagation():
+    """Test that errors from async registered functions propagate correctly to agent."""
+    responses = [
+        # First attempt calls the async fn which raises
+        LLMResponse(
+            thinking="Calling risky function",
+            code="result = risky_async_fn()",
+        ),
+        # Agent sees the error and recovers
+        LLMResponse(
+            thinking="Got error, using fallback",
+            code="task_success('recovered_from_async_error')",
+        ),
+    ]
+    client = DummyLLMClient(responses=responses)
+    a = Agent(llm_client=client)
+
+    @a.fn
+    async def risky_async_fn() -> str:
+        """Async function that raises."""
+        await asyncio.sleep(0.001)
+        raise ValueError("Async function failed!")
+
+    @a.task
+    async def error_handling_task() -> str:
+        """Task that handles async errors."""
+        pass
+
+    result = await error_handling_task()
+    assert result == "recovered_from_async_error"
+    assert len(client.all_events) == 2  # Two LLM calls
+
+
+@pytest.mark.asyncio
+async def test_async_fn_returns_none():
+    """Test async function returning None is handled correctly."""
+    responses = [
+        LLMResponse(
+            thinking="Calling async fn",
+            code="result = async_void_fn(); task_success('done' if result is None else 'unexpected')",
+        )
+    ]
+    client = DummyLLMClient(responses=responses)
+    a = Agent(llm_client=client)
+
+    @a.fn
+    async def async_void_fn() -> None:
+        """Async function that returns None."""
+        await asyncio.sleep(0.001)
+        return None
+
+    @a.task
+    async def none_handling_task() -> str:
+        """Task that handles None return."""
+        pass
+
+    result = await none_handling_task()
+    assert result == "done"
+
+
+@pytest.mark.asyncio
+async def test_async_fn_complex_return_type():
+    """Test async function returning complex types."""
+    responses = [
+        LLMResponse(
+            thinking="Calling async fn",
+            code="data = fetch_complex_data(); task_success(data['items'][0])",
+        )
+    ]
+    client = DummyLLMClient(responses=responses)
+    a = Agent(llm_client=client)
+
+    @a.fn
+    async def fetch_complex_data() -> dict:
+        """Async function that returns complex data."""
+        await asyncio.sleep(0.001)
+        return {"items": ["first", "second"], "count": 2}
+
+    @a.task
+    async def complex_data_task() -> str:
+        """Task that uses complex data."""
+        pass
+
+    result = await complex_data_task()
+    assert result == "first"
+
+
+@pytest.mark.asyncio
+async def test_multiple_async_fn_calls():
+    """Test multiple async function calls in sequence."""
+    responses = [
+        LLMResponse(
+            thinking="Calling multiple async functions",
+            code="a = async_add(1); b = async_add(a); c = async_add(b); task_success(c)",
+        )
+    ]
+    client = DummyLLMClient(responses=responses)
+    agent = Agent(llm_client=client)
+
+    @agent.fn
+    async def async_add(x: int) -> int:
+        """Async function that adds 10."""
+        await asyncio.sleep(0.001)
+        return x + 10
+
+    @agent.task
+    async def chain_task() -> int:
+        """Task that chains async calls."""
+        pass
+
+    result = await chain_task()
+    assert result == 31  # 1 + 10 + 10 + 10
+
+
+@pytest.mark.asyncio
+async def test_async_fn_with_exception_type_preserved():
+    """Test that specific exception types from async functions are preserved."""
+    responses = [
+        LLMResponse(
+            thinking="Calling fn that raises KeyError",
+            code="""
+try:
+    result = async_key_error_fn()
+except KeyError as e:
+    task_success(f'caught_keyerror:{e}')
+""",
+        ),
+    ]
+    client = DummyLLMClient(responses=responses)
+    a = Agent(llm_client=client)
+
+    @a.fn
+    async def async_key_error_fn() -> str:
+        """Async function that raises KeyError."""
+        await asyncio.sleep(0.001)
+        raise KeyError("missing_key")
+
+    @a.task
+    async def exception_type_task() -> str:
+        """Task that catches specific exception."""
+        pass
+
+    result = await exception_type_task()
+    assert "caught_keyerror" in result
+    assert "missing_key" in result
+
+
+def test_sync_task_async_fn_error_surfaces():
+    """Test that calling async fn from sync task produces clear error to agent."""
+    responses = [
+        # Agent tries to call async fn
+        LLMResponse(
+            thinking="Calling async function",
+            code="result = async_fn_not_available()",
+        ),
+        # Agent sees error and uses fallback
+        LLMResponse(
+            thinking="Got error about async fn, using fallback",
+            code="task_success('used_sync_fallback')",
+        ),
+    ]
+    client = DummyLLMClient(responses=responses)
+    a = Agent(llm_client=client)
+
+    @a.fn
+    async def async_fn_not_available() -> str:
+        """Async function that can't be called from sync task."""
+        await asyncio.sleep(0.001)
+        return "async_result"
+
+    @a.task
+    def sync_task() -> str:
+        """Sync task that tries to call async fn."""
+        pass
+
+    # Agent should see error in stdout and recover
+    result = sync_task()
+    assert result == "used_sync_fallback"
+    assert len(client.all_events) == 2  # Two LLM calls (error + recovery)

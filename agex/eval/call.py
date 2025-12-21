@@ -293,6 +293,16 @@ class CallEvaluator(BaseEvaluator):
                     result = asyncio.run_coroutine_threadsafe(
                         result, main_loop
                     ).result()
+                else:
+                    # No event loop to bridge to - async fn called from sync task
+                    fn_name = self._callable_name(node.func)
+                    # Close the coroutine to avoid "never awaited" warning
+                    result.close()
+                    raise EvalError(
+                        f"'{fn_name}' is an async function and cannot be called from a sync task. "
+                        f"Either use 'async def' for your @agent.task, or use a synchronous alternative.",
+                        node,
+                    )
 
             # Special handling for agent exit signals
             if isinstance(result, _AgentExit):
