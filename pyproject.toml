@@ -45,6 +45,7 @@ dev = [
 ]
 test = [
     "pytest",
+    "pytest-asyncio",
     "anyio",
     "numpy",
     "pandas",

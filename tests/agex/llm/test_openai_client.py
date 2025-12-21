@@ -1,10 +1,10 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from agex.agent.events import ActionEvent, OutputEvent, TaskStartEvent
 from agex.eval.objects import PrintAction
-from agex.llm.core import LLMResponse
+from agex.llm.core import LLMResponse, TokenChunk
 from agex.llm.openai_client import OpenAIClient
 
 
@@ -217,3 +217,170 @@ def test_openai_client_event_to_message_conversion():
         # First message should be system
         assert passed_messages[0]["role"] == "system"
         assert passed_messages[0]["content"] == system
+
+
+# =============================================================================
+# Async Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_openai_acomplete():
+    """Test async acomplete method."""
+    client = OpenAIClient(api_key="test")
+
+    mock_response = MagicMock()
+    mock_parsed = LLMResponse(thinking="Async thinking", code="print('async')")
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.parsed = mock_parsed
+
+    with patch.object(client, "async_client") as mock_async:
+        mock_async.beta.chat.completions.parse = AsyncMock(return_value=mock_response)
+
+        system = "Test system"
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        result = await client.acomplete(system, events)
+
+        assert isinstance(result, LLMResponse)
+        assert result.thinking == "Async thinking"
+        assert result.code == "print('async')"
+        mock_async.beta.chat.completions.parse.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_openai_acomplete_request_parameters():
+    """Test that async acomplete properly passes parameters."""
+    client = OpenAIClient(temperature=0.7, api_key="test")
+
+    mock_response = MagicMock()
+    mock_parsed = LLMResponse(thinking="Test", code="test()")
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.parsed = mock_parsed
+
+    with patch.object(client, "async_client") as mock_async:
+        mock_async.beta.chat.completions.parse = AsyncMock(return_value=mock_response)
+
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        await client.acomplete("system", events, max_tokens=500)
+
+        call_args = mock_async.beta.chat.completions.parse.call_args
+        assert call_args[1]["temperature"] == 0.7
+        assert call_args[1]["max_tokens"] == 500
+        assert call_args[1]["model"] == "gpt-4.1-nano"
+
+
+@pytest.mark.asyncio
+async def test_openai_acomplete_none_response():
+    """Test async acomplete error handling for None parsed response."""
+    client = OpenAIClient(api_key="test")
+
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.parsed = None
+
+    with patch.object(client, "async_client") as mock_async:
+        mock_async.beta.chat.completions.parse = AsyncMock(return_value=mock_response)
+
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        with pytest.raises(
+            RuntimeError, match="OpenAI returned None for parsed response"
+        ):
+            await client.acomplete("system", events)
+
+
+@pytest.mark.asyncio
+async def test_openai_acomplete_api_error():
+    """Test async acomplete error handling for API errors."""
+    client = OpenAIClient(api_key="test")
+
+    with patch.object(client, "async_client") as mock_async:
+        mock_async.beta.chat.completions.parse = AsyncMock(
+            side_effect=Exception("Async API Error")
+        )
+
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        with pytest.raises(RuntimeError, match="OpenAI completion failed"):
+            await client.acomplete("system", events)
+
+
+@pytest.mark.asyncio
+async def test_openai_acomplete_stream():
+    """Test async acomplete_stream method."""
+    client = OpenAIClient(api_key="test")
+
+    # Mock the streaming response - create an async iterator
+    async def mock_stream():
+        chunks = [
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="<title>"))]),
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="Test</title>"))]),
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="<thinking>"))]),
+            MagicMock(
+                choices=[MagicMock(delta=MagicMock(content="Thinking...</thinking>"))]
+            ),
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="<python>"))]),
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="x = 1</python>"))]),
+        ]
+        for chunk in chunks:
+            yield chunk
+
+    with patch.object(client, "async_client") as mock_async:
+        mock_async.chat.completions.create = AsyncMock(return_value=mock_stream())
+
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        tokens = []
+        async for token in client.acomplete_stream("system", events):
+            tokens.append(token)
+
+        # Verify we got TokenChunk objects
+        assert len(tokens) > 0
+        assert all(isinstance(t, TokenChunk) for t in tokens)
+
+        # Verify stream=True was passed
+        call_args = mock_async.chat.completions.create.call_args
+        assert call_args[1]["stream"] is True
+
+
+@pytest.mark.asyncio
+async def test_openai_acomplete_stream_api_error():
+    """Test async acomplete_stream error handling."""
+    client = OpenAIClient(api_key="test")
+
+    with patch.object(client, "async_client") as mock_async:
+        mock_async.chat.completions.create = AsyncMock(
+            side_effect=Exception("Stream Error")
+        )
+
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        with pytest.raises(RuntimeError, match="OpenAI streaming completion failed"):
+            async for _ in client.acomplete_stream("system", events):
+                pass

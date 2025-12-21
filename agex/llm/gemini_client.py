@@ -1,5 +1,5 @@
 import json
-from typing import Any, Iterator, List
+from typing import Any, AsyncIterator, Iterator, List
 
 from google import genai
 from google.genai import types
@@ -149,6 +149,73 @@ class GeminiClient(LLMClient):
         except Exception as e:
             raise RuntimeError(f"Gemini completion failed: {e}") from e
 
+    async def acomplete(
+        self, system: str, events: List[Event], **kwargs
+    ) -> LLMResponse:
+        """Async version of complete."""
+        from agex.render.events import render_events_as_markdown
+
+        request_kwargs = {**self._kwargs, **kwargs}
+        if "max_tokens" in request_kwargs:
+            request_kwargs["max_output_tokens"] = request_kwargs.pop("max_tokens")
+
+        messages_dicts = render_events_as_markdown(events)
+        gemini_contents = self._convert_messages_to_gemini_format(messages_dicts)
+
+        response_schema = {
+            "type": "object",
+            "properties": {
+                "thinking": {
+                    "type": "string",
+                    "description": "Your natural language thinking about the task",
+                },
+                "code": {"type": "string", "description": "The Python code to execute"},
+            },
+            "required": ["thinking", "code"],
+        }
+
+        try:
+            tools = []
+            if self._google_search:
+                tools.append(types.Tool(google_search=types.GoogleSearch()))
+            if self._url_context:
+                tools.append({"url_context": {}})
+            if tools:
+                grounding_primer = _get_grounding_primer(
+                    self._google_search, self._url_context
+                )
+                if grounding_primer:
+                    system = f"{grounding_primer}\n\n{system}"
+
+            config = types.GenerateContentConfig(
+                system_instruction=system,
+                response_mime_type="application/json",
+                response_schema=response_schema,
+                tools=tools if tools else None,
+                **request_kwargs,
+            )
+
+            response = await self.client.aio.models.generate_content(
+                model=self._model,
+                contents=gemini_contents,
+                config=config,
+            )
+
+            if not response.text:
+                raise RuntimeError("Gemini returned empty response")
+
+            try:
+                parsed_response = json.loads(response.text)
+            except json.JSONDecodeError as e:
+                raise RuntimeError(f"Failed to parse Gemini JSON response: {e}")
+
+            thinking = parsed_response.get("thinking", "")
+            code = parsed_response.get("code", "")
+            return LLMResponse(thinking=thinking, code=code)
+
+        except Exception as e:
+            raise RuntimeError(f"Gemini completion failed: {e}") from e
+
     def complete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> Iterator[TokenChunk]:
@@ -207,11 +274,67 @@ class GeminiClient(LLMClient):
 
                 for chunk in response_stream:
                     text = chunk.text or ""
-                    if text:
-                        print(f"ADAM - text: {text}")
                     yield text
 
             yield from tokenize_xml_stream(raw_chunks())
+
+        except Exception as e:
+            raise RuntimeError(f"Gemini streaming completion failed: {e}") from e
+
+    async def acomplete_stream(
+        self, system: str, events: List[Event], **kwargs
+    ) -> AsyncIterator[TokenChunk]:
+        """Async version of complete_stream."""
+        from agex.llm.xml import atokenize_xml_stream
+        from agex.render.xml import render_events_as_xml
+
+        request_kwargs = {**self._kwargs, **kwargs}
+        if "max_tokens" in request_kwargs:
+            request_kwargs["max_output_tokens"] = request_kwargs.pop("max_tokens")
+
+        messages_dicts = render_events_as_xml(events)
+        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+
+        grounding_primer = _get_grounding_primer(self._google_search, self._url_context)
+        if grounding_primer:
+            system_with_format = f"{grounding_primer}\n\n{system_with_format}"
+
+        gemini_contents = self._convert_messages_to_gemini_format(messages_dicts)
+
+        prefill_text = f"<{TAG_TITLE}>"
+        if not self._google_search and not self._url_context:
+            gemini_contents.append(
+                types.Content(role="model", parts=[types.Part(text=prefill_text)])
+            )
+
+        try:
+            tools = []
+            if self._google_search:
+                tools.append(types.Tool(google_search=types.GoogleSearch()))
+            if self._url_context:
+                tools.append({"url_context": {}})
+
+            config = types.GenerateContentConfig(
+                system_instruction=system_with_format,
+                tools=tools if tools else None,
+                **request_kwargs,
+            )
+
+            response_stream = await self.client.aio.models.generate_content_stream(
+                model=self._model,
+                contents=gemini_contents,
+                config=config,
+            )
+
+            async def raw_chunks():
+                if not self._google_search and not self._url_context:
+                    yield prefill_text
+                async for chunk in response_stream:
+                    text = chunk.text or ""
+                    yield text
+
+            async for token in atokenize_xml_stream(raw_chunks()):
+                yield token
 
         except Exception as e:
             raise RuntimeError(f"Gemini streaming completion failed: {e}") from e

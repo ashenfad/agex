@@ -1,4 +1,5 @@
 import ast
+import asyncio
 from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
@@ -40,6 +41,7 @@ class Evaluator(
         sub_agent_time: float = 0.0,
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
+        main_loop: asyncio.AbstractEventLoop | None = None,
     ):
         actual_timeout = (
             timeout_seconds if timeout_seconds is not None else agent.timeout_seconds
@@ -55,6 +57,7 @@ class Evaluator(
         self.resolver = Resolver(agent)
         self.on_event = on_event
         self.on_token = on_token
+        self.main_loop = main_loop
         self._with_binding_cleanup: list[tuple[str, Any]] = []
 
     def visit_Module(self, node: ast.Module):
@@ -101,6 +104,7 @@ def evaluate_program(
     timeout_seconds: float | None = None,
     on_event: Callable[[Any], None] | None = None,
     on_token: Callable[[Any], None] | None = None,
+    main_loop: asyncio.AbstractEventLoop | None = None,
 ):
     """
     Updates state with the result of running the program. The agent provides
@@ -112,6 +116,8 @@ def evaluate_program(
         state: The state to execute in
         timeout_seconds: Optional timeout override. If None, uses agent.timeout_seconds
         on_event: Optional handler to call for each event
+        on_token: Optional handler to call for each token
+        main_loop: Optional asyncio loop for bridging async calls from the thread
     """
     actual_timeout = (
         timeout_seconds if timeout_seconds is not None else agent.timeout_seconds
@@ -124,6 +130,7 @@ def evaluate_program(
         timeout_seconds=actual_timeout,
         on_event=on_event,
         on_token=on_token,
+        main_loop=main_loop,
     )
 
     try:

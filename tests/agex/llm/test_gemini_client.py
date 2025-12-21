@@ -1,10 +1,10 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from google.genai import types
 
 from agex.agent.events import ActionEvent, TaskStartEvent
-from agex.llm.core import LLMResponse
+from agex.llm.core import LLMResponse, TokenChunk
 from agex.llm.gemini_client import GeminiClient
 
 
@@ -352,3 +352,111 @@ def test_gemini_client_url_context_stream_prefill():
         # Check that pre-fill content was NOT added to the request
         # The last message should be the user message, not a model pre-fill
         assert gemini_contents[-1].role == "user"
+
+
+# =============================================================================
+# Async Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_gemini_acomplete():
+    """Test async acomplete method."""
+    with patch("google.genai.Client") as MockClient:
+        mock_aio = MockClient.return_value.aio
+        mock_models = mock_aio.models
+
+        mock_response = MagicMock()
+        mock_response.text = (
+            '{"thinking": "Async thinking", "code": "print(\'async\')"}'
+        )
+        mock_models.generate_content = AsyncMock(return_value=mock_response)
+
+        client = GeminiClient()
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        result = await client.acomplete("system", events)
+
+        assert isinstance(result, LLMResponse)
+        assert result.thinking == "Async thinking"
+        assert result.code == "print('async')"
+        mock_models.generate_content.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_gemini_acomplete_empty_response():
+    """Test async acomplete error for empty response."""
+    with patch("google.genai.Client") as MockClient:
+        mock_aio = MockClient.return_value.aio
+        mock_models = mock_aio.models
+
+        mock_response = MagicMock()
+        mock_response.text = ""
+        mock_models.generate_content = AsyncMock(return_value=mock_response)
+
+        client = GeminiClient()
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        with pytest.raises(RuntimeError, match="Gemini returned empty response"):
+            await client.acomplete("system", events)
+
+
+@pytest.mark.asyncio
+async def test_gemini_acomplete_stream():
+    """Test async acomplete_stream method."""
+    with patch("google.genai.Client") as MockClient:
+        mock_aio = MockClient.return_value.aio
+        mock_models = mock_aio.models
+
+        # Create async iterator for stream
+        async def mock_stream():
+            chunks = [
+                MagicMock(text="<THINKING>"),
+                MagicMock(text="Some thinking</THINKING>"),
+            ]
+            for chunk in chunks:
+                yield chunk
+
+        mock_models.generate_content_stream = AsyncMock(return_value=mock_stream())
+
+        client = GeminiClient()
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        tokens = []
+        async for token in client.acomplete_stream("system", events):
+            tokens.append(token)
+
+        assert len(tokens) > 0
+        assert all(isinstance(t, TokenChunk) for t in tokens)
+        mock_models.generate_content_stream.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_gemini_acomplete_api_error():
+    """Test async acomplete error handling."""
+    with patch("google.genai.Client") as MockClient:
+        mock_aio = MockClient.return_value.aio
+        mock_models = mock_aio.models
+        mock_models.generate_content = AsyncMock(side_effect=Exception("API Error"))
+
+        client = GeminiClient()
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        with pytest.raises(RuntimeError, match="Gemini completion failed"):
+            await client.acomplete("system", events)

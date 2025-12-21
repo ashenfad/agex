@@ -326,8 +326,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             def stream(self):
                 return self._stream_func
 
-        # Create the actual task function
-        def task_wrapper(*args, **kwargs):
+        # Helper to bind and validate arguments for both sync and async wrappers
+        def _bind_and_validate(*args, **kwargs):
             # Bind to the new signature that includes the 'state', 'on_event', and 'on_token' parameters
             bound_args = new_sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
@@ -354,20 +354,47 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         ) from e
                 inputs_instance = inputs_dataclass(**validated_args)
 
-            # Call the task loop
-            return self._run_task_loop(
-                task_name=task_name,
-                docstring=effective_docstring,
-                inputs_dataclass=inputs_dataclass,
-                inputs_instance=inputs_instance,
-                return_type=return_type,
-                state=state,
-                on_event=on_event,
-                on_token=on_token,
-                setup=setup,
-                on_conflict=on_conflict,
-                max_conflict_retries=max_conflict_retries,
-            )
+            return inputs_instance, state, on_event, on_token
+
+        # Create the actual task function (async or sync based on original function)
+        if inspect.iscoroutinefunction(func):
+
+            async def task_wrapper(*args, **kwargs):
+                inputs_instance, state, on_event, on_token = _bind_and_validate(
+                    *args, **kwargs
+                )
+                return await self._arun_task_loop(
+                    task_name=task_name,
+                    docstring=effective_docstring,
+                    inputs_dataclass=inputs_dataclass,
+                    inputs_instance=inputs_instance,
+                    return_type=return_type,
+                    state=state,
+                    on_event=on_event,
+                    on_token=on_token,
+                    setup=setup,
+                    on_conflict=on_conflict,
+                    max_conflict_retries=max_conflict_retries,
+                )
+        else:
+
+            def task_wrapper(*args, **kwargs):
+                inputs_instance, state, on_event, on_token = _bind_and_validate(
+                    *args, **kwargs
+                )
+                return self._run_task_loop(
+                    task_name=task_name,
+                    docstring=effective_docstring,
+                    inputs_dataclass=inputs_dataclass,
+                    inputs_instance=inputs_instance,
+                    return_type=return_type,
+                    state=state,
+                    on_event=on_event,
+                    on_token=on_token,
+                    setup=setup,
+                    on_conflict=on_conflict,
+                    max_conflict_retries=max_conflict_retries,
+                )
 
         def stream(*args, **kwargs):
             """Stream events in real-time during task execution."""

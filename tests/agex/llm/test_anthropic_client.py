@@ -1,8 +1,10 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from agex.agent.events import ActionEvent, TaskStartEvent
 from agex.llm.anthropic_client import AnthropicClient
-from agex.llm.core import LLMResponse
+from agex.llm.core import LLMResponse, TokenChunk
 
 
 def test_anthropic_client_initialization():
@@ -95,3 +97,110 @@ def test_anthropic_client_system_message():
         # Verify system message was passed
         call_args = mock_client.messages.create.call_args
         assert call_args[1]["system"] == system
+
+
+# =============================================================================
+# Async Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_anthropic_acomplete():
+    """Test async acomplete method."""
+    client = AnthropicClient()
+
+    mock_response = MagicMock()
+    mock_tool_use = MagicMock()
+    mock_tool_use.type = "tool_use"
+    mock_tool_use.name = "structured_response"
+    mock_tool_use.input = {"thinking": "Async thinking", "code": "print('async')"}
+    mock_response.content = [mock_tool_use]
+
+    with patch.object(client, "async_client") as mock_async:
+        mock_async.messages.create = AsyncMock(return_value=mock_response)
+
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        result = await client.acomplete("system", events)
+
+        assert isinstance(result, LLMResponse)
+        assert result.thinking == "Async thinking"
+        assert result.code == "print('async')"
+        mock_async.messages.create.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_anthropic_acomplete_empty_response():
+    """Test async acomplete error for empty response."""
+    client = AnthropicClient()
+
+    mock_response = MagicMock()
+    mock_response.content = []
+
+    with patch.object(client, "async_client") as mock_async:
+        mock_async.messages.create = AsyncMock(return_value=mock_response)
+
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        with pytest.raises(RuntimeError, match="Anthropic returned empty response"):
+            await client.acomplete("system", events)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_acomplete_api_error():
+    """Test async acomplete error handling."""
+    client = AnthropicClient()
+
+    with patch.object(client, "async_client") as mock_async:
+        mock_async.messages.create = AsyncMock(side_effect=Exception("API Error"))
+
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        with pytest.raises(RuntimeError, match="Anthropic completion failed"):
+            await client.acomplete("system", events)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_acomplete_stream():
+    """Test async acomplete_stream method."""
+    client = AnthropicClient()
+
+    # Mock streaming events
+    async def mock_stream():
+        events = [
+            MagicMock(type="content_block_delta", delta=MagicMock(text="<THINKING>")),
+            MagicMock(
+                type="content_block_delta", delta=MagicMock(text="Some thinking")
+            ),
+            MagicMock(type="content_block_delta", delta=MagicMock(text="</THINKING>")),
+        ]
+        for event in events:
+            yield event
+
+    with patch.object(client, "async_client") as mock_async:
+        mock_async.messages.create = AsyncMock(return_value=mock_stream())
+
+        events = [
+            TaskStartEvent(
+                agent_name="test", task_name="test", inputs={}, message="Hello"
+            )
+        ]
+
+        tokens = []
+        async for token in client.acomplete_stream("system", events):
+            tokens.append(token)
+
+        assert len(tokens) > 0
+        assert all(isinstance(t, TokenChunk) for t in tokens)
