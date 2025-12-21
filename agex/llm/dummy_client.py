@@ -102,6 +102,34 @@ class DummyLLMClient(LLMClient):
 
         return response
 
+    async def acomplete(
+        self, system: str, events: List[Event], **kwargs
+    ) -> LLMResponse:
+        """Async version of complete."""
+        return self.complete(system, events, **kwargs)
+
+    async def acomplete_stream(
+        self, system: str, events: List[Event], **kwargs
+    ) -> float:  # Actually AsyncGenerator, but accurate type hint requires imports
+        """Stream the response as StreamTokens."""
+        from agex.llm.core import StreamToken
+
+        # Get response using normal logic
+        response = self.complete(system, events, **kwargs)
+
+        # Stream interactions
+        if response.title:
+            yield StreamToken(type="title", content=response.title, done=False)
+            yield StreamToken(type="title", content="", done=True)
+
+        if response.thinking:
+            yield StreamToken(type="thinking", content=response.thinking, done=False)
+            yield StreamToken(type="thinking", content="", done=True)
+
+        if response.code:
+            yield StreamToken(type="python", content=response.code, done=False)
+            yield StreamToken(type="python", content="", done=True)
+
     def summarize(self, system: str, content: str | List[Event], **kwargs) -> str:
         """Return a deterministic plain text for testing."""
         # Check for configured exception

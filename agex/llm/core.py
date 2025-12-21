@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Iterator, List, Literal, Union
+from typing import TYPE_CHECKING, Any, AsyncIterator, Iterator, List, Literal, Union
 
 from pydantic import BaseModel
 
@@ -125,6 +125,64 @@ class LLMClient(ABC):
         """
         # Default fallback: buffer complete() response and yield as tokens
         response = self.complete(system, events, **kwargs)
+
+        # Yield title section first (if present)
+        if response.title:
+            yield TokenChunk(type="title", content=response.title, done=False)
+            yield TokenChunk(type="title", content="", done=True)
+
+        # Yield thinking section
+        if response.thinking:
+            yield TokenChunk(type="thinking", content=response.thinking, done=False)
+        yield TokenChunk(type="thinking", content="", done=True)
+
+        # Yield code section
+        if response.code:
+            yield TokenChunk(type="python", content=response.code, done=False)
+        yield TokenChunk(type="python", content="", done=True)
+
+    async def acomplete(
+        self, system: str, events: List["Event"], **kwargs
+    ) -> LLMResponse:
+        """
+        Async agent execution - convert events to structured response.
+
+        Args:
+            system: System message content (primer + capabilities)
+            events: Conversation history as Event objects
+            **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
+
+        Returns:
+            LLMResponse with parsed thinking and code sections
+
+        Raises:
+            RuntimeError: If the completion request fails
+            ResponseParseError: If response doesn't match expected format
+        """
+        # Default fallback: run sync complete() in a thread
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: self.complete(system, events, **kwargs)
+        )
+
+    async def acomplete_stream(
+        self, system: str, events: List["Event"], **kwargs
+    ) -> AsyncIterator[TokenChunk]:
+        """
+        Async agent execution with token-level streaming support.
+
+        Args:
+            system: System message content (primer + capabilities)
+            events: Conversation history as Event objects
+            **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
+
+        Yields:
+            TokenChunk objects as sections are parsed from the stream
+        """
+        # Default fallback: buffer acomplete() response and yield as tokens
+        response = await self.acomplete(system, events, **kwargs)
 
         # Yield title section first (if present)
         if response.title:

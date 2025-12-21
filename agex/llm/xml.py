@@ -9,7 +9,7 @@ Note: For rendering events to XML, see agex.render.xml.render_events_as_xml()
 
 import re
 from dataclasses import dataclass
-from typing import Iterator, Literal
+from typing import AsyncIterator, Iterator, Literal
 
 from agex.llm.core import ResponseParseError, TokenChunk
 
@@ -257,3 +257,88 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
         # Still in a section but stream ended - yield remaining content
         yield TokenChunk(type=current_section, content=buffer, done=False)
     # Section is not properly closed but we choose to be forgiving
+
+
+async def atokenize_xml_stream(
+    raw_chunks: AsyncIterator[str],
+) -> AsyncIterator[TokenChunk]:
+    """
+    Convert raw text stream to TokenChunks via XML parsing (Async).
+
+    Args:
+        raw_chunks: AsyncIterator of raw text chunks from provider
+
+    Yields:
+        TokenChunk objects as sections are parsed
+    """
+    buffer = ""
+    current_section: Literal["title", "thinking", "python"] | None = None
+
+    async for chunk in raw_chunks:
+        buffer += chunk
+
+        # Process all complete tags in the buffer
+        while True:
+            if current_section is None:
+                # Look for opening tags (case-insensitive)
+                title_start = re.search(rf"<{TAG_TITLE}>", buffer, re.IGNORECASE)
+                thinking_start = re.search(rf"<{TAG_THINKING}>", buffer, re.IGNORECASE)
+                python_start = re.search(rf"<{TAG_PYTHON}>", buffer, re.IGNORECASE)
+
+                if title_start:
+                    current_section = "title"
+                    buffer = buffer[title_start.end() :]
+                    continue
+                elif thinking_start:
+                    current_section = "thinking"
+                    buffer = buffer[thinking_start.end() :]
+                    continue
+                elif python_start:
+                    current_section = "python"
+                    buffer = buffer[python_start.end() :]
+                    continue
+                else:
+                    # No opening tag found yet
+                    break
+
+            # We're in a section - look for closing tag
+            if current_section == "title":
+                tokens, buffer, complete = _process_section_closing(
+                    buffer, "title", TAG_TITLE
+                )
+                for token in tokens:
+                    yield token
+                if complete:
+                    current_section = None
+                    continue
+                else:
+                    break
+
+            if current_section == "thinking":
+                tokens, buffer, complete = _process_section_closing(
+                    buffer, "thinking", TAG_THINKING
+                )
+                for token in tokens:
+                    yield token
+                if complete:
+                    current_section = None
+                    continue
+                else:
+                    break
+
+            elif current_section == "python":
+                tokens, buffer, complete = _process_section_closing(
+                    buffer, "python", TAG_PYTHON
+                )
+                for token in tokens:
+                    yield token
+                if complete:
+                    # Enforce single turn: stop after first Python section is closed
+                    return
+                else:
+                    break
+
+    # Handle any remaining buffer at end of stream
+    if buffer and current_section:
+        # Still in a section but stream ended - yield remaining content
+        yield TokenChunk(type=current_section, content=buffer, done=False)

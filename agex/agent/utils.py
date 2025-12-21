@@ -1,7 +1,8 @@
 import ast
+import asyncio
 import inspect
 import textwrap
-from typing import Callable
+from typing import Awaitable, Callable, TypeVar
 
 
 def is_function_body_empty(func: Callable) -> bool:
@@ -20,7 +21,10 @@ def is_function_body_empty(func: Callable) -> bool:
         lines = source.strip().split("\n")
         func_start = 0
         for i, line in enumerate(lines):
-            if line.strip().startswith("def ") and func.__name__ in line:
+            # Check for both synchronous and asynchronous definitions
+            if (
+                line.strip().startswith("def ") or line.strip().startswith("async def ")
+            ) and func.__name__ in line:
                 func_start = i
                 break
 
@@ -32,7 +36,10 @@ def is_function_body_empty(func: Callable) -> bool:
         # Find the function definition
         func_def = None
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name == func.__name__:
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == func.__name__
+            ):
                 func_def = node
                 break
 
@@ -101,3 +108,41 @@ def get_instance_attributes_from_init(py_cls: type) -> set[str]:
             continue
 
     return attributes
+
+
+T = TypeVar("T")
+R = TypeVar("R")
+
+
+def call_sync_or_async(
+    handler: Callable[[T], R | Awaitable[R]],
+    arg: T,
+    loop: asyncio.AbstractEventLoop | None = None,
+) -> Awaitable[R] | R | None:
+    """
+    Call a handler that might be sync or async.
+
+    If the handler is async (coroutine function):
+        - If loop is provided (threaded context): Schedule using run_coroutine_threadsafe
+        - If loop is None (async context): Return awaitable (must be awaited by caller)
+
+    If the handler is sync:
+        - Call directly and return result
+
+    Args:
+        handler: The callable to invoke
+        arg: The argument to pass to the handler
+        loop: Optional event loop (if running from a thread)
+    """
+    if inspect.iscoroutinefunction(handler):
+        coro = handler(arg)  # type: ignore
+        if loop:
+            # Threaded context: fire and forget (or return future)
+            # run_coroutine_threadsafe returns a concurrent.futures.Future
+            return asyncio.run_coroutine_threadsafe(coro, loop)
+        else:
+            # Async context: return coro to be awaited
+            return coro  # type: ignore
+    else:
+        # Sync handler
+        return handler(arg)  # type: ignore

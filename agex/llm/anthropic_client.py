@@ -1,4 +1,4 @@
-from typing import Any, Iterator, List
+from typing import Any, AsyncIterator, Iterator, List
 
 import anthropic
 from anthropic.types import TextBlockParam
@@ -70,6 +70,7 @@ class AnthropicClient(LLMClient):
         self._model = model
         self._kwargs = completion_kwargs
         self.client = anthropic.Anthropic(**client_kwargs)
+        self.async_client = anthropic.AsyncAnthropic(**client_kwargs)
 
     def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
@@ -152,6 +153,74 @@ class AnthropicClient(LLMClient):
         except Exception as e:
             raise RuntimeError(f"Anthropic completion failed: {e}") from e
 
+    async def acomplete(
+        self, system: str, events: List[Event], **kwargs
+    ) -> LLMResponse:
+        """Async version of complete."""
+        from agex.render.events import render_events_as_markdown
+
+        request_kwargs = {**self._kwargs, **kwargs}
+        messages_dicts = render_events_as_markdown(events)
+        conversation_messages = [
+            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
+            for index, msg in enumerate(messages_dicts)
+        ]
+
+        structured_response_tool = {
+            "name": "structured_response",
+            "description": "Respond with thinking and code in a structured format",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "thinking": {
+                        "type": "string",
+                        "description": "Your natural language thinking about the task",
+                    },
+                    "code": {
+                        "type": "string",
+                        "description": "The Python code to execute",
+                    },
+                },
+                "required": ["thinking", "code"],
+            },
+        }
+
+        try:
+            if "max_tokens" not in request_kwargs:
+                request_kwargs["max_tokens"] = MAX_TOKENS
+
+            response = await self.async_client.messages.create(
+                model=self._model,
+                system=system,
+                messages=conversation_messages,
+                tools=[structured_response_tool],
+                tool_choice={"type": "tool", "name": "structured_response"},
+                **request_kwargs,
+            )
+
+            if not response.content or len(response.content) == 0:
+                raise RuntimeError("Anthropic returned empty response")
+
+            tool_use = None
+            for content_block in response.content:
+                if (
+                    content_block.type == "tool_use"
+                    and content_block.name == "structured_response"
+                ):
+                    tool_use = content_block
+                    break
+
+            if tool_use is None:
+                raise RuntimeError("Anthropic did not return expected tool use")
+
+            tool_input = tool_use.input
+            thinking = tool_input.get("thinking", "")
+            code = tool_input.get("code", "")
+            return LLMResponse(thinking=thinking, code=code)
+
+        except Exception as e:
+            raise RuntimeError(f"Anthropic completion failed: {e}") from e
+
     def complete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> Iterator[TokenChunk]:
@@ -214,6 +283,60 @@ class AnthropicClient(LLMClient):
 
             # Parse XML stream into TokenChunks
             yield from tokenize_xml_stream(raw_chunks())
+
+        except Exception as e:
+            raise RuntimeError(f"Anthropic streaming completion failed: {e}") from e
+
+    async def acomplete_stream(
+        self, system: str, events: List[Event], **kwargs
+    ) -> AsyncIterator[TokenChunk]:
+        """Async version of complete_stream."""
+        from agex.llm.xml import atokenize_xml_stream
+        from agex.render.xml import render_events_as_xml
+
+        request_kwargs = {**self._kwargs, **kwargs}
+        messages_dicts = render_events_as_xml(events)
+        conversation_messages = [
+            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
+            for index, msg in enumerate(messages_dicts)
+        ]
+
+        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+        system_block = TextBlockParam(
+            type="text",
+            text=system_with_format,
+            cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
+        )
+
+        prefill_text = f"<{TAG_TITLE}>"
+        conversation_messages.append(
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": prefill_text}],
+            }
+        )
+
+        try:
+            if "max_tokens" not in request_kwargs:
+                request_kwargs["max_tokens"] = MAX_TOKENS
+
+            stream = await self.async_client.messages.create(
+                model=self._model,
+                system=[system_block],
+                messages=conversation_messages,
+                stream=True,
+                **request_kwargs,
+            )
+
+            async def raw_chunks():
+                yield prefill_text
+                async for event in stream:
+                    if event.type == "content_block_delta":
+                        if hasattr(event.delta, "text"):
+                            yield event.delta.text
+
+            async for token in atokenize_xml_stream(raw_chunks()):
+                yield token
 
         except Exception as e:
             raise RuntimeError(f"Anthropic streaming completion failed: {e}") from e

@@ -61,6 +61,7 @@ class OpenAIClient(LLMClient):
         self._model = model
         self._kwargs = completion_kwargs
         self.client = openai.OpenAI(**client_kwargs)
+        self.async_client = openai.AsyncOpenAI(**client_kwargs)
         self.tokenizer = get_tokenizer(model)
 
     def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
@@ -81,6 +82,41 @@ class OpenAIClient(LLMClient):
         try:
             # Use OpenAI's native structured outputs with beta.chat.completions.parse
             response = self.client.beta.chat.completions.parse(
+                model=self._model,
+                messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
+                response_format=LLMResponse,
+                **request_kwargs,
+            )
+
+            # Extract the parsed response
+            parsed_response = response.choices[0].message.parsed
+            if parsed_response is None:
+                raise RuntimeError("OpenAI returned None for parsed response")
+            return parsed_response
+
+        except Exception as e:
+            raise RuntimeError(f"OpenAI completion failed: {e}") from e
+
+    async def acomplete(
+        self, system: str, events: List[Event], **kwargs
+    ) -> LLMResponse:
+        """
+        Send events to OpenAI and return a structured response using native structured outputs (Async).
+        """
+        from agex.render.events import render_events_as_markdown
+
+        # Combine kwargs, giving precedence to method-level ones
+        request_kwargs = {**self._kwargs, **kwargs}
+
+        # Use rendering helper to convert events to markdown messages
+        messages_dicts = render_events_as_markdown(events)
+
+        # Add system message at the beginning
+        full_messages = [{"role": "system", "content": system}] + messages_dicts
+
+        try:
+            # Use OpenAI's native structured outputs with beta.chat.completions.parse
+            response = await self.async_client.beta.chat.completions.parse(
                 model=self._model,
                 messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
                 response_format=LLMResponse,
@@ -136,6 +172,49 @@ class OpenAIClient(LLMClient):
 
             # Parse XML stream into TokenChunks
             yield from tokenize_xml_stream(raw_chunks())
+
+        except Exception as e:
+            raise RuntimeError(f"OpenAI streaming completion failed: {e}") from e
+
+    async def acomplete_stream(self, system: str, events: List[Event], **kwargs) -> Any:
+        """
+        Stream tokens from OpenAI using XML format (Async).
+        """
+        from agex.render.xml import render_events_as_xml
+
+        # Combine kwargs, giving precedence to method-level ones
+        request_kwargs = {**self._kwargs, **kwargs}
+
+        # Use XML rendering for streaming (instead of structured outputs)
+        messages_dicts = render_events_as_xml(events)
+
+        # Add system message with XML format instructions
+        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+        full_messages = [
+            {"role": "system", "content": system_with_format}
+        ] + messages_dicts
+
+        try:
+            # Use standard streaming API (not structured outputs)
+            stream = await self.async_client.chat.completions.create(
+                model=self._model,
+                messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
+                stream=True,
+                **request_kwargs,
+            )
+
+            # Async Generator for raw text chunks from OpenAI
+            async def raw_chunks():
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        yield delta.content
+
+            # Parse XML stream into TokenChunks
+            from agex.llm.xml import atokenize_xml_stream
+
+            async for token in atokenize_xml_stream(raw_chunks()):
+                yield token
 
         except Exception as e:
             raise RuntimeError(f"OpenAI streaming completion failed: {e}") from e

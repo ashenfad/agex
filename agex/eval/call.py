@@ -250,37 +250,49 @@ class CallEvaluator(BaseEvaluator):
         try:
             # Handle calling a AgexClass to create an instance
             if isinstance(fn, (AgexClass, AgexDataClass)):
-                return fn(*args, **kwargs)
+                result = fn(*args, **kwargs)
 
             # Legacy direct UserFunction execution path (explicit to handle signature)
-            if isinstance(fn, UserFunction):
-                return fn.execute(args, kwargs, self.source_code, parent_evaluator=self)
+            elif isinstance(fn, UserFunction):
+                result = fn.execute(
+                    args, kwargs, self.source_code, parent_evaluator=self
+                )
 
             # If this is a dual-decorated function needing state injection, route via proxy
-            if hasattr(fn, "__agex_task_namespace__"):
+            elif hasattr(fn, "__agex_task_namespace__"):
                 from .functions import TaskProxy
 
                 proxy = TaskProxy(self, getattr(fn, "fn", fn))
-                return proxy.execute(args, kwargs)
+                result = proxy.execute(args, kwargs)
 
             # If function has a unified execute() hook, use it
-            if hasattr(fn, "execute") and callable(getattr(fn, "execute")):
-                return fn.execute(args, kwargs)  # type: ignore[attr-defined]
+            elif hasattr(fn, "execute") and callable(getattr(fn, "execute")):
+                result = fn.execute(args, kwargs)  # type: ignore[attr-defined]
 
-            if not callable(fn):
-                fn_name_for_error = getattr(
-                    node.func, "attr", getattr(node.func, "id", "object")
-                )
-                raise AgexError(f"'{fn_name_for_error}' is not callable.", node)
-
-                # Check if this is a dual-decorated function needing state injection
-            else:
-                # Regular function call - no timer changes needed
+            # Regular function call - no timer changes needed
+            elif callable(fn):
                 # For external functions, unwrap BoundInstanceObject arguments
                 unwrapped_args, unwrapped_kwargs = self._unwrap_bound_objects(
                     args, kwargs
                 )
                 result = fn(*unwrapped_args, **unwrapped_kwargs)
+
+            else:
+                fn_name_for_error = getattr(
+                    node.func, "attr", getattr(node.func, "id", "object")
+                )
+                raise AgexError(f"'{fn_name_for_error}' is not callable.", node)
+
+            # Bridge async results if we have a main loop (threaded context)
+            if inspect.isawaitable(result):
+                main_loop = getattr(self, "main_loop", None)
+                if main_loop:
+                    import asyncio
+
+                    # Block thread until async logic completes on the main loop
+                    result = asyncio.run_coroutine_threadsafe(
+                        result, main_loop
+                    ).result()
 
             # Special handling for agent exit signals
             if isinstance(result, _AgentExit):
