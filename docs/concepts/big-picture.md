@@ -6,7 +6,7 @@ Many agentic frameworks adopt JSON tooling as the communication medium between y
 
 ## Core Philosophy: Code as the Language of Reasoning
 
-The key insight is that **code is language made formal enough to get stuff done**. The same tools that help human developers manage complexity work naturally for AI agents:
+The idea is that **code is language made formal enough to get stuff done**. The same tools that help human developers manage complexity work naturally for AI agents:
 
 - **REPLs** for interactive exploration and step-by-step reasoning
 - **`dir()` and `help()`** for discovering capabilities  
@@ -14,7 +14,7 @@ The key insight is that **code is language made formal enough to get stuff done*
 - **Imports for whitelisted modules** for accessing functionality
 - **Function definitions** for building reusable tools
 
-Instead of inventing new agent interaction patterns, `agex` adapts the proven tools developers have used for decades. This makes agents more effective and their behavior more predictable.
+Instead of inventing new agent interaction patterns, `agex` adapts the tools developers have used for decades.
 
 ## Implementation Foundation
 
@@ -35,7 +35,7 @@ The whitelist registration system is more than just a security feature; it is a 
 
 This curated environment helps guide the agent toward a correct solution by limiting its scope of action to only the most relevant capabilities. It prevents the agent from getting lost in the vastness of a full compute environment and encourages it to compose the building blocks you provide. This "micro-DSL" can be as small or as large as you need, from a handful of functions to broad access to a library, giving you fine-grained control over the balance of guidance and freedom.
 
-This philosophy of providing guidance through a curated environment is the primary design principle. A powerful and welcome side-effect of this approach is a robust security model. By limiting the agent's world to only the capabilities you provide, you inherently prevent it from accessing unintended and potentially unsafe parts of your system. Security becomes a natural outcome of thoughtful agent design.
+This philosophy of providing guidance through a curated environment is the primary design principle. A useful side-effect of this approach is a robust security model. By limiting the agent's world to only the capabilities you provide, you inherently prevent it from accessing unintended and potentially unsafe parts of your system. Security becomes a natural outcome of thoughtful agent design.
 
 ### Registration, Not Tool-Making
 
@@ -50,13 +50,11 @@ agent.module(pd)
 
 Your existing codebase *is* the toolset. The registration system acts as a secure and targeted bridge between your code and the agent, without forcing you to create and maintain a parallel set of tool abstractions.
 
-#### PyPI is the Ultimate Toolset
+#### Leveraging the Existing Ecosystem
 
-`agex` is built on a simple premise:
+The premise is simple: a vast ecosystem of Python libraries already exists.
 
-> The richest, most mature, and most capable ecosystem of "tools" for a Python agent already exists. **It's called the Python Package Index (PyPI).**
-
-Instead of requiring developers to wrap their logic in new schemas for a new ecosystem, `agex` enables agents to directly use the 500,000+ libraries that the Python community has spent decades building, testing, and perfecting.
+Rather than wrapping logic in new abstractions, `agex` lets agents use existing libraries directly—the same ones you'd use in regular Python code.
 
 ## Security Through Design
 
@@ -128,7 +126,7 @@ Traditional frameworks would likely require separate tool calls for filtering an
 
 ### 3. Agent Workspace Persistence  
 
-Git-like versioning with automatic checkpointing enables powerful debugging:
+Git-like versioning with automatic checkpointing enables detailed debugging:
 
 ```python
 from agex import ActionEvent, Versioned, events
@@ -152,7 +150,7 @@ Natural coordination through hierarchical delegation or simple Python control fl
 
 **Hierarchical Delegation**
 
-The dual-decorator pattern (`@orchestrator.fn` + `@specialist.task`) enables elegant specialist architectures where sub-agents become callable functions for an orchestrator. This allows for natural hierarchies where complex workflows feel like simple function composition.
+The dual-decorator pattern (`@orchestrator.fn` + `@specialist.task`) enables specialist architectures where sub-agents become callable functions for an orchestrator. This allows for natural hierarchies where complex workflows feel like simple function composition.
 
 ```python
 # Sub-agents as functions for orchestrators
@@ -176,6 +174,6 @@ while not (review := critique(report)).approved:
 
 ## The Result
 
-agex transforms agent development from framework-specific tooling into natural Python programming. Multi-agent workflows become simple control flow. Complex data handoffs become object passing. Agent capabilities become library registrations.
+With agex, multi-agent workflows become simple control flow. Complex data handoffs become object passing. Agent capabilities become library registrations.
 
-The result is a more natural division of labor: developers provide curated access to powerful libraries, and agents take on the work of composing those libraries into novel solutions.
+The result is a straightforward division of labor: developers provide curated access to libraries, and agents compose those libraries into solutions.
