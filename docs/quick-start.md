@@ -277,6 +277,31 @@ for event in agent_events:
 
 The events system makes debugging agent behavior straightforward. For comprehensive event monitoring patterns, see the **[Events API](./api/events.md)**.
 
+## Async Tasks
+
+Tasks work seamlessly with Python's `async`/`await`. Simply define the task function as `async def`:
+
+```python
+import asyncio
+from agex import Agent
+
+agent = Agent()
+
+@agent.task
+async def analyze_data(data: list[int]) -> dict:  # type: ignore[return-value]
+    """Analyze a list of numbers."""
+    pass
+
+# Use with await
+async def main():
+    result = await analyze_data([1, 2, 3, 4, 5])
+    print(f"Result: {result}")
+
+asyncio.run(main())
+```
+
+Async tasks fully support all features: streaming (`.stream()`), callbacks (`on_event`, `on_token`), and state management.
+
 ## Task Errors
 
 Agents may refuse tasks by raising a TaskFail or a TaskClarify. A task

@@ -276,7 +276,27 @@ result = my_task("analyze", on_token=render_token)
 
 Token streaming activates only when an `on_token` handler is provided. When omitted, tasks behave exactly as before.
 
-### 5. Console Pretty-Printing Helpers
+### 5. Async Streaming
+
+All event consumption patterns work with async tasks. For async-first codebases:
+
+```python
+@agent.task
+async def my_async_task(data: str) -> str:  # type: ignore[return-value]
+    """An async task."""
+    pass
+
+# Async with callbacks
+result = await my_async_task("process this", on_event=my_handler)
+
+# Async streaming
+async for event in my_async_task.stream("process this"):
+    await process_event(event)
+```
+
+The `on_event` and `on_token` callbacks can also be async functions—agex will `await` them automatically.
+
+### 6. Console Pretty-Printing Helpers
 
 Use the top-level helpers to get colorful terminal output without writing custom handlers.
 

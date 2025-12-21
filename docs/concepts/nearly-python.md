@@ -128,6 +128,9 @@ def fetch_data():
 
 **Impact**: Async libraries won't work. Provide synchronous wrappers or use libraries with sync APIs.
 
+> [!TIP]
+> **Registered async functions work transparently.** If you register an async function via `@agent.fn`, the framework automatically bridges async results. Agents call them like regular sync functions and receive resolved values—no special handling needed.
+
 **Future**: Unlikely to change - async support would require major architectural changes.
 
 ### Exception Handling
@@ -303,6 +306,58 @@ result = multiplier(5) # This will return 10, not 50.
 **Impact**: This can lead to unexpected behavior if you assume closures will always see the latest version of their captured variables across different task runs.
 
 **Future**: The freezing behavior is inherent to the state model and is unlikely to change.
+
+## Async Architecture
+
+agex supports async task execution while keeping the agent sandbox synchronous. This is achieved through a three-layer architecture:
+
+### Layer 1: Task Execution (async optional)
+
+Your tasks can be defined as sync or async:
+
+```python
+# Sync task
+@agent.task
+def my_task(data: str) -> dict:  # type: ignore[return-value]
+    """Process data."""
+    pass
+
+# Async task
+@agent.task
+async def my_async_task(data: str) -> dict:  # type: ignore[return-value]
+    """Process data asynchronously."""
+    pass
+```
+
+Async tasks use async LLM client methods internally, allowing non-blocking I/O in async codebases.
+
+### Layer 2: Transparent Bridging
+
+Async functions registered via `@agent.fn` are bridged transparently. Agents call them like sync functions:
+
+```python
+# You register an async function
+@agent.fn
+async def fetch_data(url: str) -> dict:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        return response.json()
+
+# Agent sees and calls it as sync:
+# data = fetch_data("https://api.example.com")
+```
+
+The framework automatically awaits async results using `run_coroutine_threadsafe()`, so agents receive resolved values without needing async syntax.
+
+### Layer 3: Sandbox Execution (always sync)
+
+Agent-generated code runs in a synchronous sandbox. This is intentional:
+
+- **Simpler reasoning**: Sync code is easier for LLMs to generate correctly
+- **Safer execution**: No async race conditions or deadlock risks
+- **Predictable behavior**: Sequential execution is easier to debug
+
+The separation means you get async benefits at the framework level (non-blocking I/O, compatibility with FastAPI/asyncio) without exposing async complexity to agents.
 
 ## Why These Limitations?
 
