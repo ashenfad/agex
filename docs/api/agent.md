@@ -7,13 +7,12 @@ The `Agent` class is the main entry point for creating AI agents in agex. Each a
 ```python
 Agent(
     primer: str | None = None,
-    timeout_seconds: float = 5.0,
+    eval_timeout_seconds: float = 5.0,
     max_iterations: int = 10,
     name: str | None = None,
     capabilities_primer: str | None = None,
     llm_client: LLMClient | None = None,
     llm_max_retries: int = 2,
-    llm_retry_backoff: float = 0.25,
     log_high_water_tokens: int | None = None,
     log_low_water_tokens: int | None = None,
 )
@@ -23,17 +22,16 @@ Agent(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `primer` | `str | None` | `None` | Instructions that guide the agent's behavior and personality |
-| `timeout_seconds` | `float` | `5.0` | Maximum time in seconds for task execution |
+| `primer` | `str \| None` | `None` | Instructions that guide the agent's behavior and personality |
+| `eval_timeout_seconds` | `float` | `5.0` | Maximum time in seconds for agent-generated code execution |
 | `max_iterations` | `int` | `10` | Maximum number of think-act cycles per task |
-| `name` | `str | None` | `None` | Unique identifier for the agent (auto-generated if not provided) |
-| `capabilities_primer` | `str | None` | `None` | Optional curated text that replaces the default capabilities listing (rendered from registrations). If `None`, the agent renders capabilities from registrations; if empty string, the section is suppressed. |
-| `llm_client` | `LLMClient | None` | `None` | An instantiated `LLMClient` for the agent to use. If `None`, a default client is created. |
+| `name` | `str \| None` | `None` | Unique identifier for the agent (auto-generated if not provided) |
+| `capabilities_primer` | `str \| None` | `None` | Optional curated text that replaces the default capabilities listing (rendered from registrations). If `None`, the agent renders capabilities from registrations; if empty string, the section is suppressed. |
+| `llm_client` | `LLMClient \| None` | `None` | An instantiated `LLMClient` for the agent to use. If `None`, a default client is created. The LLM's API timeout is controlled by `llm_client.timeout_seconds` (default 90s). |
 | `llm_max_retries` | `int` | `2` | Number of times to retry a failed LLM completion before aborting with `LLMFail`. |
-| `llm_retry_backoff` | `float` | `0.25` | Initial backoff (seconds) between retries. Backoff grows exponentially per attempt. |
-| `log_high_water_tokens` | `int | None` | `None` | Trigger event log summarization when total tokens exceed this threshold. If `None`, no automatic summarization occurs. |
-| `log_low_water_tokens` | `int | None` | `None` | Target token count after summarization. Defaults to 50% of `log_high_water_tokens` if not specified. Must be less than `log_high_water_tokens`. |
-| `agex_primer_override` | `str | None` | `None` | **Advanced:** Override the built-in system instructions that define the agent's core behavior and event protocol. Use with caution. |
+| `log_high_water_tokens` | `int \| None` | `None` | Trigger event log summarization when total tokens exceed this threshold. If `None`, no automatic summarization occurs. |
+| `log_low_water_tokens` | `int \| None` | `None` | Target token count after summarization. Defaults to 50% of `log_high_water_tokens` if not specified. Must be less than `log_high_water_tokens`. |
+| `agex_primer_override` | `str \| None` | `None` | **Advanced:** Override the built-in system instructions that define the agent's core behavior and event protocol. Use with caution. |
 
 ### Examples
 
@@ -54,6 +52,26 @@ expert_agent = Agent(
 ## LLM Configuration
 
 An agent's connection to a Large Language Model is managed by an `LLMClient` instance. There are two primary ways to configure this.
+
+### `connect_llm()` Factory Function
+
+```python
+from agex import connect_llm
+
+connect_llm(
+    provider: Literal["openai", "anthropic", "gemini", "dummy"] | None = None,
+    model: str | None = None,
+    timeout_seconds: float = 90.0,
+    **kwargs,  # Provider-specific arguments
+) -> LLMClient
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `provider` | `str \| None` | `None` | LLM provider: `"openai"`, `"anthropic"`, `"gemini"`, or `"dummy"`. If `None`, resolved from `AGEX_LLM_PROVIDER` env var. |
+| `model` | `str \| None` | `None` | Model name (e.g., `"gpt-4.1-nano"`). If `None`, resolved from `AGEX_LLM_MODEL` env var or provider defaults. |
+| `timeout_seconds` | `float` | `90.0` | API call timeout in seconds. |
+| `**kwargs` | | | Additional arguments forwarded to the client (e.g., `api_key`, `temperature`, `max_tokens`). |
 
 ### 1. Direct Instantiation (Recommended)
 
@@ -178,7 +196,7 @@ agent = Agent(primer="You are concise and direct.")
 print(agent.primer)  # "You are concise and direct."
 ```
 
-### `.timeout_seconds`
+### `.eval_timeout_seconds`
 **Type:** `float`
 
 The maximum time in seconds allowed for a single block of agent-generated code to execute. This is a safety mechanism to prevent runaway code. It applies strictly to code execution time, not time spent waiting for the LLM.

@@ -139,7 +139,7 @@ class UserFunction:
                 agent=agent,
                 state=exec_state,
                 source_code=source_code,
-                timeout_seconds=parent_evaluator._timeout_seconds,
+                eval_timeout_seconds=parent_evaluator._eval_timeout_seconds,
                 start_time=parent_evaluator._start_time,
                 sub_agent_time=parent_evaluator._sub_agent_time,
             )
@@ -149,7 +149,7 @@ class UserFunction:
                 agent=agent,
                 state=exec_state,
                 source_code=source_code,
-                timeout_seconds=agent.timeout_seconds,
+                eval_timeout_seconds=agent.eval_timeout_seconds,
             )
         bound_args = bind_arguments(
             self.name, self.args, args, kwargs, eval_fn=evaluator.visit

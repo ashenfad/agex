@@ -251,9 +251,7 @@ def test_gemini_client_google_search_enabled():
         assert config.tools is not None
         assert len(config.tools) == 1
 
-        # Verify system prompt has grounding primer
         assert "# Grounding Tools Enabled" in config.system_instruction
-        assert "- Google Search" in config.system_instruction
 
 
 def test_gemini_client_google_search_stream():
@@ -281,9 +279,7 @@ def test_gemini_client_google_search_stream():
         call_kwargs = mock_models.generate_content_stream.call_args.kwargs
         config = call_kwargs["config"]
 
-        assert config.tools is not None
         assert "# Grounding Tools Enabled" in config.system_instruction
-        assert "- Google Search" in config.system_instruction
 
 
 def test_gemini_client_url_context():
@@ -319,9 +315,7 @@ def test_gemini_client_url_context():
             getattr(tool, "url_context", None) is not None for tool in config.tools
         )
 
-        # Verify system prompt has grounding primer
         assert "# Grounding Tools Enabled" in config.system_instruction
-        assert "- URL Context" in config.system_instruction
 
 
 def test_gemini_client_url_context_stream_prefill():

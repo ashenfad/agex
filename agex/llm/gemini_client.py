@@ -1,40 +1,38 @@
 import json
+import logging
 from typing import Any, AsyncIterator, Iterator, List
 
 from google import genai
 from google.genai import types
 
 from agex.agent.events import Event
-from agex.llm.core import LLMClient, LLMResponse, TokenChunk
+from agex.llm.core import (
+    LLMClient,
+    LLMResponse,
+    TokenChunk,
+    with_timeout,
+    with_timeout_async,
+)
 from agex.llm.xml import TAG_TITLE, XML_FORMAT_PRIMER, tokenize_xml_stream
+
+logger = logging.getLogger(__name__)
 
 CLIENT_CONFIG_KEYS = {"api_key", "vertexai"}
 
 GROUNDING_PRIMER_TEMPLATE = """
 # Grounding Tools Enabled
-You have access to the following tools for grounding:
-{tools_str}
+You have access to gemini grounding tools. These tools are available external
+to agex. If you choose to use them, do so before the <TITLE>.
 
-If you use them, please make a detailed summary of what you learn and include it in your
-<THINKING></THINKING> section. This will enable you to remember the summary long-term.
+When using them, please make a detailed summary of what you learn and include it in your
+<THINKING> section. This will enable you to remember the summary long-term.
 """
 
 
 def _get_grounding_primer(google_search: bool, url_context: bool) -> str:
-    """
-    Generate the grounding primer based on enabled tools.
-    """
     if not (google_search or url_context):
         return ""
-
-    tools_list = []
-    if google_search:
-        tools_list.append("- Google Search")
-    if url_context:
-        tools_list.append("- URL Context (access to content of provided URLs)")
-
-    tools_str = "\n".join(tools_list)
-    return GROUNDING_PRIMER_TEMPLATE.format(tools_str=tools_str)
+    return GROUNDING_PRIMER_TEMPLATE
 
 
 class GeminiClient(LLMClient):
@@ -45,6 +43,7 @@ class GeminiClient(LLMClient):
         model: str = "gemini-1.5-flash",
         google_search: bool = False,
         url_context: bool = False,
+        timeout_seconds: float = 90.0,
         **kwargs,
     ):
         kwargs = kwargs.copy()
@@ -63,14 +62,22 @@ class GeminiClient(LLMClient):
         self._kwargs = completion_kwargs
         self._google_search = google_search
         self._url_context = url_context
+        self._timeout_seconds = timeout_seconds
 
         # Initialize the unified Client.
         # Supports both API Key (AI Studio) and Vertex AI via explicit kwargs or environment variables.
         self.client = genai.Client(**client_kwargs)
 
+    @property
+    def timeout_seconds(self) -> float:
+        """Timeout in seconds for each API call."""
+        return self._timeout_seconds
+
     def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
         Send events to Gemini and return a structured response.
+
+        Includes timeout and retry logic to prevent indefinite hangs.
         """
         from agex.render.events import render_events_as_markdown
 
@@ -100,37 +107,40 @@ class GeminiClient(LLMClient):
             "required": ["thinking", "code"],
         }
 
-        try:
-            # Create config
-            tools = []
-            if self._google_search:
-                tools.append(types.Tool(google_search=types.GoogleSearch()))
+        # Create config
+        tools = []
+        if self._google_search:
+            tools.append(types.Tool(google_search=types.GoogleSearch()))
 
-            if self._url_context:
-                # Based on documentation, pass as a dict or dynamic type
-                tools.append({"url_context": {}})
+        if self._url_context:
+            # Based on documentation, pass as a dict or dynamic type
+            tools.append({"url_context": {}})
 
-            if tools:
-                grounding_primer = _get_grounding_primer(
-                    self._google_search, self._url_context
-                )
-                if grounding_primer:
-                    system = f"{grounding_primer}\n\n{system}"
-
-            config = types.GenerateContentConfig(
-                system_instruction=system,
-                response_mime_type="application/json",
-                response_schema=response_schema,
-                tools=tools if tools else None,
-                **request_kwargs,
+        if tools:
+            grounding_primer = _get_grounding_primer(
+                self._google_search, self._url_context
             )
+            if grounding_primer:
+                system = f"{grounding_primer}\n\n{system}"
 
-            # Generate response
-            response = self.client.models.generate_content(
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            response_mime_type="application/json",
+            response_schema=response_schema,
+            tools=tools if tools else None,
+            **request_kwargs,
+        )
+
+        def _make_request():
+            return self.client.models.generate_content(
                 model=self._model,
                 contents=gemini_contents,
                 config=config,
             )
+
+        try:
+            # Execute with timeout
+            response = with_timeout(_make_request, self.timeout_seconds)
 
             # Parse the JSON response
             if not response.text:
@@ -146,13 +156,15 @@ class GeminiClient(LLMClient):
             code = parsed_response.get("code", "")
             return LLMResponse(thinking=thinking, code=code)
 
+        except TimeoutError as e:
+            raise RuntimeError(f"Gemini completion timed out: {e}") from e
         except Exception as e:
             raise RuntimeError(f"Gemini completion failed: {e}") from e
 
     async def acomplete(
         self, system: str, events: List[Event], **kwargs
     ) -> LLMResponse:
-        """Async version of complete."""
+        """Async version of complete with timeout and retry logic."""
         from agex.render.events import render_events_as_markdown
 
         request_kwargs = {**self._kwargs, **kwargs}
@@ -174,32 +186,36 @@ class GeminiClient(LLMClient):
             "required": ["thinking", "code"],
         }
 
-        try:
-            tools = []
-            if self._google_search:
-                tools.append(types.Tool(google_search=types.GoogleSearch()))
-            if self._url_context:
-                tools.append({"url_context": {}})
-            if tools:
-                grounding_primer = _get_grounding_primer(
-                    self._google_search, self._url_context
-                )
-                if grounding_primer:
-                    system = f"{grounding_primer}\n\n{system}"
-
-            config = types.GenerateContentConfig(
-                system_instruction=system,
-                response_mime_type="application/json",
-                response_schema=response_schema,
-                tools=tools if tools else None,
-                **request_kwargs,
+        tools = []
+        if self._google_search:
+            tools.append(types.Tool(google_search=types.GoogleSearch()))
+        if self._url_context:
+            tools.append({"url_context": {}})
+        if tools:
+            grounding_primer = _get_grounding_primer(
+                self._google_search, self._url_context
             )
+            if grounding_primer:
+                system = f"{grounding_primer}\n\n{system}"
 
-            response = await self.client.aio.models.generate_content(
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            response_mime_type="application/json",
+            response_schema=response_schema,
+            tools=tools if tools else None,
+            **request_kwargs,
+        )
+
+        async def _make_request():
+            return await self.client.aio.models.generate_content(
                 model=self._model,
                 contents=gemini_contents,
                 config=config,
             )
+
+        try:
+            # Execute with timeout
+            response = await with_timeout_async(_make_request, self.timeout_seconds)
 
             if not response.text:
                 raise RuntimeError("Gemini returned empty response")
@@ -213,6 +229,8 @@ class GeminiClient(LLMClient):
             code = parsed_response.get("code", "")
             return LLMResponse(thinking=thinking, code=code)
 
+        except TimeoutError as e:
+            raise RuntimeError(f"Gemini completion timed out: {e}") from e
         except Exception as e:
             raise RuntimeError(f"Gemini completion failed: {e}") from e
 
@@ -320,6 +338,7 @@ class GeminiClient(LLMClient):
                 **request_kwargs,
             )
 
+            # Get stream handle
             response_stream = await self.client.aio.models.generate_content_stream(
                 model=self._model,
                 contents=gemini_contents,
@@ -330,8 +349,7 @@ class GeminiClient(LLMClient):
                 if not self._google_search and not self._url_context:
                     yield prefill_text
                 async for chunk in response_stream:
-                    text = chunk.text or ""
-                    yield text
+                    yield chunk.text or ""
 
             async for token in atokenize_xml_stream(raw_chunks()):
                 yield token

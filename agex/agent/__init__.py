@@ -55,7 +55,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
     def __init__(
         self,
         primer: str | None = None,
-        timeout_seconds: float = 5.0,
+        eval_timeout_seconds: float = 5.0,
         max_iterations: int = 10,
         # Agent identification
         name: str | None = None,
@@ -63,9 +63,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         capabilities_primer: str | None = None,
         # LLM configuration (optional, uses smart defaults)
         llm_client: LLMClient | None = None,
-        # LLM retry controls
+        # LLM retry control (timeout comes from llm_client.timeout_seconds)
         llm_max_retries: int = 2,
-        llm_retry_backoff: float = 0.25,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
@@ -77,11 +76,13 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
 
         Args:
             primer: A string to guide the agent's behavior.
-            timeout_seconds: The maximum time in seconds for a single action evaluation.
+            eval_timeout_seconds: The maximum time in seconds for agent-generated code to run.
             max_iterations: The maximum number of think-act cycles for a task.
             name: Unique identifier for this agent (for sub-agent namespacing).
             capabilities_primer: Optional curated capabilities primer.
-            llm_client: An instantiated LLMClient for the agent to use.
+            llm_client: An instantiated LLMClient for the agent to use. Configure
+                llm_client.timeout_seconds for API timeout control.
+            llm_max_retries: Number of retry attempts for failed/timed-out LLM calls.
             log_high_water_tokens: Trigger event log summarization when total tokens
                 exceed this threshold. If None, no summarization is performed.
             log_low_water_tokens: Target token count after summarization. Defaults to
@@ -91,13 +92,12 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         """
         super().__init__(
             primer=primer,
-            timeout_seconds=timeout_seconds,
+            eval_timeout_seconds=eval_timeout_seconds,
             max_iterations=max_iterations,
             name=name,
             capabilities_primer=capabilities_primer,
             llm_client=llm_client,
             llm_max_retries=llm_max_retries,
-            llm_retry_backoff=llm_retry_backoff,
             log_high_water_tokens=log_high_water_tokens,
             log_low_water_tokens=log_low_water_tokens,
             agex_primer_override=agex_primer_override,

@@ -1,12 +1,84 @@
+import asyncio
+import logging
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, AsyncIterator, Iterator, List, Literal, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Callable,
+    Iterator,
+    Literal,
+    TypeVar,
+    Union,
+)
 
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from agex.agent.events import Event
+
+# ============================================================================
+# Timeout Configuration
+# ============================================================================
+
+DEFAULT_TIMEOUT_SECONDS = 90.0  # 90 seconds per API call (used by LLMClient base)
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+
+def with_timeout(fn: Callable[[], T], timeout: float) -> T:
+    """
+    Execute a sync function with timeout.
+
+    Args:
+        fn: Zero-argument callable to execute
+        timeout: Timeout in seconds
+
+    Returns:
+        Result of fn()
+
+    Raises:
+        TimeoutError: If the call times out
+        Exception: Any exception from fn
+    """
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(fn)
+        try:
+            return future.result(timeout=timeout)
+        except FuturesTimeoutError:
+            raise TimeoutError(f"Request timed out after {timeout}s")
+
+
+async def with_timeout_async(coro_fn: Callable[[], Any], timeout: float) -> Any:
+    """
+    Execute an async coroutine with timeout.
+
+    Args:
+        coro_fn: Zero-argument callable that returns a coroutine
+        timeout: Timeout in seconds
+
+    Returns:
+        Result of awaiting coro_fn()
+
+    Raises:
+        TimeoutError: If the call times out
+        Exception: Any exception from coro_fn
+    """
+    try:
+        return await asyncio.wait_for(coro_fn(), timeout=timeout)
+    except asyncio.TimeoutError:
+        raise TimeoutError(f"Request timed out after {timeout}s")
+
+
+# ============================================================================
+# Content Types
+# ============================================================================
 
 
 @dataclass
@@ -79,8 +151,13 @@ class LLMClient(ABC):
     providers and implementation approaches.
     """
 
+    @property
+    def timeout_seconds(self) -> float:
+        """Timeout in seconds for each API call. Override in subclass to customize."""
+        return DEFAULT_TIMEOUT_SECONDS
+
     @abstractmethod
-    def complete(self, system: str, events: List["Event"], **kwargs) -> LLMResponse:
+    def complete(self, system: str, events: list["Event"], **kwargs) -> LLMResponse:
         """
         Agent execution - convert events to structured response.
 
@@ -99,7 +176,7 @@ class LLMClient(ABC):
         ...
 
     def complete_stream(
-        self, system: str, events: List["Event"], **kwargs
+        self, system: str, events: list["Event"], **kwargs
     ) -> Iterator[TokenChunk]:
         """
         Agent execution with token-level streaming support.
@@ -142,7 +219,7 @@ class LLMClient(ABC):
         yield TokenChunk(type="python", content="", done=True)
 
     async def acomplete(
-        self, system: str, events: List["Event"], **kwargs
+        self, system: str, events: list["Event"], **kwargs
     ) -> LLMResponse:
         """
         Async agent execution - convert events to structured response.
@@ -168,7 +245,7 @@ class LLMClient(ABC):
         )
 
     async def acomplete_stream(
-        self, system: str, events: List["Event"], **kwargs
+        self, system: str, events: list["Event"], **kwargs
     ) -> AsyncIterator[TokenChunk]:
         """
         Async agent execution with token-level streaming support.
@@ -200,7 +277,7 @@ class LLMClient(ABC):
         yield TokenChunk(type="python", content="", done=True)
 
     def _prepare_summarization_content(
-        self, content: str | List["Event"]
+        self, content: str | list["Event"]
     ) -> tuple[bool, Any]:
         """
         Helper to prepare content for summarization.
@@ -254,7 +331,7 @@ Write your summary of what happened in this interaction."""
             return (False, content)
 
     @abstractmethod
-    def summarize(self, system: str, content: str | List["Event"], **kwargs) -> str:
+    def summarize(self, system: str, content: str | list["Event"], **kwargs) -> str:
         """
         Generic text generation with instructions.
 

@@ -113,7 +113,7 @@ class SyncLoopMixin:
                     setup,
                     self,
                     exec_state,
-                    self.timeout_seconds,
+                    self.eval_timeout_seconds,
                     on_event=setup_on_event,
                     on_token=on_token,
                 )
@@ -156,7 +156,7 @@ class SyncLoopMixin:
                         code_to_evaluate,
                         self,
                         exec_state,
-                        self.timeout_seconds,
+                        self.eval_timeout_seconds,
                         on_event=on_event,
                         on_token=on_token,
                     )

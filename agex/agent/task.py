@@ -376,6 +376,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     on_conflict=on_conflict,
                     max_conflict_retries=max_conflict_retries,
                 )
+
         else:
 
             def task_wrapper(*args, **kwargs):

@@ -26,7 +26,6 @@ def test_llm_retries_then_success(monkeypatch):
         name="retry-success",
         llm_client=client,
         llm_max_retries=2,
-        llm_retry_backoff=0.0,
     )
 
     @agent.task("simple task")
@@ -45,9 +44,7 @@ def test_llm_retries_exhaust_and_fail(monkeypatch):
     responses = [RuntimeError("down 1"), RuntimeError("down 2"), RuntimeError("down 3")]
     client = DummyLLMClient(responses=responses)
 
-    agent = Agent(
-        name="retry-fail", llm_client=client, llm_max_retries=2, llm_retry_backoff=0.0
-    )
+    agent = Agent(name="retry-fail", llm_client=client, llm_max_retries=2)
 
     @agent.task("simple task")
     def t() -> int:  # type: ignore[return-value]

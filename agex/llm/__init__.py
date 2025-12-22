@@ -33,6 +33,7 @@ if GeminiClient is not None:
 def connect_llm(
     provider: Literal["openai", "anthropic", "gemini", "dummy"] | None = None,
     model: str | None = None,
+    timeout_seconds: float = 90.0,
     **kwargs: Any,
 ) -> LLMClient:
     """
@@ -40,10 +41,19 @@ def connect_llm(
 
     Resolves configuration from function parameters, global settings, and
     environment variables.
+
+    Args:
+        provider: LLM provider ("openai", "anthropic", "gemini", "dummy")
+        model: Model name (e.g., "gpt-4.1-nano")
+        timeout_seconds: API call timeout in seconds (default 90.0)
+        **kwargs: Additional provider-specific arguments
     """
     # Resolve the full configuration from all sources
     config = get_llm_config(provider=provider, model=model, **kwargs)
     final_provider = config.get("provider")
+
+    # Add timeout_seconds to config
+    config["timeout_seconds"] = timeout_seconds
 
     # The DummyLLMClient has a unique `responses` kwarg that other clients do not.
     # We pass the original kwargs to it to preserve this behavior.
