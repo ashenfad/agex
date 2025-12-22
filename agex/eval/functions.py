@@ -1,5 +1,6 @@
 import ast
 import inspect
+import time
 from dataclasses import dataclass, make_dataclass
 from typing import Any, Callable
 
@@ -332,23 +333,26 @@ class TaskProxy:
         self.task_callable = task_callable
 
     def execute(self, args: list[Any], kwargs: dict[str, Any]) -> Any:
-        # Measure sub-agent call time to deduct from parent timeout; execution is delegated to the agent
-        import time
+        """
+        Execute a sub-agent task, properly accounting for execution time.
+
+        For sync tasks: Time is measured and added before returning.
+        For async tasks: Result is wrapped to measure time after await completes.
+        """
+        from ..state import Live, Versioned
+        from ..state import Namespaced as NamespacedState
+
+        # Determine parent state for the sub-agent
+        if isinstance(self.evaluator.state, (Versioned, NamespacedState, Live)):
+            parent_state = self.evaluator.state
+        else:
+            parent_state = self.evaluator.state.base_store
 
         sub_agent_start = time.time()
         try:
-            # Determine parent state
-            from ..state import Live, Versioned
-            from ..state import Namespaced as NamespacedState
-
-            if isinstance(self.evaluator.state, (Versioned, NamespacedState, Live)):
-                parent_state = self.evaluator.state
-            else:
-                parent_state = self.evaluator.state.base_store
-
             # Delegate execution and state management to the agent
             agent = self.evaluator.agent
-            return agent.run_task(
+            result = agent.run_task(
                 self.task_callable,
                 args,
                 kwargs,
@@ -356,13 +360,36 @@ class TaskProxy:
                 on_event=getattr(self.evaluator, "on_event", None),
                 on_token=getattr(self.evaluator, "on_token", None),
             )
-        finally:
+
+            # Handle async results: wrap to capture timing *after* await completes
+            if inspect.isawaitable(result):
+
+                async def _timed_wrapper(awaitable):
+                    try:
+                        return await awaitable
+                    finally:
+                        sub_agent_duration = time.time() - sub_agent_start
+                        self._safe_add_sub_agent_time(sub_agent_duration)
+
+                return _timed_wrapper(result)
+
+            # Sync success: account for time before returning
             sub_agent_duration = time.time() - sub_agent_start
-            # Inform evaluator so it can adjust time budget
-            try:
-                self.evaluator.add_sub_agent_time(sub_agent_duration)
-            except Exception:
-                pass
+            self._safe_add_sub_agent_time(sub_agent_duration)
+            return result
+
+        except Exception:
+            # Sync error: still account for time spent
+            sub_agent_duration = time.time() - sub_agent_start
+            self._safe_add_sub_agent_time(sub_agent_duration)
+            raise
+
+    def _safe_add_sub_agent_time(self, duration: float) -> None:
+        """Safely add sub-agent time to the evaluator, ignoring errors."""
+        try:
+            self.evaluator.add_sub_agent_time(duration)
+        except Exception:
+            pass
 
 
 class FunctionEvaluator(BaseEvaluator):
