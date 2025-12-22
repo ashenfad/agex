@@ -16,7 +16,7 @@ class BaseEvaluator(ast.NodeVisitor):
         self,
         agent: "BaseAgent",
         state: "State",
-        timeout_seconds: float = 5.0,
+        eval_timeout_seconds: float = 5.0,
         start_time: float | None = None,
         sub_agent_time: float = 0.0,
     ):
@@ -26,7 +26,7 @@ class BaseEvaluator(ast.NodeVisitor):
         self.on_token: Callable[[Any], None] | None = None  # Will be set by Evaluator
         self.source_code: str | None = None
         self._start_time = start_time if start_time is not None else time.time()
-        self._timeout_seconds = timeout_seconds
+        self._eval_timeout_seconds = eval_timeout_seconds
         self._sub_agent_time = sub_agent_time  # Total time spent in sub-agent calls
         self.resolver = Resolver(agent)  # Unified resolver for all lookups
 
@@ -140,9 +140,9 @@ class BaseEvaluator(ast.NodeVisitor):
         current_time = time.time()
         elapsed = (current_time - self._start_time) - self._sub_agent_time
 
-        if elapsed > self._timeout_seconds:
+        if elapsed > self._eval_timeout_seconds:
             raise EvalError(
-                f"Program execution timed out after {self._timeout_seconds:.1f} seconds. "
+                f"Program execution timed out after {self._eval_timeout_seconds:.1f} seconds. "
                 f"Consider optimizing your code or reducing computational complexity.",
                 None,
             )

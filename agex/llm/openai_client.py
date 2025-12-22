@@ -3,7 +3,13 @@ from typing import Any, Iterator, List
 import openai
 
 from agex.agent.events import Event
-from agex.llm.core import LLMClient, LLMResponse, TokenChunk
+from agex.llm.core import (
+    LLMClient,
+    LLMResponse,
+    TokenChunk,
+    with_timeout,
+    with_timeout_async,
+)
 from agex.llm.xml import XML_FORMAT_PRIMER, tokenize_xml_stream
 from agex.tokenizers import get_tokenizer
 
@@ -47,6 +53,7 @@ class OpenAIClient(LLMClient):
     def __init__(
         self,
         model: str = "gpt-4.1-nano",
+        timeout_seconds: float = 90.0,
         **kwargs,
     ):
         kwargs.pop("provider", None)
@@ -60,9 +67,15 @@ class OpenAIClient(LLMClient):
 
         self._model = model
         self._kwargs = completion_kwargs
+        self._timeout_seconds = timeout_seconds
         self.client = openai.OpenAI(**client_kwargs)
         self.async_client = openai.AsyncOpenAI(**client_kwargs)
         self.tokenizer = get_tokenizer(model)
+
+    @property
+    def timeout_seconds(self) -> float:
+        """Timeout in seconds for each API call."""
+        return self._timeout_seconds
 
     def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
@@ -80,13 +93,17 @@ class OpenAIClient(LLMClient):
         full_messages = [{"role": "system", "content": system}] + messages_dicts
 
         try:
-            # Use OpenAI's native structured outputs with beta.chat.completions.parse
-            response = self.client.beta.chat.completions.parse(
-                model=self._model,
-                messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
-                response_format=LLMResponse,
-                **request_kwargs,
-            )
+
+            def _make_request():
+                return self.client.beta.chat.completions.parse(
+                    model=self._model,
+                    messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
+                    response_format=LLMResponse,
+                    **request_kwargs,
+                )
+
+            # Execute with timeout
+            response = with_timeout(_make_request, self.timeout_seconds)
 
             # Extract the parsed response
             parsed_response = response.choices[0].message.parsed
@@ -115,13 +132,17 @@ class OpenAIClient(LLMClient):
         full_messages = [{"role": "system", "content": system}] + messages_dicts
 
         try:
-            # Use OpenAI's native structured outputs with beta.chat.completions.parse
-            response = await self.async_client.beta.chat.completions.parse(
-                model=self._model,
-                messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
-                response_format=LLMResponse,
-                **request_kwargs,
-            )
+
+            async def _make_request():
+                return await self.async_client.beta.chat.completions.parse(
+                    model=self._model,
+                    messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
+                    response_format=LLMResponse,
+                    **request_kwargs,
+                )
+
+            # Execute with timeout
+            response = await with_timeout_async(_make_request, self.timeout_seconds)
 
             # Extract the parsed response
             parsed_response = response.choices[0].message.parsed

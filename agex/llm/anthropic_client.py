@@ -4,7 +4,13 @@ import anthropic
 from anthropic.types import TextBlockParam
 
 from agex.agent.events import Event
-from agex.llm.core import LLMClient, LLMResponse, TokenChunk
+from agex.llm.core import (
+    LLMClient,
+    LLMResponse,
+    TokenChunk,
+    with_timeout,
+    with_timeout_async,
+)
 from agex.llm.xml import TAG_TITLE, XML_FORMAT_PRIMER, tokenize_xml_stream
 
 # Define keys for client setup vs. completion
@@ -57,7 +63,12 @@ def _format_message_for_anthropic(
 class AnthropicClient(LLMClient):
     """Client for Anthropic's API using tool calling for structured outputs."""
 
-    def __init__(self, model: str = "claude-3-sonnet-20240229", **kwargs):
+    def __init__(
+        self,
+        model: str = "claude-3-sonnet-20240229",
+        timeout_seconds: float = 90.0,
+        **kwargs,
+    ):
         kwargs.pop("provider", None)
         client_kwargs = {}
         completion_kwargs = {}
@@ -69,8 +80,14 @@ class AnthropicClient(LLMClient):
 
         self._model = model
         self._kwargs = completion_kwargs
+        self._timeout_seconds = timeout_seconds
         self.client = anthropic.Anthropic(**client_kwargs)
         self.async_client = anthropic.AsyncAnthropic(**client_kwargs)
+
+    @property
+    def timeout_seconds(self) -> float:
+        """Timeout in seconds for each API call."""
+        return self._timeout_seconds
 
     def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
@@ -115,16 +132,18 @@ class AnthropicClient(LLMClient):
             if "max_tokens" not in request_kwargs:
                 request_kwargs["max_tokens"] = MAX_TOKENS
 
-            # Make the API call with tool calling
-            # Create API call with system message
-            response = self.client.messages.create(
-                model=self._model,
-                system=system,
-                messages=conversation_messages,
-                tools=[structured_response_tool],
-                tool_choice={"type": "tool", "name": "structured_response"},
-                **request_kwargs,
-            )
+            def _make_request():
+                return self.client.messages.create(
+                    model=self._model,
+                    system=system,
+                    messages=conversation_messages,
+                    tools=[structured_response_tool],
+                    tool_choice={"type": "tool", "name": "structured_response"},
+                    **request_kwargs,
+                )
+
+            # Execute with timeout
+            response = with_timeout(_make_request, self.timeout_seconds)
 
             # Extract the structured response from tool use
             if not response.content or len(response.content) == 0:
@@ -189,14 +208,18 @@ class AnthropicClient(LLMClient):
             if "max_tokens" not in request_kwargs:
                 request_kwargs["max_tokens"] = MAX_TOKENS
 
-            response = await self.async_client.messages.create(
-                model=self._model,
-                system=system,
-                messages=conversation_messages,
-                tools=[structured_response_tool],
-                tool_choice={"type": "tool", "name": "structured_response"},
-                **request_kwargs,
-            )
+            async def _make_request():
+                return await self.async_client.messages.create(
+                    model=self._model,
+                    system=system,
+                    messages=conversation_messages,
+                    tools=[structured_response_tool],
+                    tool_choice={"type": "tool", "name": "structured_response"},
+                    **request_kwargs,
+                )
+
+            # Execute with timeout
+            response = await with_timeout_async(_make_request, self.timeout_seconds)
 
             if not response.content or len(response.content) == 0:
                 raise RuntimeError("Anthropic returned empty response")

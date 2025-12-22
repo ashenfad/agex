@@ -36,7 +36,7 @@ class Evaluator(
         agent: BaseAgent,
         state: State,
         source_code: str | None = None,
-        timeout_seconds: float | None = None,
+        eval_timeout_seconds: float | None = None,
         start_time: float | None = None,
         sub_agent_time: float = 0.0,
         on_event: Callable[[Any], None] | None = None,
@@ -44,7 +44,9 @@ class Evaluator(
         main_loop: asyncio.AbstractEventLoop | None = None,
     ):
         actual_timeout = (
-            timeout_seconds if timeout_seconds is not None else agent.timeout_seconds
+            eval_timeout_seconds
+            if eval_timeout_seconds is not None
+            else agent.eval_timeout_seconds
         )
         super().__init__(
             agent,
@@ -101,7 +103,7 @@ def evaluate_program(
     program: str,
     agent: BaseAgent,
     state: State,
-    timeout_seconds: float | None = None,
+    eval_timeout_seconds: float | None = None,
     on_event: Callable[[Any], None] | None = None,
     on_token: Callable[[Any], None] | None = None,
     main_loop: asyncio.AbstractEventLoop | None = None,
@@ -114,20 +116,22 @@ def evaluate_program(
         program: The Python code to execute
         agent: The agent providing the execution context
         state: The state to execute in
-        timeout_seconds: Optional timeout override. If None, uses agent.timeout_seconds
+        eval_timeout_seconds: Optional timeout override. If None, uses agent.eval_timeout_seconds
         on_event: Optional handler to call for each event
         on_token: Optional handler to call for each token
         main_loop: Optional asyncio loop for bridging async calls from the thread
     """
     actual_timeout = (
-        timeout_seconds if timeout_seconds is not None else agent.timeout_seconds
+        eval_timeout_seconds
+        if eval_timeout_seconds is not None
+        else agent.eval_timeout_seconds
     )
     tree = ast.parse(program)
     evaluator = Evaluator(
         agent,
         state,
         source_code=program,
-        timeout_seconds=actual_timeout,
+        eval_timeout_seconds=actual_timeout,
         on_event=on_event,
         on_token=on_token,
         main_loop=main_loop,

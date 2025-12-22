@@ -76,7 +76,7 @@ def test_comprehensive_serialization_stress():
     edge case, complex nested scenarios, exception handling, circular refs, etc.
     """
     # This test creates 10,000+ objects and needs more time than the default 5 seconds
-    agent = Agent(timeout_seconds=15.0)
+    agent = Agent(eval_timeout_seconds=15.0)
     agent.module(np, name="np")
 
     store = Memory()

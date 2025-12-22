@@ -512,8 +512,8 @@ def test_agent_self_registration_works():
     assert state.get("result") == "modified_primer"
 
     # Test accessing other auto-detected attributes
-    evaluate_program("timeout = agent.timeout_seconds", agent, state)
-    assert state.get("timeout") == agent.timeout_seconds
+    evaluate_program("timeout = agent.eval_timeout_seconds", agent, state)
+    assert state.get("timeout") == agent.eval_timeout_seconds
 
 
 def test_live_object_security_vs_class_security():
@@ -530,8 +530,8 @@ def test_live_object_security_vs_class_security():
     state = Live()
 
     # Live object should allow access to all registered properties
-    evaluate_program("result1 = live_agent.timeout_seconds", agent, state)
-    assert state.get("result1") == test_agent.timeout_seconds
+    evaluate_program("result1 = live_agent.eval_timeout_seconds", agent, state)
+    assert state.get("result1") == test_agent.eval_timeout_seconds
 
     # But if we create a new Agent instance through the evaluator,
     # it should respect the class registration limits
@@ -544,9 +544,9 @@ def test_live_object_security_vs_class_security():
 
     # Should NOT be able to access unregistered attribute
     with pytest.raises(AgexAttributeError) as exc_info:
-        evaluate_program("timeout_value = new_agent.timeout_seconds", agent, state)
+        evaluate_program("timeout_value = new_agent.eval_timeout_seconds", agent, state)
 
-    assert "object has no attribute 'timeout_seconds'" in str(exc_info.value)
+    assert "object has no attribute 'eval_timeout_seconds'" in str(exc_info.value)
 
 
 def test_live_object_method_access_unchanged():

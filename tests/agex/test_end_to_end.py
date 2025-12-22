@@ -31,7 +31,7 @@ def test_successful_task_completion():
     # Create agent with registered functions
     agent = Agent(
         primer="You are a helpful math assistant.",
-        timeout_seconds=30.0,
+        eval_timeout_seconds=30.0,
         max_iterations=3,
         llm_client=llm_client,
     )

@@ -68,7 +68,7 @@ class BaseAgent:
     def __init__(
         self,
         primer: str | None,
-        timeout_seconds: float,
+        eval_timeout_seconds: float,
         max_iterations: int,
         # Agent identification
         name: str | None = None,
@@ -76,9 +76,8 @@ class BaseAgent:
         capabilities_primer: str | None = None,
         # LLM configuration (optional, uses smart defaults)
         llm_client: LLMClient | None = None,
-        # LLM retry controls
+        # LLM retry control (timeout comes from llm_client.timeout_seconds)
         llm_max_retries: int = 2,
-        llm_retry_backoff: float = 0.25,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
@@ -91,14 +90,13 @@ class BaseAgent:
         self.capabilities_primer = capabilities_primer
         # Advanced: Override the builtin system instructions
         self.agex_primer_override = agex_primer_override
-        self.timeout_seconds = timeout_seconds
+        self.eval_timeout_seconds = eval_timeout_seconds
         self.max_iterations = max_iterations
 
         # Create LLM client using the resolved configuration
         self.llm_client = llm_client or connect_llm()
-        # LLM retry settings
+        # LLM retry setting (timeout comes from llm_client.timeout_seconds)
         self.llm_max_retries = llm_max_retries
-        self.llm_retry_backoff = llm_retry_backoff
 
         # Event log summarization settings
         if log_low_water_tokens is not None and log_high_water_tokens is None:
