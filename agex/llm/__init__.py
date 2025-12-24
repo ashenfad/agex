@@ -55,10 +55,19 @@ def connect_llm(
     # Add timeout_seconds to config
     config["timeout_seconds"] = timeout_seconds
 
-    # The DummyLLMClient has a unique `responses` kwarg that other clients do not.
-    # We pass the original kwargs to it to preserve this behavior.
+    # DummyLLMClient has special serialization for responses
     if final_provider == "dummy":
-        return DummyLLMClient(**kwargs)
+        # If responses are in serialized format (dicts from dump_config), use from_config
+        if "responses" in config and config["responses"]:
+            first = config["responses"][0]
+            if isinstance(first, dict):
+                # Serialized format - use from_config for proper reconstruction
+                return DummyLLMClient.from_config(config)
+        # Otherwise, pass through (for direct instantiation with LLMResponse objects)
+        dummy_kwargs = {**config, **kwargs}
+        dummy_kwargs.pop("provider", None)
+        dummy_kwargs.pop("model", None)
+        return DummyLLMClient(**dummy_kwargs)
 
     if final_provider == "anthropic":
         if AnthropicClient is None:

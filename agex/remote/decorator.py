@@ -7,11 +7,31 @@ The heavy lifting is delegated to RemoteTaskExecutor.
 
 import functools
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from agex.agent.base import BaseAgent
 from agex.remote.executor import (
     RemoteTaskExecutor,
 )
+
+
+def _validate_url(url: str) -> None:
+    """Validate that url looks like a proper HTTP(S) URL.
+
+    Raises:
+        ValueError: If url is missing scheme or host.
+    """
+    parsed = urlparse(url)
+    # Check for valid HTTP schemes (urlparse can mis-parse 'example.com:8000'
+    # as scheme='example.com' with no netloc)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(
+            f"Invalid URL '{url}': must start with 'http://' or 'https://'"
+        )
+    if not parsed.netloc:
+        raise ValueError(
+            f"Invalid URL '{url}': missing host (e.g., 'example.com:8000')"
+        )
 
 
 def remote(
@@ -33,6 +53,7 @@ def remote(
     """
 
     def decorator(task_func: Callable) -> Callable:
+        _validate_url(url)
         agent = _resolve_agent(task_func)
         executor = RemoteTaskExecutor(
             agent=agent,
@@ -90,6 +111,15 @@ def _extract_remote_kwargs(
         state_uri = call_state
     elif call_state is None and default_state is not None:
         state_uri = default_state
+    elif call_state is not None:
+        # User passed a non-string state (likely a Versioned or Live object)
+        kwargs.pop("state")
+        state_type = type(call_state).__name__
+        raise TypeError(
+            f"Remote tasks require a state URI string (e.g., 'disk://session'), "
+            f"got {state_type}. State objects like Versioned or Live cannot be "
+            f"serialized across the network."
+        )
 
     # Extract callbacks
     on_token = kwargs.pop("on_token", None)

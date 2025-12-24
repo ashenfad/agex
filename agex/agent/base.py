@@ -26,20 +26,33 @@ def register_agent(agent: "BaseAgent") -> str:
     Register an agent in the global registry.
 
     Returns the agent's fingerprint.
+
+    Note: Allows re-registration of agents with the same fingerprint,
+    which is necessary for handling deserialized agents (e.g., in remote
+    execution where the same agent may be sent multiple times).
     """
     registry_by_name = _AGENT_REGISTRY_BY_NAME.get().copy()
     registry = _AGENT_REGISTRY.get().copy()
+
+    # Compute fingerprint first - needed for collision detection
+    fingerprint = compute_agent_fingerprint_from_policy(agent)
 
     # Enforce unique agent names if provided
     if hasattr(agent, "name") and agent.name is not None:
         if agent.name in registry_by_name:
             existing_agent = registry_by_name[agent.name]
-            if existing_agent is not agent:  # Allow re-registration of same agent
-                raise ValueError(f"Agent name '{agent.name}' already exists")
+            # Allow re-registration if:
+            # 1. Same object instance (identity), OR
+            # 2. Same fingerprint (deserialized copy of same agent)
+            # 3. Existing agent has no fingerprint (shouldn't happen but defensive)
+            existing_fingerprint = getattr(existing_agent, "fingerprint", None)
+
+            if existing_agent is not agent:
+                if existing_fingerprint is None or existing_fingerprint != fingerprint:
+                    raise ValueError(f"Agent name '{agent.name}' already exists")
         registry_by_name[agent.name] = agent
         _AGENT_REGISTRY_BY_NAME.set(registry_by_name)
 
-    fingerprint = compute_agent_fingerprint_from_policy(agent)
     registry[fingerprint] = agent
     _AGENT_REGISTRY.set(registry)
     return fingerprint
@@ -131,6 +144,9 @@ class BaseAgent:
         self._host_object_registry: dict[str, Any] = {}
 
         self._policy: AgentPolicy = AgentPolicy()
+
+        # Registry for tasks defined via @agent.task
+        self._tasks: dict[str, Callable] = {}
 
         # Auto-register this agent
         self.fingerprint = register_agent(self)

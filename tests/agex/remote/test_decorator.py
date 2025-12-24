@@ -163,3 +163,89 @@ def test_remote_async_task():
     import inspect
 
     assert inspect.iscoroutinefunction(async_add)
+
+
+def test_remote_url_validation_missing_scheme():
+    """Test that URLs without scheme are rejected."""
+    agent = Agent()
+
+    with pytest.raises(ValueError, match="must start with"):
+
+        @remote("example.com:8000")
+        @agent.task
+        def task():
+            """Test."""
+            pass
+
+
+def test_remote_url_validation_missing_host():
+    """Test that URLs without host are rejected."""
+    agent = Agent()
+
+    with pytest.raises(ValueError, match="missing host"):
+
+        @remote("http://")
+        @agent.task
+        def task():
+            """Test."""
+            pass
+
+
+def test_remote_url_validation_valid_urls():
+    """Test that valid URLs are accepted."""
+    agent = Agent()
+
+    # These should not raise
+    @remote("http://localhost:8000")
+    @agent.task
+    def task1():
+        """Test."""
+        pass
+
+    @remote("https://api.example.com/execute")
+    @agent.task
+    def task2():
+        """Test."""
+        pass
+
+    assert callable(task1)
+    assert callable(task2)
+
+
+def test_remote_execution_error_str():
+    """Test that RemoteExecutionError includes traceback in str output."""
+    # Without traceback
+    e1 = RemoteExecutionError("Task failed")
+    assert str(e1) == "Task failed"
+    assert "Remote Traceback" not in str(e1)
+
+    # With traceback
+    tb = '  File "/server/app.py", line 42\n    raise ValueError("x")\nValueError: x'
+    e2 = RemoteExecutionError("Task failed", remote_traceback=tb)
+    s = str(e2)
+    assert "Task failed" in s
+    assert "Remote Traceback:" in s
+    assert 'File "/server/app.py"' in s
+    assert "ValueError: x" in s
+
+
+def test_remote_state_type_validation():
+    """Test that passing a state object instead of URI raises helpful error."""
+    from agex import Versioned
+    from agex.remote.decorator import _extract_remote_kwargs
+
+    # String URI should work
+    kwargs = {"state": "disk://session", "foo": "bar"}
+    state_uri, _, _ = _extract_remote_kwargs(kwargs, default_state=None)
+    assert state_uri == "disk://session"
+    assert "foo" in kwargs  # Other kwargs preserved
+
+    # Versioned object should raise TypeError
+    kwargs = {"state": Versioned()}
+    with pytest.raises(TypeError, match="state URI string"):
+        _extract_remote_kwargs(kwargs, default_state=None)
+
+    # Any non-string should raise
+    kwargs = {"state": {"invalid": "dict"}}
+    with pytest.raises(TypeError, match="got dict"):
+        _extract_remote_kwargs(kwargs, default_state=None)

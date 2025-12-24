@@ -416,4 +416,5 @@ print(result)  # Comprehensive analysis from both agents
 - **Agent Creation**: See [Agent](agent.md) for Agent class documentation
 - **Registration**: See [Registration](registration.md) for exposing capabilities to agents
 - **State Management**: See [State](state.md) for `Versioned` objects and persistent agent memory
+- **Remote Execution**: See [Remote](remote.md) for distributed execution on remote hosts
 - **Debugging**: See [View](view.md) for inspecting task execution and state changes

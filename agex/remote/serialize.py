@@ -1,76 +1,69 @@
-from typing import Optional
+"""
+Serialization utilities for remote agent execution.
+
+This module handles the serialization and deserialization of agents for
+transport between client and server.
+"""
 
 import cloudpickle
 
 from agex.agent import Agent
-from agex.llm import LLMClient
 
 
 def serialize_agent(agent: Agent) -> bytes:
     """
-    Serialize an agent and its dependencies to bytes using cloudpickle.
+    Serialize an agent for transport to a remote server.
 
-    This captures:
-    - The agent configuration and policy
-    - The task function and its closure (dependent variables)
-    - Registered modules (as imports)
-    - Dependent agents (via closure capture)
-    - LLM configuration (via __getstate__)
+    Args:
+        agent: The agent to serialize
 
-    It excludes:
-    - Host-specific objects (DB connections, valid only on origin)
-    - The live LLM client instance
+    Returns:
+        Pickled bytes representing the agent
     """
     return cloudpickle.dumps(agent)
 
 
-def deserialize_agent(payload: bytes, llm_client: Optional[LLMClient] = None) -> Agent:
+def deserialize_agent(payload: bytes) -> Agent:
     """
-    Deserialize an agent from bytes.
+    Deserialize an agent from transport bytes.
+
+    The agent's LLM client is reconstructed from the serialized configuration.
+    The server environment must have the appropriate API keys set (e.g.,
+    ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY).
 
     Args:
-        payload: Pickled agent bytes
-        llm_client: Optional pre-configured LLM client to inject. If not provided,
-                   will attempt to reconstruct from serialized config.
+        payload: Pickled bytes from serialize_agent
 
     Returns:
-        Rehydrated Agent instance, ready for execution.
+        Reconstructed Agent instance
 
     Raises:
         ValueError: If payload is not a valid Agent
+        RuntimeError: If LLM client cannot be reconstructed
     """
     agent = cloudpickle.loads(payload)
 
     if not isinstance(agent, Agent):
         raise ValueError(f"Deserialized object is not an Agent: {type(agent)}")
 
-    # Rehydrate LLM client
-    if llm_client:
-        agent.llm_client = llm_client
-    elif hasattr(agent, "_llm_config") and agent._llm_config:
+    # Rehydrate LLM client from serialized config
+    if hasattr(agent, "_llm_config") and agent._llm_config:
         try:
-            # Reconstruct from config using the LLMClient factory
-            # avoiding circular import at top level
             from agex.llm import LLMClient
 
             agent.llm_client = LLMClient.from_config(agent._llm_config)
         except Exception as e:
-            # Fallback or strict failure?
-            # For now, let's allow it but warn, or maybe fail if strict.
-            # Design choice: If we can't create the LLM client, the agent is useless.
             raise RuntimeError(
-                f"Failed to reconstruct LLM client from config: {e}"
+                f"Failed to reconstruct LLM client from config: {e}. "
+                f"Ensure the server has the appropriate API keys set."
             ) from e
     else:
-        # No client provided and no config found.
-        # This might be okay if the agent doesn't need LLM (unlikely for Agex)
-        # or if it relies on default env vars on the remote host.
-        from agex.llm import connect_llm
-
-        agent.llm_client = connect_llm()
+        raise RuntimeError(
+            "Agent has no LLM configuration. Ensure the agent has an "
+            "llm_client set before serialization."
+        )
 
     # Re-register the agent in the new process global registry
-    # This recomputes the fingerprint based on the restored state
     agent._update_fingerprint()
 
     return agent

@@ -7,40 +7,7 @@ from fastapi.testclient import TestClient
 
 from agex import Agent
 from agex.agent.base import clear_agent_registry
-from agex.llm import LLMClient
-
-
-class MockClient(LLMClient):
-    """Mock LLM client for testing."""
-
-    def __init__(self, model="mock", timeout_seconds=60, **kwargs):
-        self._model = model
-        self._timeout_seconds = timeout_seconds
-
-    @property
-    def model(self):
-        return self._model
-
-    @property
-    def provider_name(self):
-        return "mock"
-
-    def dump_config(self):
-        return {
-            "provider": "mock",
-            "model": self.model,
-            "timeout_seconds": self.timeout_seconds,
-        }
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(model=config["model"], timeout_seconds=config["timeout_seconds"])
-
-    def complete(self, *args, **kwargs):
-        pass
-
-    def summarize(self, *args, **kwargs):
-        pass
+from agex.llm.dummy_client import DummyLLMClient
 
 
 @pytest.fixture(autouse=True)
@@ -52,15 +19,15 @@ def clear_registry():
 
 @pytest.fixture
 def mock_llm_client():
-    return MockClient()
+    return DummyLLMClient()
 
 
 @pytest.fixture
-def app(mock_llm_client, tmp_path):
-    """Create test app with mock LLM client."""
+def app(tmp_path):
+    """Create test app."""
     from agex.server import create_app
 
-    return create_app(llm_client=mock_llm_client, state_base_path=str(tmp_path))
+    return create_app(state_dir=str(tmp_path))
 
 
 @pytest.fixture
