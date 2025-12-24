@@ -1,4 +1,5 @@
 # Main agent functionality
+from ..host import Host
 from ..llm import LLM
 from .base import BaseAgent, clear_agent_registry, register_agent, resolve_agent
 
@@ -65,6 +66,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         llm: LLM | None = None,
         # LLM retry control (timeout comes from llm.timeout_seconds)
         llm_max_retries: int = 2,
+        # Host configuration (optional, defaults to local execution)
+        host: Host | None = None,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
@@ -83,6 +86,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             llm: An instantiated LLM for the agent to use. Configure
                 llm.timeout_seconds for API timeout control.
             llm_max_retries: Number of retry attempts for failed/timed-out LLM calls.
+            host: Execution host for tasks. Defaults to Local() which runs in-process.
+                Use HTTP(url=...) for remote execution.
             log_high_water_tokens: Trigger event log summarization when total tokens
                 exceed this threshold. If None, no summarization is performed.
             log_low_water_tokens: Target token count after summarization. Defaults to
@@ -98,6 +103,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             capabilities_primer=capabilities_primer,
             llm=llm,
             llm_max_retries=llm_max_retries,
+            host=host,
             log_high_water_tokens=log_high_water_tokens,
             log_low_water_tokens=log_low_water_tokens,
             agex_primer_override=agex_primer_override,

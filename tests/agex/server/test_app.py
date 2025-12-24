@@ -49,7 +49,7 @@ def test_execute_missing_task(client, mock_llm):
     clear_agent_registry()  # Clear before creating
     agent = Agent()
     agent.llm = mock_llm
-    from agex.remote import serialize_agent
+    from agex.host import serialize_agent
 
     payload = {
         "agent_payload": base64.b64encode(serialize_agent(agent)).decode("utf-8"),
@@ -76,7 +76,7 @@ def test_execute_invalid_state_uri(client, mock_llm):
     clear_agent_registry()
     agent = Agent()
     agent.llm = mock_llm
-    from agex.remote import serialize_agent
+    from agex.host import serialize_agent
 
     payload = {
         "agent_payload": base64.b64encode(serialize_agent(agent)).decode("utf-8"),

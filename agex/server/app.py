@@ -25,7 +25,7 @@ from fastapi import Depends, FastAPI, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from agex.remote.serialize import deserialize_agent
+from agex.host import deserialize_agent
 from agex.server.helpers import (
     execute_worker,
     format_error_data,

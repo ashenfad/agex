@@ -1,29 +1,47 @@
 """
-Serialization utilities for remote agent execution.
+Serialization utilities for remote host execution.
 
 This module handles the serialization and deserialization of agents for
-transport between client and server.
+transport between client and host.
 """
 
-import cloudpickle
+from typing import TYPE_CHECKING, Any
 
-from agex.agent import Agent
+if TYPE_CHECKING:
+    from agex.agent.base import BaseAgent
 
 
-def serialize_agent(agent: Agent) -> bytes:
+def _get_cloudpickle():
+    """Get cloudpickle, raising a clear error if unavailable."""
+    try:
+        import cloudpickle
+
+        return cloudpickle
+    except ImportError as e:
+        raise ImportError(
+            "cloudpickle is required for remote host execution. "
+            "Install it with: pip install cloudpickle"
+        ) from e
+
+
+def serialize_agent(agent: "BaseAgent") -> bytes:
     """
-    Serialize an agent for transport to a remote server.
+    Serialize an agent for transport to a remote host.
 
     Args:
         agent: The agent to serialize
 
     Returns:
         Pickled bytes representing the agent
+
+    Raises:
+        ImportError: If cloudpickle is not available
     """
+    cloudpickle = _get_cloudpickle()
     return cloudpickle.dumps(agent)
 
 
-def deserialize_agent(payload: bytes) -> Agent:
+def deserialize_agent(payload: bytes) -> "BaseAgent":
     """
     Deserialize an agent from transport bytes.
 
@@ -40,10 +58,13 @@ def deserialize_agent(payload: bytes) -> Agent:
     Raises:
         ValueError: If payload is not a valid Agent
         RuntimeError: If LLM cannot be reconstructed
+        ImportError: If cloudpickle is not available
     """
+    cloudpickle = _get_cloudpickle()
     agent = cloudpickle.loads(payload)
 
-    if not isinstance(agent, Agent):
+    # Duck typing: check for agent-specific attributes to avoid circular import
+    if not _is_agent_like(agent):
         raise ValueError(f"Deserialized object is not an Agent: {type(agent)}")
 
     # Rehydrate LLM from serialized config
@@ -67,3 +88,13 @@ def deserialize_agent(payload: bytes) -> Agent:
     agent._update_fingerprint()
 
     return agent
+
+
+def _is_agent_like(obj: Any) -> bool:
+    """
+    Check if an object looks like an Agent using duck typing.
+
+    This avoids importing Agent which would cause circular imports.
+    """
+    required_attrs = ("_tasks", "fingerprint", "_update_fingerprint", "llm", "name")
+    return all(hasattr(obj, attr) for attr in required_attrs)

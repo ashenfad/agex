@@ -1,20 +1,21 @@
 """
-Remote task execution logic.
+HTTP host implementation.
 
-This module provides the core execution machinery for remote agent tasks,
-separating concerns from the decorator itself.
+Executes agent tasks on a remote HTTP server.
 """
 
 import base64
 import json
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import cloudpickle
 import httpx
 
-from agex.agent.base import BaseAgent
-from agex.remote.serialize import serialize_agent
+from .base import Host
+
+if TYPE_CHECKING:
+    from agex.agent.base import BaseAgent
 
 
 class RemoteExecutionError(Exception):
@@ -43,49 +44,68 @@ class SSEEvent:
     """Parsed SSE event."""
 
     event_type: str | None
-    data: dict | None
+    data: dict[str, Any] | str | None  # str when __set_type__, dict for JSON data
 
 
-class RemoteTaskExecutor:
+class HTTP(Host):
     """
-    Handles the execution of agent tasks on a remote server.
+    HTTP remote execution host.
 
-    This class encapsulates:
-    - Agent serialization
-    - HTTP transport (sync and async)
-    - SSE stream parsing
-    - Callback invocation
+    Sends agent tasks to a remote HTTP server for execution.
+    Supports SSE streaming for real-time event and token callbacks.
     """
 
     def __init__(
         self,
-        agent: BaseAgent,
-        task_name: str,
         url: str,
-        default_state: str | None = None,
         timeout: float = 300.0,
         retries: int = 0,
         _http_client: Any | None = None,
     ):
-        self.agent = agent
-        self.task_name = task_name
+        """
+        Initialize the HTTP host.
+
+        Args:
+            url: The remote server URL (e.g., "https://compute.example.com/execute")
+            timeout: Client-side HTTP timeout in seconds
+            retries: Number of connection retries for network failures only
+            _http_client: Test hook for injecting a custom HTTP client
+        """
+        self._validate_url(url)
         self.url = url
-        self.default_state = default_state
         self.timeout = timeout
         self.retries = retries
-        # Test hook: allows injecting a custom HTTP client (e.g., TestClient)
         self._http_client = _http_client
 
-    def execute_sync(
+    @staticmethod
+    def _validate_url(url: str) -> None:
+        """Validate that url looks like a proper HTTP(S) URL."""
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(
+                f"Invalid URL '{url}': must start with 'http://' or 'https://'"
+            )
+        if not parsed.netloc:
+            raise ValueError(
+                f"Invalid URL '{url}': missing host (e.g., 'example.com:8000')"
+            )
+
+    def execute(
         self,
+        agent: "BaseAgent",
+        task_name: str,
         args: tuple,
         kwargs: dict,
-        state_uri: str | None,
-        on_token: Callable | None,
-        on_event: Callable | None,
+        state: Any,
+        on_event: Callable[[Any], None] | None,
+        on_token: Callable[[Any], None] | None,
     ) -> Any:
-        """Execute the task synchronously."""
-        payload = self._build_payload(args, kwargs, state_uri)
+        """Execute the task on the remote server synchronously."""
+        # Convert state to URI if it's a string, otherwise validate
+        state_uri = self._resolve_state_uri(state)
+        payload = self._build_payload(agent, task_name, args, kwargs, state_uri)
 
         # Use injected client if provided (for testing)
         if self._http_client is not None:
@@ -97,6 +117,68 @@ class RemoteTaskExecutor:
         transport = httpx.HTTPTransport(retries=self.retries)
         with httpx.Client(transport=transport, timeout=self.timeout) as client:
             return self._execute_with_client(client, payload, on_token, on_event)
+
+    async def aexecute(
+        self,
+        agent: "BaseAgent",
+        task_name: str,
+        args: tuple,
+        kwargs: dict,
+        state: Any,
+        on_event: Callable[[Any], None] | None,
+        on_token: Callable[[Any], None] | None,
+    ) -> Any:
+        """Execute the task on the remote server asynchronously."""
+        state_uri = self._resolve_state_uri(state)
+        payload = self._build_payload(agent, task_name, args, kwargs, state_uri)
+
+        # Use injected client if provided (for testing)
+        if self._http_client is not None:
+            return await self._execute_async_with_client(
+                self._http_client, payload, on_token, on_event
+            )
+
+        transport = httpx.AsyncHTTPTransport(retries=self.retries)
+        async with httpx.AsyncClient(
+            transport=transport, timeout=self.timeout
+        ) as client:
+            return await self._execute_async_with_client(
+                client, payload, on_token, on_event
+            )
+
+    def _resolve_state_uri(self, state: Any) -> str | None:
+        """Convert state to URI string or validate it's already a string."""
+        if state is None:
+            return None
+        if isinstance(state, str):
+            return state
+        # User passed a state object - not supported for remote execution
+        state_type = type(state).__name__
+        raise TypeError(
+            f"HTTP host requires a state URI string (e.g., 'disk://session'), "
+            f"got {state_type}. State objects like Versioned or Live cannot be "
+            f"serialized across the network."
+        )
+
+    def _build_payload(
+        self,
+        agent: "BaseAgent",
+        task_name: str,
+        args: tuple,
+        kwargs: dict,
+        state_uri: str | None,
+    ) -> dict:
+        """Build the JSON request payload."""
+        from .serialize import serialize_agent
+
+        agent_payload = serialize_agent(agent)
+        return {
+            "agent_payload": base64.b64encode(agent_payload).decode("utf-8"),
+            "task_name": task_name,
+            "args": args,
+            "kwargs": kwargs,
+            "state_uri": state_uri,
+        }
 
     def _execute_with_client(
         self,
@@ -139,57 +221,6 @@ class RemoteTaskExecutor:
         except httpx.RequestError as e:
             raise RemoteExecutionError(f"Connection error: {e}") from e
 
-    def _process_text_response(
-        self,
-        text: str,
-        on_token: Callable | None,
-        on_event: Callable | None,
-    ) -> Any:
-        """Process SSE response from text (for TestClient)."""
-        current_event_type = None
-
-        for line in text.split("\n"):
-            event = self._parse_sse_line(line, current_event_type)
-            if event.event_type == "__set_type__":
-                current_event_type = event.data
-                continue
-            if event.event_type == "__reset__":
-                current_event_type = None
-                continue
-            if event.data is None:
-                continue
-
-            result = self._handle_event(event, on_token, on_event)
-            if result is not None:
-                return result
-
-        raise RemoteExecutionError("Connection closed without returning a result.")
-
-    async def execute_async(
-        self,
-        args: tuple,
-        kwargs: dict,
-        state_uri: str | None,
-        on_token: Callable | None,
-        on_event: Callable | None,
-    ) -> Any:
-        """Execute the task asynchronously."""
-        payload = self._build_payload(args, kwargs, state_uri)
-
-        # Use injected client if provided (for testing)
-        if self._http_client is not None:
-            return await self._execute_async_with_client(
-                self._http_client, payload, on_token, on_event
-            )
-
-        transport = httpx.AsyncHTTPTransport(retries=self.retries)
-        async with httpx.AsyncClient(
-            transport=transport, timeout=self.timeout
-        ) as client:
-            return await self._execute_async_with_client(
-                client, payload, on_token, on_event
-            )
-
     async def _execute_async_with_client(
         self,
         client,
@@ -219,16 +250,32 @@ class RemoteTaskExecutor:
         except httpx.RequestError as e:
             raise RemoteExecutionError(f"Connection error: {e}") from e
 
-    def _build_payload(self, args: tuple, kwargs: dict, state_uri: str | None) -> dict:
-        """Build the JSON request payload."""
-        agent_payload = serialize_agent(self.agent)
-        return {
-            "agent_payload": base64.b64encode(agent_payload).decode("utf-8"),
-            "task_name": self.task_name,
-            "args": args,
-            "kwargs": kwargs,
-            "state_uri": state_uri or self.default_state,
-        }
+    def _process_text_response(
+        self,
+        text: str,
+        on_token: Callable | None,
+        on_event: Callable | None,
+    ) -> Any:
+        """Process SSE response from text (for TestClient)."""
+        current_event_type: str | None = None
+
+        for line in text.split("\n"):
+            event = self._parse_sse_line(line, current_event_type)
+            if event.event_type == "__set_type__":
+                # event.data is a string when __set_type__
+                current_event_type = str(event.data) if event.data else None
+                continue
+            if event.event_type == "__reset__":
+                current_event_type = None
+                continue
+            if event.data is None:
+                continue
+
+            result = self._handle_event(event, on_token, on_event)
+            if result is not None:
+                return result
+
+        raise RemoteExecutionError("Connection closed without returning a result.")
 
     def _process_sync_stream(
         self,
@@ -237,12 +284,13 @@ class RemoteTaskExecutor:
         on_event: Callable | None,
     ) -> Any:
         """Process SSE stream synchronously."""
-        current_event_type = None
+        current_event_type: str | None = None
 
         for line in response.iter_lines():
             event = self._parse_sse_line(line, current_event_type)
             if event.event_type == "__set_type__":
-                current_event_type = event.data
+                # event.data is a string when __set_type__
+                current_event_type = str(event.data) if event.data else None
                 continue
             if event.event_type == "__reset__":
                 current_event_type = None
@@ -263,12 +311,13 @@ class RemoteTaskExecutor:
         on_event: Callable | None,
     ) -> Any:
         """Process SSE stream asynchronously."""
-        current_event_type = None
+        current_event_type: str | None = None
 
         async for line in response.aiter_lines():
             event = self._parse_sse_line(line, current_event_type)
             if event.event_type == "__set_type__":
-                current_event_type = event.data
+                # event.data is a string when __set_type__
+                current_event_type = str(event.data) if event.data else None
                 continue
             if event.event_type == "__reset__":
                 current_event_type = None
@@ -321,7 +370,12 @@ class RemoteTaskExecutor:
         """
         event_type = event.event_type
         event_data = event.data
-        event_payload_b64 = event_data.get("payload") if event_data else None
+
+        # Only dict data has payload - skip string/None
+        if not isinstance(event_data, dict):
+            return None
+
+        event_payload_b64 = event_data.get("payload")
 
         if event_type == "token":
             if on_token and event_payload_b64:
@@ -334,7 +388,8 @@ class RemoteTaskExecutor:
                 on_event(base_event)
 
         elif event_type == "result":
-            return cloudpickle.loads(base64.b64decode(event_payload_b64))
+            if event_payload_b64:
+                return cloudpickle.loads(base64.b64decode(event_payload_b64))
 
         elif event_type == "error":
             msg = event_data.get("message", "Unknown remote error")
