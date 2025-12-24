@@ -1,14 +1,14 @@
 import uuid
 from contextvars import ContextVar
-from typing import Any, Callable, Dict, Literal
+from typing import TYPE_CHECKING, Any, Callable, Dict, Literal
 
 from ..llm import LLM, connect_llm
-from .datatypes import (
-    MemberSpec,
-    RegisteredClass,
-)
+from .datatypes import MemberSpec, RegisteredClass
 from .fingerprint import compute_agent_fingerprint_from_policy
 from .policy.policy import AgentPolicy
+
+if TYPE_CHECKING:
+    from ..host import Host
 
 # Global registry mapping fingerprints to agents
 # Using ContextVar for thread/async-task safety in server environments
@@ -102,6 +102,8 @@ class BaseAgent:
         llm: LLM | None = None,
         # LLM retry control (timeout comes from llm.timeout_seconds)
         llm_max_retries: int = 2,
+        # Host configuration (optional, defaults to local execution)
+        host: "Host | None" = None,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
@@ -121,6 +123,11 @@ class BaseAgent:
         self.llm = llm or connect_llm()
         # LLM retry setting (timeout comes from llm.timeout_seconds)
         self.llm_max_retries = llm_max_retries
+
+        # Execution host (defaults to local)
+        from ..host import Local
+
+        self._host: "Host" = host or Local()
 
         # Event log summarization settings
         if log_low_water_tokens is not None and log_high_water_tokens is None:
@@ -162,6 +169,7 @@ class BaseAgent:
         Excludes:
         - _host_object_registry: Holds live instances (db connections, etc.)
         - llm: Live LLM has nonserializable state (sockets, SSL context)
+        - _host: Host has non-serializable state (HTTP clients, etc.)
         - fingerprint: Computed from runtime state, might differ on host
 
         Adds:
@@ -175,6 +183,7 @@ class BaseAgent:
 
         # Remove runtime-only objects
         state.pop("llm", None)
+        state.pop("_host", None)
         state.pop("_host_object_registry", None)
         state.pop("fingerprint", None)
 
@@ -194,6 +203,11 @@ class BaseAgent:
 
         # Initialize runtime fields that were mocked/missing
         self._host_object_registry = {}  # Empty on new host
+
+        # Host defaults to Local on remote side
+        from ..host import Local
+
+        self._host = Local()
 
         # llm remains None until injected by deserialize_agent
         # or lazily connected if we want that behavior (design choice: passed in)

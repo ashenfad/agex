@@ -12,6 +12,7 @@ from .agent.events import (
     SummaryEvent,
     TaskStartEvent,
 )
+from .host import Host, connect_host
 from .llm import LLM, connect_llm
 from .render.capabilities import summarize_capabilities
 from .render.token_count import system_token_count
@@ -23,6 +24,9 @@ __all__ = [
     # Core Classes
     "Agent",
     "LLM",
+    # Host abstraction
+    "Host",
+    "connect_host",
     # State Management
     "Versioned",
     "GCVersioned",

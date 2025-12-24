@@ -13,6 +13,7 @@ from agex.agent.base import BaseAgent
 from agex.agent.loop import TaskLoopMixin
 from agex.agent.utils import is_function_body_empty
 from agex.eval.validation import validate_with_sampling
+from agex.host import Local
 
 # Global registry for dynamically created input dataclasses
 # This allows pickle to find them by module.classname lookup
@@ -374,6 +375,25 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 inputs_instance, state, on_event, on_token = _bind_and_validate(
                     *args, **kwargs
                 )
+                # Route through host for non-local execution
+                if not isinstance(self._host, Local):
+                    # Extract raw args/kwargs for remote execution
+                    # (state, on_event, on_token already extracted by _bind_and_validate)
+                    bound = new_sig.bind(*args, **kwargs)
+                    bound.apply_defaults()
+                    raw_kwargs = dict(bound.arguments)
+                    raw_kwargs.pop("state", None)
+                    raw_kwargs.pop("on_event", None)
+                    raw_kwargs.pop("on_token", None)
+                    return await self._host.aexecute(
+                        agent=self,
+                        task_name=task_name,
+                        args=(),
+                        kwargs=raw_kwargs,
+                        state=state,
+                        on_event=on_event,
+                        on_token=on_token,
+                    )
                 return await self._arun_task_loop(
                     task_name=task_name,
                     docstring=effective_docstring,
@@ -394,6 +414,25 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 inputs_instance, state, on_event, on_token = _bind_and_validate(
                     *args, **kwargs
                 )
+                # Route through host for non-local execution
+                if not isinstance(self._host, Local):
+                    # Extract raw args/kwargs for remote execution
+                    # (state, on_event, on_token already extracted by _bind_and_validate)
+                    bound = new_sig.bind(*args, **kwargs)
+                    bound.apply_defaults()
+                    raw_kwargs = dict(bound.arguments)
+                    raw_kwargs.pop("state", None)
+                    raw_kwargs.pop("on_event", None)
+                    raw_kwargs.pop("on_token", None)
+                    return self._host.execute(
+                        agent=self,
+                        task_name=task_name,
+                        args=(),
+                        kwargs=raw_kwargs,
+                        state=state,
+                        on_event=on_event,
+                        on_token=on_token,
+                    )
                 return self._run_task_loop(
                     task_name=task_name,
                     docstring=effective_docstring,

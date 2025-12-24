@@ -13,10 +13,10 @@ from fastapi.testclient import TestClient
 
 from agex import Agent
 from agex.agent.base import clear_agent_registry
+from agex.host import HTTP
+from agex.host.http import RemoteExecutionError
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
-from agex.remote import remote
-from agex.remote.executor import RemoteExecutionError, RemoteTaskExecutor
 from agex.server import create_app
 
 
@@ -53,7 +53,7 @@ class TestEndToEndIntegration:
         clear_agent_registry()
         agent = Agent()
         agent.llm = mock_llm
-        from agex.remote import serialize_agent
+        from agex.host import serialize_agent
 
         payload = {
             "agent_payload": base64.b64encode(serialize_agent(agent)).decode("utf-8"),
@@ -75,7 +75,7 @@ class TestEndToEndIntegration:
         clear_agent_registry()
         agent = Agent()
         agent.llm = mock_llm
-        from agex.remote import serialize_agent
+        from agex.host import serialize_agent
 
         payload = {
             "agent_payload": base64.b64encode(serialize_agent(agent)).decode("utf-8"),
@@ -92,35 +92,35 @@ class TestEndToEndIntegration:
         content = response.text
         assert "error" in content
 
-    def test_remote_decorator_with_mock_server(self, test_server, mock_llm):
-        """Test @remote decorator structure."""
-        agent = Agent()
+    def test_host_based_remote_task_structure(self, test_server, mock_llm):
+        """Test Agent with HTTP host structure."""
+        # Create agent with HTTP host
+        host = HTTP(url="http://test-server/execute")
+        agent = Agent(host=host)
         agent.llm = mock_llm
 
-        @remote("http://test-server/execute")
         @agent.task
         def test_task(x: int) -> int:
             """Test task."""
             pass
 
-        # Verify decorator preserved function metadata
-        assert test_task.__name__ == "test_task"
+        # Verify task was registered
+        assert "test_task" in agent._tasks
         assert callable(test_task)
 
     def test_async_task_structure(self, mock_llm):
-        """Test async task with @remote decorator."""
-        agent = Agent()
+        """Test async task with HTTP host."""
+        host = HTTP(url="http://test-server/execute")
+        agent = Agent(host=host)
         agent.llm = mock_llm
 
-        @remote("http://test-server/execute")
         @agent.task
         async def async_task(prompt: str) -> str:
             """Async test task."""
             pass
 
-        import inspect
-
-        assert inspect.iscoroutinefunction(async_task)
+        # TaskWrapper uses __agex_is_async__ to track if the underlying function is async
+        assert getattr(async_task, "__agex_is_async__", False)
 
 
 class TestClientServerProtocol:
@@ -202,7 +202,7 @@ class TestActualTaskExecution:
             pass
 
         # Serialize agent
-        from agex.remote import serialize_agent
+        from agex.host import serialize_agent
 
         agent_bytes = serialize_agent(agent)
 
@@ -253,7 +253,7 @@ class TestActualTaskExecution:
             """Return a complex object."""
             pass
 
-        from agex.remote import serialize_agent
+        from agex.host import serialize_agent
 
         agent_bytes = serialize_agent(agent)
 
@@ -309,7 +309,7 @@ class TestActualTaskExecution:
             """This task will fail."""
             pass
 
-        from agex.remote import serialize_agent
+        from agex.host import serialize_agent
 
         agent_bytes = serialize_agent(agent)
 
@@ -362,7 +362,7 @@ class TestActualTaskExecution:
             """Compute a value."""
             pass
 
-        from agex.remote import serialize_agent
+        from agex.host import serialize_agent
 
         agent_bytes = serialize_agent(agent)
 
@@ -428,22 +428,22 @@ class TestHierarchicalAgentExecution:
             pass
 
         # Serialize orchestrator - should include worker task via closure
-        from agex.remote import serialize_agent
+        from agex.host import serialize_agent
 
         agent_bytes = serialize_agent(orchestrator)
 
         # Verify serialization worked
         clear_agent_registry()
-        from agex.remote import deserialize_agent
+        from agex.host import deserialize_agent
 
         restored = deserialize_agent(agent_bytes)
 
         assert restored.name == "orchestrator"
 
 
-class TestExecutorE2E:
+class TestHTTPHostE2E:
     """
-    True end-to-end tests that use RemoteTaskExecutor directly.
+    True end-to-end tests that use HTTP host directly.
 
     These tests inject TestClient via _http_client parameter to test the
     full flow: serialization → HTTP → server → execution → SSE → result.
@@ -453,11 +453,10 @@ class TestExecutorE2E:
     agent serialization.
     """
 
-    def test_executor_full_roundtrip(self, tmp_path):
-        """Test full roundtrip: executor → TestClient → server → result."""
+    def test_http_host_full_roundtrip(self, tmp_path):
+        """Test full roundtrip: HTTP host → TestClient → server → result."""
         from agex.llm.core import LLMResponse
         from agex.llm.dummy_client import Dummy
-        from agex.remote.executor import RemoteTaskExecutor
 
         clear_agent_registry()
 
@@ -487,7 +486,7 @@ class TestExecutorE2E:
             pass
 
         # Serialize agent
-        from agex.remote import serialize_agent
+        from agex.host import serialize_agent
 
         serialize_agent(agent)
 
@@ -495,30 +494,27 @@ class TestExecutorE2E:
         app = create_app(state_dir=str(tmp_path))
         test_client = TestClient(app)
 
-        # Create executor with injected TestClient
-        executor = RemoteTaskExecutor(
-            agent=agent,
-            task_name="get_answer",
-            url="/execute",
-            _http_client=test_client,
-        )
+        # Create HTTP host with injected TestClient
+        # Use a dummy URL since TestClient handles routing internally
+        host = HTTP(url="http://test/execute", _http_client=test_client)
 
         # Execute - this goes through the full path!
-        result = executor.execute_sync(
+        result = host.execute(
+            agent=agent,
+            task_name="get_answer",
             args=(),
             kwargs={},
-            state_uri=None,
-            on_token=None,
+            state=None,
             on_event=print,
+            on_token=None,
         )
 
         assert result == 42
 
-    def test_executor_complex_return(self, tmp_path):
-        """Test complex return types through executor."""
+    def test_http_host_complex_return(self, tmp_path):
+        """Test complex return types through HTTP host."""
         from agex.llm.core import LLMResponse
         from agex.llm.dummy_client import Dummy
-        from agex.remote.executor import RemoteTaskExecutor
 
         clear_agent_registry()
 
@@ -542,15 +538,16 @@ class TestExecutorE2E:
         test_client = TestClient(app)
         clear_agent_registry()
 
-        executor = RemoteTaskExecutor(
+        host = HTTP(url="http://test/execute", _http_client=test_client)
+
+        result = host.execute(
             agent=agent,
             task_name="get_data",
-            url="/execute",
-            _http_client=test_client,
-        )
-
-        result = executor.execute_sync(
-            args=(), kwargs={}, state_uri=None, on_token=None, on_event=None
+            args=(),
+            kwargs={},
+            state=None,
+            on_event=None,
+            on_token=None,
         )
 
         assert result == {"items": [1, 2, 3], "status": "ok"}
@@ -562,7 +559,6 @@ class TestExecutorE2E:
         from httpx import ASGITransport, AsyncClient
 
         from agex.llm.dummy_client import Dummy
-        from agex.remote.executor import RemoteTaskExecutor
 
         clear_agent_registry()
 
@@ -585,20 +581,21 @@ class TestExecutorE2E:
         async with AsyncClient(
             transport=transport, base_url="http://test"
         ) as async_client:
-            executor = RemoteTaskExecutor(
+            host = HTTP(url="http://test/execute", _http_client=async_client)
+
+            result = await host.aexecute(
                 agent=agent,
                 task_name="async_task",
-                url="/execute",
-                _http_client=async_client,
-            )
-
-            result = await executor.execute_async(
-                args=(), kwargs={}, state_uri=None, on_token=None, on_event=None
+                args=(),
+                kwargs={},
+                state=None,
+                on_event=None,
+                on_token=None,
             )
             assert result == "ok"
 
-    def test_executor_error_propagation(self, tmp_path):
-        """Test that server errors propagate through executor."""
+    def test_http_host_error_propagation(self, tmp_path):
+        """Test that server errors propagate through HTTP host."""
 
         clear_agent_registry()
 
@@ -618,14 +615,15 @@ class TestExecutorE2E:
         test_client = TestClient(app)
         clear_agent_registry()
 
-        executor = RemoteTaskExecutor(
-            agent=agent,
-            task_name="fail_task",
-            url="/execute",
-            _http_client=test_client,
-        )
+        host = HTTP(url="http://test/execute", _http_client=test_client)
 
         with pytest.raises(RemoteExecutionError):
-            executor.execute_sync(
-                args=(), kwargs={}, state_uri=None, on_token=None, on_event=None
+            host.execute(
+                agent=agent,
+                task_name="fail_task",
+                args=(),
+                kwargs={},
+                state=None,
+                on_event=None,
+                on_token=None,
             )

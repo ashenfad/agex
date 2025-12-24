@@ -5,8 +5,8 @@ import pytest
 
 from agex.agent import Agent
 from agex.agent.base import clear_agent_registry
+from agex.host import deserialize_agent, serialize_agent
 from agex.llm.dummy_client import Dummy
-from agex.remote.serialize import deserialize_agent, serialize_agent
 
 
 @pytest.fixture(autouse=True)
