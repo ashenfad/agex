@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from agex import Agent
 from agex.agent.base import clear_agent_registry
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 
 
 @pytest.fixture(autouse=True)
@@ -18,8 +18,8 @@ def clear_registry():
 
 
 @pytest.fixture
-def mock_llm_client():
-    return DummyLLMClient()
+def mock_llm():
+    return Dummy()
 
 
 @pytest.fixture
@@ -43,12 +43,12 @@ def test_health_endpoint(client):
     assert response.json() == {"status": "ok"}
 
 
-def test_execute_missing_task(client, mock_llm_client):
+def test_execute_missing_task(client, mock_llm):
     """Test execute with non-existent task."""
     # Create a fresh agent for this test
     clear_agent_registry()  # Clear before creating
     agent = Agent()
-    agent.llm_client = mock_llm_client
+    agent.llm = mock_llm
     from agex.remote import serialize_agent
 
     payload = {
@@ -70,12 +70,12 @@ def test_execute_missing_task(client, mock_llm_client):
     assert "not found" in content.lower()
 
 
-def test_execute_invalid_state_uri(client, mock_llm_client):
+def test_execute_invalid_state_uri(client, mock_llm):
     """Test execute with invalid state URI."""
     # Create a fresh agent for this test
     clear_agent_registry()
     agent = Agent()
-    agent.llm_client = mock_llm_client
+    agent.llm = mock_llm
     from agex.remote import serialize_agent
 
     payload = {

@@ -4,7 +4,7 @@ from agex.agent import Agent
 from agex.agent.datatypes import MemberSpec
 from agex.eval.user_errors import AgexAttributeError
 from agex.llm.core import LLMResponse
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 
 
 class DatabaseConnection:
@@ -34,10 +34,8 @@ def test_register_and_use_live_object():
             code='user = db.query("users", inputs.user_id)\nconn_id = db.connection_id\ntask_success((user, conn_id))',
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(
-        primer="Test agent for live objects.", max_iterations=2, llm_client=llm_client
-    )
+    llm = Dummy(responses=responses)
+    agent = Agent(primer="Test agent for live objects.", max_iterations=2, llm=llm)
 
     agent.module(
         db,
@@ -77,10 +75,8 @@ def test_live_object_state_safety():
             code='query_method = db.query\nresult = query_method("users", inputs.user_id)\ntask_success(result)',
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(
-        primer="Test agent for state safety.", max_iterations=2, llm_client=llm_client
-    )
+    llm = Dummy(responses=responses)
+    agent = Agent(primer="Test agent for state safety.", max_iterations=2, llm=llm)
 
     agent.module(db, name="db", configure={"query": MemberSpec(visibility="high")})
 

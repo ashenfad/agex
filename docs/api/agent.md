@@ -11,7 +11,7 @@ Agent(
     max_iterations: int = 10,
     name: str | None = None,
     capabilities_primer: str | None = None,
-    llm_client: LLMClient | None = None,
+    llm: LLM | None = None,
     llm_max_retries: int = 2,
     log_high_water_tokens: int | None = None,
     log_low_water_tokens: int | None = None,
@@ -27,7 +27,7 @@ Agent(
 | `max_iterations` | `int` | `10` | Maximum number of think-act cycles per task |
 | `name` | `str \| None` | `None` | Unique identifier for the agent (auto-generated if not provided) |
 | `capabilities_primer` | `str \| None` | `None` | Optional curated text that replaces the default capabilities listing (rendered from registrations). If `None`, the agent renders capabilities from registrations; if empty string, the section is suppressed. |
-| `llm_client` | `LLMClient \| None` | `None` | An instantiated `LLMClient` for the agent to use. If `None`, a default client is created. The LLM's API timeout is controlled by `llm_client.timeout_seconds` (default 90s). |
+| `llm` | `LLM \| None` | `None` | An instantiated `LLM` for the agent to use. If `None`, a default client is created. The LLM's API timeout is controlled by `llm.timeout_seconds` (default 90s). |
 | `llm_max_retries` | `int` | `2` | Number of times to retry a failed LLM completion before aborting with `LLMFail`. |
 | `log_high_water_tokens` | `int \| None` | `None` | Trigger event log summarization when total tokens exceed this threshold. If `None`, no automatic summarization occurs. |
 | `log_low_water_tokens` | `int \| None` | `None` | Target token count after summarization. Defaults to 50% of `log_high_water_tokens` if not specified. Must be less than `log_high_water_tokens`. |
@@ -36,22 +36,22 @@ Agent(
 ### Examples
 
 ```python
-from agex import Agent, connect_llm, LLMClient
+from agex import Agent, connect_llm, LLM
 
 # Simple agent using the default LLM (dummy provider or from env vars)
 agent = Agent(primer="You are a helpful assistant.")
 
 # Agent configured with a specific, explicitly created client
-llm_client = connect_llm(provider="openai", model="gpt-4.1-nano", temperature=0.1)
+llm = connect_llm(provider="openai", model="gpt-4.1-nano", temperature=0.1)
 expert_agent = Agent(
     primer="You are an expert data analyst.",
-    llm_client=llm_client
+    llm=llm
 )
 ```
 
 ## LLM Configuration
 
-An agent's connection to a Large Language Model is managed by an `LLMClient` instance. There are two primary ways to configure this.
+An agent's connection to a Large Language Model is managed by an `LLM` instance. There are two primary ways to configure this.
 
 ### `connect_llm()` Factory Function
 
@@ -63,7 +63,7 @@ connect_llm(
     model: str | None = None,
     timeout_seconds: float = 90.0,
     **kwargs,  # Provider-specific arguments
-) -> LLMClient
+) -> LLM
 ```
 
 | Parameter | Type | Default | Description |
@@ -75,24 +75,24 @@ connect_llm(
 
 ### 1. Direct Instantiation (Recommended)
 
-The clearest and most explicit method is to create an `LLMClient` instance using the top-level `connect_llm()` factory function and pass it directly to the `Agent`'s constructor. This makes dependencies obvious and is ideal for production code and testing.
+The clearest and most explicit method is to create an `LLM` instance using the top-level `connect_llm()` factory function and pass it directly to the `Agent`'s constructor. This makes dependencies obvious and is ideal for production code and testing.
 
 ```python
 from agex import connect_llm, Agent
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 
 # For production, create a client for a specific provider
 prod_client = connect_llm(provider="openai", model="gpt-4.1-nano")
-prod_agent = Agent(llm_client=prod_client)
+prod_agent = Agent(llm=prod_client)
 
 # For testing, you can inject a dummy client
-test_client = DummyLLMClient()
-test_agent = Agent(llm_client=test_client)
+test_client = Dummy()
+test_agent = Agent(llm=test_client)
 ```
 
 ### 2. Default Client (via Environment Variables)
 
-If you do not pass an `llm_client` to the `Agent` constructor, `agex` will automatically create a default one for you by calling `connect_llm()` with no arguments. This default client is configured using environment variables.
+If you do not pass an `llm` to the `Agent` constructor, `agex` will automatically create a default one for you by calling `connect_llm()` with no arguments. This default client is configured using environment variables.
 
 ```bash
 # Example: Configure agent via environment variables
@@ -114,7 +114,7 @@ local_client = connect_llm(
     api_key="ollama",          # Placeholder key for local services
 )
 
-local_agent = Agent(llm_client=local_client)
+local_agent = Agent(llm=local_client)
 ```
 
 > **Note on Model Compatibility:** `agex` relies on the model's ability to follow specific function-calling or "tool use" instructions. While many models are compatible, we have specifically tested and verified that the `qwen3` family of models works effectively when served via Ollama. Performance may vary with other models. We recommend `qwen3-coder:30b`.
@@ -125,7 +125,7 @@ The `connect_llm` function is designed to intelligently separate two types of ar
 -   **Client Arguments**: Used to configure the connection to the LLM provider (e.g., `api_key`, `base_url`, `timeout`).
 -   **Completion Arguments**: Used to control the behavior of the model for each request (e.g., `temperature`, `top_p`, `max_tokens`).
 
-You can pass both types of arguments directly to `connect_llm`. The underlying client for each provider (`OpenAIClient`, `AnthropicClient`, etc.) is responsible for correctly routing them.
+You can pass both types of arguments directly to `connect_llm`. The underlying client for each provider (`OpenAI`, `Anthropic`, etc.) is responsible for correctly routing them.
 
 ```python
 # Example with both client and completion arguments
@@ -219,7 +219,7 @@ from agex import summarize_capabilities
 def summarize_capabilities(
     agent: Agent,
     target_chars: int,
-    llm_client: LLMClient | None = None,
+    llm: LLM | None = None,
     use_cache: bool = True,
 ) -> str: ...
 ```
@@ -228,7 +228,7 @@ Parameters:
 
 - `agent`: The agent whose registered capabilities will be summarized (visibility-aware).
 - `target_chars`: Minimum character count to target; the helper asks the model to write at least this many characters.
-- `llm_client`: Optional override client for summarization (defaults to `agent.llm_client`).
+- `llm`: Optional override client for summarization (defaults to `agent.llm`).
 - `use_cache`: If True, read/write a project-local cache under `.agex/primer_cache/` keyed by the agent fingerprint, target length, and model id.
 
 Behavior:

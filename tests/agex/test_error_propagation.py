@@ -6,7 +6,7 @@ from agex import Agent
 from agex.agent.base import clear_agent_registry
 from agex.agent.datatypes import TaskClarify, TaskFail, TaskTimeout
 from agex.llm.core import LLMResponse
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 from agex.state import Versioned
 
 
@@ -20,7 +20,7 @@ def clear_registry():
 
 def test_top_level_agent_raises_task_clarify():
     """Test that a top-level agent's TaskClarify is raised normally."""
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I need more information.",
@@ -31,7 +31,7 @@ def test_top_level_agent_raises_task_clarify():
     agent = Agent(
         name="top_level",
         primer="You are a top-level agent.",
-        llm_client=llm_client,
+        llm=llm,
     )
 
     @agent.task
@@ -49,7 +49,7 @@ def test_top_level_agent_raises_task_clarify():
 
 def test_sub_agent_converts_task_clarify_to_eval_error():
     """Test that a sub-agent's TaskClarify becomes an EvalError in the parent's stdout."""
-    sub_agent_llm = DummyLLMClient(
+    sub_agent_llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I need more information.",
@@ -60,10 +60,10 @@ def test_sub_agent_converts_task_clarify_to_eval_error():
     sub_agent = Agent(
         name="sub_agent",
         primer="You are a sub-agent.",
-        llm_client=sub_agent_llm,
+        llm=sub_agent_llm,
     )
 
-    parent_agent_llm = DummyLLMClient(
+    parent_agent_llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I will call the sub-agent and see what happens.",
@@ -74,7 +74,7 @@ def test_sub_agent_converts_task_clarify_to_eval_error():
     parent_agent = Agent(
         name="parent",
         primer="You are a parent agent.",
-        llm_client=parent_agent_llm,
+        llm=parent_agent_llm,
     )
 
     # Register the sub-agent's task with the parent
@@ -127,7 +127,7 @@ def test_sub_agent_converts_task_clarify_to_eval_error():
 
 def test_top_level_agent_raises_task_fail():
     """Test that a top-level agent's TaskFail is raised normally."""
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I cannot complete this task.",
@@ -138,7 +138,7 @@ def test_top_level_agent_raises_task_fail():
     agent = Agent(
         name="top_level",
         primer="You are a top-level agent.",
-        llm_client=llm_client,
+        llm=llm,
     )
 
     @agent.task
@@ -156,7 +156,7 @@ def test_top_level_agent_raises_task_fail():
 
 def test_sub_agent_converts_task_fail_to_eval_error():
     """Test that a sub-agent's TaskFail becomes an EvalError in the parent's stdout."""
-    sub_agent_llm = DummyLLMClient(
+    sub_agent_llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I cannot complete this task.",
@@ -167,10 +167,10 @@ def test_sub_agent_converts_task_fail_to_eval_error():
     sub_agent = Agent(
         name="sub_agent",
         primer="You are a sub-agent.",
-        llm_client=sub_agent_llm,
+        llm=sub_agent_llm,
     )
 
-    parent_agent_llm = DummyLLMClient(
+    parent_agent_llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I will call the sub-agent and see what happens.",
@@ -181,7 +181,7 @@ def test_sub_agent_converts_task_fail_to_eval_error():
     parent_agent = Agent(
         name="parent",
         primer="You are a parent agent.",
-        llm_client=parent_agent_llm,
+        llm=parent_agent_llm,
     )
 
     # Register the sub-agent's task with the parent

@@ -16,15 +16,13 @@ from typing import Literal
 
 from agex import Agent, connect_llm, pprint_tokens
 
-client = connect_llm(provider="anthropic", model="claude-haiku-4-5")
+llm = connect_llm(provider="anthropic", model="claude-haiku-4-5")
 
-optimizer = Agent(
-    name="optimizer", primer="You create and hone jokes.", llm_client=client
-)
+optimizer = Agent(name="optimizer", primer="You create and hone jokes.", llm=llm)
 evaluator = Agent(
     name="evaluator",
     primer="You critique jokes & suggest improvements.",
-    llm_client=client,
+    llm=llm,
 )
 
 

@@ -17,7 +17,7 @@ from agex.agent.events import (
     TaskStartEvent,
 )
 from agex.llm.core import LLMResponse
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 from agex.state import Versioned, events
 from agex.state.log import add_event_to_log
 
@@ -32,7 +32,7 @@ class TestEventSystem:
     def test_task_start_event_creation(self):
         """Test that TaskStartEvent is properly created with all required fields."""
         # Set up dummy LLM to complete the task
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll complete this simple task.",
@@ -40,7 +40,7 @@ class TestEventSystem:
                 )
             ]
         )
-        agent = Agent(name="test_agent", llm_client=llm_client)
+        agent = Agent(name="test_agent", llm=llm)
 
         @agent.task
         def test_task(name: str, count: int = 5):
@@ -71,10 +71,8 @@ class TestEventSystem:
         """Test that ActionEvent captures agent thinking and code."""
         thinking_text = "I need to analyze this problem step by step."
         code_text = 'result = "analyzed"\ntask_success(result)'
-        llm_client = DummyLLMClient(
-            [LLMResponse(thinking=thinking_text, code=code_text)]
-        )
-        agent = Agent(name="thinking_agent", llm_client=llm_client)
+        llm = Dummy([LLMResponse(thinking=thinking_text, code=code_text)])
+        agent = Agent(name="thinking_agent", llm=llm)
 
         @agent.task
         def think_task():
@@ -97,7 +95,7 @@ class TestEventSystem:
 
     def test_output_event_creation(self):
         """Test that OutputEvent is created for print(), help(), dir() calls."""
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll test various output functions and complete.",
@@ -105,7 +103,7 @@ class TestEventSystem:
                 )
             ]
         )
-        agent = Agent(name="output_agent", llm_client=llm_client)
+        agent = Agent(name="output_agent", llm=llm)
 
         @agent.task
         def output_task():
@@ -131,7 +129,7 @@ class TestEventSystem:
     def test_success_event_creation(self):
         """Test that SuccessEvent is created when task_success() is called."""
         expected_result = {"status": "completed", "value": 42}
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll return a successful result.",
@@ -139,7 +137,7 @@ class TestEventSystem:
                 )
             ]
         )
-        agent = Agent(name="success_agent", llm_client=llm_client)
+        agent = Agent(name="success_agent", llm=llm)
 
         @agent.task
         def success_task():
@@ -163,7 +161,7 @@ class TestEventSystem:
     def test_fail_event_creation(self):
         """Test that FailEvent is created when task_fail() is called."""
         fail_message = "This task cannot be completed"
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="I cannot complete this task.",
@@ -171,7 +169,7 @@ class TestEventSystem:
                 )
             ]
         )
-        agent = Agent(name="fail_agent", llm_client=llm_client)
+        agent = Agent(name="fail_agent", llm=llm)
 
         @agent.task
         def fail_task():
@@ -199,7 +197,7 @@ class TestEventSystem:
         clear_agent_registry()
 
         # Create multiple agents
-        llm_client1 = DummyLLMClient(
+        llm1 = Dummy(
             [
                 LLMResponse(
                     thinking="Agent one processing",
@@ -207,9 +205,9 @@ class TestEventSystem:
                 )
             ]
         )
-        agent1 = Agent(name="agent_one", llm_client=llm_client1)
+        agent1 = Agent(name="agent_one", llm=llm1)
 
-        llm_client2 = DummyLLMClient(
+        llm2 = Dummy(
             [
                 LLMResponse(
                     thinking="Agent two processing",
@@ -217,9 +215,9 @@ class TestEventSystem:
                 )
             ]
         )
-        agent2 = Agent(name="agent_two", llm_client=llm_client2)
+        agent2 = Agent(name="agent_two", llm=llm2)
 
-        orchestrator_llm_client = DummyLLMClient(
+        orchestrator_llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll call both sub-agents and return results",
@@ -227,7 +225,7 @@ class TestEventSystem:
                 )
             ]
         )
-        orchestrator = Agent(name="orchestrator", llm_client=orchestrator_llm_client)
+        orchestrator = Agent(name="orchestrator", llm=orchestrator_llm)
 
         # Create dual-decorated functions
         @orchestrator.fn(docstring="Function handled by agent one")
@@ -372,7 +370,7 @@ class TestEventSystem:
 
     def test_complete_task_lifecycle_events(self):
         """Test that a complete task generates all expected events in correct order."""
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll process this input and return a result.",
@@ -380,7 +378,7 @@ class TestEventSystem:
                 )
             ]
         )
-        agent = Agent(name="lifecycle_agent", llm_client=llm_client)
+        agent = Agent(name="lifecycle_agent", llm=llm)
 
         @agent.task
         def lifecycle_task(input_data: str):
@@ -420,14 +418,14 @@ class TestEventSystem:
 
     def test_event_persistence_in_versioned_state(self):
         """Test that events are properly persisted and can be retrieved after state snapshots."""
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="Testing persistence", code='task_success("persisted")'
                 )
             ]
         )
-        agent = Agent(name="persistence_agent", llm_client=llm_client)
+        agent = Agent(name="persistence_agent", llm=llm)
 
         @agent.task
         def persistence_task():
@@ -467,7 +465,7 @@ class TestEventSystem:
         def faulty_handler(event):
             raise ValueError("Handler failed")
 
-        specialist_llm_client = DummyLLMClient(
+        specialist_llm = Dummy(
             [
                 LLMResponse(
                     thinking="Specialist thinking",
@@ -475,9 +473,9 @@ class TestEventSystem:
                 )
             ]
         )
-        specialist = Agent(name="specialist", llm_client=specialist_llm_client)
+        specialist = Agent(name="specialist", llm=specialist_llm)
 
-        orchestrator_llm_client = DummyLLMClient(
+        orchestrator_llm = Dummy(
             [
                 LLMResponse(
                     thinking="Orchestrator thinking",
@@ -485,7 +483,7 @@ class TestEventSystem:
                 )
             ]
         )
-        orchestrator = Agent(name="orchestrator", llm_client=orchestrator_llm_client)
+        orchestrator = Agent(name="orchestrator", llm=orchestrator_llm)
 
         @orchestrator.fn
         @specialist.task

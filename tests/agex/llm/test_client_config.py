@@ -1,13 +1,13 @@
 import pytest
 
-from agex.llm import AnthropicClient, GeminiClient, LLMClient, OpenAIClient
+from agex.llm import LLM, Anthropic, Gemini, OpenAI
 
 
-def test_llm_client_dump_config_base():
-    """Test dump_config on base LLMClient."""
+def test_llm_dump_config_base():
+    """Test dump_config on base LLM."""
 
     # Define concrete implementation for testing base behavior
-    class MockClient(LLMClient):
+    class MockClient(LLM):
         def complete(self, *args, **kwargs):
             pass
 
@@ -29,7 +29,7 @@ def test_llm_client_dump_config_base():
     assert config["provider"] == "mock"
 
 
-def test_llm_client_from_config_reconstruction():
+def test_llm_from_config_reconstruction():
     """Test reconstruction via from_config."""
     # Note: connect_llm requires API keys usually, so we might need to mock or just check delegation
     # For now, just check basic behavior if we mock connect_llm?
@@ -40,9 +40,9 @@ def test_llm_client_from_config_reconstruction():
 @pytest.mark.parametrize(
     "client_cls, provider_name",
     [
-        (OpenAIClient, "openai"),
-        (AnthropicClient, "anthropic"),
-        (GeminiClient, "google"),
+        (OpenAI, "openai"),
+        (Anthropic, "anthropic"),
+        (Gemini, "google"),
     ],
 )
 def test_provider_dump_config(client_cls, provider_name, monkeypatch):
@@ -57,7 +57,7 @@ def test_provider_dump_config(client_cls, provider_name, monkeypatch):
         self._timeout_seconds = timeout_seconds
         self._kwargs = kwargs
         # Add provider-specific attrs
-        if client_cls == GeminiClient:
+        if client_cls == Gemini:
             self._google_search = kwargs.get("google_search", False)
             self._url_context = kwargs.get("url_context", False)
 
@@ -73,6 +73,6 @@ def test_provider_dump_config(client_cls, provider_name, monkeypatch):
     assert config["timeout_seconds"] == 120
     assert config["temperature"] == 0.7
 
-    if client_cls == GeminiClient:
+    if client_cls == Gemini:
         assert "google_search" in config
         assert "url_context" in config

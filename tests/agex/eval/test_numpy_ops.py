@@ -96,11 +96,11 @@ def test_task_returning_list_of_numpy_arrays():
     Tests that a task can successfully return a list of numpy arrays
     without causing a validation error (e.g., truthiness error).
     """
-    from agex.llm.dummy_client import DummyLLMClient, LLMResponse
+    from agex.llm.dummy_client import Dummy, LLMResponse
 
     clear_agent_registry()
     # Simulate the agent creating and returning a list of numpy arrays
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I will create and return a list of two numpy arrays.",
@@ -108,7 +108,7 @@ def test_task_returning_list_of_numpy_arrays():
             ),
         ]
     )
-    agent = Agent(name="test_agent", max_iterations=2, llm_client=llm_client)
+    agent = Agent(name="test_agent", max_iterations=2, llm=llm)
     agent.module(np, name="np")
 
     @agent.task("A task that must return a list of numpy arrays.")

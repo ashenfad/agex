@@ -6,7 +6,7 @@ import pytest
 
 from agex import Agent, clear_agent_registry
 from agex.agent.events import SystemNoteEvent
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 
 
 @pytest.fixture(autouse=True)
@@ -19,7 +19,7 @@ def clear_registry():
 def test_transient_message_injection():
     """Test that forefront message is injected into LLM context but not event log."""
     # 1. Setup Agent with Dummy Client
-    client = DummyLLMClient()
+    client = Dummy()
     # Mock the complete method to inspect arguments
     client.complete = MagicMock(
         return_value=MagicMock(thinking="ok", code="task_success()", title="done")
@@ -31,7 +31,7 @@ def test_transient_message_injection():
     # We want to verify that `complete` is called 5 times, and check arg on the LAST one.
 
     # We need the task to NOT finish immediately so the loop runs multiple times.
-    # But DummyLLMClient returns "task_success()", so it would finish immediately.
+    # But Dummy returns "task_success()", so it would finish immediately.
     # We need to change the loop behavior or mock client responses to be "continue" for a few steps.
 
     # EASIER: Mock `_get_forefront_message` to behave predictably for a simple single-step test,
@@ -41,7 +41,7 @@ def test_transient_message_injection():
 
     # Cleanest way: Test with 1 iteration (max=1).
     # Threshold = max(0, 1-3) = 0. So Iteration 0 >= 0 -> Message SHOULD appear.
-    agent = Agent(name="tester", llm_client=client, max_iterations=1)
+    agent = Agent(name="tester", llm=client, max_iterations=1)
 
     # 2. Run a simple task
     @agent.task

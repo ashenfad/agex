@@ -5,7 +5,7 @@ import pytest
 from agex.agent import Agent
 from agex.agent.datatypes import TaskFail
 from agex.llm.core import LLMResponse
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 
 
 @pytest.mark.asyncio
@@ -14,8 +14,8 @@ async def test_async_task_execution():
     responses = [
         LLMResponse(thinking="Thinking...", code="task_success('async_success')")
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     @a.task
     async def my_task(val: int) -> str:
@@ -38,8 +38,8 @@ async def test_async_streaming():
             code="task_success('stream_success')",
         )
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     tokens = []
 
@@ -66,8 +66,8 @@ async def test_async_streaming():
 async def test_async_event_handler():
     """Test async event handler."""
     responses = [LLMResponse(thinking="T", code="task_success('done')")]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     events = []
 
@@ -96,8 +96,8 @@ async def test_sync_code_calling_async_function_in_async_task():
             code="res = my_async_fn(5); task_success(res)",
         )
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     # Register an async user function
     @a.fn
@@ -121,8 +121,8 @@ async def test_sync_code_calling_async_function_in_async_task():
 async def test_async_task_failure_handling():
     """Test that task_fail works in async task."""
     responses = [LLMResponse(thinking="Failing", code="task_fail('failed')")]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     @a.task
     async def fail_task():
@@ -141,8 +141,8 @@ async def test_async_task_clarify_handling():
     from agex.agent.datatypes import TaskClarify
 
     responses = [LLMResponse(thinking="Need info", code="task_clarify('what is x?')")]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     @a.task
     async def clarify_task() -> str:
@@ -162,8 +162,8 @@ async def test_async_task_continue():
         LLMResponse(thinking="First step", code="x = 1; task_continue()"),
         LLMResponse(thinking="Second step", code="task_success(x + 1)"),
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     @a.task
     async def continue_task() -> int:
@@ -182,8 +182,8 @@ async def test_async_task_error_recovery():
         LLMResponse(thinking="Bad code", code="undefined_var"),  # Causes NameError
         LLMResponse(thinking="Fixed", code="task_success('recovered')"),
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     @a.task
     async def error_task() -> str:
@@ -201,8 +201,8 @@ async def test_async_task_with_setup():
     responses = [
         LLMResponse(thinking="Using setup var", code="task_success(setup_value * 2)")
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     @a.task(setup="setup_value = 21")
     async def setup_task() -> int:
@@ -224,8 +224,8 @@ async def test_async_task_timeout():
         LLMResponse(thinking="Step", code="x = 2"),
         LLMResponse(thinking="Step", code="x = 3"),
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client, max_iterations=2)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client, max_iterations=2)
 
     @a.task
     async def timeout_task() -> int:
@@ -245,8 +245,8 @@ async def test_async_recursive_task():
             code="result = async_helper(5); task_success(result)",
         )
     ]
-    client = DummyLLMClient(responses=responses)
-    agent = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    agent = Agent(llm=client)
 
     @agent.fn
     async def async_helper(x: int) -> int:
@@ -283,8 +283,8 @@ async def test_async_fn_error_propagation():
             code="task_success('recovered_from_async_error')",
         ),
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     @a.fn
     async def risky_async_fn() -> str:
@@ -311,8 +311,8 @@ async def test_async_fn_returns_none():
             code="result = async_void_fn(); task_success('done' if result is None else 'unexpected')",
         )
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     @a.fn
     async def async_void_fn() -> None:
@@ -338,8 +338,8 @@ async def test_async_fn_complex_return_type():
             code="data = fetch_complex_data(); task_success(data['items'][0])",
         )
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     @a.fn
     async def fetch_complex_data() -> dict:
@@ -365,8 +365,8 @@ async def test_multiple_async_fn_calls():
             code="a = async_add(1); b = async_add(a); c = async_add(b); task_success(c)",
         )
     ]
-    client = DummyLLMClient(responses=responses)
-    agent = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    agent = Agent(llm=client)
 
     @agent.fn
     async def async_add(x: int) -> int:
@@ -397,8 +397,8 @@ except KeyError as e:
 """,
         ),
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     @a.fn
     async def async_key_error_fn() -> str:
@@ -430,8 +430,8 @@ def test_sync_task_async_fn_error_surfaces():
             code="task_success('used_sync_fallback')",
         ),
     ]
-    client = DummyLLMClient(responses=responses)
-    a = Agent(llm_client=client)
+    client = Dummy(responses=responses)
+    a = Agent(llm=client)
 
     @a.fn
     async def async_fn_not_available() -> str:

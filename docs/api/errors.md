@@ -120,7 +120,7 @@ Attributes:
 Notes:
 
 - Configure retries via `Agent(llm_max_retries=...)`.
-- Configure LLM API timeout via `LLMClient.timeout_seconds` (default 90s).
+- Configure LLM API timeout via `LLM.timeout_seconds` (default 90s).
 - Transient errors (timeouts/network/parse) are retried with exponential backoff; fatal errors (auth/config) fail immediately.
 
 ## Error Propagation

@@ -13,7 +13,7 @@ from agex import Agent, clear_agent_registry
 from agex.agent.base import resolve_agent
 from agex.eval.functions import TaskUserFunction
 from agex.eval.objects import AgexModule
-from agex.llm.dummy_client import DummyLLMClient, LLMResponse
+from agex.llm.dummy_client import Dummy, LLMResponse
 
 
 @pytest.fixture(autouse=True)
@@ -44,9 +44,9 @@ task_success(task_fn)
 """,
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
+    llm = Dummy(responses=responses)
     # Create architect agent
-    architect = Agent(name="architect", llm_client=llm_client)
+    architect = Agent(name="architect", llm=llm)
     architect.cls(Agent, include=["__init__", "name", "task", "fingerprint"])
 
     @architect.task
@@ -92,9 +92,9 @@ task_success(fingerprint)
 """,
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
+    llm = Dummy(responses=responses)
     # Create architect that can create agents and register functions
-    architect = Agent(name="architect", llm_client=llm_client)
+    architect = Agent(name="architect", llm=llm)
     architect.cls(Agent, include=["__init__", "name", "fn", "task", "fingerprint"])
 
     # Register the parent's helper function
@@ -141,9 +141,9 @@ task_success(fingerprint)
 """,
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
+    llm = Dummy(responses=responses)
     # Create architect that can access the parent's math module
-    architect = Agent(name="architect", llm_client=llm_client)
+    architect = Agent(name="architect", llm=llm)
     architect.cls(Agent, include=["__init__", "name", "module", "task", "fingerprint"])
     architect.module(
         math, include=["sin", "cos", "pi"], name="math"
@@ -214,9 +214,9 @@ task_success(result)
 """,
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
+    llm = Dummy(responses=responses)
     # Create architect agent
-    architect = Agent(name="architect", llm_client=llm_client)
+    architect = Agent(name="architect", llm=llm)
     architect.cls(
         Agent, include=["__init__", "name", "fn", "module", "task", "fingerprint"]
     )
@@ -271,8 +271,8 @@ task_success(math)
 """,
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(name="test_agent", llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(name="test_agent", llm=llm)
     agent.module(math, name="math")
 
     @agent.task

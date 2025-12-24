@@ -74,11 +74,11 @@ def test_numpy_random_normal_resolution_with_alias_and_full_path():
     Reproduces attribute resolution for submodules: np.random.normal and numpy.random.normal.
     Previously failed with "module has no attribute 'normal'" when submodule wasn't wrapped as AgexModule.
     """
-    from agex.llm.dummy_client import DummyLLMClient, LLMResponse
+    from agex.llm.dummy_client import Dummy, LLMResponse
 
     clear_agent_registry()
     # 1) Alias path: import np; np.random.normal
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="Will import np and call np.random.normal",
@@ -90,7 +90,7 @@ def test_numpy_random_normal_resolution_with_alias_and_full_path():
             )
         ]
     )
-    agent = Agent(name="test_agent", max_iterations=2, llm_client=llm_client)
+    agent = Agent(name="test_agent", max_iterations=2, llm=llm)
     agent.module(np, name="np")
     agent.module(np.random)
 
@@ -101,7 +101,7 @@ def test_numpy_random_normal_resolution_with_alias_and_full_path():
     assert make_noise_alias() is True
 
     # 2) Full path: import numpy; numpy.random.normal
-    llm_client2 = DummyLLMClient(
+    llm2 = Dummy(
         responses=[
             LLMResponse(
                 thinking="Will import numpy and call numpy.random.normal",
@@ -113,7 +113,7 @@ def test_numpy_random_normal_resolution_with_alias_and_full_path():
             )
         ]
     )
-    agent2 = Agent(name="test_agent2", max_iterations=2, llm_client=llm_client2)
+    agent2 = Agent(name="test_agent2", max_iterations=2, llm=llm2)
     agent2.module(np, name="numpy", recursive=True)
 
     @agent2.task("Return True if noise vector can be generated")

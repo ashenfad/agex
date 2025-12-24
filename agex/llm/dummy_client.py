@@ -1,7 +1,7 @@
 """
-Dummy LLM client for testing purposes.
+Dummy LLM for testing purposes.
 
-This module provides a mock LLMClient that returns predefined LLMResponse objects
+This module provides a mock LLM that returns predefined LLMResponse objects
 sequentially, useful for testing agent behavior without actual LLM calls.
 """
 
@@ -9,12 +9,12 @@ from typing import List
 
 from agex.agent.events import Event
 
-from .core import LLMClient, LLMResponse
+from .core import LLM, LLMResponse
 
 
-class DummyLLMClient(LLMClient):
+class Dummy(LLM):
     """
-    A dummy LLM client that returns predefined LLMResponse objects in sequence.
+    A dummy LLM that returns predefined LLMResponse objects in sequence.
     Useful for testing agent logic without actual LLM calls.
     """
 
@@ -63,8 +63,8 @@ class DummyLLMClient(LLMClient):
         }
 
     @classmethod
-    def from_config(cls, config: dict) -> "DummyLLMClient":
-        """Reconstruct client from configuration."""
+    def from_config(cls, config: dict) -> "Dummy":
+        """Reconstruct from configuration."""
         responses = None
         if "responses" in config and config["responses"]:
             responses = [LLMResponse.model_validate(r) for r in config["responses"]]

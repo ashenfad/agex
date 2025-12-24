@@ -5,9 +5,9 @@ from agex import connect_llm
 
 
 def test_openai_import_error():
-    # Test that calling get_llm_client with provider="openai" raises an ImportError
+    # Test that calling get_llm with provider="openai" raises an ImportError
     # if the 'openai' package is not installed.
-    with patch("agex.llm.OpenAIClient", None):
+    with patch("agex.llm.OpenAI", None):
         with patch.dict(os.environ, {"AGEX_LLM_PROVIDER": "openai"}, clear=True):
             try:
                 connect_llm(provider="openai")
@@ -17,9 +17,9 @@ def test_openai_import_error():
 
 
 def test_anthropic_import_error():
-    # Test that calling get_llm_client with provider="anthropic" raises an ImportError
+    # Test that calling get_llm with provider="anthropic" raises an ImportError
     # if the 'anthropic' package is not installed.
-    with patch("agex.llm.AnthropicClient", None):
+    with patch("agex.llm.Anthropic", None):
         with patch.dict(os.environ, {"AGEX_LLM_PROVIDER": "anthropic"}, clear=True):
             try:
                 connect_llm(provider="anthropic")
@@ -29,9 +29,9 @@ def test_anthropic_import_error():
 
 
 def test_gemini_import_error():
-    # Test that calling get_llm_client with provider="gemini" raises an ImportError
+    # Test that calling get_llm with provider="gemini" raises an ImportError
     # if the 'google-generativeai' package is not installed.
-    with patch("agex.llm.GeminiClient", None):
+    with patch("agex.llm.Gemini", None):
         with patch.dict(os.environ, {"AGEX_LLM_PROVIDER": "gemini"}, clear=True):
             try:
                 connect_llm(provider="gemini")
@@ -42,10 +42,10 @@ def test_gemini_import_error():
 
 def test_dummy_client_always_available():
     # Test that the dummy client is always available, even if other dependencies are not installed.
-    with patch("agex.llm.OpenAIClient", None):
+    with patch("agex.llm.OpenAI", None):
         client = connect_llm(provider="dummy")
         assert client is not None
-        assert client.__class__.__name__ == "DummyLLMClient"
+        assert client.__class__.__name__ == "Dummy"
 
 
 def test_unsupported_provider_error():
@@ -65,9 +65,9 @@ def test_available_providers_in_error_message():
     with patch.dict(os.environ, {"OPENAI_API_KEY": "test"}, clear=True):
         # Only dummy is available
         with (
-            patch("agex.llm.OpenAIClient", None),
-            patch("agex.llm.AnthropicClient", None),
-            patch("agex.llm.GeminiClient", None),
+            patch("agex.llm.OpenAI", None),
+            patch("agex.llm.Anthropic", None),
+            patch("agex.llm.Gemini", None),
         ):
             try:
                 connect_llm(provider="invalid")  # type: ignore
@@ -81,8 +81,8 @@ def test_available_providers_in_error_message():
 
         # Test with OpenAI available
         with (
-            patch("agex.llm.AnthropicClient", None),
-            patch("agex.llm.GeminiClient", None),
+            patch("agex.llm.Anthropic", None),
+            patch("agex.llm.Gemini", None),
         ):
             try:
                 connect_llm(provider="invalid")  # type: ignore
@@ -94,7 +94,7 @@ def test_available_providers_in_error_message():
                 assert "gemini" not in error_str
 
         # Test with Anthropic available
-        with patch("agex.llm.OpenAIClient", None), patch("agex.llm.GeminiClient", None):
+        with patch("agex.llm.OpenAI", None), patch("agex.llm.Gemini", None):
             try:
                 connect_llm(provider="invalid")  # type: ignore
                 assert False, "Expected ValueError to be raised"
@@ -105,8 +105,8 @@ def test_available_providers_in_error_message():
 
         # Test with Gemini available
         with (
-            patch("agex.llm.OpenAIClient", None),
-            patch("agex.llm.AnthropicClient", None),
+            patch("agex.llm.OpenAI", None),
+            patch("agex.llm.Anthropic", None),
         ):
             try:
                 connect_llm(provider="invalid")  # type: ignore

@@ -6,7 +6,7 @@ modify the same Versioned state.
 """
 
 from agex import Agent, Versioned
-from agex.llm import DummyLLMClient
+from agex.llm import Dummy
 from agex.llm.core import LLMResponse
 from agex.state import kv
 
@@ -27,8 +27,8 @@ def test_task_merges_on_success():
             code='x = 42\ntask_success("done")',
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     @agent.task
     def simple_task() -> str:
@@ -62,8 +62,8 @@ def test_task_retry_on_conflict():
             code='task_success("attempt2")',
         ),
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     @agent.task(on_conflict="retry", max_conflict_retries=2)
     def retry_task() -> str:
@@ -100,8 +100,8 @@ def test_task_abandon_on_conflict():
             code='x = 1\ntask_success("background_result")',
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     @agent.task(on_conflict="abandon")
     def background_task() -> str:
@@ -121,8 +121,8 @@ def test_task_without_versioned_state_ignores_on_conflict():
             code="task_success(42)",
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     @agent.task(on_conflict="retry")
     def stateless_task() -> int:
@@ -158,8 +158,8 @@ def test_task_with_multiple_snapshots_merges_all():
             code='task_success("complete")',
         ),
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=5, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=5, llm=llm)
 
     @agent.task
     def multi_step_task() -> str:
@@ -195,9 +195,7 @@ def test_concurrent_tasks_with_actual_conflict():
             code='data1_retry = "agent1_retry"\ntask_success("agent1_retried")',
         ),
     ]
-    agent1 = Agent(
-        max_iterations=2, llm_client=DummyLLMClient(responses=agent1_responses)
-    )
+    agent1 = Agent(max_iterations=2, llm=Dummy(responses=agent1_responses))
 
     agent2_responses = [
         LLMResponse(
@@ -210,9 +208,7 @@ def test_concurrent_tasks_with_actual_conflict():
             code='data2_retry = "agent2_retry"\ntask_success("agent2_retried")',
         ),
     ]
-    agent2 = Agent(
-        max_iterations=2, llm_client=DummyLLMClient(responses=agent2_responses)
-    )
+    agent2 = Agent(max_iterations=2, llm=Dummy(responses=agent2_responses))
 
     @agent1.task(on_conflict="retry", max_conflict_retries=2)
     def task1() -> str:
@@ -281,9 +277,7 @@ def test_concurrent_abandon_strategy():
             code='bg1 = "data"\ntask_success("bg1_done")',
         )
     ]
-    agent1 = Agent(
-        max_iterations=2, llm_client=DummyLLMClient(responses=agent1_responses)
-    )
+    agent1 = Agent(max_iterations=2, llm=Dummy(responses=agent1_responses))
 
     agent2_responses = [
         LLMResponse(
@@ -291,9 +285,7 @@ def test_concurrent_abandon_strategy():
             code='bg2 = "data"\ntask_success("bg2_done")',
         )
     ]
-    agent2 = Agent(
-        max_iterations=2, llm_client=DummyLLMClient(responses=agent2_responses)
-    )
+    agent2 = Agent(max_iterations=2, llm=Dummy(responses=agent2_responses))
 
     @agent1.task(on_conflict="abandon")
     def bg_task1() -> str:

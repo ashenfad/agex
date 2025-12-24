@@ -19,7 +19,7 @@ from agex.bench.core import (
 )
 from agex.bench.types import NumericStats, PassFailStats, Stats, Trial, params
 from agex.llm.core import LLMResponse
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 
 
 class TestTrialResult:
@@ -66,9 +66,9 @@ class TestBenchmarkPassFail:
             LLMResponse(thinking="Solving 2+2", code="task_success('4')"),
             LLMResponse(thinking="Solving 1+1", code="task_success('2')"),
         ]
-        client = DummyLLMClient(responses=dummy_responses)
+        client = Dummy(responses=dummy_responses)
 
-        agent = Agent(name="math_agent", llm_client=client)
+        agent = Agent(name="math_agent", llm=client)
 
         @agent.task
         def solve_math(question: str) -> str:
@@ -106,9 +106,9 @@ class TestBenchmarkPassFail:
             LLMResponse(thinking="Solving 2+2", code="task_success('4')"),  # Correct
             LLMResponse(thinking="Solving 1+1", code="task_success('3')"),  # Wrong!
         ]
-        client = DummyLLMClient(responses=dummy_responses)
+        client = Dummy(responses=dummy_responses)
 
-        agent = Agent(name="math_agent", llm_client=client)
+        agent = Agent(name="math_agent", llm=client)
 
         @agent.task
         def solve_math(question: str) -> str:
@@ -151,12 +151,8 @@ class TestBenchmarkPassFail:
             LLMResponse(thinking="Bad at math", code="task_success('wrong')"),
         ]
 
-        good_agent = Agent(
-            name="good_agent", llm_client=DummyLLMClient(responses=good_responses)
-        )
-        bad_agent = Agent(
-            name="bad_agent", llm_client=DummyLLMClient(responses=bad_responses)
-        )
+        good_agent = Agent(name="good_agent", llm=Dummy(responses=good_responses))
+        bad_agent = Agent(name="bad_agent", llm=Dummy(responses=bad_responses))
 
         @good_agent.task
         def good_task(question: str) -> str:
@@ -196,9 +192,9 @@ class TestBenchmarkNumeric:
                 thinking="Writing", code="task_success('Much longer story here!')"
             ),  # 24 chars = 2.4
         ]
-        client = DummyLLMClient(responses=dummy_responses)
+        client = Dummy(responses=dummy_responses)
 
-        agent = Agent(name="writer_agent", llm_client=client)
+        agent = Agent(name="writer_agent", llm=client)
 
         @agent.task
         def write_story(prompt: str) -> str:
@@ -251,9 +247,9 @@ class TestBenchmarkGeneric:
             LLMResponse(thinking="Echoing", code="task_success(inputs.text)"),
             LLMResponse(thinking="Echoing", code="task_success(inputs.text)"),
         ]
-        client = DummyLLMClient(responses=dummy_responses)
+        client = Dummy(responses=dummy_responses)
 
-        agent = Agent(name="echo_agent", llm_client=client)
+        agent = Agent(name="echo_agent", llm=client)
 
         @agent.task
         def echo_task(text: str) -> str:
@@ -293,9 +289,9 @@ class TestBenchmarkGeneric:
         clear_agent_registry()
 
         dummy_responses = [LLMResponse(thinking="Test", code="task_success('result')")]
-        client = DummyLLMClient(responses=dummy_responses)
+        client = Dummy(responses=dummy_responses)
 
-        agent = Agent(name="test_agent", llm_client=client)
+        agent = Agent(name="test_agent", llm=client)
 
         @agent.task
         def test_task(input_val: str) -> str:
@@ -319,9 +315,9 @@ class TestBenchmarkGeneric:
         clear_agent_registry()
 
         dummy_responses = [LLMResponse(thinking="Test", code="task_success('result')")]
-        client = DummyLLMClient(responses=dummy_responses)
+        client = Dummy(responses=dummy_responses)
 
-        agent = Agent(name="test_agent", llm_client=client)
+        agent = Agent(name="test_agent", llm=client)
 
         @agent.task
         def test_task(input_val: str) -> str:
@@ -346,14 +342,14 @@ class TestConcurrency:
         clear_agent_registry()
 
         # Use a single response that echoes the input to avoid race conditions.
-        # DummyLLMClient cycles through responses using a shared counter, so
+        # Dummy cycles through responses using a shared counter, so
         # concurrent execution would get responses in unpredictable order.
         dummy_responses = [
             LLMResponse(thinking="Echo input", code="task_success(input_val)"),
         ]
-        client = DummyLLMClient(responses=dummy_responses)
+        client = Dummy(responses=dummy_responses)
 
-        agent = Agent(name="test_agent", llm_client=client)
+        agent = Agent(name="test_agent", llm=client)
 
         @agent.task
         def test_task(input_val: str) -> str:

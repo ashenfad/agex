@@ -167,8 +167,8 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         """Get structured response with retry; emit ErrorEvent per attempt."""
         max_retries = max(0, self.llm_max_retries)
         backoff = 0.5  # Fixed backoff in seconds, doubles on each retry
-        provider = self.llm_client.provider_name
-        model = self.llm_client.model
+        provider = self.llm.provider_name
+        model = self.llm.model
 
         use_streaming = on_token is not None
 
@@ -193,7 +193,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                         "python": False,
                     }
 
-                    for token in self.llm_client.complete_stream(
+                    for token in self.llm.complete_stream(
                         system_message, messages_to_send
                     ):
                         start_flag = (
@@ -233,7 +233,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                         code="".join(code_parts),
                     )
                 else:
-                    return self.llm_client.complete(system_message, messages_to_send)
+                    return self.llm.complete(system_message, messages_to_send)
 
             except (ResponseParseError, RuntimeError) as e:
                 is_last = attempt >= max_retries
@@ -263,8 +263,8 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         """Async version of _get_llm_response."""
         max_retries = max(0, self.llm_max_retries)
         backoff = 0.5  # Fixed backoff in seconds, doubles on each retry
-        provider = self.llm_client.provider_name
-        model = self.llm_client.model
+        provider = self.llm.provider_name
+        model = self.llm.model
 
         use_streaming = on_token is not None
 
@@ -289,7 +289,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                         "python": False,
                     }
 
-                    async for token in self.llm_client.acomplete_stream(
+                    async for token in self.llm.acomplete_stream(
                         system_message, messages_to_send
                     ):
                         start_flag = (
@@ -331,9 +331,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                         code="".join(code_parts),
                     )
                 else:
-                    return await self.llm_client.acomplete(
-                        system_message, messages_to_send
-                    )
+                    return await self.llm.acomplete(system_message, messages_to_send)
 
             except (ResponseParseError, RuntimeError) as e:
                 is_last = attempt >= max_retries

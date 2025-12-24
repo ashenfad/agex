@@ -5,7 +5,7 @@ from anthropic.types import TextBlockParam
 
 from agex.agent.events import Event
 from agex.llm.core import (
-    LLMClient,
+    LLM,
     LLMResponse,
     TokenChunk,
     with_timeout,
@@ -60,8 +60,8 @@ def _format_message_for_anthropic(
     return {"role": message["role"], "content": content_parts}
 
 
-class AnthropicClient(LLMClient):
-    """Client for Anthropic's API using tool calling for structured outputs."""
+class Anthropic(LLM):
+    """Anthropic LLM provider using tool calling for structured outputs."""
 
     def __init__(
         self,

@@ -4,7 +4,7 @@ import openai
 
 from agex.agent.events import Event
 from agex.llm.core import (
-    LLMClient,
+    LLM,
     LLMResponse,
     TokenChunk,
     with_timeout,
@@ -47,8 +47,8 @@ def _format_message_for_openai(message: dict[str, Any]) -> dict:
         return message
 
 
-class OpenAIClient(LLMClient):
-    """Client for OpenAI's API with native structured outputs."""
+class OpenAI(LLM):
+    """OpenAI LLM provider with native structured outputs."""
 
     def __init__(
         self,
