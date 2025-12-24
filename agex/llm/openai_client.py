@@ -77,6 +77,14 @@ class OpenAIClient(LLMClient):
         """Timeout in seconds for each API call."""
         return self._timeout_seconds
 
+    def dump_config(self) -> dict[str, Any]:
+        return {
+            "provider": "openai",
+            "model": self.model,
+            "timeout_seconds": self.timeout_seconds,
+            **self._kwargs,  # Include other completion args
+        }
+
     def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
         Send events to OpenAI and return a structured response using native structured outputs.

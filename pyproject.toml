@@ -73,6 +73,16 @@ anthropic = [
 gemini = [
     "google-genai",
 ]
+remote = [
+    "cloudpickle",
+    "httpx",
+]
+server = [
+    "fastapi",
+    "uvicorn",
+    "sse-starlette",
+    "cloudpickle",
+]
 # Convenience group for all providers
 all-providers = [
     "agex[openai]",

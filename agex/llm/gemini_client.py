@@ -73,6 +73,16 @@ class GeminiClient(LLMClient):
         """Timeout in seconds for each API call."""
         return self._timeout_seconds
 
+    def dump_config(self) -> dict[str, Any]:
+        return {
+            "provider": "google",
+            "model": self.model,
+            "google_search": self._google_search,
+            "url_context": self._url_context,
+            "timeout_seconds": self.timeout_seconds,
+            **self._kwargs,
+        }
+
     def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """
         Send events to Gemini and return a structured response.
