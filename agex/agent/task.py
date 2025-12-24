@@ -142,7 +142,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     )
 
                 # Create TaskUserFunction
-                return TaskUserFunction(
+                wrapper = TaskUserFunction(
                     # Copy UserFunction metadata
                     name=func.name,
                     args=func.args,
@@ -155,6 +155,9 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     task_docstring=effective_primer,
                     task_return_type=object,  # Generic type since UserFunction loses type hints
                 )
+                # Attach agent instance for @remote decorator access
+                wrapper.__agex_agent__ = self  # type: ignore
+                return wrapper
             else:
                 # Normal case: real function definition
                 self._validate_task_decorator(func)
@@ -315,6 +318,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 # Set namespace for dual-decorator pattern
                 namespace = self._agent_name
                 self.__agex_task_namespace__ = namespace
+                # Track if the underlying task is async for @remote decorator
+                self.__agex_is_async__ = inspect.iscoroutinefunction(task_func)
 
             def __call__(self, *args, **kwargs):
                 return self._task_func(*args, **kwargs)
@@ -497,6 +502,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         # Create the custom wrapper with proper __repr__
         agent_name = self.name if self.name is not None else self.__class__.__name__
         wrapper = TaskWrapper(task_wrapper, stream, agent_name, task_name)
+        # Attach agent instance for @remote decorator access
+        wrapper.__agex_agent__ = self  # type: ignore
 
         return wrapper
 
