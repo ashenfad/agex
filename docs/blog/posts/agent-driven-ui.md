@@ -53,7 +53,7 @@ Let's make this a little more concrete by going through the details of the lorem
 agent = Agent(
     name="lorem_ipsum",
     primer=PRIMER,
-    llm_client=connect_llm(
+    llm=connect_llm(
         provider="openai",
         model="gpt-5",
         reasoning_effort="medium",

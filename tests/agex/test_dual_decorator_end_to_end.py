@@ -9,7 +9,7 @@ This module tests the complete dual-decorator workflow:
 
 from agex import Agent, clear_agent_registry
 from agex.llm.core import LLMResponse
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 from agex.state import Versioned
 from agex.state.kv import Memory
 
@@ -65,9 +65,9 @@ def test_dual_decorator_math_workflow():
     ]
 
     # Configure dummy LLMs for each agent
-    calculator.llm_client = DummyLLMClient(responses=calculator_responses)
-    validator.llm_client = DummyLLMClient(responses=validator_responses)
-    orchestrator.llm_client = DummyLLMClient(responses=orchestrator_responses)
+    calculator.llm = Dummy(responses=calculator_responses)
+    validator.llm = Dummy(responses=validator_responses)
+    orchestrator.llm = Dummy(responses=orchestrator_responses)
 
     # Use a shared state object to inspect sub-agent stdout
     shared_state = Versioned(Memory())
@@ -152,9 +152,9 @@ def test_dual_decorator_state_sharing():
     ]
 
     # Configure LLMs
-    data_processor.llm_client = DummyLLMClient(responses=processor_responses)
-    analyzer.llm_client = DummyLLMClient(responses=analyzer_responses)
-    coordinator.llm_client = DummyLLMClient(responses=coordinator_responses)
+    data_processor.llm = Dummy(responses=processor_responses)
+    analyzer.llm = Dummy(responses=analyzer_responses)
+    coordinator.llm = Dummy(responses=coordinator_responses)
 
     # Test with shared state
     shared_state = Versioned(Memory())
@@ -244,7 +244,7 @@ def test_hierarchical_namespace_state_is_correct():
         pass
 
     # Configure LLM responses
-    worker.llm_client = DummyLLMClient(
+    worker.llm = Dummy(
         [
             LLMResponse(
                 thinking="I will set the success flag and exit.",
@@ -252,7 +252,7 @@ def test_hierarchical_namespace_state_is_correct():
             )
         ]
     )
-    orchestrator.llm_client = DummyLLMClient(
+    orchestrator.llm = Dummy(
         [
             LLMResponse(
                 thinking="I will call the do_work function.",
@@ -315,8 +315,8 @@ def test_dual_decorator_error_handling():
     ]
 
     # Configure LLMs
-    risky_worker.llm_client = DummyLLMClient(responses=risky_success_responses)
-    orchestrator.llm_client = DummyLLMClient(responses=orchestrator_responses)
+    risky_worker.llm = Dummy(responses=risky_success_responses)
+    orchestrator.llm = Dummy(responses=orchestrator_responses)
 
     # Test the workflow
     result = safe_coordinator(test_mode="success_test")
@@ -376,9 +376,9 @@ def test_dual_decorator_namespace_isolation():
     ]
 
     # Configure LLMs
-    agent_a.llm_client = DummyLLMClient(responses=agent_a_responses)
-    agent_b.llm_client = DummyLLMClient(responses=agent_b_responses)
-    coordinator.llm_client = DummyLLMClient(responses=coordinator_responses)
+    agent_a.llm = Dummy(responses=agent_a_responses)
+    agent_b.llm = Dummy(responses=agent_b_responses)
+    coordinator.llm = Dummy(responses=coordinator_responses)
 
     # Test the workflow
     shared_state = Versioned(Memory())

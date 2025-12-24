@@ -18,7 +18,7 @@ from agex import Agent, Versioned, connect_llm, pprint_tokens
 db = Agent(
     name="db_agent",
     primer=PRIMER,
-    llm_client=connect_llm(provider="anthropic", model="claude-haiku-4-5"),
+    llm=connect_llm(provider="anthropic", model="claude-haiku-4-5"),
 )
 
 # create an in-memory database and register the connection with the agent

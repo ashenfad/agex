@@ -1,33 +1,33 @@
 from typing import Any, Literal
 
 from .config import get_llm_config
-from .core import LLMClient, LLMResponse, TokenChunk
-from .dummy_client import DummyLLMClient
+from .core import LLM, LLMResponse, TokenChunk
+from .dummy_client import Dummy
 
 # Optional imports for LLM providers
 try:
-    from .openai_client import OpenAIClient
+    from .openai_client import OpenAI
 except ImportError:
-    OpenAIClient = None
+    OpenAI = None
 
 try:
-    from .anthropic_client import AnthropicClient
+    from .anthropic_client import Anthropic
 except ImportError:
-    AnthropicClient = None
+    Anthropic = None
 
 try:
-    from .gemini_client import GeminiClient
+    from .gemini_client import Gemini
 except ImportError:
-    GeminiClient = None
+    Gemini = None
 
-# Build __all__ dynamically based on available clients
-__all__ = ["DummyLLMClient", "connect_llm", "LLMResponse", "TokenChunk"]
-if OpenAIClient is not None:
-    __all__.append("OpenAIClient")
-if AnthropicClient is not None:
-    __all__.append("AnthropicClient")
-if GeminiClient is not None:
-    __all__.append("GeminiClient")
+# Build __all__ dynamically based on available providers
+__all__ = ["LLM", "Dummy", "connect_llm", "LLMResponse", "TokenChunk"]
+if OpenAI is not None:
+    __all__.append("OpenAI")
+if Anthropic is not None:
+    __all__.append("Anthropic")
+if Gemini is not None:
+    __all__.append("Gemini")
 
 
 def connect_llm(
@@ -35,7 +35,7 @@ def connect_llm(
     model: str | None = None,
     timeout_seconds: float = 90.0,
     **kwargs: Any,
-) -> LLMClient:
+) -> LLM:
     """
     Factory function to get an LLM client.
 
@@ -55,51 +55,51 @@ def connect_llm(
     # Add timeout_seconds to config
     config["timeout_seconds"] = timeout_seconds
 
-    # DummyLLMClient has special serialization for responses
+    # Dummy has special serialization for responses
     if final_provider == "dummy":
         # If responses are in serialized format (dicts from dump_config), use from_config
         if "responses" in config and config["responses"]:
             first = config["responses"][0]
             if isinstance(first, dict):
                 # Serialized format - use from_config for proper reconstruction
-                return DummyLLMClient.from_config(config)
+                return Dummy.from_config(config)
         # Otherwise, pass through (for direct instantiation with LLMResponse objects)
         dummy_kwargs = {**config, **kwargs}
         dummy_kwargs.pop("provider", None)
         dummy_kwargs.pop("model", None)
-        return DummyLLMClient(**dummy_kwargs)
+        return Dummy(**dummy_kwargs)
 
     if final_provider == "anthropic":
-        if AnthropicClient is None:
+        if Anthropic is None:
             raise ImportError(
                 "Anthropic provider requires the 'anthropic' package. "
                 'Install it with: pip install "agex[anthropic]"'
             )
-        return AnthropicClient(**config)
+        return Anthropic(**config)
 
     if final_provider == "gemini":
-        if GeminiClient is None:
+        if Gemini is None:
             raise ImportError(
                 "Gemini provider requires the 'google-generativeai' package. "
                 'Install it with: pip install "agex[gemini]"'
             )
-        return GeminiClient(**config)
+        return Gemini(**config)
 
     if final_provider == "openai":
-        if OpenAIClient is None:
+        if OpenAI is None:
             raise ImportError(
                 "OpenAI provider requires the 'openai' package. "
                 'Install it with: pip install "agex[openai]"'
             )
-        return OpenAIClient(**config)
+        return OpenAI(**config)
 
     # Build list of available providers for the error message
     available_providers = ["dummy"]
-    if OpenAIClient is not None:
+    if OpenAI is not None:
         available_providers.append("openai")
-    if AnthropicClient is not None:
+    if Anthropic is not None:
         available_providers.append("anthropic")
-    if GeminiClient is not None:
+    if Gemini is not None:
         available_providers.append("gemini")
 
     raise ValueError(

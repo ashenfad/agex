@@ -12,7 +12,7 @@ from agex.agent.events import (
     TaskStartEvent,
 )
 from agex.llm.core import LLMResponse
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 from agex.state import Versioned, events
 
 
@@ -45,7 +45,7 @@ class TestEventsSimple:
         """Test that basic agent task execution generates expected events."""
         clear_agent_registry()
 
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll complete this task.",
@@ -53,7 +53,7 @@ class TestEventsSimple:
                 )
             ]
         )
-        agent = Agent(name="simple_agent", llm_client=llm_client)
+        agent = Agent(name="simple_agent", llm=llm)
 
         @agent.task
         def simple_task():
@@ -85,7 +85,7 @@ class TestEventsSimple:
 
     def test_simple_print_with_continue(self):
         """Test if print statements work when separated with task_continue."""
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll print something.",
@@ -94,7 +94,7 @@ class TestEventsSimple:
                 LLMResponse(thinking="Now I'll finish.", code='task_success("done")'),
             ]
         )
-        agent = Agent(name="print_agent", llm_client=llm_client)
+        agent = Agent(name="print_agent", llm=llm)
 
         @agent.task
         def print_task():
@@ -126,10 +126,10 @@ class TestEventsSimple:
 
     def test_investigate_stateful_builtins(self):
         """Test to investigate how stateful builtins are called during evaluation."""
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [LLMResponse(thinking="I'll just print.", code='print("Debug print")')]
         )
-        agent = Agent(name="investigate_agent", llm_client=llm_client)
+        agent = Agent(name="investigate_agent", llm=llm)
 
         @agent.task
         def investigate_task():

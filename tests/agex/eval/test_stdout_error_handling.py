@@ -9,7 +9,7 @@ These tests verify that:
 from agex import events
 from agex.agent import Agent, clear_agent_registry
 from agex.agent.events import ActionEvent, OutputEvent
-from agex.llm.dummy_client import DummyLLMClient, LLMResponse
+from agex.llm.dummy_client import Dummy, LLMResponse
 from agex.state.kv import Memory
 from agex.state.versioned import Versioned
 
@@ -22,7 +22,7 @@ def test_error_appears_immediately_in_first_iteration():
     clear_agent_registry()
     # First response has a syntax error
     # Second response should see the error from the first response
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I'll try to compute something with a syntax error.",
@@ -34,7 +34,7 @@ def test_error_appears_immediately_in_first_iteration():
             ),
         ]
     )
-    agent = Agent(name="test_agent", max_iterations=3, llm_client=llm_client)
+    agent = Agent(name="test_agent", max_iterations=3, llm=llm)
 
     @agent.task("Compute a simple result.")
     def compute_simple() -> int:  # type: ignore[return-value]
@@ -93,7 +93,7 @@ def test_validation_error_shows_full_type():
     clear_agent_registry()
     # First response: Return the wrong type (list of strings instead of list of ints)
     # Second response: "See" the error and return the correct type.
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I will try to return a list of strings.",
@@ -105,7 +105,7 @@ def test_validation_error_shows_full_type():
             ),
         ]
     )
-    agent = Agent(name="test_agent", max_iterations=3, llm_client=llm_client)
+    agent = Agent(name="test_agent", max_iterations=3, llm=llm)
 
     @agent.task("A task that requires returning a list of integers.")
     def list_of_ints_task() -> list[int]:  # type: ignore[return-value]

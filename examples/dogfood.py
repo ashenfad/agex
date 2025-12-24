@@ -19,9 +19,7 @@ from agex import Agent, connect_llm
 architect = Agent(
     name="architect",
     primer=PRIMER,
-    llm_client=connect_llm(
-        provider="openai", model="gpt-5-nano", reasoning_effort="low"
-    ),
+    llm=connect_llm(provider="openai", model="gpt-5-nano", reasoning_effort="low"),
 )
 
 # register the Agent class so the architect can use it...

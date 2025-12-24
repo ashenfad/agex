@@ -12,7 +12,7 @@ from pathlib import Path
 
 from agex import Agent
 from agex.eval.user_errors import AgexValueError
-from agex.llm.dummy_client import DummyLLMClient, LLMResponse
+from agex.llm.dummy_client import Dummy, LLMResponse
 
 
 class DatabaseManager:
@@ -79,7 +79,7 @@ def test_basic_with_statement():
             return False
 
     # Configure dummy LLM
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         [
             LLMResponse(
                 thinking="I'll use a with statement to test the context manager.",
@@ -95,7 +95,7 @@ task_success(result)
         ]
     )
     # Create agent and register context manager
-    agent = Agent(llm_client=llm_client)
+    agent = Agent(llm=llm)
     ctx = SimpleContext()
     agent.module(ctx, name="ctx", include=["__enter__", "__exit__"])
 
@@ -142,7 +142,7 @@ def test_database_with_statement():
         db_manager = DatabaseManager(str(db_path))
 
         # Configure dummy LLM
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll use a with statement for safe database operations.",
@@ -171,7 +171,7 @@ task_success(result)
             ]
         )
         # Create agent and register database manager
-        agent = Agent(llm_client=llm_client)
+        agent = Agent(llm=llm)
         agent.module(
             db_manager, name="db", include=["execute", "__enter__", "__exit__"]
         )
@@ -228,7 +228,7 @@ def test_with_statement_exception_handling():
         db_manager = DatabaseManager(str(db_path))
 
         # Configure dummy LLM
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll test exception handling with database rollback using a simpler constraint violation.",
@@ -264,7 +264,7 @@ task_success(result)
             ]
         )
         # Create agent and register database manager
-        agent = Agent(llm_client=llm_client)
+        agent = Agent(llm=llm)
         agent.module(
             db_manager,
             name="db",
@@ -317,7 +317,7 @@ def test_nested_with_statements():
             return False
 
     # Configure dummy LLM
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         [
             LLMResponse(
                 thinking="I'll test nested with statements for resource management.",
@@ -340,7 +340,7 @@ task_success(results)
         ]
     )
     # Create agent and register multiple resource managers
-    agent = Agent(llm_client=llm_client)
+    agent = Agent(llm=llm)
     resource1 = ResourceManager("A")
     resource2 = ResourceManager("B")
 
@@ -386,7 +386,7 @@ def test_with_statement_raw_sqlite_connection():
         conn = sqlite3.connect(str(db_path))
 
         # Configure dummy LLM
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll use the raw SQLite connection with a with statement.",
@@ -423,7 +423,7 @@ task_success(result)
             ]
         )
         # Create agent and register raw connection
-        agent = Agent(llm_client=llm_client)
+        agent = Agent(llm=llm)
         agent.module(
             conn,
             name="conn",
@@ -477,7 +477,7 @@ def test_unpicklable_marker_system():
         conn = sqlite3.connect(str(db_path))
 
         # Configure dummy LLM for single-turn use (works perfectly)
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll directly assign and use cursors - the new system handles unpicklables gracefully.",
@@ -505,7 +505,7 @@ task_success(results)
             ]
         )
         # Create agent and register raw connection
-        agent = Agent(llm_client=llm_client)
+        agent = Agent(llm=llm)
         agent.module(conn, name="conn", include=["execute"])
         agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 
@@ -540,7 +540,7 @@ def test_sqlite_context_manager_method_access():
     conn = sqlite3.connect(":memory:")
 
     # Configure agent to use the exact pattern that was failing
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         [
             LLMResponse(
                 thinking="I'll recreate the exact failing scenario from db_direct.py",
@@ -570,7 +570,7 @@ task_success("Created 'users' table with columns: id, name, email, age")
         ]
     )
     # Create agent and register connection (matching db_direct.py setup)
-    agent = Agent(llm_client=llm_client)
+    agent = Agent(llm=llm)
     agent.module(
         conn,
         name="db",

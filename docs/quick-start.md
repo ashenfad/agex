@@ -25,28 +25,28 @@ Next, configure your LLM client. You can either pass arguments directly to `conn
 from agex import connect_llm
 
 # Option 1: Explicitly create a client
-llm_client = connect_llm(provider="openai", model="gpt-4.1-nano")
+llm = connect_llm(provider="openai", model="gpt-4.1-nano")
 
 # Option 2: Rely on environment variables
 # Set OPENAI_API_KEY, AGEX_LLM_PROVIDER, AGEX_LLM_MODEL, etc.
-# llm_client = connect_llm()
+# llm = connect_llm()
 ```
 
 ## Your First Agent
 
-Let's start with a simple agent that can do math. We'll pass it the `llm_client` we just created.
+Let's start with a simple agent that can do math. We'll pass it the `llm` we just created.
 
 ```python
 import math
 from agex import Agent, connect_llm
 
 # It's best practice to create your LLM client once and reuse it
-llm_client = connect_llm(provider="openai", model="gpt-4.1-nano")
+llm = connect_llm(provider="openai", model="gpt-4.1-nano")
 
 # Create an agent
 agent = Agent(
     primer="You are great at solving math problems.",
-    llm_client=llm_client
+    llm=llm
 )
 
 # Give it access to math functions
@@ -68,7 +68,7 @@ print(result)  # 50.26548245743669
 **Key concepts:**
 
 - **`connect_llm()`**: Creates a configured client for interacting with an LLM.
-- **`Agent(llm_client=...)`**: Creates an agent using a specific LLM client.
+- **`Agent(llm=...)`**: Creates an agent using a specific LLM client.
 - **`agent.module()`**: Exposes existing Python modules to the agent.
 - **`@agent.task`**: Defines what you want accomplished (agent provides implementation).
 

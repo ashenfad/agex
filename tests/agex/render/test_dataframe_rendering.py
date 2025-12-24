@@ -10,7 +10,7 @@ import pytest
 
 from agex import Agent
 from agex.llm.core import LLMResponse
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 from agex.state import Versioned
 
 
@@ -28,7 +28,7 @@ def test_print_large_dataframe_shows_all_rows():
     )
 
     # Set up dummy client
-    client = DummyLLMClient()
+    client = Dummy()
     client.responses = [
         LLMResponse(
             thinking="I'll print the dataframe",
@@ -36,7 +36,7 @@ def test_print_large_dataframe_shows_all_rows():
         ),
     ]
 
-    agent = Agent(name="test_print_df", llm_client=client, max_iterations=3)
+    agent = Agent(name="test_print_df", llm=client, max_iterations=3)
 
     @agent.fn
     def test_df():
@@ -97,7 +97,7 @@ def test_task_continue_large_dataframe_shows_all_rows():
     )
 
     # Set up dummy client
-    client = DummyLLMClient()
+    client = Dummy()
     client.responses = [
         LLMResponse(
             thinking="I'll send the dataframe",
@@ -109,7 +109,7 @@ def test_task_continue_large_dataframe_shows_all_rows():
         ),
     ]
 
-    agent = Agent(name="test_task_continue", llm_client=client, max_iterations=3)
+    agent = Agent(name="test_task_continue", llm=client, max_iterations=3)
 
     @agent.fn
     def get_df():
@@ -157,7 +157,7 @@ def test_task_continue_large_dataframe_shows_all_rows():
 def test_task_input_large_dataframe_shows_all_rows():
     """Test that DataFrame passed as task input shows all rows."""
     # Set up dummy client
-    client = DummyLLMClient()
+    client = Dummy()
     client.responses = [
         LLMResponse(
             thinking="I can see the input dataframe",
@@ -165,7 +165,7 @@ def test_task_input_large_dataframe_shows_all_rows():
         ),
     ]
 
-    agent = Agent(name="test_task_input", llm_client=client, max_iterations=3)
+    agent = Agent(name="test_task_input", llm=client, max_iterations=3)
 
     @agent.task("Process the events dataframe.")
     def process_events(events: pd.DataFrame) -> str:  # type: ignore[return-value]
@@ -220,7 +220,7 @@ def test_dataframe_respects_token_budget():
     )
 
     # Set up dummy client
-    client = DummyLLMClient()
+    client = Dummy()
     client.responses = [
         LLMResponse(
             thinking="I'll print a huge dataframe",
@@ -228,7 +228,7 @@ def test_dataframe_respects_token_budget():
         ),
     ]
 
-    agent = Agent(name="test_token_budget", llm_client=client, max_iterations=3)
+    agent = Agent(name="test_token_budget", llm=client, max_iterations=3)
 
     @agent.fn
     def get_huge_df():

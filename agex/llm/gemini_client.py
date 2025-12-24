@@ -7,7 +7,7 @@ from google.genai import types
 
 from agex.agent.events import Event
 from agex.llm.core import (
-    LLMClient,
+    LLM,
     LLMResponse,
     TokenChunk,
     with_timeout,
@@ -35,8 +35,8 @@ def _get_grounding_primer(google_search: bool, url_context: bool) -> str:
     return GROUNDING_PRIMER_TEMPLATE
 
 
-class GeminiClient(LLMClient):
-    """Client for Google's Gemini API (google-genai SDK) with structured outputs."""
+class Gemini(LLM):
+    """Google Gemini LLM provider (google-genai SDK) with structured outputs."""
 
     def __init__(
         self,

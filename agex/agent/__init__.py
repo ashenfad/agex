@@ -1,5 +1,5 @@
 # Main agent functionality
-from ..llm import LLMClient
+from ..llm import LLM
 from .base import BaseAgent, clear_agent_registry, register_agent, resolve_agent
 
 # Data types and exceptions
@@ -62,8 +62,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         # Optional curated capabilities primer
         capabilities_primer: str | None = None,
         # LLM configuration (optional, uses smart defaults)
-        llm_client: LLMClient | None = None,
-        # LLM retry control (timeout comes from llm_client.timeout_seconds)
+        llm: LLM | None = None,
+        # LLM retry control (timeout comes from llm.timeout_seconds)
         llm_max_retries: int = 2,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
@@ -80,8 +80,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             max_iterations: The maximum number of think-act cycles for a task.
             name: Unique identifier for this agent (for sub-agent namespacing).
             capabilities_primer: Optional curated capabilities primer.
-            llm_client: An instantiated LLMClient for the agent to use. Configure
-                llm_client.timeout_seconds for API timeout control.
+            llm: An instantiated LLM for the agent to use. Configure
+                llm.timeout_seconds for API timeout control.
             llm_max_retries: Number of retry attempts for failed/timed-out LLM calls.
             log_high_water_tokens: Trigger event log summarization when total tokens
                 exceed this threshold. If None, no summarization is performed.
@@ -96,7 +96,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             max_iterations=max_iterations,
             name=name,
             capabilities_primer=capabilities_primer,
-            llm_client=llm_client,
+            llm=llm,
             llm_max_retries=llm_max_retries,
             log_high_water_tokens=log_high_water_tokens,
             log_low_water_tokens=log_low_water_tokens,

@@ -27,7 +27,7 @@ CASE5_EXPECTED_ALT = {
 
 def make_task(model: str) -> Callable:
     """Create an excel analysis task with specified model."""
-    llm_client = connect_llm(
+    llm = connect_llm(
         "openai",
         model=model,
         base_url=None if "gpt" in model else "http://localhost:11434/v1",
@@ -35,7 +35,7 @@ def make_task(model: str) -> Callable:
     analyst = Agent(
         name=f"analyst-{model}",
         primer="You are an expert business data analyst skilled at pandas operations.",
-        llm_client=llm_client,
+        llm=llm,
         max_iterations=8,
     )
     register_pandas(analyst)

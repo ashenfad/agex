@@ -10,7 +10,7 @@ def test_dummy_provider_example():
     with patch.dict(os.environ, {}, clear=True):
         client = connect_llm(provider="dummy")
         assert client is not None
-        assert client.__class__.__name__ == "DummyLLMClient"
+        assert client.__class__.__name__ == "Dummy"
 
 
 def test_openai_provider_example():
@@ -34,7 +34,7 @@ def test_openai_provider_example():
     ):
         client = connect_llm(provider="openai", model="gpt-4.1-nano")
         assert client is not None
-        assert client.__class__.__name__ == "OpenAIClient"
+        assert client.__class__.__name__ == "OpenAI"
         assert client.model == "gpt-4.1-nano"
 
 
@@ -57,7 +57,7 @@ def test_anthropic_provider_example():
     ):
         client = connect_llm(provider="anthropic", model="claude-3-sonnet-20240229")
         assert client is not None
-        assert client.__class__.__name__ == "AnthropicClient"
+        assert client.__class__.__name__ == "Anthropic"
         assert client.model == "claude-3-sonnet-20240229"
 
 
@@ -80,11 +80,11 @@ def test_gemini_provider_example():
     ):
         client = connect_llm(provider="gemini", model="gemini-1.5-flash")
         assert client is not None
-        assert client.__class__.__name__ == "GeminiClient"
+        assert client.__class__.__name__ == "Gemini"
         assert client.model == "gemini-1.5-flash"
 
 
-def test_llm_client_factory_example():
+def test_llm_factory_example():
     # Test the LLM client factory example from the documentation.
     # This example shows how to create clients for different providers.
     # We use a loop and patch to simulate different installation scenarios.

@@ -2,7 +2,7 @@ import uuid
 from contextvars import ContextVar
 from typing import Any, Callable, Dict, Literal
 
-from ..llm import LLMClient, connect_llm
+from ..llm import LLM, connect_llm
 from .datatypes import (
     MemberSpec,
     RegisteredClass,
@@ -99,8 +99,8 @@ class BaseAgent:
         # Optional curated capabilities primer (overrides rendered registrations when set)
         capabilities_primer: str | None = None,
         # LLM configuration (optional, uses smart defaults)
-        llm_client: LLMClient | None = None,
-        # LLM retry control (timeout comes from llm_client.timeout_seconds)
+        llm: LLM | None = None,
+        # LLM retry control (timeout comes from llm.timeout_seconds)
         llm_max_retries: int = 2,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
@@ -117,9 +117,9 @@ class BaseAgent:
         self.eval_timeout_seconds = eval_timeout_seconds
         self.max_iterations = max_iterations
 
-        # Create LLM client using the resolved configuration
-        self.llm_client = llm_client or connect_llm()
-        # LLM retry setting (timeout comes from llm_client.timeout_seconds)
+        # Create LLM using the resolved configuration
+        self.llm = llm or connect_llm()
+        # LLM retry setting (timeout comes from llm.timeout_seconds)
         self.llm_max_retries = llm_max_retries
 
         # Event log summarization settings
@@ -161,20 +161,20 @@ class BaseAgent:
 
         Excludes:
         - _host_object_registry: Holds live instances (db connections, etc.)
-        - llm_client: Live client has nonserializable state (sockets, SSL context)
+        - llm: Live LLM has nonserializable state (sockets, SSL context)
         - fingerprint: Computed from runtime state, might differ on host
 
         Adds:
-        - _llm_config: Reconstructable configuration for the LLM client
+        - _llm_config: Reconstructable configuration for the LLM
         """
         state = self.__dict__.copy()
 
         # Serialize LLM config using our new helper
-        if self.llm_client:
-            state["_llm_config"] = self.llm_client.dump_config()
+        if self.llm:
+            state["_llm_config"] = self.llm.dump_config()
 
         # Remove runtime-only objects
-        state.pop("llm_client", None)
+        state.pop("llm", None)
         state.pop("_host_object_registry", None)
         state.pop("fingerprint", None)
 
@@ -186,7 +186,7 @@ class BaseAgent:
 
         NOTE: The agent is not fully functional until rehydrated by the remote
         runtime, which must:
-        1. Inject a new llm_client (or use the one from _llm_config)
+        1. Inject a new LLM (or use the one from _llm_config)
         2. Recompute fingerprint/register
         """
         # Restore configuration
@@ -195,9 +195,9 @@ class BaseAgent:
         # Initialize runtime fields that were mocked/missing
         self._host_object_registry = {}  # Empty on new host
 
-        # llm_client remains None until injected by deserialize_agent
+        # llm remains None until injected by deserialize_agent
         # or lazily connected if we want that behavior (design choice: passed in)
-        self.llm_client = None
+        self.llm = None
         self.fingerprint = None  # Will be recomputed
 
     def module(

@@ -73,7 +73,7 @@ def maybe_summarize_event_log(
     - Preserves event storage efficiency (only summary is new)
 
     Args:
-        agent: Agent with llm_client and watermark configuration
+        agent: Agent with llm and watermark configuration
         state: State containing the event log
         system_message: The current systems message (for token accounting)
         on_event: Optional callback to notify about the SummaryEvent
@@ -152,7 +152,7 @@ def maybe_summarize_event_log(
     # Call LLM to generate summary (pass events directly for multimodal support)
     # Use same max_tokens as normal completions for detailed summaries
     try:
-        summary_text = agent.llm_client.summarize(
+        summary_text = agent.llm.summarize(
             system=SUMMARIZATION_SYSTEM_MESSAGE,
             content=events_to_summarize,
             max_tokens=16384,  # Same as normal completions (16K tokens)

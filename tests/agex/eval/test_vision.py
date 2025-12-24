@@ -6,7 +6,7 @@ from typing import Any
 
 from agex.agent import Agent, clear_agent_registry
 from agex.agent.events import OutputEvent
-from agex.llm.dummy_client import DummyLLMClient, LLMResponse
+from agex.llm.dummy_client import Dummy, LLMResponse
 from agex.state.kv import Memory
 from agex.state.versioned import Versioned
 
@@ -29,7 +29,7 @@ def test_view_image_sends_image_in_output_event():
     # We need to capture the events sent to the LLM client and provide a response.
     # The first response from the LLM will call view_image.
     # The second response will see the rendered image and finish the task.
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I will view the image provided in the inputs.",
@@ -41,7 +41,7 @@ def test_view_image_sends_image_in_output_event():
             ),
         ]
     )
-    agent = Agent(name="test_agent", max_iterations=3, llm_client=llm_client)
+    agent = Agent(name="test_agent", max_iterations=3, llm=llm)
 
     # Create a simple black 10x10 image for the test
     test_image = Image.new("RGB", (10, 10), "black")
@@ -58,7 +58,7 @@ def test_view_image_sends_image_in_output_event():
     assert result == "done"
 
     # Verify that events were sent to the LLM
-    sent_events = llm_client.all_events
+    sent_events = llm.all_events
     assert len(sent_events) >= 2, "Should have at least 2 LLM calls"
 
     # Verify that the second call contains OutputEvents (which would include the image)

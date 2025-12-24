@@ -12,7 +12,7 @@ from agex.agent.events import (
     SuccessEvent,
 )
 from agex.llm.core import LLMResponse
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 from agex.state import Versioned, events
 
 
@@ -27,7 +27,7 @@ class TestStreaming:
         """Test that streaming yields events in real-time."""
         agent = Agent(name="stream_agent")
 
-        agent.llm_client = DummyLLMClient(
+        agent.llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll print something then complete the task.",
@@ -67,8 +67,8 @@ class TestStreaming:
 
         # Same LLM responses for both
         response = LLMResponse(thinking="I'll return 42.", code="task_success(42)")
-        agent1.llm_client = DummyLLMClient([response])
-        agent2.llm_client = DummyLLMClient([response])
+        agent1.llm = Dummy([response])
+        agent2.llm = Dummy([response])
 
         @agent1.task
         def regular_task() -> int:  # type: ignore[return-value]
@@ -112,7 +112,7 @@ class TestStreaming:
         worker = Agent(name="worker")
 
         # Set up worker agent
-        worker.llm_client = DummyLLMClient(
+        worker.llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll do some work.",
@@ -130,7 +130,7 @@ class TestStreaming:
         orchestrator.fn(do_work)
 
         # Set up orchestrator agent
-        orchestrator.llm_client = DummyLLMClient(
+        orchestrator.llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll delegate to the worker.",
@@ -174,7 +174,7 @@ class TestStreaming:
         """Test streaming with task_continue to verify multiple iterations work."""
         agent = Agent(name="multi_iter_agent")
 
-        agent.llm_client = DummyLLMClient(
+        agent.llm = Dummy(
             [
                 LLMResponse(
                     title="Initial attempt",
@@ -213,7 +213,7 @@ class TestStreaming:
         """Test that streaming properly handles task failures."""
         agent = Agent(name="fail_agent")
 
-        agent.llm_client = DummyLLMClient(
+        agent.llm = Dummy(
             [
                 LLMResponse(
                     thinking="This will fail.",
@@ -256,7 +256,7 @@ class TestStreaming:
         agent = Agent(name="persistent_agent")
 
         # First task execution (regular mode)
-        agent.llm_client = DummyLLMClient(
+        agent.llm = Dummy(
             [LLMResponse(thinking="First task", code='task_success("first")')]
         )
 
@@ -270,7 +270,7 @@ class TestStreaming:
         assert result1 == "first"
 
         # Second task execution (streaming mode) with same state
-        agent.llm_client = DummyLLMClient(
+        agent.llm = Dummy(
             [LLMResponse(thinking="Second task", code='task_success("second")')]
         )
 
@@ -303,9 +303,7 @@ class TestStreaming:
         assert callable(test_task.stream)
 
         # Verify it returns a generator
-        agent.llm_client = DummyLLMClient(
-            [LLMResponse(thinking="Test", code='task_success("ok")')]
-        )
+        agent.llm = Dummy([LLMResponse(thinking="Test", code='task_success("ok")')])
 
         state = Versioned()
         generator = test_task.stream(state=state)
@@ -319,7 +317,7 @@ class TestStreaming:
         """Test that streaming preserves chronological event ordering."""
         agent = Agent(name="order_agent")
 
-        agent.llm_client = DummyLLMClient(
+        agent.llm = Dummy(
             [
                 LLMResponse(
                     thinking="Multiple outputs",
@@ -356,7 +354,7 @@ class TestStreaming:
         """Test that streaming with different states doesn't interfere."""
         agent = Agent(name="isolated_agent")
 
-        agent.llm_client = DummyLLMClient(
+        agent.llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll print something.",
@@ -463,7 +461,7 @@ class TestTokenStreaming:
         from agex.llm.xml import TokenChunk
 
         agent = Agent(name="token_stream_agent")
-        agent.llm_client = DummyLLMClient(
+        agent.llm = Dummy(
             [
                 LLMResponse(
                     title="Calculating sum",
@@ -525,16 +523,14 @@ class TestTokenStreaming:
 
         # Track whether complete_stream was called
         stream_called = [False]
-        original_complete_stream = agent.llm_client.complete_stream
+        original_complete_stream = agent.llm.complete_stream
 
         def tracked_stream(*args, **kwargs):
             stream_called[0] = True
             return original_complete_stream(*args, **kwargs)
 
-        agent.llm_client.complete_stream = tracked_stream
-        agent.llm_client = DummyLLMClient(
-            [LLMResponse(thinking="Test", code='task_success("ok")')]
-        )
+        agent.llm.complete_stream = tracked_stream
+        agent.llm = Dummy([LLMResponse(thinking="Test", code='task_success("ok")')])
 
         @agent.task
         def no_stream_task():
@@ -553,7 +549,7 @@ class TestTokenStreaming:
         from agex.llm.xml import TokenChunk
 
         agent = Agent(name="multi_handler_agent")
-        agent.llm_client = DummyLLMClient(
+        agent.llm = Dummy(
             [LLMResponse(thinking="Test thinking", code='task_success("done")')]
         )
 
@@ -591,9 +587,7 @@ class TestTokenStreaming:
         from agex.llm.xml import TokenChunk
 
         agent = Agent(name="error_handler_agent")
-        agent.llm_client = DummyLLMClient(
-            [LLMResponse(thinking="Test", code="task_success(42)")]
-        )
+        agent.llm = Dummy([LLMResponse(thinking="Test", code="task_success(42)")])
 
         # Create a handler that raises an exception
         def bad_handler(chunk: TokenChunk):

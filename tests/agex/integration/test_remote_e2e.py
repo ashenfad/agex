@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from agex import Agent
 from agex.agent.base import clear_agent_registry
 from agex.llm.core import LLMResponse
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 from agex.remote import remote
 from agex.remote.executor import RemoteExecutionError, RemoteTaskExecutor
 from agex.server import create_app
@@ -29,7 +29,7 @@ def clear_registry():
 
 @pytest.fixture
 def mock_llm():
-    return DummyLLMClient()
+    return Dummy()
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ class TestEndToEndIntegration:
         """Test error handling when task is not found."""
         clear_agent_registry()
         agent = Agent()
-        agent.llm_client = mock_llm
+        agent.llm = mock_llm
         from agex.remote import serialize_agent
 
         payload = {
@@ -74,7 +74,7 @@ class TestEndToEndIntegration:
         """Test that invalid state URIs are rejected."""
         clear_agent_registry()
         agent = Agent()
-        agent.llm_client = mock_llm
+        agent.llm = mock_llm
         from agex.remote import serialize_agent
 
         payload = {
@@ -95,7 +95,7 @@ class TestEndToEndIntegration:
     def test_remote_decorator_with_mock_server(self, test_server, mock_llm):
         """Test @remote decorator structure."""
         agent = Agent()
-        agent.llm_client = mock_llm
+        agent.llm = mock_llm
 
         @remote("http://test-server/execute")
         @agent.task
@@ -110,7 +110,7 @@ class TestEndToEndIntegration:
     def test_async_task_structure(self, mock_llm):
         """Test async task with @remote decorator."""
         agent = Agent()
-        agent.llm_client = mock_llm
+        agent.llm = mock_llm
 
         @remote("http://test-server/execute")
         @agent.task
@@ -187,16 +187,14 @@ class TestActualTaskExecution:
     def test_simple_task_execution(self, tmp_path):
         """Test executing a simple task that returns a value."""
         from agex.llm.core import LLMResponse
-        from agex.llm.dummy_client import DummyLLMClient
+        from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
 
         # Create agent with task that returns 42
-        llm = DummyLLMClient(
-            responses=[LLMResponse(thinking="Computing...", code="return 42")]
-        )
+        llm = Dummy(responses=[LLMResponse(thinking="Computing...", code="return 42")])
         agent = Agent()
-        agent.llm_client = llm
+        agent.llm = llm
 
         @agent.task
         def simple_task() -> int:
@@ -234,12 +232,12 @@ class TestActualTaskExecution:
         import cloudpickle
 
         from agex.llm.core import LLMResponse
-        from agex.llm.dummy_client import DummyLLMClient
+        from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
 
         # Create agent with task that returns a dict
-        llm = DummyLLMClient(
+        llm = Dummy(
             responses=[
                 LLMResponse(
                     thinking="Building result...",
@@ -248,7 +246,7 @@ class TestActualTaskExecution:
             ]
         )
         agent = Agent()
-        agent.llm_client = llm
+        agent.llm = llm
 
         @agent.task
         def complex_task() -> dict:
@@ -290,12 +288,12 @@ class TestActualTaskExecution:
     def test_task_exception_propagation(self, tmp_path):
         """Test that exceptions in tasks are propagated to client."""
         from agex.llm.core import LLMResponse
-        from agex.llm.dummy_client import DummyLLMClient
+        from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
 
         # Create agent with task that raises an exception
-        llm = DummyLLMClient(
+        llm = Dummy(
             responses=[
                 LLMResponse(
                     thinking="This will fail...",
@@ -304,7 +302,7 @@ class TestActualTaskExecution:
             ]
         )
         agent = Agent()
-        agent.llm_client = llm
+        agent.llm = llm
 
         @agent.task
         def failing_task() -> str:
@@ -342,13 +340,13 @@ class TestActualTaskExecution:
         for inputs may have pickling limitations across process boundaries.
         """
         from agex.llm.core import LLMResponse
-        from agex.llm.dummy_client import DummyLLMClient
+        from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
 
         # Create agent with task that uses inputs
         # Use simple return to avoid dynamic dataclass pickling issues
-        llm = DummyLLMClient(
+        llm = Dummy(
             responses=[
                 LLMResponse(
                     thinking="Computing sum...",
@@ -357,7 +355,7 @@ class TestActualTaskExecution:
             ]
         )
         agent = Agent()
-        agent.llm_client = llm
+        agent.llm = llm
 
         @agent.task
         def compute() -> int:
@@ -393,16 +391,16 @@ class TestHierarchicalAgentExecution:
     def test_hierarchical_agent_serialization(self, tmp_path):
         """Test that hierarchical agents are serialized correctly."""
         from agex.llm.core import LLMResponse
-        from agex.llm.dummy_client import DummyLLMClient
+        from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
 
         # Create worker agent
-        worker_llm = DummyLLMClient(
+        worker_llm = Dummy(
             responses=[LLMResponse(thinking="Working...", code="return 'done'")]
         )
         worker = Agent(name="worker")
-        worker.llm_client = worker_llm
+        worker.llm = worker_llm
 
         @worker.task
         def do_work() -> str:
@@ -410,7 +408,7 @@ class TestHierarchicalAgentExecution:
             pass
 
         # Create orchestrator that uses worker
-        orchestrator_llm = DummyLLMClient(
+        orchestrator_llm = Dummy(
             responses=[
                 LLMResponse(
                     thinking="Delegating to worker...",
@@ -419,7 +417,7 @@ class TestHierarchicalAgentExecution:
             ]
         )
         orchestrator = Agent(name="orchestrator")
-        orchestrator.llm_client = orchestrator_llm
+        orchestrator.llm = orchestrator_llm
 
         # Register worker's task with orchestrator
         orchestrator.fn(do_work)
@@ -458,7 +456,7 @@ class TestExecutorE2E:
     def test_executor_full_roundtrip(self, tmp_path):
         """Test full roundtrip: executor → TestClient → server → result."""
         from agex.llm.core import LLMResponse
-        from agex.llm.dummy_client import DummyLLMClient
+        from agex.llm.dummy_client import Dummy
         from agex.remote.executor import RemoteTaskExecutor
 
         clear_agent_registry()
@@ -472,11 +470,9 @@ class TestExecutorE2E:
         """)
 
         # Create agent with task - provide enough responses for potential retries
-        llm = DummyLLMClient(
-            responses=[LLMResponse(thinking="Computing...", code=PROG)] * 10
-        )
+        llm = Dummy(responses=[LLMResponse(thinking="Computing...", code=PROG)] * 10)
         agent = Agent()
-        agent.llm_client = llm
+        agent.llm = llm
 
         agent.module(math)
 
@@ -521,12 +517,12 @@ class TestExecutorE2E:
     def test_executor_complex_return(self, tmp_path):
         """Test complex return types through executor."""
         from agex.llm.core import LLMResponse
-        from agex.llm.dummy_client import DummyLLMClient
+        from agex.llm.dummy_client import Dummy
         from agex.remote.executor import RemoteTaskExecutor
 
         clear_agent_registry()
 
-        llm = DummyLLMClient(
+        llm = Dummy(
             responses=[
                 LLMResponse(
                     thinking="Building...",
@@ -536,7 +532,7 @@ class TestExecutorE2E:
             * 10
         )
         agent = Agent()
-        agent.llm_client = llm
+        agent.llm = llm
 
         @agent.task
         def get_data() -> dict:
@@ -565,17 +561,17 @@ class TestExecutorE2E:
         """Test execution of an async task function."""
         from httpx import ASGITransport, AsyncClient
 
-        from agex.llm.dummy_client import DummyLLMClient
+        from agex.llm.dummy_client import Dummy
         from agex.remote.executor import RemoteTaskExecutor
 
         clear_agent_registry()
 
         # LLM response for async task
-        llm = DummyLLMClient(
+        llm = Dummy(
             responses=[LLMResponse(thinking="Building...", code='task_success("ok")')]
         )
         agent = Agent()
-        agent.llm_client = llm
+        agent.llm = llm
 
         @agent.task
         async def async_task() -> str:
@@ -606,13 +602,13 @@ class TestExecutorE2E:
 
         clear_agent_registry()
 
-        llm = DummyLLMClient(
+        llm = Dummy(
             responses=[
                 LLMResponse(thinking="Failing...", code="task_fail('not gonna do it')")
             ]
         )
         agent = Agent()
-        agent.llm_client = llm
+        agent.llm = llm
 
         @agent.task
         def fail_task() -> str:

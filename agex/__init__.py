@@ -12,7 +12,7 @@ from .agent.events import (
     SummaryEvent,
     TaskStartEvent,
 )
-from .llm import LLMClient, connect_llm
+from .llm import LLM, connect_llm
 from .render.capabilities import summarize_capabilities
 from .render.token_count import system_token_count
 from .render.view import view
@@ -22,7 +22,7 @@ from .state.kv import Cache, Disk, Memory, WriteBehind
 __all__ = [
     # Core Classes
     "Agent",
-    "LLMClient",
+    "LLM",
     # State Management
     "Versioned",
     "GCVersioned",

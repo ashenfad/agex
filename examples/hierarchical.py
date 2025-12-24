@@ -18,14 +18,14 @@ import plotly.graph_objects as go
 from agex import Agent, connect_llm, pprint_tokens
 from agex.helpers import register_numpy, register_pandas, register_plotly
 
-llm_client = connect_llm(provider="anthropic", model="claude-haiku-4-5")
+llm = connect_llm(provider="anthropic", model="claude-haiku-4-5")
 
 
 # define the data-making agent and give it numpy and random
 data_maker = Agent(
     name="data_maker",
     primer="You excel at generating data via numpy.",
-    llm_client=llm_client,
+    llm=llm,
 )
 
 data_maker.module(np, recursive=True, visibility="low")
@@ -36,7 +36,7 @@ data_maker.module(random, visibility="low")
 plotty = Agent(
     name="plotty",
     primer="You excel plotting data via plotly express.",
-    llm_client=llm_client,
+    llm=llm,
 )
 
 # use helpers for our plotting agent
@@ -48,7 +48,7 @@ register_pandas(plotty)
 orchestrator = Agent(
     name="orchestrator",
     primer="You orchestrate other agents to solve a problem. Don't use numpy or plotly directly. Call 'make_data' and 'plot_data' to spawn sub-agent work.",
-    llm_client=llm_client,
+    llm=llm,
 )
 
 

@@ -3,7 +3,7 @@ from pathlib import Path
 
 from agex.agent import BaseAgent
 from agex.agent.fingerprint import compute_agent_fingerprint_from_policy
-from agex.llm.core import LLMClient
+from agex.llm.core import LLM
 from agex.render.definitions import render_definitions
 
 
@@ -24,18 +24,18 @@ def _cache_path(
 def summarize_capabilities(
     agent: BaseAgent,
     target_chars: int,
-    llm_client: LLMClient | None = None,
+    llm: LLM | None = None,
     use_cache: bool = True,
 ) -> str:
     """
     Build a concise capabilities primer from the agent's registered capabilities.
 
     - Honors visibility via render_definitions(agent)
-    - Uses llm_client.summarize to compress into ~token_budget tokens (best-effort)
+    - Uses llm.summarize to compress into ~token_budget tokens (best-effort)
     - Optional on-disk cache under .agex/primer_cache/
     """
-    # Resolve summarizer client and model id for cache key
-    client = llm_client or agent.llm_client
+    # Resolve summarizer LLM and model id for cache key
+    client = llm or agent.llm
     try:
         model_id = client.model
     except Exception:

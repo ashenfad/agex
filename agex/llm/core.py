@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 # Timeout Configuration
 # ============================================================================
 
-DEFAULT_TIMEOUT_SECONDS = 90.0  # 90 seconds per API call (used by LLMClient base)
+DEFAULT_TIMEOUT_SECONDS = 90.0  # 90 seconds per API call (used by LLM base)
 
 logger = logging.getLogger(__name__)
 
@@ -145,9 +145,11 @@ class ResponseParseError(Exception):
         return self.message
 
 
-class LLMClient(ABC):
+class LLM(ABC):
     """
-    A common interface for LLM clients, ensuring compatibility between different
+    Abstract base class for LLM providers.
+
+    Provides a common interface ensuring compatibility between different
     providers and implementation approaches.
     """
 
@@ -178,12 +180,11 @@ class LLMClient(ABC):
         }
 
     @classmethod
-    def from_config(cls, config: dict[str, Any]) -> "LLMClient":
+    def from_config(cls, config: dict[str, Any]) -> "LLM":
         """
-        Reconstruct a client from a configuration dictionary.
+        Reconstruct an LLM from a configuration dictionary.
 
-        This method delegates to the `connect_llm` factory or direct instantiation
-        depending on the structure of the config.
+        This method delegates to the `connect_llm` factory.
         """
         # Avoid circular import
         from agex.llm import connect_llm
@@ -397,9 +398,9 @@ Write your summary of what happened in this interaction."""
     @abstractmethod
     def provider_name(self) -> str:
         """
-        The provider name for this client.
+        The provider name for this LLM.
 
         Returns:
             Provider name string (e.g., "OpenAI", "Anthropic", "Google Gemini")
         """
-        return "LLMClient"
+        ...

@@ -5,22 +5,22 @@ from google.genai import types
 
 from agex.agent.events import ActionEvent, TaskStartEvent
 from agex.llm.core import LLMResponse, TokenChunk
-from agex.llm.gemini_client import GeminiClient
+from agex.llm.gemini_client import Gemini
 
 
 def test_gemini_client_initialization():
-    """Test that GeminiClient can be initialized with default parameters."""
+    """Test that Gemini can be initialized with default parameters."""
     with patch("google.genai.Client") as MockClient:
-        client = GeminiClient()
+        client = Gemini()
         assert client.model == "gemini-1.5-flash"
         assert client.provider_name == "Google Gemini"
         MockClient.assert_called_once()
 
 
 def test_gemini_client_custom_model():
-    """Test that GeminiClient can be initialized with custom model."""
+    """Test that Gemini can be initialized with custom model."""
     with patch("google.genai.Client"):
-        client = GeminiClient(model="gemini-1.5-pro")
+        client = Gemini(model="gemini-1.5-pro")
         assert client.model == "gemini-1.5-pro"
 
 
@@ -36,7 +36,7 @@ def test_gemini_client_event_handling():
         mock_response.text = '{"thinking": "Test thinking", "code": "print(\'hello\')"}'
         mock_models.generate_content.return_value = mock_response
 
-        client = GeminiClient()
+        client = Gemini()
 
         system = "You are a helpful assistant."
         events = [
@@ -83,7 +83,7 @@ def test_gemini_client_system_message():
         mock_response.text = '{"thinking": "Test thinking", "code": "print(\'hello\')"}'
         mock_models.generate_content.return_value = mock_response
 
-        client = GeminiClient()
+        client = Gemini()
 
         system = "System Instructions"
         events = [
@@ -109,7 +109,7 @@ def test_gemini_client_structured_output_config():
         mock_response.text = '{"thinking": "Test thinking", "code": "print(\'hello\')"}'
         mock_models.generate_content.return_value = mock_response
 
-        client = GeminiClient()
+        client = Gemini()
         system = "Test"
         events = [
             TaskStartEvent(
@@ -132,7 +132,7 @@ def test_gemini_client_json_parsing_error():
         mock_models = MockClient.return_value.models
         mock_models.generate_content.return_value.text = "invalid json"
 
-        client = GeminiClient()
+        client = Gemini()
         system = "Test"
         events = [
             TaskStartEvent(
@@ -150,7 +150,7 @@ def test_gemini_client_empty_response():
         mock_models = MockClient.return_value.models
         mock_models.generate_content.return_value.text = ""
 
-        client = GeminiClient()
+        client = Gemini()
         system = "Test"
         events = [
             TaskStartEvent(
@@ -173,7 +173,7 @@ def test_gemini_client_complete_stream():
         mock_response_stream = [mock_chunk]
         mock_models.generate_content_stream.return_value = mock_response_stream
 
-        client = GeminiClient()
+        client = Gemini()
         system = "System prompt"
         events = [
             TaskStartEvent(
@@ -206,7 +206,7 @@ def test_gemini_client_summarize_with_config():
         mock_models = MockClient.return_value.models
         mock_models.generate_content.return_value.text = "Summary text"
 
-        client = GeminiClient()
+        client = Gemini()
         system = "Summarize this"
         content = "Some long content"
 
@@ -231,7 +231,7 @@ def test_gemini_client_google_search_enabled():
         mock_models.generate_content.return_value = mock_response
 
         # Initialize with google_search=True
-        client = GeminiClient(google_search=True)
+        client = Gemini(google_search=True)
 
         system = "Test System"
         events = [
@@ -264,7 +264,7 @@ def test_gemini_client_google_search_stream():
         mock_chunk.text = "<THINKING>Thinking</THINKING>"
         mock_models.generate_content_stream.return_value = [mock_chunk]
 
-        client = GeminiClient(google_search=True)
+        client = Gemini(google_search=True)
         system = "Test"
         events = [
             TaskStartEvent(
@@ -291,7 +291,7 @@ def test_gemini_client_url_context():
         mock_models.generate_content.return_value = mock_response
 
         # Initialize with url_context=True
-        client = GeminiClient(url_context=True)
+        client = Gemini(url_context=True)
 
         system = "Test System"
         events = [
@@ -328,7 +328,7 @@ def test_gemini_client_url_context_stream_prefill():
         mock_chunk.text = "<THINKING>Thinking</THINKING>"
         mock_models.generate_content_stream.return_value = [mock_chunk]
 
-        client = GeminiClient(url_context=True)
+        client = Gemini(url_context=True)
         system = "Test"
         events = [
             TaskStartEvent(
@@ -366,7 +366,7 @@ async def test_gemini_acomplete():
         )
         mock_models.generate_content = AsyncMock(return_value=mock_response)
 
-        client = GeminiClient()
+        client = Gemini()
         events = [
             TaskStartEvent(
                 agent_name="test", task_name="test", inputs={}, message="Hello"
@@ -392,7 +392,7 @@ async def test_gemini_acomplete_empty_response():
         mock_response.text = ""
         mock_models.generate_content = AsyncMock(return_value=mock_response)
 
-        client = GeminiClient()
+        client = Gemini()
         events = [
             TaskStartEvent(
                 agent_name="test", task_name="test", inputs={}, message="Hello"
@@ -421,7 +421,7 @@ async def test_gemini_acomplete_stream():
 
         mock_models.generate_content_stream = AsyncMock(return_value=mock_stream())
 
-        client = GeminiClient()
+        client = Gemini()
         events = [
             TaskStartEvent(
                 agent_name="test", task_name="test", inputs={}, message="Hello"
@@ -445,7 +445,7 @@ async def test_gemini_acomplete_api_error():
         mock_models = mock_aio.models
         mock_models.generate_content = AsyncMock(side_effect=Exception("API Error"))
 
-        client = GeminiClient()
+        client = Gemini()
         events = [
             TaskStartEvent(
                 agent_name="test", task_name="test", inputs={}, message="Hello"

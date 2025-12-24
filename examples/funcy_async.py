@@ -18,7 +18,7 @@ from agex import Agent, Versioned, connect_llm, pprint_tokens
 funcy_agent = Agent(
     name="funcy_async",
     primer="You are great at providing custom functions to the user.",
-    llm_client=connect_llm(provider="gemini", model="gemini-3-flash-preview"),
+    llm=connect_llm(provider="gemini", model="gemini-3-flash-preview"),
 )
 funcy_agent.module(math, visibility="low")
 

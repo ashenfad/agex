@@ -3,26 +3,26 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from agex.agent.events import ActionEvent, TaskStartEvent
-from agex.llm.anthropic_client import AnthropicClient
+from agex.llm.anthropic_client import Anthropic
 from agex.llm.core import LLMResponse, TokenChunk
 
 
 def test_anthropic_client_initialization():
-    """Test that AnthropicClient can be initialized with default parameters."""
-    client = AnthropicClient()
+    """Test that Anthropic can be initialized with default parameters."""
+    client = Anthropic()
     assert client.model == "claude-3-sonnet-20240229"
     assert client.provider_name == "Anthropic"
 
 
 def test_anthropic_client_custom_model():
-    """Test that AnthropicClient can be initialized with custom model."""
-    client = AnthropicClient(model="claude-3-haiku-20240307")
+    """Test that Anthropic can be initialized with custom model."""
+    client = Anthropic(model="claude-3-haiku-20240307")
     assert client.model == "claude-3-haiku-20240307"
 
 
 def test_anthropic_client_event_handling():
     """Test that events are properly handled by Anthropic API."""
-    client = AnthropicClient()
+    client = Anthropic()
 
     # Mock the anthropic client
     mock_response = MagicMock()
@@ -69,7 +69,7 @@ def test_anthropic_client_event_handling():
 
 def test_anthropic_client_system_message():
     """Test that system message is properly passed to Anthropic API."""
-    client = AnthropicClient()
+    client = Anthropic()
 
     mock_response = MagicMock()
     mock_tool_use = MagicMock()
@@ -107,7 +107,7 @@ def test_anthropic_client_system_message():
 @pytest.mark.asyncio
 async def test_anthropic_acomplete():
     """Test async acomplete method."""
-    client = AnthropicClient()
+    client = Anthropic()
 
     mock_response = MagicMock()
     mock_tool_use = MagicMock()
@@ -136,7 +136,7 @@ async def test_anthropic_acomplete():
 @pytest.mark.asyncio
 async def test_anthropic_acomplete_empty_response():
     """Test async acomplete error for empty response."""
-    client = AnthropicClient()
+    client = Anthropic()
 
     mock_response = MagicMock()
     mock_response.content = []
@@ -157,7 +157,7 @@ async def test_anthropic_acomplete_empty_response():
 @pytest.mark.asyncio
 async def test_anthropic_acomplete_api_error():
     """Test async acomplete error handling."""
-    client = AnthropicClient()
+    client = Anthropic()
 
     with patch.object(client, "async_client") as mock_async:
         mock_async.messages.create = AsyncMock(side_effect=Exception("API Error"))
@@ -175,7 +175,7 @@ async def test_anthropic_acomplete_api_error():
 @pytest.mark.asyncio
 async def test_anthropic_acomplete_stream():
     """Test async acomplete_stream method."""
-    client = AnthropicClient()
+    client = Anthropic()
 
     # Mock streaming events
     async def mock_stream():

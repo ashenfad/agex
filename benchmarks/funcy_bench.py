@@ -12,7 +12,7 @@ from agex.bench import Trial, benchmark_pass_fail, params
 
 
 def make_task(model: str) -> Callable:
-    llm_client = connect_llm(
+    llm = connect_llm(
         "openai",
         model=model,
         base_url="http://localhost:11434/v1",
@@ -22,7 +22,7 @@ def make_task(model: str) -> Callable:
     funcy = Agent(
         name=f"funcy-{model}",
         primer="You are great at providing custom functions to the user.",
-        llm_client=llm_client,
+        llm=llm,
         max_iterations=4,
     )
     funcy.module(math, visibility="low")

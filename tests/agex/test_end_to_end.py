@@ -13,7 +13,7 @@ These tests verify that all components work together correctly:
 import pytest
 
 from agex import Agent, TaskClarify, TaskFail, TaskTimeout
-from agex.llm import DummyLLMClient
+from agex.llm import Dummy
 from agex.llm.core import LLMResponse
 
 
@@ -26,14 +26,14 @@ def test_successful_task_completion():
             code="sum_result = add(inputs.x, inputs.y)\nfinal_result = multiply(sum_result, 2)\ntask_success(final_result)",
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
+    llm = Dummy(responses=responses)
 
     # Create agent with registered functions
     agent = Agent(
         primer="You are a helpful math assistant.",
         eval_timeout_seconds=30.0,
         max_iterations=3,
-        llm_client=llm_client,
+        llm=llm,
     )
 
     @agent.fn()
@@ -84,8 +84,8 @@ def test_task_with_parse_error_recovery():
             code="result = get_answer()\ntask_success(result)",
         ),
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=3, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=3, llm=llm)
 
     @agent.fn()
     def get_answer() -> int:
@@ -121,8 +121,8 @@ def test_task_with_evaluation_error_recovery():
             code="result = 1 + 1\ntask_success(result)",
         ),
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=3, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=3, llm=llm)
 
     @agent.task("Compute a simple result.")
     def compute_simple() -> int:  # type: ignore[return-value]
@@ -146,8 +146,8 @@ def test_task_with_inputs_access():
             code="message = inputs.text.upper()\ncount = inputs.repeat_count\nresult = message * count\ntask_success(result)",
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     @agent.task("Process text input by transforming and repeating it.")
     def process_text(text: str, repeat_count: int) -> str:  # type: ignore[return-value]
@@ -176,8 +176,8 @@ def test_task_timeout_after_max_iterations():
             code='x = 1 + 1\nprint(f"Current value: {x}")',
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     @agent.task("A task that never completes.")
     def never_ending_task() -> int:  # type: ignore[return-value]
@@ -202,8 +202,8 @@ def test_task_with_task_fail():
             code='task_fail("Task is impossible to complete")',
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     @agent.task("A task that always fails.")
     def impossible_task() -> str:  # type: ignore[return-value]
@@ -234,8 +234,8 @@ def test_task_with_task_clarify():
             code=f'task_clarify("{clarification_message}")',
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     @agent.task("A task that requires clarification.")
     def needs_clarification_task() -> str:  # type: ignore[return-value]
@@ -259,8 +259,8 @@ def test_task_with_no_inputs():
             code='result = "Hello, World!"\ntask_success(result)',
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     @agent.task("Return a greeting.")
     def hello_world() -> str:  # type: ignore[return-value]
@@ -284,8 +284,8 @@ def test_task_with_complex_return_type():
             code='result = {"name": inputs.name, "age": inputs.age, "status": "processed"}\ntask_success(result)',
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     @agent.task("Create a profile dictionary.")
     def create_profile(name: str, age: int) -> dict:  # type: ignore[return-value]
@@ -315,8 +315,8 @@ def test_agent_function_visibility_in_task():
             code="result = calculate_factorial(inputs.number)\ntask_success(result)",
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     # Register a helper function
     @agent.fn()
@@ -351,8 +351,8 @@ def test_task_with_no_return_type():
             code="print('Task completed successfully')\ntask_success()",
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(max_iterations=2, llm_client=llm_client)
+    llm = Dummy(responses=responses)
+    agent = Agent(max_iterations=2, llm=llm)
 
     @agent.task("Perform a task that doesn't return anything.")
     def no_return_task():  # No return type annotation

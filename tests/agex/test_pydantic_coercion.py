@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import pytest
 
 from agex import Agent, TaskTimeout
-from agex.llm import DummyLLMClient
+from agex.llm import Dummy
 from agex.llm.core import LLMResponse
 
 
@@ -25,10 +25,8 @@ def test_pydantic_strict_mode():
             code='task_success({"msg": "a shiny ring"})',
         )
     ]
-    llm_client = DummyLLMClient(responses=responses)
-    agent = Agent(
-        llm_client=llm_client, max_iterations=2
-    )  # Limit iterations to fail faster
+    llm = Dummy(responses=responses)
+    agent = Agent(llm=llm, max_iterations=2)  # Limit iterations to fail faster
 
     @agent.cls
     @dataclass

@@ -5,7 +5,7 @@ import pytest
 
 from agex.agent import Agent
 from agex.agent.base import clear_agent_registry
-from agex.llm.dummy_client import DummyLLMClient
+from agex.llm.dummy_client import Dummy
 from agex.remote.serialize import deserialize_agent, serialize_agent
 
 
@@ -19,7 +19,7 @@ def clear_registry():
 def test_agent_serialization_basic():
     """Test basic agent serialization and reconstruction."""
     agent = Agent()
-    agent.llm_client = DummyLLMClient(timeout_seconds=123)
+    agent.llm = Dummy(timeout_seconds=123)
 
     # Serialize
     payload = serialize_agent(agent)
@@ -38,9 +38,9 @@ def test_agent_serialization_basic():
     restored_agent = ctx.run(run_isolated)
 
     assert restored_agent.name is not None
-    assert restored_agent.llm_client is not None
-    # LLM client is reconstructed from config - will be DummyLLMClient
-    assert restored_agent.llm_client.model == "dummy"
+    assert restored_agent.llm is not None
+    # LLM client is reconstructed from config - will be Dummy
+    assert restored_agent.llm.model == "dummy"
 
     # Verify fingerprint logic was called
     assert restored_agent.fingerprint is not None
@@ -49,7 +49,7 @@ def test_agent_serialization_basic():
 def test_agent_serialization_with_modules():
     """Test serialization of an agent with registered modules."""
     agent = Agent()
-    agent.llm_client = DummyLLMClient()
+    agent.llm = Dummy()
     agent.module(np, name="numpy")
 
     payload = serialize_agent(agent)
@@ -68,7 +68,7 @@ def test_agent_serialization_with_modules():
 def test_serialized_config_is_used():
     """Test that serialized LLM config is used during deserialization."""
     agent = Agent()
-    agent.llm_client = DummyLLMClient(timeout_seconds=999)
+    agent.llm = Dummy(timeout_seconds=999)
 
     payload = serialize_agent(agent)
 
@@ -80,5 +80,5 @@ def test_serialized_config_is_used():
     restored_agent = ctx.run(run_isolated)
 
     # Verify the reconstructed client uses the serialized config
-    # DummyLLMClient's from_config passes through timeout_seconds
-    assert restored_agent.llm_client is not None
+    # Dummy's from_config passes through timeout_seconds
+    assert restored_agent.llm is not None

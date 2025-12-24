@@ -17,7 +17,7 @@ from agex.agent.policy.describe import (
     describe_member,
     describe_namespace,
 )
-from agex.llm import DummyLLMClient
+from agex.llm import Dummy
 from agex.llm.core import LLMResponse
 from agex.state import Namespaced, Versioned
 from tests.agex import test_module
@@ -104,7 +104,7 @@ def test_context_manager_bound_variable_is_cleaned_up():
     """Context manager bindings (e.g., 'as conn') should not persist after the block."""
     clear_agent_registry()
 
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         [
             LLMResponse(
                 thinking="Create a table via sqlite3 context manager.",
@@ -114,7 +114,7 @@ task_success("done")""",
             )
         ]
     )
-    agent = Agent(name="db_agent", llm_client=llm_client)
+    agent = Agent(name="db_agent", llm=llm)
     connection = sqlite3.connect(":memory:")
     agent.module(connection, name="db", include=["execute", "commit"])
 
@@ -134,10 +134,8 @@ def test_helper_recap_skips_unpicklable_markers():
     """UserFunction recap should skip state entries that raise UnpicklableVariableError."""
     clear_agent_registry()
 
-    llm_client = DummyLLMClient(
-        [LLMResponse(thinking="Simple completion.", code='task_success("ok")')]
-    )
-    agent = Agent(name="marker_agent", llm_client=llm_client)
+    llm = Dummy([LLMResponse(thinking="Simple completion.", code='task_success("ok")')])
+    agent = Agent(name="marker_agent", llm=llm)
 
     @agent.task
     def marker_task() -> str:  # type: ignore[return-value]
@@ -655,7 +653,7 @@ def test_task_input_dataclass_pickling():
     clear_agent_registry()
 
     # Create agent with dummy LLM client to avoid real API calls
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I will return the expected result",
@@ -663,7 +661,7 @@ def test_task_input_dataclass_pickling():
             )
         ]
     )
-    agent = Agent(name="test_agent", llm_client=llm_client)
+    agent = Agent(name="test_agent", llm=llm)
 
     @agent.task("Test task with inputs")
     def test_task(message: str, value: int) -> str:  # type: ignore
@@ -707,7 +705,7 @@ def test_unserializable_object_in_state_is_handled_gracefully():
 
     # This fn mutates a dictionary to include a real Python lambda,
     # making the dictionary unserializable.
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="Mutating an object to make it unserializable.",
@@ -719,7 +717,7 @@ def test_unserializable_object_in_state_is_handled_gracefully():
             ),
         ]
     )
-    agent = Agent(name="test_agent", llm_client=llm_client)
+    agent = Agent(name="test_agent", llm=llm)
 
     class Unserializable:
         def __getstate__(self):
@@ -774,10 +772,8 @@ def test_shallow_validation_on_large_input_list():
     clear_agent_registry()
     # The non-failing path of this test will enter the task loop.
     # We provide a single dummy response for it to consume.
-    llm_client = DummyLLMClient(
-        responses=[LLMResponse(thinking="Looks good.", code="task_success(1)")]
-    )
-    agent = Agent(name="test_agent", llm_client=llm_client)
+    llm = Dummy(responses=[LLMResponse(thinking="Looks good.", code="task_success(1)")])
+    agent = Agent(name="test_agent", llm=llm)
 
     @agent.task("A task that accepts a large list.")
     def process_large_list(items: list[int]) -> int:  # type: ignore
@@ -813,7 +809,7 @@ def test_shallow_validation_on_agent_output():
     large_invalid_dict = large_valid_dict.copy()
     large_invalid_dict["key_145"] = "not an int"  # type: ignore
 
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I will try to return an invalid dictionary.",
@@ -825,7 +821,7 @@ def test_shallow_validation_on_agent_output():
             ),
         ]
     )
-    agent = Agent(name="test_agent", llm_client=llm_client)
+    agent = Agent(name="test_agent", llm=llm)
 
     @agent.task("A task that returns a large dictionary.")
     def produce_large_dict() -> dict[str, int]:  # type: ignore
@@ -882,7 +878,7 @@ def test_task_setup_functionality():
     clear_agent_registry()
 
     # Create agent
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I can see the setup variable and will complete the task",
@@ -890,7 +886,7 @@ def test_task_setup_functionality():
             )
         ]
     )
-    agent = Agent(name="setup_test_agent", llm_client=llm_client)
+    agent = Agent(name="setup_test_agent", llm=llm)
 
     # Define task with setup
     @agent.task(primer="Test task with setup", setup='setup_var = "Hello from setup!"')
@@ -930,7 +926,7 @@ def test_task_setup_error_handling():
     clear_agent_registry()
 
     # Create agent
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I see there was an error in setup, but I can still complete the task",
@@ -938,7 +934,7 @@ def test_task_setup_error_handling():
             )
         ]
     )
-    agent = Agent(name="setup_error_agent", llm_client=llm_client)
+    agent = Agent(name="setup_error_agent", llm=llm)
 
     # Define task with setup that will error
     @agent.task(
@@ -981,7 +977,7 @@ def test_task_without_setup():
     clear_agent_registry()
 
     # Create agent
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="Simple task completion",
@@ -989,7 +985,7 @@ def test_task_without_setup():
             )
         ]
     )
-    agent = Agent(name="no_setup_agent", llm_client=llm_client)
+    agent = Agent(name="no_setup_agent", llm=llm)
 
     # Define task without setup
     @agent.task(primer="Test task without setup")
@@ -1021,7 +1017,7 @@ def test_setup_events_tagged_with_source():
     clear_agent_registry()
 
     # Create agent that uses task_continue in setup
-    llm_client = DummyLLMClient(
+    llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="I can see the setup output and complete",
@@ -1029,7 +1025,7 @@ def test_setup_events_tagged_with_source():
             )
         ]
     )
-    agent = Agent(name="setup_source_agent", llm_client=llm_client)
+    agent = Agent(name="setup_source_agent", llm=llm)
 
     # Define task with setup that creates output
     @agent.task(
@@ -1095,14 +1091,14 @@ print(f"Setup complete: {setup_var}")
 
     # Create identical agents for batch and streaming tests
     def create_agent(name: str) -> Agent:
-        llm_client = DummyLLMClient(
+        llm = Dummy(
             responses=[
                 LLMResponse(
                     thinking="I will complete immediately", code='task_success("done")'
                 ),
             ]
         )
-        return Agent(name=name, llm_client=llm_client)
+        return Agent(name=name, llm=llm)
 
     # Test 1: Batch execution
     batch_agent = create_agent("batch_agent")
@@ -1231,7 +1227,7 @@ def test_recursive_module_registration_allows_submodule_imports():
     # collections.abc is a submodule of collections.
     agent.module(collections, recursive=True)
     # Use dummy LLM to avoid real calls; simply succeed
-    agent.llm_client = DummyLLMClient(
+    agent.llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="ok", code="from collections import abc\ntask_success(True)"
@@ -1259,7 +1255,7 @@ def test_non_recursive_module_registration_fails_submodule_imports():
     # Register collections WITHOUT recursive=True
     agent.module(collections, recursive=False)
     # Dummy LLM won't be used because setup should fail before LLM runs
-    agent.llm_client = DummyLLMClient(
+    agent.llm = Dummy(
         responses=[
             LLMResponse(
                 thinking="should not run",
