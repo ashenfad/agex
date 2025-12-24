@@ -151,10 +151,44 @@ class LLMClient(ABC):
     providers and implementation approaches.
     """
 
+    def __init__(
+        self,
+        model: str = "",
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        **kwargs,
+    ):
+        self._model = model
+        self._timeout_seconds = timeout_seconds
+
     @property
     def timeout_seconds(self) -> float:
         """Timeout in seconds for each API call. Override in subclass to customize."""
-        return DEFAULT_TIMEOUT_SECONDS
+        return self._timeout_seconds
+
+    def dump_config(self) -> dict[str, Any]:
+        """
+        Return a configuration dictionary that can be used to reconstruct this client.
+
+        This dictionary should be serializable (JSON-safe).
+        """
+        return {
+            "provider": getattr(self, "provider_name", "llmclient").lower(),
+            "model": self.model,
+            "timeout_seconds": self.timeout_seconds,
+        }
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any]) -> "LLMClient":
+        """
+        Reconstruct a client from a configuration dictionary.
+
+        This method delegates to the `connect_llm` factory or direct instantiation
+        depending on the structure of the config.
+        """
+        # Avoid circular import
+        from agex.llm import connect_llm
+
+        return connect_llm(**config)
 
     @abstractmethod
     def complete(self, system: str, events: list["Event"], **kwargs) -> LLMResponse:
@@ -357,7 +391,7 @@ Write your summary of what happened in this interaction."""
         Returns:
             Model identifier string
         """
-        ...
+        return getattr(self, "_model", "")
 
     @property
     @abstractmethod
@@ -368,4 +402,4 @@ Write your summary of what happened in this interaction."""
         Returns:
             Provider name string (e.g., "OpenAI", "Anthropic", "Google Gemini")
         """
-        ...
+        return "LLMClient"

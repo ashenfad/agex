@@ -1,4 +1,5 @@
 import uuid
+from contextvars import ContextVar
 from typing import Any, Callable, Dict, Literal
 
 from ..llm import LLMClient, connect_llm
@@ -10,9 +11,14 @@ from .fingerprint import compute_agent_fingerprint_from_policy
 from .policy.policy import AgentPolicy
 
 # Global registry mapping fingerprints to agents
-_AGENT_REGISTRY: Dict[str, "BaseAgent"] = {}
+# Using ContextVar for thread/async-task safety in server environments
+_AGENT_REGISTRY: ContextVar[Dict[str, "BaseAgent"]] = ContextVar(
+    "agent_registry", default={}
+)
 # Global registry mapping agent names to agents
-_AGENT_REGISTRY_BY_NAME: Dict[str, "BaseAgent"] = {}
+_AGENT_REGISTRY_BY_NAME: ContextVar[Dict[str, "BaseAgent"]] = ContextVar(
+    "agent_registry_by_name", default={}
+)
 
 
 def register_agent(agent: "BaseAgent") -> str:
@@ -21,16 +27,21 @@ def register_agent(agent: "BaseAgent") -> str:
 
     Returns the agent's fingerprint.
     """
+    registry_by_name = _AGENT_REGISTRY_BY_NAME.get().copy()
+    registry = _AGENT_REGISTRY.get().copy()
+
     # Enforce unique agent names if provided
     if hasattr(agent, "name") and agent.name is not None:
-        if agent.name in _AGENT_REGISTRY_BY_NAME:
-            existing_agent = _AGENT_REGISTRY_BY_NAME[agent.name]
+        if agent.name in registry_by_name:
+            existing_agent = registry_by_name[agent.name]
             if existing_agent is not agent:  # Allow re-registration of same agent
                 raise ValueError(f"Agent name '{agent.name}' already exists")
-        _AGENT_REGISTRY_BY_NAME[agent.name] = agent
+        registry_by_name[agent.name] = agent
+        _AGENT_REGISTRY_BY_NAME.set(registry_by_name)
 
     fingerprint = compute_agent_fingerprint_from_policy(agent)
-    _AGENT_REGISTRY[fingerprint] = agent
+    registry[fingerprint] = agent
+    _AGENT_REGISTRY.set(registry)
     return fingerprint
 
 
@@ -40,9 +51,10 @@ def resolve_agent(fingerprint: str) -> "BaseAgent":
 
     Raises RuntimeError if no matching agent is found.
     """
-    agent = _AGENT_REGISTRY.get(fingerprint)
+    registry = _AGENT_REGISTRY.get()
+    agent = registry.get(fingerprint)
     if not agent:
-        available = list(_AGENT_REGISTRY.keys())
+        available = list(registry.keys())
         raise RuntimeError(
             f"No agent found with fingerprint '{fingerprint[:8]}...'. "
             f"Available fingerprints: {[fp[:8] + '...' for fp in available]}"
@@ -54,9 +66,8 @@ def clear_agent_registry() -> None:
     """Clear the global registry. Primarily for testing."""
     from .task import clear_dynamic_dataclass_registry
 
-    global _AGENT_REGISTRY, _AGENT_REGISTRY_BY_NAME
-    _AGENT_REGISTRY = {}
-    _AGENT_REGISTRY_BY_NAME = {}
+    _AGENT_REGISTRY.set({})
+    _AGENT_REGISTRY_BY_NAME.set({})
     clear_dynamic_dataclass_registry()
 
 
@@ -127,6 +138,51 @@ class BaseAgent:
     def _update_fingerprint(self):
         """Update the fingerprint after registration changes."""
         self.fingerprint = register_agent(self)
+
+    def __getstate__(self) -> dict[str, Any]:
+        """
+        Custom pickling state to handle runtime objects.
+
+        Excludes:
+        - _host_object_registry: Holds live instances (db connections, etc.)
+        - llm_client: Live client has nonserializable state (sockets, SSL context)
+        - fingerprint: Computed from runtime state, might differ on host
+
+        Adds:
+        - _llm_config: Reconstructable configuration for the LLM client
+        """
+        state = self.__dict__.copy()
+
+        # Serialize LLM config using our new helper
+        if self.llm_client:
+            state["_llm_config"] = self.llm_client.dump_config()
+
+        # Remove runtime-only objects
+        state.pop("llm_client", None)
+        state.pop("_host_object_registry", None)
+        state.pop("fingerprint", None)
+
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """
+        Restore agent from pickle state.
+
+        NOTE: The agent is not fully functional until rehydrated by the remote
+        runtime, which must:
+        1. Inject a new llm_client (or use the one from _llm_config)
+        2. Recompute fingerprint/register
+        """
+        # Restore configuration
+        self.__dict__.update(state)
+
+        # Initialize runtime fields that were mocked/missing
+        self._host_object_registry = {}  # Empty on new host
+
+        # llm_client remains None until injected by deserialize_agent
+        # or lazily connected if we want that behavior (design choice: passed in)
+        self.llm_client = None
+        self.fingerprint = None  # Will be recomputed
 
     def module(
         self,
