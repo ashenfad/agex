@@ -28,6 +28,9 @@ class DummyLLMClient(LLMClient):
             responses: A list of LLMResponse objects to cycle through. If None, a default
                        response is used.
         """
+        # Initialize base class timeout
+        self._timeout_seconds = kwargs.get("timeout_seconds", 60.0)
+
         if responses:
             self.responses = responses
         else:
@@ -44,6 +47,32 @@ class DummyLLMClient(LLMClient):
         # For testing summarization
         self.summary_response: str | None = None
         self.summary_exception: Exception | None = None
+
+    def dump_config(self) -> dict:
+        """Serialize client configuration for transport."""
+        # Serialize LLMResponse objects; skip Exceptions (can't serialize)
+        serialized_responses = [
+            r.model_dump() for r in self.responses if isinstance(r, LLMResponse)
+        ]
+
+        return {
+            "provider": "dummy",
+            "model": self.model,
+            "timeout_seconds": self.timeout_seconds,
+            "responses": serialized_responses,
+        }
+
+    @classmethod
+    def from_config(cls, config: dict) -> "DummyLLMClient":
+        """Reconstruct client from configuration."""
+        responses = None
+        if "responses" in config and config["responses"]:
+            responses = [LLMResponse.model_validate(r) for r in config["responses"]]
+
+        return cls(
+            responses=responses,
+            timeout_seconds=config.get("timeout_seconds", 60.0),
+        )
 
     def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
         """

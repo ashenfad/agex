@@ -6,22 +6,18 @@
 
 `agex` executes sandboxed Python directly in your process, bypassing JSON serialization to let complex objects flow freely. You define a safe, focused environment by whitelisting exactly which capabilities are available.
 
-In agex, agents are just Python functions:
-- **Defined by Signature**: Input/output types are enforced by standard type hints.
-- **Powered by Code**: Agents write and execute Python in a secure sandbox to fulfill that signature.
-- **Curated Scope**: You whitelist exactly which modules and classes are available.
-- **Stateful Memory**: The entire workspace is versioned, enabling time-travel debugging and serverless-style background execution.
-- **Unified Observability**: Complete visibility into agent thought and action with real-time event & token streaming.
-- **Multi-Agent Orchestration**: Coordinate hierarchical or peer agents with natural Python control flow.
-- **Integrated Benchmarking**: A built-in framework for data-driven agent evaluation.
+Key features:
+- **Type-Safe Execution**: Agents fulfill typed signatures by executing sandboxed Python.
+- **Curated Scope**: Whitelist exactly which modules and classes are available.
+- **Stateful Memory**: Versioned workspace enables time-travel debugging.
+- **Multi-Agent Orchestration**: Coordinate agents with natural Python control flow.
+- **Remote Execution**: Deploy tasks to servers with `@remote`, streaming results via SSE.
 
-![agex demo gif](docs/assets/teaser.gif)
+![Demo of an agex agent returning pandas DataFrames and plotly figures in an IPython REPL](docs/assets/teaser.gif)
 
 **This works because** `agex` agents can accept and return complex types like `pandas.DataFrame` and `plotly.Figure` objects without intermediate JSON serialization. For a deeper dive, check out the full **[agex101.ipynb tutorial](https://ashenfad.github.io/agex/examples/agex101/)** or see **[geospatial routing with OSMnx](https://ashenfad.github.io/agex/examples/routing/)** for advanced multi-library integration.
 
 For a full demo app where agex integrates with NiceGUI, see [`agex-ui`](https://github.com/ashenfad/agex-ui).
-
-
 
 
 ## Documentation

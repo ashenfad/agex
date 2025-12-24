@@ -169,13 +169,19 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 if effective_primer is None and not callable(primer_or_func):
                     effective_primer = primer_or_func
 
-                return self._create_task_wrapper(
+                wrapper = self._create_task_wrapper(
                     func,
                     primer=effective_primer,
                     setup=setup,
                     on_conflict=on_conflict,
                     max_conflict_retries=max_conflict_retries,
                 )
+
+                # Register the task so it can be found remotely
+                if hasattr(self, "_tasks"):
+                    self._tasks[func.__name__] = wrapper
+
+                return wrapper
 
         # If the decorator is used without parentheses (@agent.task), the function
         # is passed directly as primer_or_func. In this case, we call the decorator

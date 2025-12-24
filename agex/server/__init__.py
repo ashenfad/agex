@@ -8,12 +8,11 @@ Install with: pip install agex[server]
 """
 
 from .app import create_app, run_server
-from .state import InvalidStateURIError, register_state_scheme, resolve_state_uri
+from .state import InvalidStateURIError, resolve_state_uri
 
 __all__ = [
     "create_app",
     "run_server",
     "resolve_state_uri",
-    "register_state_scheme",
     "InvalidStateURIError",
 ]

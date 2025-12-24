@@ -95,6 +95,18 @@ class RegistrationMixin(BaseAgent):
             else:
                 # Normal case: real Python function
                 final_name = name or f.__name__
+
+                # Check if this function is already a task on THIS agent
+                # This would indicate API confusion - tasks don't need .fn() registration
+                owning_agent = getattr(f, "__agex_agent__", None)
+                if owning_agent is self:
+                    raise ValueError(
+                        f"Cannot register '{final_name}' as a capability on the same "
+                        f"agent that owns it as a task. Task functions are automatically "
+                        f"available to their agent—use @agent.fn only when registering "
+                        f"a task from a different agent as a callable capability."
+                    )
+
                 if final_name in RESERVED_NAMES:
                     raise ValueError(
                         f"The name '{final_name}' is reserved and cannot be registered."

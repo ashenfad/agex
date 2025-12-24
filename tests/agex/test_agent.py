@@ -553,6 +553,25 @@ def test_task_decorator_validation_error_messages():
     assert "Correct order:" in error_msg
 
 
+def test_fn_registration_of_own_task_not_allowed():
+    """Test that registering a task as a capability on the same agent raises an error."""
+    agent = Agent()
+
+    @agent.task("Do something")
+    def my_task():
+        """A task function."""
+        pass
+
+    # Attempt to register the same task as a capability on the same agent
+    with pytest.raises(ValueError) as exc_info:
+        agent.fn(my_task)
+
+    error_msg = str(exc_info.value)
+    assert "Cannot register" in error_msg
+    assert "same agent" in error_msg
+    assert "Task functions are automatically available" in error_msg
+
+
 def test_agent_names_and_uniqueness():
     """Test agent name assignment and uniqueness enforcement."""
     # Clear registry for clean test
@@ -566,8 +585,13 @@ def test_agent_names_and_uniqueness():
     assert agent2.name == "other_agent"
 
     # Test duplicate name prevention
+
+    # 1. Identical agent (same fingerprint) should NOT raise (simulates deserialization)
+    Agent(name="test_agent")
+
+    # 2. Different agent (different fingerprint) SHOULD raise
     with pytest.raises(ValueError, match="Agent name 'test_agent' already exists"):
-        Agent(name="test_agent")
+        Agent(name="test_agent", primer="Different instructions")
 
 
 def test_dual_decorator_namespace_setting():

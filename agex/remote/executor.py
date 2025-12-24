@@ -24,6 +24,13 @@ class RemoteExecutionError(Exception):
         super().__init__(message)
         self.remote_traceback = remote_traceback
 
+    def __str__(self) -> str:
+        """Include remote traceback in string representation for debugging."""
+        base = super().__str__()
+        if self.remote_traceback:
+            return f"{base}\n\nRemote Traceback:\n{self.remote_traceback}"
+        return base
+
 
 class RemoteTimeoutError(TimeoutError):
     """Raised when the remote execution times out."""
@@ -58,6 +65,7 @@ class RemoteTaskExecutor:
         default_state: str | None = None,
         timeout: float = 300.0,
         retries: int = 0,
+        _http_client: Any | None = None,
     ):
         self.agent = agent
         self.task_name = task_name
@@ -65,6 +73,8 @@ class RemoteTaskExecutor:
         self.default_state = default_state
         self.timeout = timeout
         self.retries = retries
+        # Test hook: allows injecting a custom HTTP client (e.g., TestClient)
+        self._http_client = _http_client
 
     def execute_sync(
         self,
@@ -77,9 +87,28 @@ class RemoteTaskExecutor:
         """Execute the task synchronously."""
         payload = self._build_payload(args, kwargs, state_uri)
 
+        # Use injected client if provided (for testing)
+        if self._http_client is not None:
+            return self._execute_with_client(
+                self._http_client, payload, on_token, on_event
+            )
+
+        # Normal path: create httpx client
         transport = httpx.HTTPTransport(retries=self.retries)
         with httpx.Client(transport=transport, timeout=self.timeout) as client:
-            try:
+            return self._execute_with_client(client, payload, on_token, on_event)
+
+    def _execute_with_client(
+        self,
+        client,
+        payload: dict,
+        on_token: Callable | None,
+        on_event: Callable | None,
+    ) -> Any:
+        """Execute using the provided HTTP client."""
+        try:
+            # Check if client supports streaming (httpx) vs request (TestClient)
+            if hasattr(client, "stream"):
                 with client.stream(
                     "POST",
                     self.url,
@@ -88,17 +117,53 @@ class RemoteTaskExecutor:
                 ) as response:
                     response.raise_for_status()
                     return self._process_sync_stream(response, on_token, on_event)
+            else:
+                # TestClient uses .post() with stream=True in response
+                response = client.post(
+                    "/execute",
+                    json=payload,
+                    headers={"Accept": "text/event-stream"},
+                )
+                response.raise_for_status()
+                # TestClient returns response.text directly, parse it
+                return self._process_text_response(response.text, on_token, on_event)
 
-            except httpx.TimeoutException as e:
-                raise RemoteTimeoutError(
-                    f"Remote execution timed out after {self.timeout}s"
-                ) from e
-            except httpx.HTTPStatusError as e:
-                raise RemoteExecutionError(
-                    f"HTTP Error {e.response.status_code}: {e.response.text}"
-                ) from e
-            except httpx.RequestError as e:
-                raise RemoteExecutionError(f"Connection error: {e}") from e
+        except httpx.TimeoutException as e:
+            raise RemoteTimeoutError(
+                f"Remote execution timed out after {self.timeout}s"
+            ) from e
+        except httpx.HTTPStatusError as e:
+            raise RemoteExecutionError(
+                f"HTTP Error {e.response.status_code}: {e.response.text}"
+            ) from e
+        except httpx.RequestError as e:
+            raise RemoteExecutionError(f"Connection error: {e}") from e
+
+    def _process_text_response(
+        self,
+        text: str,
+        on_token: Callable | None,
+        on_event: Callable | None,
+    ) -> Any:
+        """Process SSE response from text (for TestClient)."""
+        current_event_type = None
+
+        for line in text.split("\n"):
+            event = self._parse_sse_line(line, current_event_type)
+            if event.event_type == "__set_type__":
+                current_event_type = event.data
+                continue
+            if event.event_type == "__reset__":
+                current_event_type = None
+                continue
+            if event.data is None:
+                continue
+
+            result = self._handle_event(event, on_token, on_event)
+            if result is not None:
+                return result
+
+        raise RemoteExecutionError("Connection closed without returning a result.")
 
     async def execute_async(
         self,
@@ -111,32 +176,48 @@ class RemoteTaskExecutor:
         """Execute the task asynchronously."""
         payload = self._build_payload(args, kwargs, state_uri)
 
+        # Use injected client if provided (for testing)
+        if self._http_client is not None:
+            return await self._execute_async_with_client(
+                self._http_client, payload, on_token, on_event
+            )
+
         transport = httpx.AsyncHTTPTransport(retries=self.retries)
         async with httpx.AsyncClient(
             transport=transport, timeout=self.timeout
         ) as client:
-            try:
-                async with client.stream(
-                    "POST",
-                    self.url,
-                    json=payload,
-                    headers={"Accept": "text/event-stream"},
-                ) as response:
-                    response.raise_for_status()
-                    return await self._process_async_stream(
-                        response, on_token, on_event
-                    )
+            return await self._execute_async_with_client(
+                client, payload, on_token, on_event
+            )
 
-            except httpx.TimeoutException as e:
-                raise RemoteTimeoutError(
-                    f"Remote execution timed out after {self.timeout}s"
-                ) from e
-            except httpx.HTTPStatusError as e:
-                raise RemoteExecutionError(
-                    f"HTTP Error {e.response.status_code}: {e.response.text}"
-                ) from e
-            except httpx.RequestError as e:
-                raise RemoteExecutionError(f"Connection error: {e}") from e
+    async def _execute_async_with_client(
+        self,
+        client,
+        payload: dict,
+        on_token: Callable | None,
+        on_event: Callable | None,
+    ) -> Any:
+        """Execute using the provided Async HTTP client."""
+        try:
+            async with client.stream(
+                "POST",
+                self.url,
+                json=payload,
+                headers={"Accept": "text/event-stream"},
+            ) as response:
+                response.raise_for_status()
+                return await self._process_async_stream(response, on_token, on_event)
+
+        except httpx.TimeoutException as e:
+            raise RemoteTimeoutError(
+                f"Remote execution timed out after {self.timeout}s"
+            ) from e
+        except httpx.HTTPStatusError as e:
+            raise RemoteExecutionError(
+                f"HTTP Error {e.response.status_code}: {e.response.text}"
+            ) from e
+        except httpx.RequestError as e:
+            raise RemoteExecutionError(f"Connection error: {e}") from e
 
     def _build_payload(self, args: tuple, kwargs: dict, state_uri: str | None) -> dict:
         """Build the JSON request payload."""

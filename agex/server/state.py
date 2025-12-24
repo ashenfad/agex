@@ -6,7 +6,6 @@ Versioned state objects.
 """
 
 import os
-from typing import Callable
 from urllib.parse import urlparse
 
 from agex.state import Versioned
@@ -19,34 +18,15 @@ class InvalidStateURIError(ValueError):
     pass
 
 
-# Registry of custom state scheme resolvers
-_STATE_SCHEME_REGISTRY: dict[str, Callable[[str], Versioned]] = {}
-
-
-def register_state_scheme(scheme: str, resolver: Callable[[str], Versioned]) -> None:
-    """
-    Register a custom state scheme resolver.
-
-    Args:
-        scheme: The URI scheme (e.g., "redis", "s3")
-        resolver: A callable that takes a URI string and returns a Versioned object
-
-    Example:
-        def redis_resolver(uri: str) -> Versioned:
-            parsed = urlparse(uri)
-            return Versioned(kv.Redis(host=parsed.hostname, port=parsed.port))
-
-        register_state_scheme("redis", redis_resolver)
-    """
-    _STATE_SCHEME_REGISTRY[scheme] = resolver
-
-
 def resolve_state_uri(
     uri: str,
     base_path: str = "/var/agex/state",
 ) -> Versioned:
     """
     Resolve a state URI to a Versioned state object.
+
+    Currently supports:
+    - disk://session_id: Disk-backed state in base_path/session_id
 
     Args:
         uri: The state URI (e.g., "disk://my_session")
@@ -65,11 +45,6 @@ def resolve_state_uri(
 
     scheme = parsed.scheme
 
-    # Check for custom scheme resolver
-    if scheme in _STATE_SCHEME_REGISTRY:
-        return _STATE_SCHEME_REGISTRY[scheme](uri)
-
-    # Built-in schemes
     if scheme == "disk":
         return _resolve_disk_uri(parsed, base_path)
 
