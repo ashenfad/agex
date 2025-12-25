@@ -339,24 +339,18 @@ class TaskProxy:
         For sync tasks: Time is measured and added before returning.
         For async tasks: Result is wrapped to measure time after await completes.
         """
-        from ..state import Live, Versioned
-        from ..state import Namespaced as NamespacedState
-
-        # Determine parent state for the sub-agent
-        if isinstance(self.evaluator.state, (Versioned, NamespacedState, Live)):
-            parent_state = self.evaluator.state
-        else:
-            parent_state = self.evaluator.state.base_store
+        # Get session from exec_state for sub-agent to inherit
+        session = self.evaluator.state.get("__session__", "default")
 
         sub_agent_start = time.time()
         try:
-            # Delegate execution and state management to the agent
+            # Delegate execution to the agent with inherited session
             agent = self.evaluator.agent
             result = agent.run_task(
                 self.task_callable,
                 args,
                 kwargs,
-                parent_state,
+                session=session,
                 on_event=getattr(self.evaluator, "on_event", None),
                 on_token=getattr(self.evaluator, "on_token", None),
             )

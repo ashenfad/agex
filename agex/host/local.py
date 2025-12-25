@@ -22,12 +22,12 @@ class Local(Host):
     Runs agent tasks in the current process. This is the default host
     and provides the same behavior as calling tasks without any host configuration.
 
-    For memory storage, maintains a session cache to reuse state instances
-    across calls with the same session ID.
+    For memory storage, each agent has isolated state. For shared state
+    across agents, use disk storage with a shared path.
     """
 
     def __init__(self):
-        # Session cache for memory-backed states
+        # Per-agent session cache for memory-backed states
         # Key format: "{type}:{session}"
         self._session_cache: dict[str, "State"] = {}
 

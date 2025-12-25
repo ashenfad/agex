@@ -95,7 +95,8 @@ In multi-agent workflows, resource inheritance follows these rules:
 |----------|-------------|-------|
 | **LLM** | Independent | Each agent uses its own LLM (or default) |
 | **Host** | Independent | Sub-agents default to Local (run in-process) |
-| **State** | Inherited | Parent's state (namespaced) is passed to sub-agents |
+| **State** | Independent | Each agent uses its own state config |
+| **Session** | Inherited | Session ID passes from parent to sub-agents |
 
 ### Example: Remote Orchestrator with Local Sub-Agents
 
@@ -119,10 +120,15 @@ def process_data(data: str) -> str:
 ```
 
 When `orchestrator` calls `process_data`:
-1. Orchestrator's task runs on remote server
+1. Orchestrator's task runs on remote server A
 2. Orchestrator's code invokes `process_data`
-3. Specialist runs **locally on the server** (not a second remote call)
-4. State is shared via `_parent_state` mechanism
+3. Specialist's host is rehydrated from its config
+4. If specialist has Local host → runs locally on server A
+5. If specialist has HTTP host → makes its own HTTP call
+6. Session is inherited, each agent resolves its own state
+
+> [!TIP]
+> **Sub-agents can run on different remote hosts.** When a sub-agent has its own HTTP host configured, it makes a separate HTTP call and runs on that server. This enables GPU offloading where a CPU orchestrator delegates compute-intensive work to GPU-equipped servers.
 
 ## Callbacks with Remote Execution
 

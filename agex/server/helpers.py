@@ -32,11 +32,6 @@ def execute_worker(
         # Prepare kwargs
         exec_kwargs = dict(kwargs)
 
-        # Pass pre-resolved state via _parent_state (internal mechanism for bypassing session resolution)
-        # This is the same mechanism used for sub-task state propagation
-        if state is not None:
-            exec_kwargs["_parent_state"] = state
-
         # Wire up event handlers
         def on_token(token_chunk):
             loop.call_soon_threadsafe(queue.put_nowait, ("token", token_chunk))

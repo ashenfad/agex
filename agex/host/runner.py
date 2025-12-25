@@ -113,21 +113,14 @@ def execute_task(
     if kwargs is None:
         kwargs = {}
 
-    # Resolve state from config + session
-    from agex.host.local import Local
-
-    local_host = Local()
-    state = local_host.resolve_state(state_config, session)
-
     # Find the task
     task_func = agent._tasks.get(task_name)
     if task_func is None:
         raise KeyError(f"Task '{task_name}' not found on agent '{agent.name}'")
 
-    # Build execution kwargs
+    # Build execution kwargs - session is passed via kwargs for state resolution
     exec_kwargs = dict(kwargs)
-    if state is not None:
-        exec_kwargs["_parent_state"] = state
+    exec_kwargs["session"] = session
     if on_event is not None:
         exec_kwargs["on_event"] = on_event
     if on_token is not None:
@@ -155,21 +148,14 @@ async def aexecute_task(
     if kwargs is None:
         kwargs = {}
 
-    # Resolve state from config + session
-    from agex.host.local import Local
-
-    local_host = Local()
-    state = local_host.resolve_state(state_config, session)
-
     # Find the task
     task_func = agent._tasks.get(task_name)
     if task_func is None:
         raise KeyError(f"Task '{task_name}' not found on agent '{agent.name}'")
 
-    # Build execution kwargs
+    # Build execution kwargs - session is passed via kwargs for state resolution
     exec_kwargs = dict(kwargs)
-    if state is not None:
-        exec_kwargs["_parent_state"] = state
+    exec_kwargs["session"] = session
     if on_event is not None:
         exec_kwargs["on_event"] = on_event
     if on_token is not None:
