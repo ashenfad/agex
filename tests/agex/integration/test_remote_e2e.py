@@ -504,7 +504,7 @@ class TestHTTPHostE2E:
             task_name="get_answer",
             args=(),
             kwargs={},
-            state=None,
+            session="test",
             on_event=print,
             on_token=None,
         )
@@ -545,7 +545,7 @@ class TestHTTPHostE2E:
             task_name="get_data",
             args=(),
             kwargs={},
-            state=None,
+            session="test",
             on_event=None,
             on_token=None,
         )
@@ -588,7 +588,7 @@ class TestHTTPHostE2E:
                 task_name="async_task",
                 args=(),
                 kwargs={},
-                state=None,
+                session="test",
                 on_event=None,
                 on_token=None,
             )
@@ -623,7 +623,7 @@ class TestHTTPHostE2E:
                 task_name="fail_task",
                 args=(),
                 kwargs={},
-                state=None,
+                session="test",
                 on_event=None,
                 on_token=None,
             )

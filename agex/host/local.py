@@ -4,12 +4,15 @@ Local host implementation.
 Executes agent tasks in the current process using the agent's task loop.
 """
 
+import os
 from typing import TYPE_CHECKING, Any, Callable
 
 from .base import Host
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
+    from agex.state import State
+    from agex.state.config import StateConfig
 
 
 class Local(Host):
@@ -18,7 +21,78 @@ class Local(Host):
 
     Runs agent tasks in the current process. This is the default host
     and provides the same behavior as calling tasks without any host configuration.
+
+    For memory storage, maintains a session cache to reuse state instances
+    across calls with the same session ID.
     """
+
+    def __init__(self):
+        # Session cache for memory-backed states
+        # Key format: "{type}:{session}"
+        self._session_cache: dict[str, "State"] = {}
+
+    def validate_state(self, config: "StateConfig | None") -> None:
+        """Validate that the state config is compatible with local execution."""
+        if config is None:
+            return  # Ephemeral is always valid
+
+        if config.storage not in (None, "memory", "disk"):
+            raise ValueError(
+                f"Local host does not support storage '{config.storage}'. "
+                f"Supported: memory, disk"
+            )
+
+        if config.storage == "disk" and not config.path:
+            raise ValueError("Disk storage requires 'path' parameter")
+
+    def resolve_state(self, config: "StateConfig | None", session: str) -> "State":
+        """Create or retrieve a State instance for this session."""
+        from agex.state import Live
+        from agex.state.kv import Disk, Memory
+
+        # Ephemeral: fresh Live instance per call
+        if config is None:
+            return Live()
+
+        # For memory storage, use session cache
+        if config.storage == "memory":
+            cache_key = f"{config.type}:{session}"
+            if cache_key not in self._session_cache:
+                self._session_cache[cache_key] = self._create_state(config, Memory())
+            return self._session_cache[cache_key]
+
+        # For disk storage, create with session-namespaced path
+        if config.storage == "disk":
+            path = os.path.expanduser(config.path or "")
+            session_path = os.path.join(path, "sessions", session)
+            kv = Disk(session_path)
+            return self._create_state(config, kv)
+
+        # Fallback for unspecified storage (treat as memory)
+        cache_key = f"{config.type}:{session}"
+        if cache_key not in self._session_cache:
+            self._session_cache[cache_key] = self._create_state(config, Memory())
+        return self._session_cache[cache_key]
+
+    def _create_state(self, config: "StateConfig", kv: Any) -> "State":
+        """Create a state instance from config and KV store."""
+        from agex.state import Live, Versioned
+        from agex.state.gc import GCVersioned
+
+        if config.type == "versioned":
+            state: "State" = Versioned(store=kv)
+            # Wrap with GC if high_water_bytes is set
+            if config.high_water_bytes is not None:
+                state = GCVersioned(
+                    state,
+                    high_water_bytes=config.high_water_bytes,
+                    low_water_bytes=config.low_water_bytes,
+                )
+            return state
+        elif config.type == "live":
+            return Live()
+        else:  # ephemeral
+            return Live()
 
     def execute(
         self,
@@ -26,11 +100,14 @@ class Local(Host):
         task_name: str,
         args: tuple,
         kwargs: dict,
-        state: Any,
+        session: str,
         on_event: Callable[[Any], None] | None,
         on_token: Callable[[Any], None] | None,
     ) -> Any:
         """Execute the task locally using the agent's task loop."""
+        # Resolve state from agent's config
+        state = self.resolve_state(agent._state_config, session)
+
         # Get the registered task
         task_fn = agent._tasks.get(task_name)
         if task_fn is None:
@@ -52,11 +129,14 @@ class Local(Host):
         task_name: str,
         args: tuple,
         kwargs: dict,
-        state: Any,
+        session: str,
         on_event: Callable[[Any], None] | None,
         on_token: Callable[[Any], None] | None,
     ) -> Any:
         """Execute the task locally using the agent's async task loop."""
+        # Resolve state from agent's config
+        state = self.resolve_state(agent._state_config, session)
+
         # Get the registered task
         task_fn = agent._tasks.get(task_name)
         if task_fn is None:

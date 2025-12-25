@@ -1,8 +1,9 @@
 """A state management system for tic agents."""
 
-from typing import cast
+from typing import Literal, cast
 
 from ..agent.events import Event
+from .config import StateConfig
 from .core import State, is_live_root
 from .gc import GCVersioned, RebaseResult
 from .kv import KVStore
@@ -13,6 +14,7 @@ from .versioned import ConcurrencyError, Versioned
 
 __all__ = [
     "State",
+    "StateConfig",
     "is_live_root",
     "Live",
     "KVStore",
@@ -22,7 +24,71 @@ __all__ = [
     "ConcurrencyError",
     "RebaseResult",
     "GCVersioned",
+    "connect_state",
 ]
+
+
+def connect_state(
+    type: Literal["ephemeral", "versioned", "live"],
+    storage: str | None = None,
+    **kwargs,
+) -> StateConfig:
+    """
+    Create a state configuration.
+
+    Args:
+        type: State semantics ("ephemeral", "versioned", or "live")
+        storage: Storage backend ("memory" or "disk"). Not required for ephemeral.
+        **kwargs: Type and storage-specific arguments
+
+    Storage-specific kwargs:
+        disk:
+            path: str - Directory path (required for disk storage)
+
+    Type-specific kwargs (versioned):
+        high_water_bytes: int - Trigger GC when total size exceeds this
+        low_water_bytes: int - Target size after GC (default: 80% of high_water)
+
+    Returns:
+        A StateConfig instance
+
+    Examples:
+        # Ephemeral (no persistence)
+        connect_state(type="ephemeral")
+
+        # In-memory versioned (for testing)
+        connect_state(type="versioned", storage="memory")
+
+        # Disk-backed versioned with GC
+        connect_state(
+            type="versioned",
+            storage="disk",
+            path="~/.agex/state",
+            high_water_bytes=100_000_000,
+        )
+    """
+    # Validate storage requirements
+    if type != "ephemeral" and storage is None:
+        raise ValueError(f"State type '{type}' requires storage parameter")
+
+    if storage == "disk" and "path" not in kwargs:
+        raise ValueError("Disk storage requires 'path' parameter")
+
+    # Validate GC params only apply to versioned state
+    gc_params = [k for k in ("high_water_bytes", "low_water_bytes") if k in kwargs]
+    if gc_params and type != "versioned":
+        raise ValueError(
+            f"GC parameters ({', '.join(gc_params)}) only apply to "
+            f"'versioned' state, but got type='{type}'"
+        )
+
+    return StateConfig(
+        type=type,
+        storage=storage,
+        path=kwargs.get("path"),
+        high_water_bytes=kwargs.get("high_water_bytes"),
+        low_water_bytes=kwargs.get("low_water_bytes"),
+    )
 
 
 def _namespaced(state: State, namespaces: list[str]) -> State:

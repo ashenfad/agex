@@ -8,10 +8,10 @@ This module tests the complete dual-decorator workflow:
 """
 
 from agex import Agent, clear_agent_registry
+from agex.agent.events import SuccessEvent
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
-from agex.state import Versioned
-from agex.state.kv import Memory
+from agex.state import connect_state, events
 
 
 def test_dual_decorator_math_workflow():
@@ -19,9 +19,10 @@ def test_dual_decorator_math_workflow():
     clear_agent_registry()
 
     # Create specialist agents
-    calculator = Agent(name="calculator")
-    validator = Agent(name="validator")
-    orchestrator = Agent(name="orchestrator")
+    config = connect_state(type="versioned", storage="memory")
+    calculator = Agent(name="calculator", state=config)
+    validator = Agent(name="validator", state=config)
+    orchestrator = Agent(name="orchestrator", state=config)
 
     # Register specialist functions with the orchestrator
     @orchestrator.fn(docstring="Perform basic arithmetic operations")
@@ -69,13 +70,10 @@ def test_dual_decorator_math_workflow():
     validator.llm = Dummy(responses=validator_responses)
     orchestrator.llm = Dummy(responses=orchestrator_responses)
 
-    # Use a shared state object to inspect sub-agent stdout
-    shared_state = Versioned(Memory())
-
     # Execute the workflow
     result = solve_math_problem(
         problem_description="Calculate 15 + 25 * 2 and verify the result",
-        state=shared_state,  # type: ignore
+        session="shared_session",
     )
 
     # Verify the complete workflow worked
@@ -86,7 +84,7 @@ def test_dual_decorator_math_workflow():
     assert result["status"] == "success"
 
     # Verify that the sub-agent's events are properly logged
-    from agex.state import events
+    shared_state = orchestrator._host.resolve_state(config, "shared_session")
 
     validator_events = [
         e for e in events(shared_state) if e.full_namespace == "orchestrator/validator"
@@ -107,9 +105,10 @@ def test_dual_decorator_state_sharing():
     clear_agent_registry()
 
     # Create agents
-    data_processor = Agent(name="data_processor")
-    analyzer = Agent(name="analyzer")
-    coordinator = Agent(name="coordinator")
+    config = connect_state(type="versioned", storage="memory")
+    data_processor = Agent(name="data_processor", state=config)
+    analyzer = Agent(name="analyzer", state=config)
+    coordinator = Agent(name="coordinator", state=config)
 
     # Create dual-decorated functions
     @coordinator.fn(docstring="Process raw data")
@@ -156,13 +155,10 @@ def test_dual_decorator_state_sharing():
     analyzer.llm = Dummy(responses=analyzer_responses)
     coordinator.llm = Dummy(responses=coordinator_responses)
 
-    # Test with shared state
-    shared_state = Versioned(Memory())
-
     # Execute the pipeline
     result = run_pipeline(
         raw_data=[1, 2, -1, 3.5, 0, 4, "invalid", 5],
-        state=shared_state,  # type: ignore
+        session="pipeline_session",
     )
 
     # Verify the results
@@ -176,11 +172,8 @@ def test_dual_decorator_state_sharing():
     assert analysis["count"] == 5  # Valid numbers after processing: [1, 2, 3.5, 4, 5]
     assert analysis["mean"] == 3.1  # (1 + 2 + 3.5 + 4 + 5) / 5 = 15.5 / 5 = 3.1
 
-    # Import required functions
-    from agex.agent.events import SuccessEvent
-    from agex.state import events
-
     # Verify that the orchestrator's completion event is in its own event log
+    shared_state = coordinator._host.resolve_state(config, "pipeline_session")
     coordinator_events = [
         e for e in events(shared_state) if e.full_namespace == "coordinator"
     ]
@@ -227,8 +220,9 @@ def test_hierarchical_namespace_state_is_correct():
     clear_agent_registry()
 
     # Create two agents
-    worker = Agent(name="worker")
-    orchestrator = Agent(name="orchestrator")
+    config = connect_state(type="versioned", storage="memory")
+    worker = Agent(name="worker", state=config)
+    orchestrator = Agent(name="orchestrator", state=config)
 
     # A task for the worker, which the orchestrator can call
     @orchestrator.fn()
@@ -262,14 +256,14 @@ def test_hierarchical_namespace_state_is_correct():
     )
 
     # Execute the workflow with a shared state object
-    shared_state = Versioned(Memory())
-    result = run_worker(state=shared_state)  # type: ignore
+    result = run_worker(session="worker_session")
 
     # --- Assertions ---
     # 1. The task should complete successfully
     assert result is True
 
     # 2. The worker's state should be under "orchestrator/worker/".
+    shared_state = orchestrator._host.resolve_state(config, "worker_session")
     worker_success_key = "orchestrator/worker/success"
     assert (
         shared_state.get(worker_success_key) is True
@@ -332,9 +326,10 @@ def test_dual_decorator_namespace_isolation():
     clear_agent_registry()
 
     # Create agents with separate namespaces
-    agent_a = Agent(name="agent_a")
-    agent_b = Agent(name="agent_b")
-    coordinator = Agent(name="coordinator")
+    config = connect_state(type="versioned", storage="memory")
+    agent_a = Agent(name="agent_a", state=config)
+    agent_b = Agent(name="agent_b", state=config)
+    coordinator = Agent(name="coordinator", state=config)
 
     @coordinator.fn(docstring="Function A")
     @agent_a.task("Store data in agent A namespace")
@@ -380,11 +375,8 @@ def test_dual_decorator_namespace_isolation():
     agent_b.llm = Dummy(responses=agent_b_responses)
     coordinator.llm = Dummy(responses=coordinator_responses)
 
-    # Test the workflow
-    shared_state = Versioned(Memory())
-
     # Execute the test
-    result = run_namespace_test(test_data="shared_data", state=shared_state)  # type: ignore
+    result = run_namespace_test(test_data="shared_data", session="isolation_session")
 
     # Verify namespace isolation
     assert isinstance(result, dict)

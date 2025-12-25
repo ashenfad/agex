@@ -9,6 +9,7 @@ from .policy.policy import AgentPolicy
 
 if TYPE_CHECKING:
     from ..host import Host
+    from ..state.config import StateConfig
 
 # Global registry mapping fingerprints to agents
 # Using ContextVar for thread/async-task safety in server environments
@@ -104,6 +105,8 @@ class BaseAgent:
         llm_max_retries: int = 2,
         # Host configuration (optional, defaults to local execution)
         host: "Host | None" = None,
+        # State configuration (optional, defaults to ephemeral)
+        state: "StateConfig | None" = None,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
@@ -128,6 +131,13 @@ class BaseAgent:
         from ..host import Local
 
         self._host: "Host" = host or Local()
+
+        # State configuration (None = ephemeral)
+        self._state_config: "StateConfig | None" = state
+
+        # Validate state config is compatible with the host
+        if self._state_config is not None:
+            self._host.validate_state(self._state_config)
 
         # Event log summarization settings
         if log_low_water_tokens is not None and log_high_water_tokens is None:

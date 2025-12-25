@@ -6,12 +6,10 @@ These tests verify that:
 2. stdout is cleared between iterations so only recent output is shown
 """
 
-from agex import events
-from agex.agent import Agent, clear_agent_registry
+from agex import Agent, clear_agent_registry, events
 from agex.agent.events import ActionEvent, OutputEvent
 from agex.llm.dummy_client import Dummy, LLMResponse
-from agex.state.kv import Memory
-from agex.state.versioned import Versioned
+from agex.state import connect_state
 
 
 def test_error_appears_immediately_in_first_iteration():
@@ -34,15 +32,16 @@ def test_error_appears_immediately_in_first_iteration():
             ),
         ]
     )
-    agent = Agent(name="test_agent", max_iterations=3, llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="test_agent", max_iterations=3, llm=llm, state=config)
 
     @agent.task("Compute a simple result.")
     def compute_simple() -> int:  # type: ignore[return-value]
         """Perform a simple computation and return the result."""
         pass
 
-    state = Versioned(Memory())
-    result = compute_simple(state=state)  # type: ignore
+    result = compute_simple(session="test_session")  # type: ignore
+    state = agent._host.resolve_state(config, "test_session")
 
     # Should successfully complete with result 2
     assert result == 2
@@ -105,15 +104,16 @@ def test_validation_error_shows_full_type():
             ),
         ]
     )
-    agent = Agent(name="test_agent", max_iterations=3, llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="test_agent", max_iterations=3, llm=llm, state=config)
 
     @agent.task("A task that requires returning a list of integers.")
     def list_of_ints_task() -> list[int]:  # type: ignore[return-value]
         """A task that must return a list of integers."""
         pass
 
-    state = Versioned(Memory())
-    result = list_of_ints_task(state=state)  # type: ignore
+    result = list_of_ints_task(session="test_session")  # type: ignore
+    state = agent._host.resolve_state(config, "test_session")
 
     assert result == [1, 2]
 

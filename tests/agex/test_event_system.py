@@ -18,7 +18,7 @@ from agex.agent.events import (
 )
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
-from agex.state import Versioned, events
+from agex.state import Versioned, connect_state, events
 from agex.state.log import add_event_to_log
 
 
@@ -40,15 +40,16 @@ class TestEventSystem:
                 )
             ]
         )
-        agent = Agent(name="test_agent", llm=llm)
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="test_agent", llm=llm, state=config)
 
         @agent.task
         def test_task(name: str, count: int = 5):
             """Test task with parameters."""
             pass
 
-        state = Versioned()
-        test_task("test_value", count=10, state=state)
+        test_task("test_value", count=10, session="test_session")
+        state = agent._host.resolve_state(config, "test_session")
 
         # Get events from the agent's namespace
         event_list = [e for e in events(state) if e.full_namespace == "test_agent"]
@@ -72,15 +73,16 @@ class TestEventSystem:
         thinking_text = "I need to analyze this problem step by step."
         code_text = 'result = "analyzed"\ntask_success(result)'
         llm = Dummy([LLMResponse(thinking=thinking_text, code=code_text)])
-        agent = Agent(name="thinking_agent", llm=llm)
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="thinking_agent", llm=llm, state=config)
 
         @agent.task
         def think_task():
             """Task that requires thinking."""
             pass
 
-        state = Versioned()
-        think_task(state=state)
+        think_task(session="test_session")
+        state = agent._host.resolve_state(config, "test_session")
 
         # Get events from the agent's namespace
         event_list = [e for e in events(state) if e.full_namespace == "thinking_agent"]
@@ -103,15 +105,16 @@ class TestEventSystem:
                 )
             ]
         )
-        agent = Agent(name="output_agent", llm=llm)
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="output_agent", llm=llm, state=config)
 
         @agent.task
         def output_task():
             """Task that produces various outputs."""
             pass
 
-        state = Versioned()
-        output_task(state=state)
+        output_task(session="test_session")
+        state = agent._host.resolve_state(config, "test_session")
 
         # Get events from the agent's namespace
         event_list = [e for e in events(state) if e.full_namespace == "output_agent"]
@@ -137,15 +140,16 @@ class TestEventSystem:
                 )
             ]
         )
-        agent = Agent(name="success_agent", llm=llm)
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="success_agent", llm=llm, state=config)
 
         @agent.task
         def success_task():
             """Task that succeeds with a result."""
             pass
 
-        state = Versioned()
-        result = success_task(state=state)
+        result = success_task(session="test_session")
+        state = agent._host.resolve_state(config, "test_session")
 
         # Get events from the agent's namespace
         event_list = [e for e in events(state) if e.full_namespace == "success_agent"]
@@ -169,18 +173,19 @@ class TestEventSystem:
                 )
             ]
         )
-        agent = Agent(name="fail_agent", llm=llm)
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="fail_agent", llm=llm, state=config)
 
         @agent.task
         def fail_task():
             """Task that fails."""
             pass
 
-        state = Versioned()
-
         # Task should raise TaskFail exception
         with pytest.raises(Exception):
-            fail_task(state=state)
+            fail_task(session="test_session")
+
+        state = agent._host.resolve_state(config, "test_session")
 
         # Get events from the agent's namespace
         event_list = [e for e in events(state) if e.full_namespace == "fail_agent"]
@@ -196,7 +201,10 @@ class TestEventSystem:
         """Test that events are properly attributed in multi-agent scenarios."""
         clear_agent_registry()
 
-        # Create multiple agents
+        # Configure shared state
+        config = connect_state(type="versioned", storage="memory")
+
+        # Sub-agent LLMs
         llm1 = Dummy(
             [
                 LLMResponse(
@@ -205,8 +213,6 @@ class TestEventSystem:
                 )
             ]
         )
-        agent1 = Agent(name="agent_one", llm=llm1)
-
         llm2 = Dummy(
             [
                 LLMResponse(
@@ -215,19 +221,26 @@ class TestEventSystem:
                 )
             ]
         )
-        agent2 = Agent(name="agent_two", llm=llm2)
 
+        # Orchestrator LLM - passes session to sub-tasks so they share state
         orchestrator_llm = Dummy(
             [
                 LLMResponse(
                     thinking="I'll call both sub-agents and return results",
-                    code="r1 = task_one(inputs.input_value)\nr2 = task_two(inputs.input_value)\ntask_success({'r1': r1, 'r2': r2})",
+                    code=(
+                        "r1 = task_one(inputs.input_value)\n"
+                        "r2 = task_two(inputs.input_value)\n"
+                        "task_success({'r1': r1, 'r2': r2})"
+                    ),
                 )
             ]
         )
-        orchestrator = Agent(name="orchestrator", llm=orchestrator_llm)
 
-        # Create dual-decorated functions
+        # Create agents with shared config (Local host caches by config+session)
+        agent1 = Agent(name="agent_one", llm=llm1, state=config)
+        agent2 = Agent(name="agent_two", llm=llm2, state=config)
+        orchestrator = Agent(name="orchestrator", llm=orchestrator_llm, state=config)
+
         @orchestrator.fn(docstring="Function handled by agent one")
         @agent1.task("Complete task one")
         def task_one(value: int):
@@ -242,8 +255,8 @@ class TestEventSystem:
         def orchestrate(input_value: int):
             pass
 
-        shared_state = Versioned()
-        result = orchestrate(input_value=5, state=shared_state)
+        result = orchestrate(input_value=5, session="shared")
+        shared_state = orchestrator._host.resolve_state(config, "shared")
 
         # Verify the result is correct
         assert result == {"r1": 10, "r2": 15}
@@ -378,15 +391,16 @@ class TestEventSystem:
                 )
             ]
         )
-        agent = Agent(name="lifecycle_agent", llm=llm)
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="lifecycle_agent", llm=llm, state=config)
 
         @agent.task
         def lifecycle_task(input_data: str):
             """Complete lifecycle test task."""
             pass
 
-        state = Versioned()
-        result = lifecycle_task("hello world", state=state)
+        result = lifecycle_task("hello world", session="test_session")
+        state = agent._host.resolve_state(config, "test_session")
 
         # Get events from the agent's namespace
         event_list = [e for e in events(state) if e.full_namespace == "lifecycle_agent"]
@@ -425,15 +439,16 @@ class TestEventSystem:
                 )
             ]
         )
-        agent = Agent(name="persistence_agent", llm=llm)
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="persistence_agent", llm=llm, state=config)
 
         @agent.task
         def persistence_task():
             """Test event persistence."""
             pass
 
-        state = Versioned()
-        persistence_task(state=state)
+        persistence_task(session="test_session")
+        state = agent._host.resolve_state(config, "test_session")
 
         # Take a snapshot
         snapshot_result = state.snapshot()
@@ -485,6 +500,16 @@ class TestEventSystem:
         )
         orchestrator = Agent(name="orchestrator", llm=orchestrator_llm)
 
+        # --- Test Regular Execution ---
+        event_log.clear()
+        clear_agent_registry()
+
+        config = connect_state(type="versioned", storage="memory")
+        # Ensure all agents share the same state configuration/host semantics
+        specialist = Agent(name="specialist", llm=specialist_llm, state=config)
+        orchestrator = Agent(name="orchestrator", llm=orchestrator_llm, state=config)
+
+        # Redefine tasks on properly configured agents
         @orchestrator.fn
         @specialist.task
         def specialist_task(data: str):
@@ -496,10 +521,7 @@ class TestEventSystem:
             """An orchestrator task that calls a specialist."""
             pass
 
-        # --- Test Regular Execution ---
-        event_log.clear()
-        state = Versioned()
-        result = main_task("test", state=state, on_event=test_handler)
+        result = main_task("test", session="test_session", on_event=test_handler)
 
         assert result == "TEST"
         event_names = [e.__class__.__name__ for e in event_log]
@@ -530,9 +552,10 @@ class TestEventSystem:
 
         # --- Test Stream Execution ---
         event_log.clear()
-        state = Versioned()
         stream_events = []
-        for event in main_task.stream("test", state=state, on_event=test_handler):
+        for event in main_task.stream(
+            "test", session="test_session", on_event=test_handler
+        ):
             stream_events.append(event)
 
         # Verify handler and stream saw the same events
@@ -543,9 +566,8 @@ class TestEventSystem:
 
         # --- Test Faulty Handler ---
         event_log.clear()
-        state = Versioned()
         # This should execute without crashing
-        result = main_task("test", state=state, on_event=faulty_handler)
+        result = main_task("test", session="test_session", on_event=faulty_handler)
         assert result == "TEST"
         # The handler should have failed, but the task completed. No events should be in the log.
         assert len(event_log) == 0

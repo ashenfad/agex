@@ -13,7 +13,7 @@ from agex.agent.events import (
 )
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
-from agex.state import Versioned, events
+from agex.state import Versioned, connect_state, events
 
 
 class TestEventsSimple:
@@ -53,15 +53,16 @@ class TestEventsSimple:
                 )
             ]
         )
-        agent = Agent(name="simple_agent", llm=llm)
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="simple_agent", llm=llm, state=config)
 
         @agent.task
         def simple_task():
             """Simple task."""
             pass
 
-        state = Versioned()
-        result = simple_task(state=state)
+        result = simple_task(session="test_session")
+        state = agent._host.resolve_state(config, "test_session")
 
         # Get events from the agent's namespace
         event_list = [e for e in events(state) if e.full_namespace == "simple_agent"]
@@ -94,15 +95,16 @@ class TestEventsSimple:
                 LLMResponse(thinking="Now I'll finish.", code='task_success("done")'),
             ]
         )
-        agent = Agent(name="print_agent", llm=llm)
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="print_agent", llm=llm, state=config)
 
         @agent.task
         def print_task():
             """Task that prints."""
             pass
 
-        state = Versioned()
-        result = print_task(state=state)
+        result = print_task(session="test_session")
+        state = agent._host.resolve_state(config, "test_session")
 
         # Get events from the agent's namespace
         event_list = [e for e in events(state) if e.full_namespace == "print_agent"]
@@ -129,20 +131,21 @@ class TestEventsSimple:
         llm = Dummy(
             [LLMResponse(thinking="I'll just print.", code='print("Debug print")')]
         )
-        agent = Agent(name="investigate_agent", llm=llm)
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="investigate_agent", llm=llm, state=config)
 
         @agent.task
         def investigate_task():
             """Task to investigate builtin calling."""
             pass
 
-        state = Versioned()
-
         # This will timeout since no task_success, but let's see what events we get
         try:
-            investigate_task(state=state)
+            investigate_task(session="test_session")
         except Exception as e:
             print(f"Expected exception: {type(e).__name__}")
+
+        state = agent._host.resolve_state(config, "test_session")
 
         # Get events from the agent's namespace
         event_list = [

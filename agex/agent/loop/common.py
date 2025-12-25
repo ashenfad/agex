@@ -119,24 +119,29 @@ def initialize_exec_state(
     state: Versioned | Live | Namespaced | None,
     inputs_instance: Any,
     return_type: type,
-) -> tuple[Namespaced, Versioned | Live | None]:
+) -> tuple[Namespaced, Versioned | None]:
     """
     Initialize the execution state based on the provided state argument.
 
     Returns:
         A tuple of (exec_state, versioned_state) where versioned_state is the
-        state we're responsible for snapshotting (or None if we don't own it).
+        state we're responsible for snapshotting (or None if we don't own it
+        or if the state is Live/ephemeral).
     """
-    versioned_state: Versioned | Live | None = None
+    versioned_state: Versioned | None = None
 
     if isinstance(state, Namespaced):
         # Namespaced = someone else owns versioning, we just work within namespace
         exec_state = state
         versioned_state = None
-    elif isinstance(state, (Versioned, Live)):
+    elif isinstance(state, Versioned):
         # Versioned = we're responsible for versioning this state
         versioned_state = state
         exec_state = Namespaced(versioned_state, namespace=agent_name)
+    elif isinstance(state, Live):
+        # Live = ephemeral in-memory state, no snapshotting needed
+        exec_state = Namespaced(state, namespace=agent_name)
+        versioned_state = None
     else:
         # None = we create and own new live state (no persistence by default)
         exec_state = Namespaced(Live(), namespace=agent_name)

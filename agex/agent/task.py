@@ -62,7 +62,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
         # Prepare kwargs safely
         call_kwargs = dict(kwargs) if kwargs is not None else {}
-        call_kwargs["state"] = child_state
+        call_kwargs["_parent_state"] = child_state
         if on_event is not None:
             call_kwargs["on_event"] = on_event
         if on_token is not None:
@@ -263,14 +263,14 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         # Create dynamic dataclass for inputs
         inputs_dataclass = self._create_inputs_dataclass(task_name, original_sig)
 
-        # Create new signature with added state parameter
-        # Insert state parameter before **kwargs if it exists, otherwise append at end
+        # Create new signature with added session parameter
+        # Insert session parameter before **kwargs if it exists, otherwise append at end
         new_params = list(original_sig.parameters.values())
-        state_param = inspect.Parameter(
-            "state",
+        session_param = inspect.Parameter(
+            "session",
             inspect.Parameter.KEYWORD_ONLY,
-            default=None,
-            annotation="Versioned | Live | None",
+            default="default",
+            annotation="str",
         )
         on_event_param = inspect.Parameter(
             "on_event",
@@ -296,10 +296,10 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             # Insert parameters before **kwargs
             new_params.insert(var_keyword_index, on_token_param)
             new_params.insert(var_keyword_index, on_event_param)
-            new_params.insert(var_keyword_index, state_param)
+            new_params.insert(var_keyword_index, session_param)
         else:
             # No **kwargs, append at end
-            new_params.append(state_param)
+            new_params.append(session_param)
             new_params.append(on_event_param)
             new_params.append(on_token_param)
 
@@ -317,7 +317,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 self.__name__ = func.__name__
                 self.__doc__ = func.__doc__
                 self.__annotations__ = func.__annotations__.copy()
-                self.__annotations__["state"] = "Versioned | Live | None"
+                self.__annotations__["session"] = "str"
                 self.__annotations__["on_event"] = "Callable[[BaseEvent], None] | None"
                 self.__annotations__["on_token"] = "Callable[[TokenChunk], None] | None"
                 self.__signature__ = new_sig
@@ -340,12 +340,15 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
         # Helper to bind and validate arguments for both sync and async wrappers
         def _bind_and_validate(*args, **kwargs):
-            # Bind to the new signature that includes the 'state', 'on_event', and 'on_token' parameters
+            # Pop internal _parent_state before binding (not part of public signature)
+            parent_state = kwargs.pop("_parent_state", None)
+
+            # Bind to the new signature that includes the 'session', 'on_event', and 'on_token' parameters
             bound_args = new_sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
 
-            # Pop the state, on_event, and on_token arguments, they are handled separately
-            state = bound_args.arguments.pop("state", None)
+            # Pop the session, on_event, on_token arguments
+            session = bound_args.arguments.pop("session", "default")
             on_event = bound_args.arguments.pop("on_event", None)
             on_token = bound_args.arguments.pop("on_token", None)
 
@@ -366,23 +369,23 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         ) from e
                 inputs_instance = inputs_dataclass(**validated_args)
 
-            return inputs_instance, state, on_event, on_token
+            return inputs_instance, session, on_event, on_token, parent_state
 
         # Create the actual task function (async or sync based on original function)
         if inspect.iscoroutinefunction(func):
 
             async def task_wrapper(*args, **kwargs):
-                inputs_instance, state, on_event, on_token = _bind_and_validate(
-                    *args, **kwargs
+                inputs_instance, session, on_event, on_token, parent_state = (
+                    _bind_and_validate(*args, **kwargs)
                 )
                 # Route through host for non-local execution
                 if not isinstance(self._host, Local):
                     # Extract raw args/kwargs for remote execution
-                    # (state, on_event, on_token already extracted by _bind_and_validate)
+                    # (session, on_event, on_token already extracted by _bind_and_validate)
                     bound = new_sig.bind(*args, **kwargs)
                     bound.apply_defaults()
                     raw_kwargs = dict(bound.arguments)
-                    raw_kwargs.pop("state", None)
+                    raw_kwargs.pop("session", None)
                     raw_kwargs.pop("on_event", None)
                     raw_kwargs.pop("on_token", None)
                     return await self._host.aexecute(
@@ -390,10 +393,16 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         task_name=task_name,
                         args=(),
                         kwargs=raw_kwargs,
-                        state=state,
+                        session=session,
                         on_event=on_event,
                         on_token=on_token,
                     )
+                # Use parent_state if provided (sub-task), otherwise resolve from session
+                state = (
+                    parent_state
+                    if parent_state is not None
+                    else self._host.resolve_state(self._state_config, session)
+                )
                 return await self._arun_task_loop(
                     task_name=task_name,
                     docstring=effective_docstring,
@@ -411,17 +420,17 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         else:
 
             def task_wrapper(*args, **kwargs):
-                inputs_instance, state, on_event, on_token = _bind_and_validate(
-                    *args, **kwargs
+                inputs_instance, session, on_event, on_token, parent_state = (
+                    _bind_and_validate(*args, **kwargs)
                 )
                 # Route through host for non-local execution
                 if not isinstance(self._host, Local):
                     # Extract raw args/kwargs for remote execution
-                    # (state, on_event, on_token already extracted by _bind_and_validate)
+                    # (session, on_event, on_token already extracted by _bind_and_validate)
                     bound = new_sig.bind(*args, **kwargs)
                     bound.apply_defaults()
                     raw_kwargs = dict(bound.arguments)
-                    raw_kwargs.pop("state", None)
+                    raw_kwargs.pop("session", None)
                     raw_kwargs.pop("on_event", None)
                     raw_kwargs.pop("on_token", None)
                     return self._host.execute(
@@ -429,10 +438,16 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         task_name=task_name,
                         args=(),
                         kwargs=raw_kwargs,
-                        state=state,
+                        session=session,
                         on_event=on_event,
                         on_token=on_token,
                     )
+                # Use parent_state if provided (sub-task), otherwise resolve from session
+                state = (
+                    parent_state
+                    if parent_state is not None
+                    else self._host.resolve_state(self._state_config, session)
+                )
                 return self._run_task_loop(
                     task_name=task_name,
                     docstring=effective_docstring,
@@ -453,8 +468,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             bound_args = new_sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
 
-            # Pop the state, on_event, and on_token arguments, they are handled separately
-            state = bound_args.arguments.pop("state", None)
+            # Pop the session, on_event, and on_token arguments, they are handled separately
+            session = bound_args.arguments.pop("session", "default")
             user_on_event = bound_args.arguments.pop("on_event", None)
             on_token = bound_args.arguments.pop("on_token", None)
 
@@ -474,6 +489,9 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                             f"Validation failed for argument '{name}':\n{e}"
                         ) from e
                 inputs_instance = inputs_dataclass(**validated_args)
+
+            # Resolve state from host
+            state = self._host.resolve_state(self._state_config, session)
 
             # Implement real-time hierarchical streaming using a worker thread and queue
             from queue import Queue

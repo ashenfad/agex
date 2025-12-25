@@ -11,7 +11,6 @@ import pytest
 from agex import Agent
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
-from agex.state import Versioned
 
 
 @pytest.mark.skip(
@@ -47,8 +46,7 @@ def test_print_large_dataframe_shows_all_rows():
     def analyze_data() -> str:  # type: ignore[return-value]
         """Analyze the data."""
 
-    state = Versioned()
-    _ = analyze_data(state=state)
+    _ = analyze_data()
 
     # Check what was actually rendered for the LLM (uses the regular rendering path)
     assert hasattr(
@@ -120,8 +118,7 @@ def test_task_continue_large_dataframe_shows_all_rows():
     def process_data() -> str:  # type: ignore[return-value]
         """Process the data."""
 
-    state = Versioned()
-    _ = process_data(state=state)
+    _ = process_data()
 
     # Check what was actually rendered for the LLM
     assert hasattr(
@@ -179,8 +176,7 @@ def test_task_input_large_dataframe_shows_all_rows():
         }
     )
 
-    state = Versioned()
-    _ = process_events(events=df, state=state)
+    _ = process_events(events=df)
 
     # Check the first LLM call (task initialization)
     assert len(client.all_rendered_messages) >= 1, "Should have at least 1 LLM call"
@@ -239,8 +235,7 @@ def test_dataframe_respects_token_budget():
     def analyze_big_data() -> str:  # type: ignore[return-value]
         """Analyze big data."""
 
-    state = Versioned()
-    _ = analyze_big_data(state=state)
+    _ = analyze_big_data()
 
     # Check what was actually rendered for the LLM
     assert hasattr(

@@ -10,12 +10,13 @@ https://asciinema.org/a/ZqYiNf6AJoskeVkcjPQAalgba
 import math
 from typing import Callable
 
-from agex import Agent, Versioned, connect_llm, pprint_tokens
+from agex import Agent, connect_llm, connect_state, pprint_tokens
 
 funcy_agent = Agent(
     name="funcy",
     primer="You are great at providing custom functions to the user.",
     llm=connect_llm(provider="gemini", model="gemini-3-flash-preview"),
+    state=connect_state(type="versioned", storage="memory"),
 )
 funcy_agent.module(math, visibility="low")
 
@@ -29,14 +30,10 @@ def fn_builder(prompt: str) -> Callable:  # type: ignore[return-value]
 
 
 def main():
-    # Use versioned state to maintain context between agent calls
-    state = Versioned()
-
     # build a function to find next prime
     print("\nPROMPT:", "a fn for the first prime larger than a given number.")
     fn = fn_builder(
         "a fn for the first prime larger than a given number.",
-        state=state,
         on_token=pprint_tokens,
     )
 
@@ -72,9 +69,7 @@ def main():
 
     # agent remembers existing conversation context and builds related function
     print("\nPROMPT:", "Okay, now make it the next lower prime.")
-    fn = fn_builder(
-        "Okay, now make it the next lower prime.", state=state, on_token=pprint_tokens
-    )
+    fn = fn_builder("Okay, now make it the next lower prime.", on_token=pprint_tokens)
     print("fn(500000) =", fn(500000), "\n")
     # 499979
 

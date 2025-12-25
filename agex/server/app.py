@@ -25,7 +25,7 @@ from fastapi import Depends, FastAPI, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from agex.host import deserialize_agent
+from agex.host import Local, deserialize_agent
 from agex.server.helpers import (
     execute_worker,
     format_error_data,
@@ -33,7 +33,7 @@ from agex.server.helpers import (
     format_result_data,
     format_token_data,
 )
-from agex.server.state import InvalidStateURIError, resolve_state_uri
+from agex.state.config import StateConfig
 
 # =============================================================================
 # Request/Response Models
@@ -47,7 +47,8 @@ class ExecuteRequest(BaseModel):
     task_name: str
     args: list[Any] = []
     kwargs: dict[str, Any] = {}
-    state_uri: str | None = None
+    session: str = "default"
+    state_config: dict[str, Any] | None = None  # Serialized StateConfig
 
 
 # =============================================================================
@@ -93,14 +94,13 @@ async def generate_execution_events(
         agent_bytes = base64.b64decode(request.agent_payload)
         agent = deserialize_agent(agent_bytes)
 
-        # 2. Resolve state if provided
-        state = None
-        if request.state_uri:
-            try:
-                state = resolve_state_uri(request.state_uri, app_state.state_dir)
-            except InvalidStateURIError as e:
-                yield {"data": format_error_data(str(e))}
-                return
+        # 2. Resolve state from config + session using Local host
+        local_host = Local()
+        config = None
+        if request.state_config:
+            config = StateConfig.from_config(request.state_config)
+
+        state = local_host.resolve_state(config, request.session)
 
         # 3. Find the task on the agent
         task_func = agent._tasks.get(request.task_name)
