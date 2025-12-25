@@ -25,7 +25,7 @@ from fastapi import Depends, FastAPI, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from agex.host import Local, deserialize_agent
+from agex.host import Local, prepare_agent
 from agex.server.helpers import (
     execute_worker,
     format_error_data,
@@ -90,9 +90,9 @@ async def generate_execution_events(
         SSE event dicts with 'data' key for EventSourceResponse
     """
     try:
-        # 1. Deserialize agent (uses serialized LLM config + server env vars)
+        # 1. Prepare agent (deserialize, rehydrate LLM, force Local host)
         agent_bytes = base64.b64decode(request.agent_payload)
-        agent = deserialize_agent(agent_bytes)
+        agent = prepare_agent(agent_bytes)
 
         # 2. Resolve state from config + session using Local host
         local_host = Local()
@@ -117,18 +117,46 @@ async def generate_execution_events(
         loop = asyncio.get_running_loop()
         FINISHED = object()  # Sentinel for completion
 
-        # 5. Execute task in thread pool
-        loop.run_in_executor(
-            None,
-            execute_worker,
-            task_func,
-            request.args,
-            request.kwargs,
-            state,
-            queue,
-            loop,
-            FINISHED,
-        )
+        # 5. Check if task is async
+        is_async_task = getattr(task_func, "__agex_is_async__", False)
+
+        if is_async_task:
+            # For async tasks, run directly in the event loop
+            async def async_execute():
+                try:
+                    exec_kwargs = dict(request.kwargs)
+                    if state is not None:
+                        exec_kwargs["_parent_state"] = state
+
+                    def on_token(token_chunk):
+                        queue.put_nowait(("token", token_chunk))
+
+                    def on_event(event):
+                        queue.put_nowait(event)
+
+                    exec_kwargs["on_event"] = on_event
+                    exec_kwargs["on_token"] = on_token
+
+                    result = await task_func(*request.args, **exec_kwargs)
+                    queue.put_nowait((FINISHED, result))
+                except Exception as e:
+                    queue.put_nowait((FINISHED, e))
+
+            # Start async task
+            asyncio.create_task(async_execute())
+        else:
+            # For sync tasks, use thread pool
+            loop.run_in_executor(
+                None,
+                execute_worker,
+                task_func,
+                request.args,
+                request.kwargs,
+                state,
+                queue,
+                loop,
+                FINISHED,
+            )
 
         # 6. Stream events from queue
         async for event_data in _stream_from_queue(queue, FINISHED):

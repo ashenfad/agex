@@ -42,7 +42,7 @@ def test_llm_from_config_reconstruction():
     [
         (OpenAI, "openai"),
         (Anthropic, "anthropic"),
-        (Gemini, "google"),
+        (Gemini, "gemini"),
     ],
 )
 def test_provider_dump_config(client_cls, provider_name, monkeypatch):
