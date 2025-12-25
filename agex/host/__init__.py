@@ -9,17 +9,32 @@ from typing import Literal
 from .base import Host
 from .http import HTTP, RemoteExecutionError, RemoteTimeoutError
 from .local import Local
+from .runner import (
+    aexecute_task,
+    arun_remote_task,
+    execute_task,
+    prepare_agent,
+    run_remote_task,
+)
 from .serialize import deserialize_agent, serialize_agent
 
 __all__ = [
+    # Host abstraction
     "Host",
     "Local",
     "HTTP",
     "RemoteExecutionError",
     "RemoteTimeoutError",
     "connect_host",
+    # Serialization
     "serialize_agent",
     "deserialize_agent",
+    # Remote execution (for server-side use)
+    "prepare_agent",
+    "execute_task",
+    "aexecute_task",
+    "run_remote_task",
+    "arun_remote_task",
 ]
 
 

@@ -20,6 +20,31 @@ from agex.host import Local
 _DYNAMIC_DATACLASS_REGISTRY: dict[str, type] = {}
 
 
+def _register_dataclass_for_pickling(dc_class: type, name: str) -> None:
+    """
+    Register a dynamic dataclass so cloudpickle can serialize it by value.
+
+    This is called when creating dynamic dataclasses to ensure they can
+    be pickled and sent to remote servers that don't have the class defined.
+    """
+
+    # Set the module to this one so pickle can find it
+    dc_class.__module__ = __name__
+    _DYNAMIC_DATACLASS_REGISTRY[name] = dc_class
+    globals()[name] = dc_class
+
+    try:
+        import sys
+
+        import cloudpickle
+
+        # Register this module to be pickled by value, not by reference
+        this_module = sys.modules[__name__]
+        cloudpickle.register_pickle_by_value(this_module)
+    except (ImportError, AttributeError, ValueError):
+        pass  # cloudpickle not available or doesn't support this API
+
+
 def clear_dynamic_dataclass_registry() -> None:
     """Clear the dynamic dataclass registry. Useful for testing or memory management."""
     global _DYNAMIC_DATACLASS_REGISTRY
@@ -316,11 +341,12 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 # Copy function attributes
                 self.__name__ = func.__name__
                 self.__doc__ = func.__doc__
+                # Expose only the original signature to agents (hide framework parameters)
                 self.__annotations__ = func.__annotations__.copy()
-                self.__annotations__["session"] = "str"
-                self.__annotations__["on_event"] = "Callable[[BaseEvent], None] | None"
-                self.__annotations__["on_token"] = "Callable[[TokenChunk], None] | None"
-                self.__signature__ = new_sig
+                self.__signature__ = original_sig  # Use original, not new_sig
+
+                # Store the full signature internally for argument binding
+                self._internal_signature = new_sig
 
                 # Set namespace for dual-decorator pattern
                 namespace = self._agent_name
@@ -378,11 +404,16 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 inputs_instance, session, on_event, on_token, parent_state = (
                     _bind_and_validate(*args, **kwargs)
                 )
-                # Route through host for non-local execution
-                if not isinstance(self._host, Local):
+                # Route through host for non-local, top-level execution only
+                # Sub-agent calls (parent_state is set) always execute locally
+                if not isinstance(self._host, Local) and parent_state is None:
                     # Extract raw args/kwargs for remote execution
                     # (session, on_event, on_token already extracted by _bind_and_validate)
-                    bound = new_sig.bind(*args, **kwargs)
+                    # Pop _parent_state before binding (it's not part of public signature)
+                    binding_kwargs = {
+                        k: v for k, v in kwargs.items() if k != "_parent_state"
+                    }
+                    bound = new_sig.bind(*args, **binding_kwargs)
                     bound.apply_defaults()
                     raw_kwargs = dict(bound.arguments)
                     raw_kwargs.pop("session", None)
@@ -423,11 +454,16 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 inputs_instance, session, on_event, on_token, parent_state = (
                     _bind_and_validate(*args, **kwargs)
                 )
-                # Route through host for non-local execution
-                if not isinstance(self._host, Local):
+                # Route through host for non-local, top-level execution only
+                # Sub-agent calls (parent_state is set) always execute locally
+                if not isinstance(self._host, Local) and parent_state is None:
                     # Extract raw args/kwargs for remote execution
                     # (session, on_event, on_token already extracted by _bind_and_validate)
-                    bound = new_sig.bind(*args, **kwargs)
+                    # Pop _parent_state before binding (it's not part of public signature)
+                    binding_kwargs = {
+                        k: v for k, v in kwargs.items() if k != "_parent_state"
+                    }
+                    bound = new_sig.bind(*args, **binding_kwargs)
                     bound.apply_defaults()
                     raw_kwargs = dict(bound.arguments)
                     raw_kwargs.pop("session", None)
@@ -608,11 +644,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         dataclass_name = f"{to_camel_case(task_name)}Inputs"
         inputs_dataclass = make_dataclass(dataclass_name, fields)
 
-        # Make the dataclass pickleable by registering it in module globals
-        # This allows pickle to find it via module.classname lookup
-        inputs_dataclass.__module__ = __name__  # Set to this module
-        _DYNAMIC_DATACLASS_REGISTRY[dataclass_name] = inputs_dataclass
-        globals()[dataclass_name] = inputs_dataclass  # Make it findable by pickle
+        # Register for pickling (enables remote execution)
+        _register_dataclass_for_pickling(inputs_dataclass, dataclass_name)
 
         # Register the dataclass with the agent for sandbox access
         if hasattr(self, "cls"):

@@ -735,7 +735,7 @@ def _render_function(
             continue
 
         # Hide framework-injected parameters for sub-agent task functions
-        if is_sub_agent and p_name in ("state", "on_event"):
+        if is_sub_agent and p_name in ("session", "state", "on_event", "on_token"):
             continue
 
         param_str = p_name

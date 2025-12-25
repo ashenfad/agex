@@ -10,7 +10,12 @@ Install with: pip install agex[server]
 from .app import create_app, run_server
 from .state import InvalidStateURIError, resolve_state_uri
 
+# Create default app instance for convenience
+# Can be run with: uvicorn agex.server:app
+app = create_app()
+
 __all__ = [
+    "app",
     "create_app",
     "run_server",
     "resolve_state_uri",

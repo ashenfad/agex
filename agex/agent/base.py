@@ -184,12 +184,17 @@ class BaseAgent:
 
         Adds:
         - _llm_config: Reconstructable configuration for the LLM
+        - _host_config: Reconstructable configuration for the Host
         """
         state = self.__dict__.copy()
 
-        # Serialize LLM config using our new helper
+        # Serialize LLM config
         if self.llm:
             state["_llm_config"] = self.llm.dump_config()
+
+        # Serialize Host config
+        if self._host:
+            state["_host_config"] = self._host.dump_config()
 
         # Remove runtime-only objects
         state.pop("llm", None)
@@ -203,25 +208,21 @@ class BaseAgent:
         """
         Restore agent from pickle state.
 
-        NOTE: The agent is not fully functional until rehydrated by the remote
-        runtime, which must:
-        1. Inject a new LLM (or use the one from _llm_config)
-        2. Recompute fingerprint/register
+        NOTE: The agent is not fully functional until rehydrated by prepare_agent,
+        which must:
+        1. Reconstruct the LLM from _llm_config
+        2. Reconstruct the Host from _host_config
+        3. Recompute fingerprint/register
         """
         # Restore configuration
         self.__dict__.update(state)
 
-        # Initialize runtime fields that were mocked/missing
+        # Initialize runtime fields
         self._host_object_registry = {}  # Empty on new host
 
-        # Host defaults to Local on remote side
-        from ..host import Local
-
-        self._host = Local()
-
-        # llm remains None until injected by deserialize_agent
-        # or lazily connected if we want that behavior (design choice: passed in)
+        # llm and _host remain None until rehydrated by prepare_agent
         self.llm = None
+        self._host = None
         self.fingerprint = None  # Will be recomputed
 
     def module(

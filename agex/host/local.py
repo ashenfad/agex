@@ -31,6 +31,10 @@ class Local(Host):
         # Key format: "{type}:{session}"
         self._session_cache: dict[str, "State"] = {}
 
+    def dump_config(self) -> dict[str, Any]:
+        """Serialize local host configuration."""
+        return {"provider": "local"}
+
     def validate_state(self, config: "StateConfig | None") -> None:
         """Validate that the state config is compatible with local execution."""
         if config is None:

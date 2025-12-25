@@ -79,6 +79,15 @@ class HTTP(Host):
         self.retries = retries
         self._http_client = _http_client
 
+    def dump_config(self) -> dict[str, Any]:
+        """Serialize HTTP host configuration."""
+        return {
+            "provider": "http",
+            "url": self.url,
+            "timeout": self.timeout,
+            "retries": self.retries,
+        }
+
     @staticmethod
     def _validate_url(url: str) -> None:
         """Validate that url looks like a proper HTTP(S) URL."""
@@ -230,8 +239,13 @@ class HTTP(Host):
                 f"Remote execution timed out after {self.timeout}s"
             ) from e
         except httpx.HTTPStatusError as e:
+            # For streaming responses, read body before accessing .text
+            try:
+                error_text = e.response.text
+            except httpx.ResponseNotRead:
+                error_text = "(response body not available)"
             raise RemoteExecutionError(
-                f"HTTP Error {e.response.status_code}: {e.response.text}"
+                f"HTTP Error {e.response.status_code}: {error_text}"
             ) from e
         except httpx.RequestError as e:
             raise RemoteExecutionError(f"Connection error: {e}") from e
@@ -259,8 +273,13 @@ class HTTP(Host):
                 f"Remote execution timed out after {self.timeout}s"
             ) from e
         except httpx.HTTPStatusError as e:
+            # For streaming responses, read body before accessing .text
+            try:
+                error_text = e.response.text
+            except httpx.ResponseNotRead:
+                error_text = "(response body not available)"
             raise RemoteExecutionError(
-                f"HTTP Error {e.response.status_code}: {e.response.text}"
+                f"HTTP Error {e.response.status_code}: {error_text}"
             ) from e
         except httpx.RequestError as e:
             raise RemoteExecutionError(f"Connection error: {e}") from e

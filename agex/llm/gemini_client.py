@@ -75,7 +75,7 @@ class Gemini(LLM):
 
     def dump_config(self) -> dict[str, Any]:
         return {
-            "provider": "google",
+            "provider": "gemini",
             "model": self.model,
             "google_search": self._google_search,
             "url_context": self._url_context,

@@ -24,6 +24,43 @@ class Host(ABC):
     """
 
     @abstractmethod
+    def dump_config(self) -> dict[str, Any]:
+        """
+        Serialize host configuration for transport.
+
+        Returns:
+            Dictionary with 'provider' key and provider-specific config
+        """
+        ...
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any]) -> "Host":
+        """
+        Create a Host from serialized configuration.
+
+        Args:
+            config: Dictionary from dump_config()
+
+        Returns:
+            Reconstructed Host instance
+        """
+        provider = config.get("provider")
+        if provider == "local":
+            from agex.host.local import Local
+
+            return Local()
+        elif provider == "http":
+            from agex.host.http import HTTP
+
+            return HTTP(
+                url=config["url"],
+                timeout=config.get("timeout", 300.0),
+                retries=config.get("retries", 0),
+            )
+        else:
+            raise ValueError(f"Unknown host provider: {provider}")
+
+    @abstractmethod
     def validate_state(self, config: "StateConfig | None") -> None:
         """
         Validate state config is compatible with this host.
