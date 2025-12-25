@@ -9,8 +9,13 @@ import sqlite3
 from typing import Any
 from agex import Agent
 
-# Create an architected DB agent with guidance (see primer idea below)
-db = Agent(name="db_agent")
+# Create an architected DB agent with persistent state
+from agex import Agent, connect_state
+
+db = Agent(
+    name="db_agent",
+    state=connect_state(type="versioned", storage="memory")
+)
 
 # In-memory database for the demo
 conn = sqlite3.connect(":memory:")
@@ -41,16 +46,13 @@ def query_db(prompt: str) -> Any:  # type: ignore[return-value]
 Ask the agent to create a table and then follow up with questions about it:
 
 ```python
-from agex import Versioned
 
-state = Versioned()
-
-# Create schema and populate rows
-update_db("Create a 'users' table with columns: id, name, email, age", state=state)
-update_db("Add 10 users to the users table", state=state)
+# Create schema and populate rows (state is managed by agent)
+update_db("Create a 'users' table with columns: id, name, email, age")
+update_db("Add 10 users to the users table")
 
 # Ask questions in natural language
-oldest = query_db("Who is the oldest user?", state=state)
+oldest = query_db("Who is the oldest user?")
 print(oldest)
 # {'id': 10, 'name': 'User10', 'email': 'user10@example.com', 'age': 30}
 
@@ -59,7 +61,7 @@ print(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
 # 10
 ```
 
-Working with live objects like a database connection while also using [`Versioned`](../api/state.md) state is one of `agex`'s most compelling features. Unpicklable objects (like cursors) are automatically handled - they work naturally in single-turn use, and provide clear error messages if accidentally reused across turns.
+Working with live objects like a database connection while also using persistent state is one of `agex`'s most compelling features. Unpicklable objects (like cursors) are automatically handled - they work naturally in single-turn use, and provide clear error messages if accidentally reused across turns.
 
 [![asciicast](https://asciinema.org/a/LM0phpZWktTueeenfOuZBIp5r.svg)](https://asciinema.org/a/LM0phpZWktTueeenfOuZBIp5r)
 —

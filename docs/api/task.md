@@ -125,7 +125,7 @@ result = solve_equation("x**2 = 16", on_event=pprint_events)
 
 ## Function Signature
 
-The decorator automatically adds `state` and `on_event` parameters to your function signature as keyword-only arguments.
+The decorator automatically adds `session`, `on_event`, and `on_token` parameters to your function signature as keyword-only arguments.
 
 ```python
 @agent.task
@@ -135,23 +135,35 @@ def my_function(x: int, y: str) -> bool:  # type: ignore[return-value]
 
 # Becomes callable as:
 # my_function(x=10, y="hello")
-# my_function(x=10, y="hello", state=my_state)
-# my_function(x=10, y="hello", state=my_state, on_event=my_handler)
+# my_function(x=10, y="hello", session="user_123")
+# my_function(x=10, y="hello", session="user_123", on_event=my_handler)
 ```
 
-### State Parameter
+### Session Parameter
 
-- **Optional**: `state: Versioned | Live | None = None`
-- **One-shot mode** (default): No memory between calls
-- **Persistent mode**: Pass a `Versioned` or `Live` state for long-term memory
+- **Optional**: `session: str = "default"`
+- **Purpose**: Isolate state between different users or conversations
+- **Requires**: Agent configured with `state=connect_state(...)`
 
 ```python
-from agex import Versioned
+from agex import Agent, connect_state
 
-# Persistent state across multiple calls  
-shared_state = Versioned()
-result1 = my_function(x=10, y="hello", state=shared_state)
-result2 = my_function(x=20, y="world", state=shared_state)  # Remembers previous call
+agent = Agent(
+    state=connect_state(type="versioned", storage="memory"),
+)
+
+@agent.task
+def chat(message: str) -> str:
+    """Chat with the user."""
+    pass
+
+# Different sessions have isolated memory
+chat("Hello", session="user_alice")  # Alice's conversation
+chat("Hello", session="user_bob")    # Bob's separate conversation
+
+# Same session shares memory across calls
+chat("Remember X=42", session="alice")
+chat("What is X?", session="alice")  # Remembers X=42
 ```
 
 See [State](state.md) for more details on state management.
@@ -374,12 +386,14 @@ result = process_numbers("invalid", 0.8)     # ❌ Raises validation error
 ## Complete Example
 
 ```python
-from agex import Agent, Versioned
+from agex import Agent, connect_state
 
-# Create agents
-researcher = Agent(name="researcher")
-analyst = Agent(name="analyst") 
-coordinator = Agent(name="coordinator")
+# Create agents with shared state configuration
+state_config = connect_state(type="versioned", storage="memory")
+
+researcher = Agent(name="researcher", state=state_config)
+analyst = Agent(name="analyst", state=state_config)
+coordinator = Agent(name="coordinator", state=state_config)
 
 # Register specialist capabilities with coordinator
 @coordinator.fn(docstring="Research a topic online")
@@ -400,12 +414,10 @@ def full_research_pipeline(topic: str, focus_areas: list[str]) -> dict:  # type:
     """Complete research and analysis pipeline."""
     pass
 
-# Execute with persistent state
-shared_state = Versioned()
+# Execute - state is managed by the agents
 result = full_research_pipeline(
     topic="renewable energy trends",
     focus_areas=["cost", "adoption", "technology"],
-    state=shared_state
 )
 
 print(result)  # Comprehensive analysis from both agents
@@ -413,8 +425,8 @@ print(result)  # Comprehensive analysis from both agents
 
 ## Next Steps
 
-- **Agent Creation**: See [Agent](agent.md) for Agent class documentation
-- **Registration**: See [Registration](registration.md) for exposing capabilities to agents
-- **State Management**: See [State](state.md) for `Versioned` objects and persistent agent memory
-- **Remote Execution**: See [Remote](remote.md) for distributed execution on remote hosts
-- **Debugging**: See [View](view.md) for inspecting task execution and state changes
+- **[Agent](agent.md)**: Agent class and configuration
+- **[Registration](registration.md)**: Expose capabilities to agents
+- **[State](state.md)**: Memory, persistence, and sessions
+- **[Host](host.md)**: Remote execution
+

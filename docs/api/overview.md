@@ -16,7 +16,13 @@ Register functions, classes, and modules to make them available to agents. Contr
 Define agent tasks using the `@agent.task` decorator. Support for standalone tasks and multi-agent workflows.
 
 - **[State](state.md)** -
-Manage persistent state across agent executions with automatic checkpointing and rollback capabilities.
+Manage persistent state across agent executions with automatic checkpointing and rollback capabilities. configure state storage backends and session isolation.
+
+- **[LLM](llm.md)** -
+Configure LLM providers, models, timeouts, and connection settings. Support for OpenAI, Anthropic, Gemini, and local models.
+
+- **[Host](host.md)** -
+Configure execution environments (`local` vs `http`). Deploy agents to remote servers and manage distributed workflows.
 
 - **[Events](events.md)** -
 Access comprehensive agent execution events for debugging, monitoring, and multi-agent coordination. Real-time introspection into agent thinking and actions.
@@ -39,6 +45,7 @@ Most agex functionality is available at the top level:
 
 ```python
 from agex import Agent, Versioned, view
+from agex import connect_llm, connect_state, connect_host  # Configuration
 from agex import Memory, Disk  # Storage backends
 from agex import TaskFail  # Error handling
 from agex import clear_agent_registry  # Utilities
