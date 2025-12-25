@@ -1,7 +1,12 @@
 # Main agent functionality
+from typing import TYPE_CHECKING
+
 from ..host import Host
 from ..llm import LLM
 from .base import BaseAgent, clear_agent_registry, register_agent, resolve_agent
+
+if TYPE_CHECKING:
+    from ..state.config import StateConfig
 
 # Data types and exceptions
 from .datatypes import (
@@ -68,10 +73,12 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         llm_max_retries: int = 2,
         # Host configuration (optional, defaults to local execution)
         host: Host | None = None,
+        # State configuration (optional, defaults to ephemeral)
+        state: "StateConfig | None" = None,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
-        # Advanced: Override the builtin system instructions
+        # Advanced: Override the built-in system instructions
         agex_primer_override: str | None = None,
     ):
         """
@@ -88,6 +95,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             llm_max_retries: Number of retry attempts for failed/timed-out LLM calls.
             host: Execution host for tasks. Defaults to Local() which runs in-process.
                 Use HTTP(url=...) for remote execution.
+            state: State configuration (optional). Use connect_state() to create.
+                Defaults to ephemeral (fresh state per task call).
             log_high_water_tokens: Trigger event log summarization when total tokens
                 exceed this threshold. If None, no summarization is performed.
             log_low_water_tokens: Target token count after summarization. Defaults to
@@ -104,6 +113,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             llm=llm,
             llm_max_retries=llm_max_retries,
             host=host,
+            state=state,
             log_high_water_tokens=log_high_water_tokens,
             log_low_water_tokens=log_low_water_tokens,
             agex_primer_override=agex_primer_override,

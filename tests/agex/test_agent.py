@@ -19,7 +19,7 @@ from agex.agent.policy.describe import (
 )
 from agex.llm import Dummy
 from agex.llm.core import LLMResponse
-from agex.state import Namespaced, Versioned
+from agex.state import Namespaced, Versioned, connect_state
 from tests.agex import test_module
 
 
@@ -114,7 +114,8 @@ task_success("done")""",
             )
         ]
     )
-    agent = Agent(name="db_agent", llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="db_agent", llm=llm, state=config)
     connection = sqlite3.connect(":memory:")
     agent.module(connection, name="db", include=["execute", "commit"])
 
@@ -123,9 +124,9 @@ task_success("done")""",
         """Create a table using sqlite3 context manager."""
         ...
 
-    state = Versioned()
-    result = create_table(state=state)
+    result = create_table(session="test_session")
     assert result == "done"
+    state = agent._host.resolve_state(config, "test_session")
     assert "db_agent/conn" not in state.keys()
     connection.close()
 
@@ -135,14 +136,15 @@ def test_helper_recap_skips_unpicklable_markers():
     clear_agent_registry()
 
     llm = Dummy([LLMResponse(thinking="Simple completion.", code='task_success("ok")')])
-    agent = Agent(name="marker_agent", llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="marker_agent", llm=llm, state=config)
 
     @agent.task
     def marker_task() -> str:  # type: ignore[return-value]
         """Return without defining helpers."""
         ...
 
-    state = Versioned()
+    state = agent._host.resolve_state(config, "test_session")
     marker = UnpicklableMarker(
         variable_name="marker_agent/bad",
         type_name="BadObject",
@@ -151,7 +153,7 @@ def test_helper_recap_skips_unpicklable_markers():
     state.set("marker_agent/bad", marker)
     state.snapshot()
 
-    assert marker_task(state=state) == "ok"
+    assert marker_task(session="test_session") == "ok"
 
 
 def test_agent_fn_registration_with_name_alias():
@@ -661,21 +663,20 @@ def test_task_input_dataclass_pickling():
             )
         ]
     )
-    agent = Agent(name="test_agent", llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="test_agent", llm=llm, state=config)
 
     @agent.task("Test task with inputs")
     def test_task(message: str, value: int) -> str:  # type: ignore
         """A test task with parameters."""
         pass
 
-    # Create a versioned state and call the task to put inputs in state
-    state = Versioned()
-
     # This will trigger creation and storage of the input dataclass
-    result = test_task(message="hello", value=42, state=state)  # type: ignore
+    result = test_task(message="hello", value=42, session="test_session")
     assert result == "test result"  # Verify the dummy LLM response was used
 
     # Verify inputs were stored and are pickleable
+    state = agent._host.resolve_state(config, "test_session")
     inputs = state.get("test_agent/inputs")
     assert inputs is not None
     assert inputs.message == "hello"
@@ -717,7 +718,8 @@ def test_unserializable_object_in_state_is_handled_gracefully():
             ),
         ]
     )
-    agent = Agent(name="test_agent", llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="test_agent", llm=llm, state=config)
 
     class Unserializable:
         def __getstate__(self):
@@ -732,18 +734,14 @@ def test_unserializable_object_in_state_is_handled_gracefully():
         """This task will create unserializable state by mutation."""
         pass
 
-    # Use a Versioned state so that snapshotting is triggered
-    state = Versioned()
-
     # Pre-populate the state with a serializable object.
-    # We must snapshot it once so it's in the long-term store and tracked
-    # for mutations.
+    state = agent._host.resolve_state(config, "test_session")
     state.set("test_agent/my_object", {"a": 1})
     state.snapshot()
 
     # Run the task. This will mutate my_object and then try to snapshot.
     # It should NOT raise a PicklingError - a marker is created instead.
-    result = task_with_unserializable_state(state=state)  # type: ignore
+    result = task_with_unserializable_state(session="test_session")  # type: ignore
     assert result == "done"
 
     # With the new marker system, there's NO warning shown (silent success)
@@ -821,18 +819,19 @@ def test_shallow_validation_on_agent_output():
             ),
         ]
     )
-    agent = Agent(name="test_agent", llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="test_agent", llm=llm, state=config)
 
     @agent.task("A task that returns a large dictionary.")
     def produce_large_dict() -> dict[str, int]:  # type: ignore
         pass
 
-    state = Versioned()
     # Pre-populate state to avoid parsing large literals in the agent's code
+    state = agent._host.resolve_state(config, "test_session")
     state.set("test_agent/invalid_dict", large_invalid_dict)
     state.set("test_agent/valid_dict", large_valid_dict)
 
-    result = produce_large_dict(state=state)  # type: ignore
+    result = produce_large_dict(session="test_session")  # type: ignore
 
     # Check that the final result is the valid one
     assert result == large_valid_dict
@@ -886,7 +885,8 @@ def test_task_setup_functionality():
             )
         ]
     )
-    agent = Agent(name="setup_test_agent", llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="setup_test_agent", llm=llm, state=config)
 
     # Define task with setup
     @agent.task(primer="Test task with setup", setup='setup_var = "Hello from setup!"')
@@ -895,13 +895,13 @@ def test_task_setup_functionality():
         ...
 
     # Execute task
-    state = Versioned()
-    result = test_task(state=state)
+    result = test_task(session="test_session")
 
     # Verify result includes setup data
     assert "Setup value: Hello from setup!" in result
 
     # Verify events
+    state = agent._host.resolve_state(config, "test_session")
     event_list = events(state)
 
     # Should have: TaskStart, Setup ActionEvent, Agent ActionEvent, SuccessEvent
@@ -934,7 +934,8 @@ def test_task_setup_error_handling():
             )
         ]
     )
-    agent = Agent(name="setup_error_agent", llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="setup_error_agent", llm=llm, state=config)
 
     # Define task with setup that will error
     @agent.task(
@@ -946,13 +947,13 @@ def test_task_setup_error_handling():
         ...
 
     # Execute task
-    state = Versioned()
-    result = test_task(state=state)
+    result = test_task(session="test_session")
 
     # Task should still complete
     assert "completed despite setup error" in result
 
     # Verify events include error
+    state = agent._host.resolve_state(config, "test_session")
     event_list = events(state)
 
     # Should have: TaskStart, Setup ActionEvent, Agent ActionEvent, SuccessEvent
@@ -985,7 +986,8 @@ def test_task_without_setup():
             )
         ]
     )
-    agent = Agent(name="no_setup_agent", llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="no_setup_agent", llm=llm, state=config)
 
     # Define task without setup
     @agent.task(primer="Test task without setup")
@@ -994,13 +996,13 @@ def test_task_without_setup():
         ...
 
     # Execute task
-    state = Versioned()
-    result = test_task(state=state)
+    result = test_task(session="test_session")
 
     # Verify result
     assert "completed without setup" in result
 
     # Verify events - should NOT have setup event
+    state = agent._host.resolve_state(config, "test_session")
     event_list = events(state)
 
     # Should have: TaskStart, Agent ActionEvent, SuccessEvent
@@ -1025,7 +1027,8 @@ def test_setup_events_tagged_with_source():
             )
         ]
     )
-    agent = Agent(name="setup_source_agent", llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="setup_source_agent", llm=llm, state=config)
 
     # Define task with setup that creates output
     @agent.task(
@@ -1037,11 +1040,11 @@ def test_setup_events_tagged_with_source():
         ...
 
     # Execute task
-    state = Versioned()
-    result = test_task(state=state)
+    result = test_task(session="test_session")
     assert result == "done"
 
     # Verify event source tagging
+    state = agent._host.resolve_state(config, "test_session")
     event_list = events(state)
 
     # Find setup ActionEvent
@@ -1090,15 +1093,17 @@ print(f"Setup complete: {setup_var}")
 """
 
     # Create identical agents for batch and streaming tests
+    config = connect_state(type="versioned", storage="memory")
+
     def create_agent(name: str) -> Agent:
         llm = Dummy(
             responses=[
                 LLMResponse(
                     thinking="I will complete immediately", code='task_success("done")'
-                ),
+                )
             ]
         )
-        return Agent(name=name, llm=llm)
+        return Agent(name=name, llm=llm, state=config)
 
     # Test 1: Batch execution
     batch_agent = create_agent("batch_agent")
@@ -1108,8 +1113,8 @@ print(f"Setup complete: {setup_var}")
         """Test task for batch execution"""
         ...
 
-    batch_state = Versioned()
-    batch_result = batch_task("test", state=batch_state)
+    batch_result = batch_task("test", session="batch_session")
+    batch_state = batch_agent._host.resolve_state(config, "batch_session")
     batch_events = events(batch_state)
 
     # Test 2: Streaming execution

@@ -7,6 +7,7 @@ Contains the async versions of the task loop generator and run methods.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import inspect
 from functools import partial
 from typing import Any, Callable
@@ -141,9 +142,12 @@ class AsyncLoopMixin:
                 thread_safe_on_event(event)
 
             try:
+                # Copy context to preserve ContextVars (like agent registry) in thread pool
+                ctx = contextvars.copy_context()
                 await loop.run_in_executor(
                     None,
                     partial(
+                        ctx.run,
                         evaluate_program,
                         program=setup,
                         agent=self,
@@ -189,12 +193,14 @@ class AsyncLoopMixin:
             yield action_event
             events_yielded += 1
 
-            # Evaluate the code in executor
             try:
                 if code_to_evaluate:
+                    # Copy context to preserve ContextVars (like agent registry) in thread pool
+                    ctx = contextvars.copy_context()
                     await loop.run_in_executor(
                         None,
                         partial(
+                            ctx.run,
                             evaluate_program,
                             program=code_to_evaluate,
                             agent=self,

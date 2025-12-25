@@ -13,7 +13,7 @@ from agex.agent.events import (
 )
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
-from agex.state import Versioned, events
+from agex.state import events
 
 
 class TestStreaming:
@@ -42,8 +42,7 @@ class TestStreaming:
             pass
 
         # Test streaming
-        state = Versioned()
-        events_list = list(simple_task.stream(state=state))
+        events_list = list(simple_task.stream())
 
         # Should have: TaskStart, Action, Output (from print), Success
         event_types = [type(e).__name__ for e in events_list]
@@ -81,12 +80,10 @@ class TestStreaming:
             pass
 
         # Test regular mode
-        state1 = Versioned()
-        result1 = regular_task(state=state1)
+        result1 = regular_task(session="test1")
 
         # Test streaming mode
-        state2 = Versioned()
-        events_list = list(streaming_task.stream(state=state2))
+        events_list = list(streaming_task.stream(session="test2"))
 
         # Extract result from SuccessEvent
         result2 = None
@@ -99,6 +96,8 @@ class TestStreaming:
         assert result1 == result2 == 42
 
         # Both states should have equivalent events
+        state1 = agent1._host.resolve_state(None, "test1")
+        state2 = agent2._host.resolve_state(None, "test2")
         regular_events = events(state1)
         streaming_events = events(state2)
 
@@ -145,8 +144,7 @@ class TestStreaming:
             pass
 
         # Test streaming captures hierarchical events
-        state = Versioned()
-        events_list = list(orchestrate.stream(state=state))
+        events_list = list(orchestrate.stream())
 
         # Verify we see events from both agents
         agent_names = {e.agent_name for e in events_list if hasattr(e, "agent_name")}
@@ -194,8 +192,7 @@ class TestStreaming:
             """Task with multiple iterations."""
             pass
 
-        state = Versioned()
-        events_list = list(multi_iteration_task.stream(state=state))
+        events_list = list(multi_iteration_task.stream())
 
         # Should have multiple ActionEvents (one per iteration)
         action_events = [e for e in events_list if isinstance(e, ActionEvent)]
@@ -227,15 +224,13 @@ class TestStreaming:
             """Task that fails."""
             pass
 
-        state = Versioned()
-
         # Streaming should yield events even for failed tasks
         events_list = []
         exception_raised = False
 
         try:
             # Manually iterate to collect events before exception
-            for event in failing_task.stream(state=state):
+            for event in failing_task.stream():
                 events_list.append(event)
         except Exception:
             # Failure is expected
@@ -265,8 +260,7 @@ class TestStreaming:
             """First task."""
             pass
 
-        state = Versioned()
-        result1 = first_task(state=state)
+        result1 = first_task(session="shared")
         assert result1 == "first"
 
         # Second task execution (streaming mode) with same state
@@ -280,7 +274,7 @@ class TestStreaming:
             pass
 
         # Streaming should only show new events, not repeat old ones
-        events_list = list(second_task.stream(state=state))
+        events_list = list(second_task.stream(session="shared"))
 
         # Should only have events from second task
         for event in events_list:
@@ -305,8 +299,7 @@ class TestStreaming:
         # Verify it returns a generator
         agent.llm = Dummy([LLMResponse(thinking="Test", code='task_success("ok")')])
 
-        state = Versioned()
-        generator = test_task.stream(state=state)
+        generator = test_task.stream()
 
         # Should be a generator
         import types
@@ -331,8 +324,7 @@ class TestStreaming:
             """Task with multiple outputs."""
             pass
 
-        state = Versioned()
-        events_list = list(ordered_task.stream(state=state))
+        events_list = list(ordered_task.stream())
 
         # Verify chronological ordering by timestamp
         timestamps = [e.timestamp for e in events_list]
@@ -369,11 +361,8 @@ class TestStreaming:
             pass
 
         # Run with two separate states
-        state1 = Versioned()
-        state2 = Versioned()
-
-        events1 = list(isolated_task.stream(state=state1))
-        events2 = list(isolated_task.stream(state=state2))
+        events1 = list(isolated_task.stream(session="s1"))
+        events2 = list(isolated_task.stream(session="s2"))
 
         # Both should have identical event sequences
         assert len(events1) == len(events2)
@@ -483,8 +472,7 @@ class TestTokenStreaming:
             pass
 
         # Run task with token handler
-        state = Versioned()
-        result = simple_calc(state=state, on_token=token_handler)
+        result = simple_calc(on_token=token_handler)
         assert result == 2
 
         # Verify tokens were received
@@ -537,8 +525,7 @@ class TestTokenStreaming:
             """Task without streaming."""
             pass
 
-        state = Versioned()
-        result = no_stream_task(state=state)
+        result = no_stream_task()
         assert result == "ok"
 
         # Streaming should not have been used (no handlers registered)
@@ -573,8 +560,7 @@ class TestTokenStreaming:
             """Task with multiple handlers."""
             pass
 
-        state = Versioned()
-        result = multi_handler_task(state=state, on_token=combined_handler)
+        result = multi_handler_task(on_token=combined_handler)
         assert result == "done"
 
         # Both handlers should have received tokens
@@ -599,6 +585,5 @@ class TestTokenStreaming:
             pass
 
         # Task should complete successfully despite handler error
-        state = Versioned()
-        result = error_tolerant_task(state=state, on_token=bad_handler)
+        result = error_tolerant_task(on_token=bad_handler)
         assert result == 42

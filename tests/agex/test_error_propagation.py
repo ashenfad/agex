@@ -7,7 +7,6 @@ from agex.agent.base import clear_agent_registry
 from agex.agent.datatypes import TaskClarify, TaskFail, TaskTimeout
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
-from agex.state import Versioned
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +40,7 @@ def test_top_level_agent_raises_task_clarify():
 
     # The TaskClarify should be raised normally
     try:
-        my_task(state=Versioned())
+        my_task()
         assert False, "Expected TaskClarify to be raised"
     except TaskClarify as e:
         assert e.message == "Please provide more details."
@@ -98,7 +97,7 @@ def test_sub_agent_converts_task_clarify_to_eval_error():
 
     # The parent should hit max iterations because it can't handle the EvalError
     try:
-        parent_task(state=Versioned(), on_event=capture_event)
+        parent_task(on_event=capture_event)
         assert False, "Expected TaskTimeout to be raised"
     except TaskTimeout:
         # Verify that the parent agent saw the EvalError in an OutputEvent
@@ -148,7 +147,7 @@ def test_top_level_agent_raises_task_fail():
 
     # The TaskFail should be raised normally
     try:
-        my_task(state=Versioned())
+        my_task()
         assert False, "Expected TaskFail to be raised"
     except TaskFail as e:
         assert e.message == "Invalid input format."
@@ -205,7 +204,7 @@ def test_sub_agent_converts_task_fail_to_eval_error():
 
     # The parent should hit max iterations because it can't handle the EvalError
     try:
-        parent_task(state=Versioned(), on_event=capture_event)
+        parent_task(on_event=capture_event)
         assert False, "Expected TaskTimeout to be raised"
     except TaskTimeout:
         # Verify that the parent agent saw the EvalError in an OutputEvent

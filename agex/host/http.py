@@ -16,6 +16,8 @@ from .base import Host
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
+    from agex.state import State
+    from agex.state.config import StateConfig
 
 
 class RemoteExecutionError(Exception):
@@ -92,20 +94,41 @@ class HTTP(Host):
                 f"Invalid URL '{url}': missing host (e.g., 'example.com:8000')"
             )
 
+    def validate_state(self, config: "StateConfig | None") -> None:
+        """Validate that the state config is compatible with HTTP execution."""
+        if config is None:
+            return  # Ephemeral is always valid
+
+        # HTTP host only supports disk storage (server resolves it)
+        if config.storage not in (None, "disk"):
+            raise ValueError(
+                f"HTTP host does not support storage '{config.storage}'. "
+                f"Supported: disk (server resolves state)"
+            )
+
+    def resolve_state(self, config: "StateConfig | None", session: str) -> "State":
+        """
+        Placeholder for HTTP host - state is resolved server-side.
+
+        This should not be called directly; the server handles state resolution.
+        """
+        raise NotImplementedError(
+            "HTTP host resolves state server-side. "
+            "This method should not be called directly."
+        )
+
     def execute(
         self,
         agent: "BaseAgent",
         task_name: str,
         args: tuple,
         kwargs: dict,
-        state: Any,
+        session: str,
         on_event: Callable[[Any], None] | None,
         on_token: Callable[[Any], None] | None,
     ) -> Any:
         """Execute the task on the remote server synchronously."""
-        # Convert state to URI if it's a string, otherwise validate
-        state_uri = self._resolve_state_uri(state)
-        payload = self._build_payload(agent, task_name, args, kwargs, state_uri)
+        payload = self._build_payload(agent, task_name, args, kwargs, session)
 
         # Use injected client if provided (for testing)
         if self._http_client is not None:
@@ -124,13 +147,12 @@ class HTTP(Host):
         task_name: str,
         args: tuple,
         kwargs: dict,
-        state: Any,
+        session: str,
         on_event: Callable[[Any], None] | None,
         on_token: Callable[[Any], None] | None,
     ) -> Any:
         """Execute the task on the remote server asynchronously."""
-        state_uri = self._resolve_state_uri(state)
-        payload = self._build_payload(agent, task_name, args, kwargs, state_uri)
+        payload = self._build_payload(agent, task_name, args, kwargs, session)
 
         # Use injected client if provided (for testing)
         if self._http_client is not None:
@@ -146,38 +168,31 @@ class HTTP(Host):
                 client, payload, on_token, on_event
             )
 
-    def _resolve_state_uri(self, state: Any) -> str | None:
-        """Convert state to URI string or validate it's already a string."""
-        if state is None:
-            return None
-        if isinstance(state, str):
-            return state
-        # User passed a state object - not supported for remote execution
-        state_type = type(state).__name__
-        raise TypeError(
-            f"HTTP host requires a state URI string (e.g., 'disk://session'), "
-            f"got {state_type}. State objects like Versioned or Live cannot be "
-            f"serialized across the network."
-        )
-
     def _build_payload(
         self,
         agent: "BaseAgent",
         task_name: str,
         args: tuple,
         kwargs: dict,
-        state_uri: str | None,
+        session: str,
     ) -> dict:
         """Build the JSON request payload."""
         from .serialize import serialize_agent
 
         agent_payload = serialize_agent(agent)
+
+        # Include state config if present
+        state_config = None
+        if agent._state_config is not None:
+            state_config = agent._state_config.dump_config()
+
         return {
             "agent_payload": base64.b64encode(agent_payload).decode("utf-8"),
             "task_name": task_name,
             "args": args,
             "kwargs": kwargs,
-            "state_uri": state_uri,
+            "session": session,
+            "state_config": state_config,
         }
 
     def _execute_with_client(

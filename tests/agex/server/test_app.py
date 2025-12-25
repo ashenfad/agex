@@ -70,8 +70,8 @@ def test_execute_missing_task(client, mock_llm):
     assert "not found" in content.lower()
 
 
-def test_execute_invalid_state_uri(client, mock_llm):
-    """Test execute with invalid state URI."""
+def test_execute_with_session(client, mock_llm):
+    """Test execute with session parameter."""
     # Create a fresh agent for this test
     clear_agent_registry()
     agent = Agent()
@@ -83,7 +83,7 @@ def test_execute_invalid_state_uri(client, mock_llm):
         "task_name": "some_task",
         "args": [],
         "kwargs": {},
-        "state_uri": "disk://../etc/passwd",  # Path traversal attempt
+        "session": "test_session",  # Valid session
     }
 
     # Clear registry again so deserialization doesn't collide
@@ -92,7 +92,7 @@ def test_execute_invalid_state_uri(client, mock_llm):
     response = client.post("/execute", json=payload)
     assert response.status_code == 200
 
-    # Parse SSE response - we expect an error about alphanumeric chars
+    # Task doesn't exist, so we get a "not found" error
     content = response.text
     assert "error" in content
-    assert "alphanumeric" in content.lower()
+    assert "not found" in content.lower()

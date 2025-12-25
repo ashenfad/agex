@@ -7,8 +7,7 @@ from typing import Any
 from agex.agent import Agent, clear_agent_registry
 from agex.agent.events import OutputEvent
 from agex.llm.dummy_client import Dummy, LLMResponse
-from agex.state.kv import Memory
-from agex.state.versioned import Versioned
+from agex.state import connect_state
 
 # Try to import Pillow for creating a test image
 try:
@@ -41,7 +40,8 @@ def test_view_image_sends_image_in_output_event():
             ),
         ]
     )
-    agent = Agent(name="test_agent", max_iterations=3, llm=llm)
+    config = connect_state(type="versioned", storage="memory")
+    agent = Agent(name="test_agent", max_iterations=3, llm=llm, state=config)
 
     # Create a simple black 10x10 image for the test
     test_image = Image.new("RGB", (10, 10), "black")
@@ -51,8 +51,7 @@ def test_view_image_sends_image_in_output_event():
         """A task that calls view_image."""
         pass
 
-    state = Versioned(Memory())
-    result = view_image_task(test_image, state=state)
+    result = view_image_task(test_image, session="test_session")
 
     # The main test: the task should complete successfully
     assert result == "done"
