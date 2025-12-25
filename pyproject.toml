@@ -52,7 +52,11 @@ test = [
     "anthropic",
     "google-genai",
     "openai",
-    "matplotlib"
+    "matplotlib",
+    "cloudpickle",
+    "uvicorn",
+    "fastapi",
+    "sse-starlette",
 ]
 examples = [
     "plotly[express]",
