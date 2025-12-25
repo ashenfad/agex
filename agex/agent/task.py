@@ -85,7 +85,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         namespace = getattr(task_callable, "__agex_task_namespace__", self.name)
         child_state = Namespaced(parent_state, namespace)
 
-        # Rehydrate sub-agent if needed (may have llm=None after deserialization)
+        # Rehydrate sub-agent if needed (may have llm=None, _host=None after deserialization)
         # This happens when cloudpickle deserializes nested agents in closures
         sub_agent = getattr(task_callable, "__agex_agent__", None)
         if sub_agent is not None:
@@ -95,6 +95,18 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     from agex.llm import LLM
 
                     sub_agent.llm = LLM.from_config(sub_agent._llm_config)
+
+            # Rehydrate Host from serialized config if missing
+            if sub_agent._host is None:
+                if hasattr(sub_agent, "_host_config") and sub_agent._host_config:
+                    from agex.host.base import Host
+
+                    sub_agent._host = Host.from_config(sub_agent._host_config)
+                else:
+                    # Default to Local if no config
+                    from agex.host import Local
+
+                    sub_agent._host = Local()
 
             # Re-register in global registry so UserFunctions can resolve it
             # (fingerprint is None after deserialization until registered)
@@ -420,9 +432,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 inputs_instance, session, on_event, on_token, parent_state = (
                     _bind_and_validate(*args, **kwargs)
                 )
-                # Route through host for non-local, top-level execution only
-                # Sub-agent calls (parent_state is set) always execute locally
-                if not isinstance(self._host, Local) and parent_state is None:
+                # Route through host for non-local execution
+                if not isinstance(self._host, Local):
                     # Extract raw args/kwargs for remote execution
                     # (session, on_event, on_token already extracted by _bind_and_validate)
                     # Pop _parent_state before binding (it's not part of public signature)
@@ -470,9 +481,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 inputs_instance, session, on_event, on_token, parent_state = (
                     _bind_and_validate(*args, **kwargs)
                 )
-                # Route through host for non-local, top-level execution only
-                # Sub-agent calls (parent_state is set) always execute locally
-                if not isinstance(self._host, Local) and parent_state is None:
+                # Route through host for non-local execution
+                if not isinstance(self._host, Local):
                     # Extract raw args/kwargs for remote execution
                     # (session, on_event, on_token already extracted by _bind_and_validate)
                     # Pop _parent_state before binding (it's not part of public signature)
