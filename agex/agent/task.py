@@ -85,6 +85,22 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         namespace = getattr(task_callable, "__agex_task_namespace__", self.name)
         child_state = Namespaced(parent_state, namespace)
 
+        # Rehydrate sub-agent if needed (may have llm=None after deserialization)
+        # This happens when cloudpickle deserializes nested agents in closures
+        sub_agent = getattr(task_callable, "__agex_agent__", None)
+        if sub_agent is not None:
+            # Rehydrate LLM from serialized config if missing
+            if sub_agent.llm is None:
+                if hasattr(sub_agent, "_llm_config") and sub_agent._llm_config:
+                    from agex.llm import LLM
+
+                    sub_agent.llm = LLM.from_config(sub_agent._llm_config)
+
+            # Re-register in global registry so UserFunctions can resolve it
+            # (fingerprint is None after deserialization until registered)
+            if sub_agent.fingerprint is None:
+                sub_agent._update_fingerprint()
+
         # Prepare kwargs safely
         call_kwargs = dict(kwargs) if kwargs is not None else {}
         call_kwargs["_parent_state"] = child_state
