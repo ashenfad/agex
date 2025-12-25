@@ -10,6 +10,7 @@ from dataclasses import make_dataclass
 from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
+from agex.agent.datatypes import TaskClarify, TaskFail
 from agex.agent.loop import TaskLoopMixin
 from agex.agent.utils import is_function_body_empty
 from agex.eval.validation import validate_with_sampling
@@ -61,30 +62,28 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         task_callable: Callable,
         args: list,
         kwargs: dict,
-        parent_state,
+        session: str,
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
     ) -> Any:
         """
-        Execute a task callable within a namespaced child context of the parent state.
+        Execute a sub-agent task with inherited session.
 
-        This centralizes sub-task state management and event propagation.
+        Each sub-agent resolves its own state using its state config and the
+        inherited session. This ensures state isolation while maintaining
+        session continuity across the agent hierarchy.
 
         Args:
             task_callable: The callable produced by @agent.task
             args: Positional arguments to pass to the task
             kwargs: Keyword arguments to pass to the task
-            parent_state: The parent's execution state (Versioned/Namespaced/Live)
+            session: Session identifier inherited from parent
             on_event: Optional event handler to propagate
+            on_token: Optional token handler to propagate
 
         Returns:
             The task result produced by the task loop
         """
-        from agex.state import Namespaced
-
-        namespace = getattr(task_callable, "__agex_task_namespace__", self.name)
-        child_state = Namespaced(parent_state, namespace)
-
         # Rehydrate sub-agent if needed (may have llm=None, _host=None after deserialization)
         # This happens when cloudpickle deserializes nested agents in closures
         sub_agent = getattr(task_callable, "__agex_agent__", None)
@@ -113,15 +112,26 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             if sub_agent.fingerprint is None:
                 sub_agent._update_fingerprint()
 
-        # Prepare kwargs safely
+        # Prepare kwargs - pass session for state resolution
         call_kwargs = dict(kwargs) if kwargs is not None else {}
-        call_kwargs["_parent_state"] = child_state
+        call_kwargs["session"] = session
         if on_event is not None:
             call_kwargs["on_event"] = on_event
         if on_token is not None:
             call_kwargs["on_token"] = on_token
 
-        return task_callable(*args, **call_kwargs)
+        # Execute sub-agent task, converting TaskClarify/TaskFail to EvalError
+        # Sub-agents can't request user clarification - parent sees error instead
+        try:
+            return task_callable(*args, **call_kwargs)
+        except TaskClarify as e:
+            from agex.eval.error import EvalError
+
+            raise EvalError(f"Sub-agent needs clarification: {e.message}", None) from e
+        except TaskFail as e:
+            from agex.eval.error import EvalError
+
+            raise EvalError(f"Sub-agent failed: {e.message}", None) from e
 
     def task(
         self,
@@ -394,9 +404,6 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
         # Helper to bind and validate arguments for both sync and async wrappers
         def _bind_and_validate(*args, **kwargs):
-            # Pop internal _parent_state before binding (not part of public signature)
-            parent_state = kwargs.pop("_parent_state", None)
-
             # Bind to the new signature that includes the 'session', 'on_event', and 'on_token' parameters
             bound_args = new_sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
@@ -423,24 +430,19 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         ) from e
                 inputs_instance = inputs_dataclass(**validated_args)
 
-            return inputs_instance, session, on_event, on_token, parent_state
+            return inputs_instance, session, on_event, on_token
 
         # Create the actual task function (async or sync based on original function)
         if inspect.iscoroutinefunction(func):
 
             async def task_wrapper(*args, **kwargs):
-                inputs_instance, session, on_event, on_token, parent_state = (
-                    _bind_and_validate(*args, **kwargs)
+                inputs_instance, session, on_event, on_token = _bind_and_validate(
+                    *args, **kwargs
                 )
                 # Route through host for non-local execution
                 if not isinstance(self._host, Local):
                     # Extract raw args/kwargs for remote execution
-                    # (session, on_event, on_token already extracted by _bind_and_validate)
-                    # Pop _parent_state before binding (it's not part of public signature)
-                    binding_kwargs = {
-                        k: v for k, v in kwargs.items() if k != "_parent_state"
-                    }
-                    bound = new_sig.bind(*args, **binding_kwargs)
+                    bound = new_sig.bind(*args, **kwargs)
                     bound.apply_defaults()
                     raw_kwargs = dict(bound.arguments)
                     raw_kwargs.pop("session", None)
@@ -455,12 +457,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         on_event=on_event,
                         on_token=on_token,
                     )
-                # Use parent_state if provided (sub-task), otherwise resolve from session
-                state = (
-                    parent_state
-                    if parent_state is not None
-                    else self._host.resolve_state(self._state_config, session)
-                )
+                # Resolve state from session using agent's state config
+                state = self._host.resolve_state(self._state_config, session)
                 return await self._arun_task_loop(
                     task_name=task_name,
                     docstring=effective_docstring,
@@ -468,6 +466,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     inputs_instance=inputs_instance,
                     return_type=return_type,
                     state=state,
+                    session=session,
                     on_event=on_event,
                     on_token=on_token,
                     setup=setup,
@@ -478,18 +477,13 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         else:
 
             def task_wrapper(*args, **kwargs):
-                inputs_instance, session, on_event, on_token, parent_state = (
-                    _bind_and_validate(*args, **kwargs)
+                inputs_instance, session, on_event, on_token = _bind_and_validate(
+                    *args, **kwargs
                 )
                 # Route through host for non-local execution
                 if not isinstance(self._host, Local):
                     # Extract raw args/kwargs for remote execution
-                    # (session, on_event, on_token already extracted by _bind_and_validate)
-                    # Pop _parent_state before binding (it's not part of public signature)
-                    binding_kwargs = {
-                        k: v for k, v in kwargs.items() if k != "_parent_state"
-                    }
-                    bound = new_sig.bind(*args, **binding_kwargs)
+                    bound = new_sig.bind(*args, **kwargs)
                     bound.apply_defaults()
                     raw_kwargs = dict(bound.arguments)
                     raw_kwargs.pop("session", None)
@@ -504,12 +498,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         on_event=on_event,
                         on_token=on_token,
                     )
-                # Use parent_state if provided (sub-task), otherwise resolve from session
-                state = (
-                    parent_state
-                    if parent_state is not None
-                    else self._host.resolve_state(self._state_config, session)
-                )
+                # Resolve state from session using agent's state config
+                state = self._host.resolve_state(self._state_config, session)
                 return self._run_task_loop(
                     task_name=task_name,
                     docstring=effective_docstring,
@@ -517,6 +507,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     inputs_instance=inputs_instance,
                     return_type=return_type,
                     state=state,
+                    session=session,
                     on_event=on_event,
                     on_token=on_token,
                     setup=setup,

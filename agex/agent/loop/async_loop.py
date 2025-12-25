@@ -64,6 +64,7 @@ class AsyncLoopMixin:
         inputs_instance: Any,
         return_type: type,
         state: Versioned | Live | Namespaced | None,
+        session: str = "default",
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
         setup: str | None = None,
@@ -75,7 +76,7 @@ class AsyncLoopMixin:
 
         # Initialize state
         exec_state, versioned_state = initialize_exec_state(
-            self.name, state, inputs_instance, return_type
+            self.name, state, inputs_instance, return_type, session=session
         )
         events_yielded = len(events(exec_state))
 
@@ -346,6 +347,7 @@ class AsyncLoopMixin:
         inputs_instance: Any,
         return_type: type,
         state: Versioned | Namespaced | None,
+        session: str = "default",
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
         setup: str | None = None,
@@ -371,6 +373,7 @@ class AsyncLoopMixin:
                     inputs_instance,
                     return_type,
                     state,
+                    session=session,
                     on_event=on_event,
                     on_token=on_token,
                     setup=setup,

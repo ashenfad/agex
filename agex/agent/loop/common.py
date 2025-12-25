@@ -119,9 +119,17 @@ def initialize_exec_state(
     state: Versioned | Live | Namespaced | None,
     inputs_instance: Any,
     return_type: type,
+    session: str = "default",
 ) -> tuple[Namespaced, Versioned | None]:
     """
     Initialize the execution state based on the provided state argument.
+
+    Args:
+        agent_name: Name of the agent
+        state: The state to use for execution
+        inputs_instance: The task inputs
+        return_type: Expected return type
+        session: Session identifier for state resolution (inherited by sub-agents)
 
     Returns:
         A tuple of (exec_state, versioned_state) where versioned_state is the
@@ -150,6 +158,9 @@ def initialize_exec_state(
     if inputs_instance is not None:
         exec_state.set("inputs", inputs_instance)
     exec_state.set("__expected_return_type__", return_type)
+
+    # Store session for sub-agent calls to inherit
+    exec_state.set("__session__", session)
 
     # Initialize the event log if it doesn't exist
     if "__event_log__" not in exec_state:

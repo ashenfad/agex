@@ -125,8 +125,6 @@ async def generate_execution_events(
             async def async_execute():
                 try:
                     exec_kwargs = dict(request.kwargs)
-                    if state is not None:
-                        exec_kwargs["_parent_state"] = state
 
                     def on_token(token_chunk):
                         queue.put_nowait(("token", token_chunk))
