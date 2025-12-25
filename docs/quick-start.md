@@ -124,23 +124,25 @@ combined = np.concatenate(signals)
 
 ## Persistent State
 
-For agents that need to remember across calls, use `Versioned` state:
+For agents that need to remember across calls, use `connect_state`:
 
 ```python
-from agex import Agent, Versioned
+from agex import Agent, connect_state
 
-comedian = Agent(primer="You're a comedian who builds elaborate jokes over time.")
+comedian = Agent(
+    primer="You're a comedian who builds elaborate jokes over time.",
+    state=connect_state(type="versioned", storage="memory"),
+)
 
 @comedian.task
-def workshop_joke(prompt: str, state: Versioned) -> str:  # type: ignore[return-value]
+def workshop_joke(prompt: str) -> str:  # type: ignore[return-value]
     """Build on the ongoing joke based on the prompt."""
     pass
 
-# Agent builds an elaborate joke across multiple calls
-state = Versioned()
-setup = workshop_joke("Start a joke about a programmer and a fish", state=state)
-buildup = workshop_joke("Add more detail about their meeting", state=state)
-punchline = workshop_joke("Deliver the punchline!", state=state)
+# Agent builds an elaborate joke across multiple calls (state is managed internally)
+setup = workshop_joke("Start a joke about a programmer and a fish")
+buildup = workshop_joke("Add more detail about their meeting")
+punchline = workshop_joke("Deliver the punchline!")
 
 print(f"{setup}\n{buildup}\n{punchline}")
 ```
@@ -243,39 +245,38 @@ One of agex's most powerful features is comprehensive event tracking that lets y
 
 ### Basic Event Monitoring
 
-Every agent action generates events that you can retrieve and analyze:
+### Basic Event Monitoring
+
+Every agent action generates events that you can capture in real-time:
 
 ```python
-from agex import Agent, Versioned, events
+from agex import Agent, connect_state, ActionEvent
 
-# Create agent with persistent state to capture events
+# Create agent
 agent = Agent(name="debug_agent")
-state = Versioned()
 
 @agent.task
 def analyze_data(numbers: list[int]) -> dict:  # type: ignore[return-value]
     """Analyze a list of numbers and return statistics."""
     pass
 
-# Execute the task
-result = analyze_data([1, 5, 3, 9, 2, 7], state=state)
-print(f"Result: {result}")
+# Capture events as they happen
+action_events = []
 
-# Get all events from this agent execution
-agent_events = events(state)
-print(f"Generated {len(agent_events)} events")
-
-# Events include TaskStartEvent, ActionEvent, OutputEvent, SuccessEvent, and FailEvent
-# See what the agent was thinking during execution
-from agex import ActionEvent
-
-for event in agent_events:
+def capture_actions(event):
     if isinstance(event, ActionEvent):
-        print(f"Agent was thinking: {event.thinking}")
-        print(f"Agent executed: {event.code}")
+        print(f"Agent thinking: {event.thinking}")
+        print(f"Agent executing: {event.code}")
+        action_events.append(event)
+
+# Execute the task with the handler
+result = analyze_data([1, 5, 3], on_event=capture_actions)
+print(f"Result: {result}")
+print(f"Captured {len(action_events)} actions")
 ```
 
 The events system makes debugging agent behavior straightforward. For comprehensive event monitoring patterns, see the **[Events API](./api/events.md)**.
+
 
 ## Async Tasks
 

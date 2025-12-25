@@ -1,278 +1,218 @@
-# State Management
+# State Configuration
 
-Agent state in agex gives you flexible control over memory and persistence across [agent tasks](task.md). You can choose between stateless execution for maximum flexibility, in-memory state for multi-step tasks, or persistent state for production workflows.
+The `connect_state()` factory function configures agent memory and persistence. State determines whether agents remember context across task calls and how that memory is stored.
 
-## State Management Approaches
-
-agex provides three ways to manage state when calling an agent task.
-
-### 1. No State (Default)
-When you call a task without a `state` parameter, the execution is **stateless**.
-
-- **No persistence**: Variables do not survive between task calls.
-- **Maximum flexibility**: Agents can work with any Python object, including unpicklable ones like database cursors or file handles.
-- **Use for**: Simple, one-off tasks and prototyping.
+## `connect_state()` API
 
 ```python
+from agex import connect_state
+
+state_config = connect_state(
+    type: Literal["versioned", "live"] = "versioned",
+    storage: Literal["memory", "disk"] = "memory",
+    path: str | None = None,  # Required for disk storage
+)
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `type` | `str` | `"versioned"` | State type: `"versioned"` (with checkpointing) or `"live"` (in-memory only) |
+| `storage` | `str` | `"memory"` | Storage backend: `"memory"` or `"disk"` |
+| `path` | `str \| None` | `None` | Path for disk storage (required when `storage="disk"`) |
+
+## State Types
+
+### No State (Default)
+
+When no state is configured, each task call is independent:
+
+```python
+agent = Agent(primer="You are helpful.")
+
 @agent.task
-def analyze_data(data: list[float]) -> dict:  # type: ignore[return-value]
-    """Analyze data without memory."""
+def analyze(data: str) -> dict:
+    """Analyze data."""
     pass
 
-# Each call is independent. No state object is needed.
-result1 = analyze_data([1, 2, 3])
-result2 = analyze_data([4, 5, 6])  # No memory of the previous call
+# Each call starts fresh - no memory
+result1 = analyze("first")
+result2 = analyze("second")  # No memory of first call
 ```
 
-### 2. In-Memory State (`Live`)
-When you pass a `Live` state object, the agent gains **in-memory, process-bound state**.
+### Versioned State (Recommended for Persistence)
 
-- **Process-bound memory**: The agent remembers variables across calls within the same Python process.
-- **Maximum flexibility**: Like stateless calls, this mode supports unpicklable objects.
-- **No checkpointing**: Memory is lost when the process ends. There are no rollback capabilities.
-- **Use for**: Multi-step workflows within a single session that need to remember stateful, unpicklable objects.
+Provides checkpointing, rollback, and cross-process persistence:
 
 ```python
-from agex import Live
+from agex import Agent, connect_state
 
-@agent.task  
-def build_analysis(data: list[float]) -> dict:  # type: ignore[return-value]
-    """Build cumulative analysis with memory."""
-    pass
-
-# State persists across calls within the same process.
-shared_state = Live()
-result1 = build_analysis([1, 2, 3], state=shared_state)
-result2 = build_analysis([4, 5, 6], state=shared_state)  # Remembers result1
-```
-
-### 3. Persistent State (`Versioned`)
-When you pass a `Versioned` state object, the agent gains **persistent, versioned state**.
-
-- **Cross-process persistence**: The agent remembers variables across calls and process restarts (when using a storage backend).
-- **Automatic checkpointing**: Every agent execution creates a commit snapshot.
-- **Rollback safety**: You can debug by reverting to any previous state.
-- **Constraints**: All objects in the agent's memory must be picklable.
-- **Use for**: Production workflows, multi-agent coordination, and tasks requiring auditability or debugging.
-
-```python
-from agex import Versioned
-
-@agent.task  
-def build_analysis(data: list[float]) -> dict:  # type: ignore[return-value]
-    """Build cumulative analysis with memory."""
-    pass
-
-# State persists across calls and can survive process restarts.
-shared_state = Versioned()
-result1 = build_analysis([1, 2, 3], state=shared_state)
-result2 = build_analysis([4, 5, 6], state=shared_state)  # Remembers result1
-```
-
-## Features of `Versioned` State
-
-When you use `Versioned` state, you get powerful features automatically:
-
-- **Checkpointing**: Each agent execution creates a commit snapshot.
-- **Mutation Detection**: Side-effect changes to objects are automatically captured.
-- **Rollback Safety**: The framework can revert to any previous state for debugging.
-
-### Working with Unpicklable Objects in Versioned State
-`Versioned` state automatically handles unpicklable objects (like database connections, file handles, etc.) gracefully. Agents can assign these objects to variables naturally - they work perfectly for single-turn use. If an agent tries to access an unpicklable object from a previous turn, they receive a clear error message with actionable solutions.
-
-**Best practices:**
-- Chain operations for one-off use: `results = db.cursor().fetchall()`
-- Recreate resources at the start of each turn if needed across iterations
-
-For a complete example, see [`examples/db.py`](https://github.com/ashenfad/agex/blob/main/examples/db.py) and the [Nearly Python documentation](../concepts/nearly-python.md#unpicklable-objects-automatic-handling) for detailed behavior.
-
-### Garbage Collection with `GCVersioned`
-
-For long-running agents with persistent state, memory can grow unbounded as variables accumulate. `GCVersioned` provides automatic garbage collection using a "high/low water mark" strategy to keep state bounded without manual intervention.
-
-**How it works:**
-- Tracks the total size of persisted user variables and the recency of access
-- When total size exceeds `high_water_bytes`, triggers garbage collection
-- Prunes coldest variables (oldest access, then largest) until size is below `low_water_bytes`
-- System keys (like event logs and metadata) are always retained
-
-```python
-from agex import GCVersioned, Disk
-
-# Create a garbage-collected state with 100MB high water, 80MB low water
-state = GCVersioned(
-    Disk("/path/to/storage"),
-    high_water_bytes=100 * 1024 * 1024,  # 100MB
-    low_water_bytes=80 * 1024 * 1024,    # 80MB (defaults to 80% of high if not specified)
+agent = Agent(
+    primer="You are helpful.",
+    state=connect_state(type="versioned", storage="memory"),
 )
 
-# State automatically prunes old/large variables when exceeding high water
-result = my_task("long running analysis", state=state)
+@agent.task
+def build_analysis(data: str) -> dict:
+    """Build cumulative analysis."""
+    pass
+
+# Agent remembers context across calls
+result1 = build_analysis("first")
+result2 = build_analysis("second")  # Remembers first call
 ```
 
-**Key features:**
-- **Automatic pruning**: Runs after each snapshot if high water exceeded
-- **LRU-based**: Removes least recently used (oldest access) variables first
-- **Size-aware**: Among equally old variables, removes largest first
-- **Preserves system data**: Event logs and metadata are never pruned
-- **Default low water**: If not specified, defaults to 80% of high water
+### Live State (In-Process Only)
 
-**Use cases:**
-- Long-running production agents that accumulate state over days/weeks
-- Agents with large intermediate data that doesn't need indefinite retention
-- Systems where you want automatic memory management without manual cleanup
+For unpicklable objects like database connections:
+
+```python
+agent = Agent(
+    primer="You are a database expert.",
+    state=connect_state(type="live"),
+)
+
+# Agent can work with file handles, cursors, etc.
+# Memory lost when process ends
+```
+
+## Session Management
+
+The `session` parameter isolates state between different users or conversations:
+
+```python
+agent = Agent(
+    state=connect_state(type="versioned", storage="memory"),
+)
+
+@agent.task
+def chat(message: str) -> str:
+    """Chat with the user."""
+    pass
+
+# Different sessions have isolated memory
+chat("Hello", session="user_alice")  # Alice's conversation
+chat("Hello", session="user_bob")    # Bob's conversation (separate)
+
+# Same session shares memory
+chat("Remember this", session="alice")
+chat("What did I say?", session="alice")  # Remembers previous message
+```
+
+### Default Session
+
+If you don't specify a session, the default session `"default"` is used:
+
+```python
+# These are equivalent
+chat("Hello")
+chat("Hello", session="default")
+```
+
+## Storage Options
+
+### Memory Storage (Default)
+
+Fast, in-process storage. Lost when process ends:
+
+```python
+state = connect_state(type="versioned", storage="memory")
+```
+
+**Use for:** Development, testing, single-process applications.
+
+### Disk Storage
+
+Persistent storage that survives restarts:
+
+```python
+state = connect_state(type="versioned", storage="disk", path="/var/agex/state")
+```
+
+**Use for:** Production, remote execution, long-running workflows.
+
+## Features of Versioned State
+
+### Automatic Checkpointing
+
+Every agent iteration creates a snapshot. You can inspect or rollback to any point:
+
+```python
+from agex import events, view
+
+# Get events after a task run
+all_events = events(resolved_state)
+
+# Each event has a commit_hash for time-travel debugging
+action = all_events[0]
+historical = resolved_state.checkout(action.commit_hash)
+print(view(historical, focus="full"))
+```
 
 ### Concurrent Task Handling
 
-`Versioned` state uses a branch-based model designed for safe concurrent execution across multiple workers (e.g., serverless deployments, background tasks).
-
-**How it works:**
-
-1. **Branch creation**: When you create a `Versioned` instance, it starts a branch from the current HEAD
-2. **Local commits**: `snapshot()` commits to your local branch without touching HEAD
-3. **Atomic merge**: At task completion, `merge()` uses compare-and-swap (CAS) to atomically update HEAD
-
-The task loop handles this automatically via the `on_conflict` parameter:
+Versioned state handles concurrent execution safely via the `on_conflict` parameter on tasks:
 
 ```python
-# Foreground task - automatically retries on conflict (default)
-@agent.task
-def analyze(query: str) -> str:
-    '''Analyze the query.'''
+@agent.task(on_conflict="retry")  # Default: retry on conflict
+def interactive_task(query: str) -> str:
     pass
 
-# Background task - silently abandons work on conflict
-@agent.task(on_conflict='abandon')
-def rebuild_index() -> None:
-    '''Rebuild search index in the background.'''
+@agent.task(on_conflict="abandon")  # Background: abandon on conflict
+def background_task() -> None:
     pass
 ```
 
-**Conflict strategies:**
+See [Task - Concurrency Control](task.md#concurrency-control) for details.
 
-| Strategy | Behavior | Use Case |
-|----------|----------|----------|
-| `retry` (default) | Resets state and reruns task (up to 3 times) | Foreground/interactive tasks |
-| `abandon` | Silently abandons work, returns `None` | Background tasks |
+### Unpicklable Objects
 
-**Customizing retry attempts:**
+Versioned state handles unpicklable objects gracefully. Agents can use database cursors, file handles, etc. - they work for single-turn use. Accessing them in later turns shows a clear error with solutions.
 
-```python
-@agent.task(on_conflict='retry', max_conflict_retries=5)
-def critical_task() -> dict:
-    '''Task that needs more retry attempts.'''
-    pass
-```
+## Advanced: Direct State Objects
 
-## Inspecting Historical State
-
-A key feature of `Versioned` state is time-travel debugging. Every event is stamped with a `commit_hash`, allowing you to check out the agent's exact memory at that point in time.
-
-1.  Run a task and get the events.
-2.  Find an event of interest and get its `commit_hash`.
-3.  Use `state.checkout()` to get a read-only view of that historical state.
+For advanced use cases, you can create state objects directly:
 
 ```python
-from agex import ActionEvent, events, view
+from agex import Versioned, Live, Disk
 
-# 1. Find an event of interest after a run
-all_events = events(state)
-action_event = next(e for e in all_events if isinstance(e, ActionEvent))
-
-# 2. Get the commit hash from that event
-commit_to_inspect = action_event.commit_hash
-
-# 3. Checkout the state to a new variable
-historical_state = state.checkout(commit_to_inspect)
-
-# `historical_state` is a read-only view of the past.
-print(f"--- Inspecting state at {commit_to_inspect[:7]} ---")
-print(view(historical_state, focus="full"))
-```
-
-## Storage Options for `Versioned` State
-
-You can configure where `Versioned` state is stored.
-
-### Memory (Default)
-In-memory storage that is lost when the process ends.
-```python
-from agex import Versioned
-
-state = Versioned()
-```
-**Use for:** Development, testing, live sessions.
-
-### Disk Storage
-Persistent storage that survives process restarts.
-```python
-from agex import Versioned, Disk
-
-# Path to storage directory
+# Direct Versioned with disk backend
 state = Versioned(Disk("/path/to/storage"))
 
-# Optional size limit (default: 1GB)
-state = Versioned(Disk("/path/to/storage", size_limit=500*1024*1024))
+# With garbage collection for long-running agents
+from agex import GCVersioned
+state = GCVersioned(
+    Disk("/path/to/storage"),
+    high_water_bytes=100 * 1024 * 1024,  # 100MB
+)
 ```
-**Use for:** Production deployments, long-running workflows.
 
-### Cached Disk Storage
-A performant option that uses an in-memory cache on top of disk persistence.
-```python
-from agex import Versioned, Cache, Disk
+### Custom Storage Backends
 
-disk_store = Disk("/path/to/storage")
-state = Versioned(Cache(disk_store, max_bytes=64*1024*1024))
-```
-**Use for:** Performance-critical applications with large state.
-
-## Custom Storage Backends
-
-For distributed or specialized storage needs, you can implement the `KVStore` interface:
+Implement the `KVStore` interface for custom backends:
 
 ```python
-from agex import Versioned
 from agex.state.kv import KVStore
 
 class RedisStore(KVStore):
-    def __init__(self, redis_url):
-        # Implementation details...
-        pass
-    
-    def get(self, key: str) -> bytes | None:
-        # Return bytes from Redis
-        pass
-    
-    def set(self, key: str, value: bytes) -> None:
-        # Store bytes in Redis
-        pass
-    
-    def cas(self, key: str, value: bytes, expected: bytes | None) -> bool:
-        # Atomic compare-and-swap for multi-worker safety
-        pass
-    
-    # ... implement remaining abstract methods (get_many, set_many, 
-    # items, remove, remove_many, __contains__)
-
-# Use with your agent
-state = Versioned(RedisStore("redis://localhost:6379"))
+    def get(self, key: str) -> bytes | None: ...
+    def set(self, key: str, value: bytes) -> None: ...
+    def cas(self, key: str, value: bytes, expected: bytes | None) -> bool: ...
+    # ... other abstract methods
 ```
-
-**Note on `cas()`**: The compare-and-swap method is required for safe concurrent access when multiple workers (e.g., in serverless or distributed deployments) update the same agent state. Most storage backends support this natively (Redis WATCH/MULTI, DynamoDB conditional writes, SQL UPDATE...WHERE).
 
 ## Quick Reference
 
-| Feature | No State (Default) | In-Memory (`Live`) | Persistent (`Versioned`) |
-|---|---|---|---|
-| **Memory** | No persistence | Persists in-process | Persists across processes |
-| **Object Support** | Any Python object | Any Python object | Only picklable objects |
-| **Usage** | `my_task(data)` | `my_task(data, state=Live())` | `my_task(data, state=Versioned())` |
-| **Checkpointing** | None | None | Automatic snapshots |
-| **Best For** | Simple tasks | Multi-step workflows | Production |
-
+| Configuration | Memory | Persistence | Use Case |
+|--------------|--------|-------------|----------|
+| No state | None | None | Simple, one-off tasks |
+| `connect_state(type="live")` | In-process | None | Unpicklable objects |
+| `connect_state(type="versioned", storage="memory")` | In-process | Checkpoints | Development, testing |
+| `connect_state(type="versioned", storage="disk", path="...")` | Disk | Full | Production |
 
 ## Next Steps
 
-- **Agent Creation**: See [Agent](agent.md) for creating agents
-- **Task Definition**: See [Task](task.md) for using state in agent tasks
-- **Debugging**: See [View](view.md) for inspecting state
+- **[Agent](agent.md)**: Configure agents with state
+- **[Task](task.md)**: Session parameter and concurrency control
+- **[Host](host.md)**: State requirements for remote execution

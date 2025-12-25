@@ -7,9 +7,12 @@ Setup the agent and let it use the math module:
 ```python
 import math
 from typing import Callable
-from agex import Agent, Versioned
+from agex import Agent, connect_state
 
-funcy_agent = Agent(primer="You are great at providing custom functions to the user.")
+funcy_agent = Agent(
+    primer="You are great at providing custom functions to the user.",
+    state=connect_state(type="versioned", storage="memory"),
+)
 funcy_agent.module(math, visibility="low")
 ```
 
@@ -22,15 +25,11 @@ def fn_builder(prompt: str) -> Callable:  # type: ignore[return-value]
     pass
 ```
 
-Ask for a prime-finder using state so the agent remembers across tasks:
+Ask for a prime-finder using persistent state:
 
 ```python
-state = Versioned()  # keep context across calls
-
 # Build a function that returns the first prime greater than n
-next_prime = fn_builder(
-    "a fn for the first prime larger than a given number.", state=state
-)
+next_prime = fn_builder("a fn for the first prime larger than a given number.")
 # ----------------------------------------------
 # actual `fn_builder` agent code for the task:
 # ----------------------------------------------
@@ -65,7 +64,7 @@ print(next_prime(500000))
 # 500009
 
 # Build a related function leveraging context
-prev_prime = fn_builder("Okay, now make it the next lower prime.", state=state)
+prev_prime = fn_builder("Okay, now make it the next lower prime.")
 print(prev_prime(500000))
 # 499979
 ```
