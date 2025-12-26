@@ -151,7 +151,6 @@ Use the right tool for the job:
 | **`view(agent)`** | "What *can* this agent do?" | Debugging agent setup & capabilities |
 | **`view(state)`** | "What is the agent's memory *right now*?" | Quick, interactive debugging of state |
 | **`events(state)`** | "What did the agent *do* historically?" | Post-hoc analysis, programmatic review |
-| **`task.stream()`** | "What is the agent *doing* right now?" | Real-time, interactive event streaming |
 
 ## Next Steps
 
