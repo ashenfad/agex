@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2025-12-25
+
+### Added
+- **Remote Execution**: New `agex.host` module for distributed compute
+  - `connect_host()` helper with `Local` and `HTTP` host implementations
+  - `@remote` decorator for deploying agents to remote servers
+  - Built-in FastAPI server (`agex.server`) for hosting agents
+  - Support for serializing agents, state, and tasks across process boundaries
+- **Host Configuration**: Agent-level `host` parameter to control where tasks execute
+- **LLM Configuration**: New `connect_llm()` helper for streamlined LLM client setup
+- **State Configuration**: New `connect_state()` helper for state initialization
+- **Documentation**: Added comprehensive API docs for [Host](docs/api/host.md) and [LLM](docs/api/llm.md)
+
+### Changed
+- **BREAKING**: State configuration moved from task-level to agent-level
+  - Before: `my_task(state=my_state)`
+  - After: `agent = Agent(state=connect_state(...))` then `my_task(session="user1")`
+  - Tasks now accept `session` parameter instead of `state` for session-scoped isolation
+- **Agent Interface**: Simplified agent configuration with three main parameters: `llm`, `host`, and `state`
+- **State Resolution**: State is now resolved by the host based on agent configuration and session ID
+- **Task Signature**: Removed `state` parameter from task functions (use `session` instead)
+
+### Removed
+- **Removed**: `task.stream()` method for real-time event streaming
+
 ## [0.7.1] - 2025-12-22
 
 ### Fixed
@@ -59,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed event token count defaults and detail thresholds
   - Garbage collection restricted to orphaned events only
 
+[0.8.0]: https://github.com/ashenfad/agex/releases/tag/v0.7.1
 [0.7.1]: https://github.com/ashenfad/agex/releases/tag/v0.7.1
 [0.7.0]: https://github.com/ashenfad/agex/releases/tag/v0.7.0
 [0.6.0]: https://github.com/ashenfad/agex/releases/tag/v0.6.0
