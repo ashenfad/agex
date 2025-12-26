@@ -63,7 +63,7 @@ process_image("Crop this to the subject.", image=my_image)
 
 ## Executing Tasks
 
-An `@agent.task`-decorated function can be executed in three ways, depending on your needs for interactivity and observability.
+An `@agent.task`-decorated function can be executed in two ways, depending on your needs for interactivity and observability.
 
 ### 1. Standard Execution
 
@@ -89,28 +89,12 @@ result = await solve_equation("2*x + 5 = 15")
 print(f"Result: {result}")
 ```
 
-All execution modes (`.stream()`, `on_event`, `on_token`) work with async tasks.
+All execution modes (`on_event`, `on_token`) work with async tasks.
 
 > [!NOTE]
 > Async registered functions (via `@agent.fn`) are only available in async tasks. If an agent tries to call an async function from a sync task, it will see an error and can adapt. Use async tasks when your registered functions include async code.
 
-### 2. Streaming Execution with `.stream()`
-
-For interactive scenarios like Jupyter notebooks, you can use the `.stream()` method. This returns a **generator** that yields events as they happen, allowing you to see the agent's progress in real time.
-
-The `.stream()` method accepts the exact same arguments as the original task function.
-
-```python
-# In a Jupyter notebook
-from IPython.display import display
-
-for event in solve_equation.stream("4x + 2 = 10"):
-    display(event) # Renders a rich view of each event
-```
-
-The final result of the task is not returned directly, but is available as the `.result` attribute of the `SuccessEvent` yielded at the end of the stream.
-
-### 3. Real-time Handlers with `on_event`
+### 2. Real-time Handlers with `on_event`
 
 You may get both event-level visibility and a blocking result via the `on_event` handler. This provides a "fire-and-forget" way to get a real-time stream of all events without needing to consume a generator.
 

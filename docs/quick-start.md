@@ -301,7 +301,7 @@ async def main():
 asyncio.run(main())
 ```
 
-Async tasks fully support all features: streaming (`.stream()`), callbacks (`on_event`, `on_token`), and state management.
+Async tasks fully support all features: callbacks (`on_event`, `on_token`), and state management.
 
 ## Task Errors
 

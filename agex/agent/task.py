@@ -370,9 +370,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
         # Create a custom callable class with proper __repr__
         class TaskWrapper:
-            def __init__(self, task_func, stream_func, agent_name, task_name):
+            def __init__(self, task_func, agent_name, task_name):
                 self._task_func = task_func
-                self._stream_func = stream_func
                 self._agent_name = agent_name
                 self._task_name = task_name
 
@@ -397,10 +396,6 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
             def __repr__(self):
                 return f"<agex.task {self._agent_name}/{self._task_name} at {hex(id(self))}>"
-
-            @property
-            def stream(self):
-                return self._stream_func
 
         # Helper to bind and validate arguments for both sync and async wrappers
         def _bind_and_validate(*args, **kwargs):
@@ -515,109 +510,9 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     max_conflict_retries=max_conflict_retries,
                 )
 
-        def stream(*args, **kwargs):
-            """Stream events in real-time during task execution."""
-            # Same parameter processing as regular task execution
-            bound_args = new_sig.bind(*args, **kwargs)
-            bound_args.apply_defaults()
-
-            # Pop the session, on_event, and on_token arguments, they are handled separately
-            session = bound_args.arguments.pop("session", "default")
-            user_on_event = bound_args.arguments.pop("on_event", None)
-            on_token = bound_args.arguments.pop("on_token", None)
-
-            # Create inputs dataclass instance with pass-by-value semantics
-            inputs_instance = None
-            if bound_args.arguments:
-                validated_args = {}
-                for name, value in bound_args.arguments.items():
-                    annotation = original_sig.parameters[name].annotation
-                    if annotation == inspect.Parameter.empty:
-                        annotation = Any  # Default to Any if no type hint
-                    try:
-                        validated_value = validate_with_sampling(value, annotation)
-                        validated_args[name] = validated_value
-                    except Exception as e:
-                        raise ValueError(
-                            f"Validation failed for argument '{name}':\n{e}"
-                        ) from e
-                inputs_instance = inputs_dataclass(**validated_args)
-
-            # Resolve state from host
-            state = self._host.resolve_state(self._state_config, session)
-
-            # Implement real-time hierarchical streaming using a worker thread and queue
-            from queue import Queue
-            from threading import Event as _ThreadEvent
-            from threading import Thread
-
-            _SENTINEL = object()
-            _queue: Queue = Queue()
-            _done = _ThreadEvent()
-
-            def _handler(ev):
-                # Enqueue every event and optionally forward to user handler
-                try:
-                    _queue.put(ev)
-                finally:
-                    if user_on_event is not None:
-                        try:
-                            user_on_event(ev)
-                        except Exception:
-                            # Swallow user handler errors to avoid breaking streaming
-                            pass
-
-            def _run_task():
-                try:
-                    # Execute standard (non-streaming) loop; events flow via _handler
-                    self._run_task_loop(
-                        task_name=task_name,
-                        docstring=effective_docstring,
-                        inputs_dataclass=inputs_dataclass,
-                        inputs_instance=inputs_instance,
-                        return_type=return_type,
-                        state=state,
-                        on_event=_handler,
-                        on_token=on_token,
-                        setup=setup,
-                        on_conflict=on_conflict,
-                        max_conflict_retries=max_conflict_retries,
-                    )
-                except BaseException as e:
-                    # Emit the exception into the queue so the consumer can re-raise
-                    try:
-                        _queue.put(e)
-                    finally:
-                        pass
-                finally:
-                    try:
-                        _queue.put(_SENTINEL)
-                    finally:
-                        _done.set()
-
-            _thread = Thread(target=_run_task, daemon=True)
-            _thread.start()
-
-            def _event_generator():
-                try:
-                    while True:
-                        ev = _queue.get()
-                        # If the worker enqueued an exception, re-raise it to match test expectations
-                        if isinstance(ev, BaseException):
-                            raise ev
-                        if ev is _SENTINEL:
-                            break
-                        yield ev
-                finally:
-                    if not _done.is_set():
-                        _done.wait(timeout=1.0)
-                    _thread.join(timeout=1.0)
-
-            return _event_generator()
-
         # Create the custom wrapper with proper __repr__
         agent_name = self.name if self.name is not None else self.__class__.__name__
-        wrapper = TaskWrapper(task_wrapper, stream, agent_name, task_name)
+        wrapper = TaskWrapper(task_wrapper, agent_name, task_name)
         # Attach agent instance for @remote decorator access
         wrapper.__agex_agent__ = self  # type: ignore
 

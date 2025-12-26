@@ -217,28 +217,7 @@ def custom_handler(event):
 result = my_task("important task", on_event=custom_handler)
 ```
 
-### 3. Real-time Generator with `.stream()`
-The `.stream()` method is best for situations where your primary goal is to process the stream of events itself. Unlike a standard function call, it does not `return` the final result directly. Instead, the result is available as an attribute of the `SuccessEvent` yielded at the end of the stream.
-
-**Choose `.stream()` if:**
-*   Your primary focus is processing the event stream, rather than getting a direct return value.
-*   You want to use generator-based control flow (e.g., with `itertools`).
-
-```python
-from agex.agent.events import ActionEvent, SuccessEvent
-
-# You get a generator of events, but not the final result.
-final_result = None
-for event in my_task.stream("process data"):
-    if isinstance(event, ActionEvent):
-        log_agent_action(event)
-    elif isinstance(event, SuccessEvent):
-        final_result = event.result
-
-print(f"Final result from stream: {final_result}")
-```
-
-### 4. Token-Level Streaming with `on_token`
+### 3. Token-Level Streaming with `on_token`
 `on_token` is an optional callback that receives LLM output tokens in real time. Tokens arrive as lightweight `TokenChunk` objects with:
 
 - `type`: either `"thinking"` or `"python"`
@@ -272,7 +251,7 @@ result = my_task("analyze", on_token=render_token)
 
 Token streaming activates only when an `on_token` handler is provided. When omitted, tasks behave exactly as before.
 
-### 5. Async Streaming
+### 4. Async Handlers
 
 All event consumption patterns work with async tasks. For async-first codebases:
 
@@ -284,10 +263,6 @@ async def my_async_task(data: str) -> str:  # type: ignore[return-value]
 
 # Async with callbacks
 result = await my_async_task("process this", on_event=my_handler)
-
-# Async streaming
-async for event in my_async_task.stream("process this"):
-    await process_event(event)
 ```
 
 The `on_event` and `on_token` callbacks can also be async functions—agex will `await` them automatically.
@@ -380,7 +355,7 @@ worker_events = events(worker_state)
 ## Related APIs
 
 - **[State Management](state.md)**: Understanding state containers and persistence
-- **[Task Definition](task.md)**: Defining tasks and using `on_event` or `.stream()`
+- **[Task Definition](task.md)**: Defining tasks and using `on_event`
 - **[View API](view.md)**: Experimental APIs for agent introspection
 
 The events system forms the foundation for agent introspection and is essential for debugging, monitoring, and building sophisticated multi-agent systems.

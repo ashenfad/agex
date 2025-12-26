@@ -513,20 +513,6 @@ class TestEventSystem:
         ]
         assert agent_names == expected_agents
 
-        # --- Test Stream Execution ---
-        event_log.clear()
-        stream_events = []
-        for event in main_task.stream(
-            "test", session="test_session", on_event=test_handler
-        ):
-            stream_events.append(event)
-
-        # Verify handler and stream saw the same events
-        assert len(event_log) == len(stream_events)
-        assert [e.__class__.__name__ for e in event_log] == [
-            e.__class__.__name__ for e in stream_events
-        ]
-
         # --- Test Faulty Handler ---
         event_log.clear()
         # This should execute without crashing
