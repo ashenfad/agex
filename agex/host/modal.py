@@ -224,8 +224,8 @@ class ModalLocal(Local):
                 from pathlib import Path
 
                 from agex.state.kv import Disk
+                from agex.state.kv.composite import Composite
                 from agex.state.kv.modal_dict import ModalDict
-                from agex.state.kv.tiered_cache import TieredCache
 
                 # Use path as the Dict name (required for disk storage)
                 config_path = getattr(config, "path", None) or ""
@@ -281,7 +281,7 @@ class ModalLocal(Local):
                 # Compose: Disk (local /tmp, fast) + ModalDict (remote, authoritative)
                 # Local cache survives across hot container reuses
                 cache = Disk(str(cache_dir))
-                kv = TieredCache(cache=cache, source=source)
+                kv = Composite([cache, source])
                 return Versioned(store=kv)
             else:
                 # Memory storage
