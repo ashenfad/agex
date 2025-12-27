@@ -453,7 +453,9 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         on_token=on_token,
                     )
                 # Resolve state from session using agent's state config
-                state = self._host.resolve_state(self._state_config, session)
+                state = self._host.resolve_state(
+                    self._state_config, session, self.fingerprint or ""
+                )
                 return await self._arun_task_loop(
                     task_name=task_name,
                     docstring=effective_docstring,
@@ -494,7 +496,9 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         on_token=on_token,
                     )
                 # Resolve state from session using agent's state config
-                state = self._host.resolve_state(self._state_config, session)
+                state = self._host.resolve_state(
+                    self._state_config, session, self.fingerprint or ""
+                )
                 return self._run_task_loop(
                     task_name=task_name,
                     docstring=effective_docstring,

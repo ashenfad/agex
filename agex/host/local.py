@@ -49,7 +49,9 @@ class Local(Host):
         if config.storage == "disk" and not config.path:
             raise ValueError("Disk storage requires 'path' parameter")
 
-    def resolve_state(self, config: "StateConfig | None", session: str) -> "State":
+    def resolve_state(
+        self, config: "StateConfig | None", session: str, fingerprint: str = ""
+    ) -> "State":
         """Create or retrieve a State instance for this session."""
         from agex.state import Live
         from agex.state.kv import Disk, Memory
