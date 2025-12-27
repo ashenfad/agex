@@ -18,7 +18,6 @@ from .render.capabilities import summarize_capabilities
 from .render.token_count import system_token_count
 from .render.view import view
 from .state import GCVersioned, Live, Namespaced, Versioned, connect_state, events
-from .state.kv import Cache, Disk, Memory, WriteBehind
 
 __all__ = [
     # Core Classes
@@ -60,11 +59,6 @@ __all__ = [
     "system_token_count",
     # Capabilities
     "summarize_capabilities",
-    # KV backends
-    "Memory",
-    "Disk",
-    "Cache",
-    "WriteBehind",
     # Console
     "pprint_events",
     "pprint_tokens",
