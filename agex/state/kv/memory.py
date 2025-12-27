@@ -55,3 +55,7 @@ class Memory(KVStore):
                 self.memory[key] = value
                 return True
             return False
+
+    def clear(self) -> None:
+        """Remove all items from the store."""
+        self.memory.clear()

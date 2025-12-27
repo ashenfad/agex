@@ -134,18 +134,15 @@ class TestModalHostValidation:
         # Should not raise (path is provided)
         host.validate_state(config)
 
-    def test_validate_state_versioned_memory_rejected(self):
-        """Versioned state with memory storage is rejected (memory resets between invocations)."""
+    def test_validate_state_versioned_memory_ok(self):
+        """Versioned state with memory storage is now accepted (uses Disk+ModalDict)."""
         from agex.state.config import StateConfig
 
         host = connect_host(provider="modal", app="my-app", secrets="llm-keys")
         config = StateConfig(type="versioned", storage="memory")
 
-        # Should raise - memory is reset between invocations on serverless
-        with pytest.raises(
-            ValueError, match="Versioned state with memory storage is not supported"
-        ):
-            host.validate_state(config)
+        # Should not raise - memory storage now uses Disk+ModalDict (7-day TTL)
+        host.validate_state(config)
 
 
 class TestModalHostWarmup:
