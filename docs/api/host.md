@@ -124,6 +124,9 @@ state = connect_state(type="live", storage="disk")  # Raises ValueError
 > The `path` parameter is used to name the Modal Dict for persistent storage. Each session gets its own Dict instance (`{path}.{session}`) to prevent cross-session conflicts.
 
 > [!WARNING]
+> Modal Dict entries expire after 7 days of inactivity. Reads refresh the TTL, so active sessions persist indefinitely. However, dormant sessions will lose state silently after the TTL expires.
+
+> [!WARNING]
 > **Modal Sub-Agent Limitation**: Sub-agents with Modal hosts cannot currently be registered as capabilities on parent agents. This prevents double-serialization overhead. This limitation may be relaxed in the future to allow Modal containers to spawn new Modal functions. For now, use HTTP hosts for explicit distributed multi-agent workflows.
 
 ### HTTP/Remote Execution
