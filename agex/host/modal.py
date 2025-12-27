@@ -207,7 +207,7 @@ class ModalLocal(Local):
         from pathlib import Path
 
         from agex.state import Live, Versioned
-        from agex.state.kv import Disk, WriteBehind
+        from agex.state.kv import Disk
         from agex.state.kv.composite import Composite
         from agex.state.kv.modal_dict import ModalDict
 
@@ -256,7 +256,7 @@ class ModalLocal(Local):
         source = ModalDict(name=dict_name, prefix=base_name)
 
         if storage == "disk":
-            # Three-tier: Disk → ModalDict → WriteBehind(Volume)
+            # Three-tier: Disk → ModalDict → Volume
             from agex.state.kv.modal_volume import Volume
 
             volume_name = base_name
@@ -275,7 +275,7 @@ class ModalLocal(Local):
                 pass
 
             cache = Disk(str(cache_dir))
-            kv = Composite([cache, source, WriteBehind(volume)])
+            kv = Composite([cache, source, volume])
             return Versioned(store=kv)
 
         else:
@@ -306,7 +306,12 @@ class ModalLocal(Local):
         on_token: Callable[[Any], None] | None,
     ) -> Any:
         """Execute task locally within Modal container."""
-        fingerprint = getattr(agent, "fingerprint", "")
+        fingerprint = getattr(agent, "fingerprint", None)
+        if not fingerprint:
+            # Compute fingerprint if not already set (e.g., after deserialization)
+            from agex.agent.fingerprint import compute_agent_fingerprint_from_policy
+
+            fingerprint = compute_agent_fingerprint_from_policy(agent)
         state = self.resolve_state(agent._state_config, session, fingerprint)
 
         task_fn = agent._tasks.get(task_name)
@@ -333,7 +338,13 @@ class ModalLocal(Local):
         on_token: Callable[[Any], None] | None,
     ) -> Any:
         """Execute async task locally within Modal container."""
-        state = self.resolve_state(agent._state_config, session)
+        fingerprint = getattr(agent, "fingerprint", None)
+        if not fingerprint:
+            # Compute fingerprint if not already set (e.g., after deserialization)
+            from agex.agent.fingerprint import compute_agent_fingerprint_from_policy
+
+            fingerprint = compute_agent_fingerprint_from_policy(agent)
+        state = self.resolve_state(agent._state_config, session, fingerprint)
 
         task_fn = agent._tasks.get(task_name)
         if task_fn is None:
