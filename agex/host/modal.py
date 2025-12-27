@@ -133,6 +133,48 @@ def _agex_runner(
     thread.join()
 
 
+def _validate_modal_state(config: "StateConfig | None") -> None:
+    """
+    Validate state config for Modal execution (shared by Modal and ModalLocal).
+
+    Raises:
+        ValueError: If state config is incompatible with Modal's serverless model.
+    """
+    if config is None:
+        return  # Ephemeral is always OK
+
+    state_type = getattr(config, "type", "ephemeral")
+    storage = getattr(config, "storage", None)
+
+    # Live state doesn't work on Modal - no persistence between invocations
+    if state_type == "live":
+        raise ValueError(
+            "Live state is not supported on Modal (state doesn't persist between task invocations). "
+            "Use type='ephemeral' for fresh state or type='versioned' with storage='disk' for persistence."
+        )
+
+    # Versioned state with memory storage doesn't work on Modal - memory is reset between invocations
+    if state_type == "versioned" and storage == "memory":
+        raise ValueError(
+            "Versioned state with memory storage is not supported on Modal (memory is reset between invocations). "
+            "Use type='ephemeral' for fresh state or type='versioned' with storage='disk' for persistence."
+        )
+
+    if storage and storage not in ("memory", "disk"):
+        raise ValueError(
+            f"Modal host supports storage='memory' or 'disk', got '{storage}'"
+        )
+
+    # For disk storage, require path to determine Dict name
+    if storage == "disk":
+        path = getattr(config, "path", None)
+        if not path:
+            raise ValueError(
+                "Disk storage on Modal requires 'path' parameter to name the Dict. "
+                "Example: connect_state(type='versioned', storage='disk', path='my-agent')"
+            )
+
+
 class ModalLocal(Local):
     """
     Local-like host for execution inside Modal containers.
@@ -153,37 +195,7 @@ class ModalLocal(Local):
 
     def validate_state(self, config: "StateConfig | None") -> None:
         """Validate state config."""
-        if config is None:
-            return
-
-        state_type = getattr(config, "type", "ephemeral")
-        storage = getattr(config, "storage", None)
-
-        # Live state doesn't work on Modal - no persistence between invocations
-        if state_type == "live":
-            raise ValueError(
-                "Live state is not supported on Modal (state doesn't persist between task invocations). "
-                "Use type='ephemeral' for fresh state or type='versioned' with storage='disk' for persistence."
-            )
-
-        # Versioned state with memory storage doesn't work on Modal - memory is reset between invocations
-        if state_type == "versioned" and storage == "memory":
-            raise ValueError(
-                "Versioned state with memory storage is not supported on Modal (memory is reset between invocations). "
-                "Use type='ephemeral' for fresh state or type='versioned' with storage='disk' for persistence."
-            )
-
-        if storage and storage not in ("memory", "disk"):
-            raise ValueError(f"ModalLocal supports 'memory' or 'disk', got '{storage}'")
-
-        # For disk storage, require path to determine Dict name
-        if storage == "disk":
-            path = getattr(config, "path", None)
-            if not path:
-                raise ValueError(
-                    "Disk storage on Modal requires 'path' parameter to name the Dict. "
-                    "Example: connect_state(type='versioned', storage='disk', path='my-agent')"
-                )
+        _validate_modal_state(config)
 
     def resolve_state(self, config: "StateConfig | None", session: str) -> "State":
         """
@@ -420,39 +432,7 @@ class Modal(Host):
 
     def validate_state(self, config: "StateConfig | None") -> None:
         """Validate state config is compatible with Modal host."""
-        if config is None:
-            return  # Ephemeral is always OK
-
-        state_type = getattr(config, "type", "ephemeral")
-        storage = getattr(config, "storage", None)
-
-        # Live state doesn't work on Modal - no persistence between invocations
-        if state_type == "live":
-            raise ValueError(
-                "Live state is not supported on Modal (state doesn't persist between task invocations). "
-                "Use type='ephemeral' for fresh state or type='versioned' with storage='disk' for persistence."
-            )
-
-        # Versioned state with memory storage doesn't work on Modal - memory is reset between invocations
-        if state_type == "versioned" and storage == "memory":
-            raise ValueError(
-                "Versioned state with memory storage is not supported on Modal (memory is reset between invocations). "
-                "Use type='ephemeral' for fresh state or type='versioned' with storage='disk' for persistence."
-            )
-
-        if storage and storage not in ("memory", "disk"):
-            raise ValueError(
-                f"Modal host supports storage='memory' or 'disk', got '{storage}'"
-            )
-
-        if storage == "disk":
-            # Disk storage requires a path (used as Dict name)
-            path = getattr(config, "path", None)
-            if not path:
-                raise ValueError(
-                    "Disk storage on Modal requires 'path' parameter in connect_state(). "
-                    "Example: connect_state(type='versioned', storage='disk', path='my-agent')"
-                )
+        _validate_modal_state(config)
 
     def resolve_state(self, config: "StateConfig | None", session: str) -> "State":
         """
