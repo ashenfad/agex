@@ -8,6 +8,7 @@ using the FastAPI TestClient to simulate a real server.
 import base64
 import math
 
+import cloudpickle
 import pytest
 from fastapi.testclient import TestClient
 
@@ -18,6 +19,16 @@ from agex.host.http import RemoteExecutionError
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
 from agex.server import create_app
+
+
+def encode_args_kwargs(args=(), kwargs=None):
+    """Helper to encode args/kwargs for HTTP payload."""
+    if kwargs is None:
+        kwargs = {}
+    return {
+        "args": base64.b64encode(cloudpickle.dumps(args)).decode("utf-8"),
+        "kwargs": base64.b64encode(cloudpickle.dumps(kwargs)).decode("utf-8"),
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -58,8 +69,7 @@ class TestEndToEndIntegration:
         payload = {
             "agent_payload": base64.b64encode(serialize_agent(agent)).decode("utf-8"),
             "task_name": "nonexistent",
-            "args": [],
-            "kwargs": {},
+            **encode_args_kwargs(),
         }
 
         clear_agent_registry()
@@ -80,8 +90,7 @@ class TestEndToEndIntegration:
         payload = {
             "agent_payload": base64.b64encode(serialize_agent(agent)).decode("utf-8"),
             "task_name": "some_task",
-            "args": [],
-            "kwargs": {},
+            **encode_args_kwargs(),
             "state_uri": "disk://invalid..session",  # Invalid characters
         }
 
@@ -214,8 +223,7 @@ class TestActualTaskExecution:
         payload = {
             "agent_payload": base64.b64encode(agent_bytes).decode("utf-8"),
             "task_name": "simple_task",
-            "args": [],
-            "kwargs": {},
+            **encode_args_kwargs(),
         }
 
         response = client.post("/execute", json=payload)
@@ -264,8 +272,7 @@ class TestActualTaskExecution:
         payload = {
             "agent_payload": base64.b64encode(agent_bytes).decode("utf-8"),
             "task_name": "complex_task",
-            "args": [],
-            "kwargs": {},
+            **encode_args_kwargs(),
         }
 
         response = client.post("/execute", json=payload)
@@ -320,8 +327,7 @@ class TestActualTaskExecution:
         payload = {
             "agent_payload": base64.b64encode(agent_bytes).decode("utf-8"),
             "task_name": "failing_task",
-            "args": [],
-            "kwargs": {},
+            **encode_args_kwargs(),
         }
 
         response = client.post("/execute", json=payload)
@@ -373,8 +379,7 @@ class TestActualTaskExecution:
         payload = {
             "agent_payload": base64.b64encode(agent_bytes).decode("utf-8"),
             "task_name": "compute",
-            "args": [],
-            "kwargs": {},
+            **encode_args_kwargs(),
         }
 
         response = client.post("/execute", json=payload)

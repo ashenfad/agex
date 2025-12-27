@@ -2,12 +2,23 @@
 
 import base64
 
+import cloudpickle
 import pytest
 from fastapi.testclient import TestClient
 
 from agex import Agent
 from agex.agent.base import clear_agent_registry
 from agex.llm.dummy_client import Dummy
+
+
+def encode_args_kwargs(args=(), kwargs=None):
+    """Helper to encode args/kwargs for HTTP payload."""
+    if kwargs is None:
+        kwargs = {}
+    return {
+        "args": base64.b64encode(cloudpickle.dumps(args)).decode("utf-8"),
+        "kwargs": base64.b64encode(cloudpickle.dumps(kwargs)).decode("utf-8"),
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -54,8 +65,7 @@ def test_execute_missing_task(client, mock_llm):
     payload = {
         "agent_payload": base64.b64encode(serialize_agent(agent)).decode("utf-8"),
         "task_name": "nonexistent_task",
-        "args": [],
-        "kwargs": {},
+        **encode_args_kwargs(),
     }
 
     # Clear registry again so deserialization doesn't collide
@@ -81,8 +91,7 @@ def test_execute_with_session(client, mock_llm):
     payload = {
         "agent_payload": base64.b64encode(serialize_agent(agent)).decode("utf-8"),
         "task_name": "some_task",
-        "args": [],
-        "kwargs": {},
+        **encode_args_kwargs(),
         "session": "test_session",  # Valid session
     }
 

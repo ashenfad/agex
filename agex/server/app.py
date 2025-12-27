@@ -45,8 +45,8 @@ class ExecuteRequest(BaseModel):
 
     agent_payload: str  # Base64-encoded cloudpickle bytes
     task_name: str
-    args: list[Any] = []
-    kwargs: dict[str, Any] = {}
+    args: str  # Base64-encoded cloudpickled tuple
+    kwargs: str  # Base64-encoded cloudpickled dict
     session: str = "default"
     state_config: dict[str, Any] | None = None  # Serialized StateConfig
 
@@ -91,8 +91,14 @@ async def generate_execution_events(
     """
     try:
         # 1. Prepare agent (deserialize, rehydrate LLM, force Local host)
+        import cloudpickle
+
         agent_bytes = base64.b64decode(request.agent_payload)
         agent = prepare_agent(agent_bytes)
+
+        # Deserialize args and kwargs
+        args = cloudpickle.loads(base64.b64decode(request.args))
+        kwargs = cloudpickle.loads(base64.b64decode(request.kwargs))
 
         # 2. Resolve state from config + session using Local host
         local_host = Local()
@@ -124,7 +130,7 @@ async def generate_execution_events(
             # For async tasks, run directly in the event loop
             async def async_execute():
                 try:
-                    exec_kwargs = dict(request.kwargs)
+                    exec_kwargs = dict(kwargs)
 
                     def on_token(token_chunk):
                         queue.put_nowait(("token", token_chunk))
@@ -135,7 +141,7 @@ async def generate_execution_events(
                     exec_kwargs["on_event"] = on_event
                     exec_kwargs["on_token"] = on_token
 
-                    result = await task_func(*request.args, **exec_kwargs)
+                    result = await task_func(*args, **exec_kwargs)
                     queue.put_nowait((FINISHED, result))
                 except Exception as e:
                     queue.put_nowait((FINISHED, e))
@@ -148,8 +154,8 @@ async def generate_execution_events(
                 None,
                 execute_worker,
                 task_func,
-                request.args,
-                request.kwargs,
+                args,
+                kwargs,
                 state,
                 queue,
                 loop,
