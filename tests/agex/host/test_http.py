@@ -83,3 +83,26 @@ class TestRemoteErrors:
         """Test RemoteTimeoutError is a TimeoutError."""
         error = RemoteTimeoutError("Timed out")
         assert isinstance(error, TimeoutError)
+
+
+class TestLiveObjectValidation:
+    """Tests for live object registration validation."""
+
+    def test_http_host_rejects_live_objects(self):
+        """HTTP host should reject live object registration."""
+        from agex import Agent, connect_host
+
+        agent = Agent(
+            host=connect_host(provider="http", url="http://localhost:8000/execute")
+        )
+
+        class DummyObject:
+            def method(self):
+                return 42
+
+        obj = DummyObject()
+
+        with pytest.raises(
+            ValueError, match="Cannot register live object.*remote host"
+        ):
+            agent.module(obj, name="live_obj")

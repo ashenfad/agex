@@ -412,6 +412,18 @@ class RegistrationMixin(BaseAgent):
                 raise ValueError(
                     f"The name '{name}' is reserved and cannot be registered."
                 )
+
+            # Check if agent uses remote host - live objects can't be serialized
+            from agex.host.local import Local
+
+            if not isinstance(self._host, Local):
+                raise ValueError(
+                    f"Cannot register live object '{name}' on agent with remote host "
+                    f"({type(self._host).__name__}). Live objects cannot be serialized "
+                    f"for remote execution. Use agent.fn() to register functions or "
+                    f"agent.cls() to register classes instead."
+                )
+
             self._policy.register_instance(
                 name=name if name is not None else "",
                 obj=obj,
