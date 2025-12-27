@@ -97,6 +97,35 @@ class TestDependencies:
 
         assert agent1.dependencies.id != agent2.dependencies.id
 
+    def test_hierarchical_agent_deps(self):
+        """Parent agent includes dependencies from sub-agents."""
+        import numpy as np
+
+        # Create sub-agent with numpy
+        sub_agent = Agent(name="sub")
+        sub_agent.module(np, recursive=True, visibility="low")
+
+        # Create parent that uses sub-agent
+        parent = Agent(name="parent")
+
+        @parent.fn
+        @sub_agent.task
+        def process_data(data: list):
+            """Process data with numpy."""
+            pass
+
+        # Parent should include numpy from sub-agent
+        parent_packages = parent.dependencies.packages
+        assert any(
+            "numpy" in p for p in parent_packages
+        ), f"Parent should include numpy from sub-agent. Got: {parent_packages}"
+
+        # Sub-agent should have numpy
+        sub_packages = sub_agent.dependencies.packages
+        assert any(
+            "numpy" in p for p in sub_packages
+        ), f"Sub-agent should have numpy. Got: {sub_packages}"
+
 
 class TestWarmup:
     """Test agent.warmup() method."""
