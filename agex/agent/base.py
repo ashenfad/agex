@@ -10,6 +10,7 @@ from .policy.policy import AgentPolicy
 if TYPE_CHECKING:
     from ..host import Host
     from ..host.dependencies import Dependencies
+    from ..state import State
     from ..state.config import StateConfig
 
 # Global registry mapping fingerprints to agents
@@ -296,3 +297,52 @@ class BaseAgent:
             )
 
         self._host.warmup(deps)
+
+    def state(self, session: str = "default") -> "State":
+        """
+        Get the state object for a session (local execution only).
+
+        Note: This retrieves the runtime state object for inspection.
+        For configuring state, see Agent(state=connect_state(...)).
+
+        Useful for debugging with view() and events():
+
+            from agex import Agent, connect_state, view, events
+
+            agent = Agent(state=connect_state(type="versioned", storage="memory"))
+
+            @agent.task
+            def chat(message: str) -> str:
+                pass
+
+            # Execute some tasks
+            chat("Hello")
+            chat("How are you?")
+
+            # Inspect state
+            state = agent.state()
+            print(view(state))
+            print(events(state))
+
+        Args:
+            session: Session identifier (default: "default")
+
+        Returns:
+            The state object for this session
+
+        Raises:
+            RuntimeError: If agent uses remote execution (HTTP/Modal host).
+                State is not locally accessible for remote hosts.
+        """
+        from agex.host.local import Local
+
+        if not isinstance(self._host, Local):
+            raise RuntimeError(
+                f"state() only works with Local host. "
+                f"Agent is using {type(self._host).__name__} host where state "
+                f"is not locally accessible. For debugging, use local execution "
+                f"or inspect state on the remote server."
+            )
+
+        # Delegate to host to resolve/retrieve state
+        return self._host.resolve_state(self._state_config, session)

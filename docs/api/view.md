@@ -93,24 +93,30 @@ print(view(agent))
 
 Alternatively, register submodules directly (e.g., `ox.routing`) when you want their members listed without dotted names.
 
-## State Inspection: `view(state)`
+## State Inspection: `view(state)` (Local Only)
 
-View a snapshot of an agent's memory (`Versioned` state). This is useful for debugging the outcome of an agent's execution.
+View a snapshot of an agent's memory (`Versioned` or `Live` state). This is useful for debugging the outcome of an agent's execution.
+
+**Note:** State inspection requires local execution. For agents using remote hosts (HTTP/Modal), state is not locally accessible.
 
 ```python
-from agex import Agent, Versioned, view
+from agex import Agent, connect_state, view
 
-agent = Agent()
+agent = Agent(
+    state=connect_state(type="versioned", storage="memory")
+)
 
-@agent.task("Analyze some data")
-def analyze_data(numbers: list[int], state: Versioned) -> dict:  # type: ignore[return-value]
+@agent.task
+def analyze_data(numbers: list[int]) -> dict:
+    """Analyze data."""
     pass
 
-# Initialize and execute
-state = Versioned()
-result = analyze_data([1, 2, 3], state=state)
+# Execute tasks
+analyze_data([1, 2, 3])
+analyze_data([4, 5, 6])
 
-# View a summary of the most recent state changes
+# Inspect state (local execution only)
+state = agent.state()
 print(view(state))
 ```
 
@@ -131,6 +137,7 @@ The `focus` parameter controls what part of the state to display:
 
 ```python
 # See what changed in the last step (returns a string)
+state = agent.state()
 recent_changes_view = view(state, focus="recent")
 print(recent_changes_view)
 
@@ -138,6 +145,30 @@ print(recent_changes_view)
 full_state_dict = view(state, focus="full")
 if "final_summary" in full_state_dict:
     print(f"Final result: {full_state_dict['final_summary']}")
+```
+
+### Inspecting Different Sessions
+
+Use the `session` parameter to inspect state for specific sessions:
+
+```python
+agent = Agent(state=connect_state(type="versioned", storage="memory"))
+
+@agent.task
+def chat(message: str) -> str:
+    """Chat with the user."""
+    pass
+
+# Execute on different sessions
+chat("Hello from Alice", session="alice")
+chat("Hello from Bob", session="bob")
+
+# Inspect each session's state
+alice_state = agent.state("alice")
+print("Alice's state:", view(alice_state, focus="full"))
+
+bob_state = agent.state("bob")
+print("Bob's state:", view(bob_state, focus="full"))
 ```
 
 You can also use `view()` to inspect a historical state snapshot retrieved using `state.checkout()`. See [Inspecting Historical State](state.md#inspecting-historical-state) for a complete example.
