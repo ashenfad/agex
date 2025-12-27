@@ -489,6 +489,25 @@ class RegistrationMixin(BaseAgent):
             except Exception:
                 pass
 
+        # Collect dependencies from sub-agents (hierarchical agents)
+        # When an agent uses sub-agents via @agent.fn @sub_agent.task,
+        # the sub-agent gets serialized in the closure and needs its deps too
+        sub_agents = set()
+        for namespace in self._policy.namespaces.values():
+            # Check fn_objects for task functions from other agents
+            for fn in namespace.fn_objects.values():
+                # Check if this function is a task from another agent
+                owning_agent = getattr(fn, "__agex_agent__", None)
+                if owning_agent is not None and owning_agent is not self:
+                    sub_agents.add(owning_agent)
+
+        # Union sub-agent dependencies
+        for sub_agent in sub_agents:
+            # Recursively get sub-agent deps (they might have their own sub-agents)
+            if hasattr(sub_agent, "dependencies"):
+                sub_deps = sub_agent.dependencies
+                packages.update(sub_deps.packages)
+
         deps = Dependencies(
             python_version=f"{sys.version_info.major}.{sys.version_info.minor}",
             agex_version=metadata.version("agex"),
