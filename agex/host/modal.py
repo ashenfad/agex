@@ -150,14 +150,7 @@ def _validate_modal_state(config: "StateConfig | None") -> None:
     if state_type == "live":
         raise ValueError(
             "Live state is not supported on Modal (state doesn't persist between task invocations). "
-            "Use type='ephemeral' for fresh state or type='versioned' with storage='disk' for persistence."
-        )
-
-    # Versioned state with memory storage doesn't work on Modal - memory is reset between invocations
-    if state_type == "versioned" and storage == "memory":
-        raise ValueError(
-            "Versioned state with memory storage is not supported on Modal (memory is reset between invocations). "
-            "Use type='ephemeral' for fresh state or type='versioned' with storage='disk' for persistence."
+            "Use type='ephemeral' for fresh state or type='versioned' for persistence."
         )
 
     if storage and storage not in ("memory", "disk"):
@@ -165,12 +158,12 @@ def _validate_modal_state(config: "StateConfig | None") -> None:
             f"Modal host supports storage='memory' or 'disk', got '{storage}'"
         )
 
-    # For disk storage, require path to determine Dict name
+    # For disk storage, require path to determine Volume name
     if storage == "disk":
         path = getattr(config, "path", None)
         if not path:
             raise ValueError(
-                "Disk storage on Modal requires 'path' parameter to name the Dict. "
+                "Disk storage on Modal requires 'path' parameter to name the Volume. "
                 "Example: connect_state(type='versioned', storage='disk', path='my-agent')"
             )
 
@@ -197,15 +190,26 @@ class ModalLocal(Local):
         """Validate state config."""
         _validate_modal_state(config)
 
-    def resolve_state(self, config: "StateConfig | None", session: str) -> "State":
+    def resolve_state(
+        self, config: "StateConfig | None", session: str, fingerprint: str = ""
+    ) -> "State":
         """
         Resolve state for Modal container execution.
 
-        For disk storage, uses ModalDict backed by Modal's native Dict service.
-        For memory storage, uses standard Memory KV store.
+        Storage semantics:
+          - memory: Disk + ModalDict (7-day TTL on inactive keys)
+          - disk: Disk + ModalDict + WriteBehind(Volume) (forever)
+
+        Names are auto-generated from fingerprint+session if no path provided.
         """
+        import re
+        import shutil
+        from pathlib import Path
+
         from agex.state import Live, Versioned
-        from agex.state.kv import Memory
+        from agex.state.kv import Disk, WriteBehind
+        from agex.state.kv.composite import Composite
+        from agex.state.kv.modal_dict import ModalDict
 
         if config is None:
             return Live()
@@ -216,84 +220,80 @@ class ModalLocal(Local):
         if state_type == "ephemeral":
             return Live()
 
-        if state_type == "versioned":
-            if storage == "disk":
-                # Use Modal's native Dict service for persistent state
-                # Much faster than volume-based storage (single RPC per op)
-                import shutil
-                from pathlib import Path
-
-                from agex.state.kv import Disk
-                from agex.state.kv.composite import Composite
-                from agex.state.kv.modal_dict import ModalDict
-
-                # Use path as the Dict name (required for disk storage)
-                config_path = getattr(config, "path", None) or ""
-
-                # Sanitize path for Modal Dict name
-                # Replace path separators with dots: /tmp/agex/funcy → tmp.agex.funcy
-                if config_path:
-                    import re
-
-                    # Expand ~ in paths
-                    config_path = config_path.replace("~", "home")
-
-                    # Replace path separators and invalid chars with dots
-                    config_path = re.sub(r"[^a-zA-Z0-9._-]+", ".", config_path)
-
-                    # Remove leading/trailing dots
-                    config_path = config_path.strip(".")
-
-                    # Ensure it's not empty after sanitization
-                    if not config_path:
-                        config_path = "state"
-
-                # Shard by session: each session gets its own Dict
-                # E.g., "tmp.agex.funcy.adam3" instead of shared "tmp.agex.funcy"
-                base_name = config_path if config_path else "agex-state"
-                dict_name = f"{base_name}.{session}"
-
-                # Use base name as prefix for key namespacing
-                prefix = base_name
-
-                # Create source (ModalDict) first
-                source = ModalDict(name=dict_name, prefix=prefix)
-
-                # Check for sentinel key to detect Dict recreation
-                # If Dict was deleted and recreated, we need to clear stale local cache
-                sentinel_key = "__agex_sentinel__"
-                cache_dir = Path(f"/tmp/agex-cache/{dict_name}")
-
-                try:
-                    # Check if sentinel exists in remote
-                    sentinel_exists = sentinel_key in source
-                    if not sentinel_exists:
-                        # Dict is brand new or was deleted - clear local cache
-                        if cache_dir.exists():
-                            shutil.rmtree(cache_dir)
-                        # Write sentinel to mark this Dict instance
-                        source.set(sentinel_key, b"1")
-                except Exception:
-                    # If check fails, proceed without cache clearing
-                    # (network issue, permissions, etc.)
-                    pass
-
-                # Compose: Disk (local /tmp, fast) + ModalDict (remote, authoritative)
-                # Local cache survives across hot container reuses
-                cache = Disk(str(cache_dir))
-                kv = Composite([cache, source])
-                return Versioned(store=kv)
-            else:
-                # Memory storage
-                cache_key = f"versioned:{session}"
-                if cache_key not in self._session_cache:
-                    self._session_cache[cache_key] = Versioned(store=Memory())
-                return self._session_cache[cache_key]
-
         if state_type == "live":
             return Live()
 
-        return Live()
+        if state_type != "versioned":
+            return Live()
+
+        # --- Versioned state ---
+
+        config_path = getattr(config, "path", None) or ""
+
+        def sanitize_name(name: str) -> str:
+            """Sanitize name for Modal Dict/Volume naming."""
+            # Expand ~ in paths
+            name = name.replace("~", "home")
+            # Replace path separators and invalid chars with dots
+            name = re.sub(r"[^a-zA-Z0-9._-]+", ".", name)
+            # Remove leading/trailing dots
+            name = name.strip(".")
+            return name or "state"
+
+        # Determine base name
+        if config_path:
+            base_name = sanitize_name(config_path)
+        else:
+            # Auto-generate from fingerprint
+            fp_short = fingerprint[:12] if fingerprint else "default"
+            base_name = f"agex.{fp_short}"
+
+        # Session-scoped names
+        dict_name = f"{base_name}.{session}"
+        cache_dir = Path(f"/tmp/agex-cache/{dict_name}")
+
+        # Create layers
+        source = ModalDict(name=dict_name, prefix=base_name)
+
+        if storage == "disk":
+            # Three-tier: Disk → ModalDict → WriteBehind(Volume)
+            from agex.state.kv.modal_volume import Volume
+
+            volume_name = base_name
+            volume = Volume(volume_name, prefix=session)
+
+            # Sentinel check on Volume (authoritative tier)
+            sentinel_key = "__agex_sentinel__"
+            try:
+                if sentinel_key not in volume:
+                    # Volume was cleared - cascade clear to ModalDict and Disk
+                    source.clear()
+                    if cache_dir.exists():
+                        shutil.rmtree(cache_dir)
+                    volume.set(sentinel_key, b"1")
+            except Exception:
+                pass
+
+            cache = Disk(str(cache_dir))
+            kv = Composite([cache, source, WriteBehind(volume)])
+            return Versioned(store=kv)
+
+        else:
+            # Two-tier: Disk → ModalDict (memory storage)
+            # Sentinel check on ModalDict (authoritative tier)
+            sentinel_key = "__agex_sentinel__"
+            try:
+                if sentinel_key not in source:
+                    # Dict was cleared - clear Disk cache
+                    if cache_dir.exists():
+                        shutil.rmtree(cache_dir)
+                    source.set(sentinel_key, b"1")
+            except Exception:
+                pass
+
+            cache = Disk(str(cache_dir))
+            kv = Composite([cache, source])
+            return Versioned(store=kv)
 
     def execute(
         self,
@@ -306,7 +306,8 @@ class ModalLocal(Local):
         on_token: Callable[[Any], None] | None,
     ) -> Any:
         """Execute task locally within Modal container."""
-        state = self.resolve_state(agent._state_config, session)
+        fingerprint = getattr(agent, "fingerprint", "")
+        state = self.resolve_state(agent._state_config, session, fingerprint)
 
         task_fn = agent._tasks.get(task_name)
         if task_fn is None:
@@ -453,7 +454,9 @@ class Modal(Host):
             "Use the task wrapper which routes through ModalLocal on the Modal side."
         )
 
-    def _build_function(self, deps: "Dependencies") -> Any:
+    def _build_function(
+        self, deps: "Dependencies", state_config: "StateConfig | None" = None
+    ) -> Any:
         """Build Modal app and function from dependencies."""
         import modal
 
@@ -509,6 +512,22 @@ class Modal(Host):
             fn_kwargs["memory"] = self.memory
         if self._options:
             fn_kwargs.update(self._options)
+
+        # Mount Volume if disk storage is used
+        if state_config is not None:
+            storage = getattr(state_config, "storage", None)
+            config_path = getattr(state_config, "path", None) or ""
+            if storage == "disk" and config_path:
+                import re
+
+                # Sanitize path for volume name (same logic as resolve_state)
+                name = config_path.replace("~", "home")
+                name = re.sub(r"[^a-zA-Z0-9._-]+", ".", name)
+                name = name.strip(".") or "state"
+                volume_name = name
+
+                volume = modal.Volume.from_name(volume_name, create_if_missing=True)
+                fn_kwargs["volumes"] = {"/vol": volume}
 
         # Decorate the runner function with Modal
         # _agex_runner is at module level, so no serialized=True needed
@@ -598,6 +617,10 @@ class Modal(Host):
 
         # Lazily set app name if not provided
         if self.app is None:
+            import hashlib
+
+            import modal
+
             # Try to get existing fingerprint or compute it
             fingerprint = getattr(agent, "fingerprint", None)
             if not fingerprint:
@@ -609,14 +632,35 @@ class Modal(Host):
             # Format: agex-{clean_name}-{combined_hash}
             clean_name = "".join(c if c.isalnum() else "-" for c in agent.name).lower()
 
-            # Combine agent structural fingerprint with dependency hash (includes source code)
-            # This ensures we get a new app (new deployment) if either the agent definition
-            # OR the libraries/source code change.
-            import hashlib
+            # Build hash components: fingerprint + deps
+            hash_input = f"{fingerprint}:{deps.id}"
 
-            combined_hash = hashlib.sha256(
-                f"{fingerprint}:{deps.id}".encode()
-            ).hexdigest()[:16]
+            # If disk storage, include volume object_id in hash
+            # This ensures new app when volume is recreated (new ID)
+            state_config = getattr(agent, "_state_config", None)
+            if state_config is not None:
+                import re
+
+                storage = getattr(state_config, "storage", None)
+                config_path = getattr(state_config, "path", None) or ""
+                if storage == "disk" and config_path:
+                    name = config_path.replace("~", "home")
+                    name = re.sub(r"[^a-zA-Z0-9._-]+", ".", name)
+                    name = name.strip(".") or "state"
+                    volume_name = name
+
+                    try:
+                        volume = modal.Volume.from_name(
+                            volume_name, create_if_missing=True
+                        )
+                        volume.hydrate()  # Required to fetch object_id from server
+                        volume_id = volume.object_id
+                        if volume_id:
+                            hash_input = f"{hash_input}:{volume_id}"
+                    except Exception:
+                        pass  # Volume lookup failed, proceed without volume ID
+
+            combined_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
 
             # Truncate components to fit within 63 chars
             # "agex-" (5) + name (max 40) + "-" (1) + hash (16) = 62
@@ -625,7 +669,9 @@ class Modal(Host):
             self.app = f"agex-{clean_name}-{combined_hash}"
 
         if self._runner_fn is None:
-            self._build_function(deps)
+            # Get state config from agent for volume mounting
+            state_config = getattr(agent, "_state_config", None)
+            self._build_function(deps, state_config)
 
         return self._runner_fn
 
@@ -716,6 +762,31 @@ class Modal(Host):
             runner = modal.Function.from_name(self.app, "_agex_runner")
             gen = run_gen(runner)
             result = self._process_messages(gen, on_event, on_token)
+        except RuntimeError as e:
+            # Volume attachment error (e.g., volume was deleted and recreated)
+            # Redeploy to mount the new volume
+            if "not attached" in str(e) or "volumes={" in str(e):
+                old_app = self.app
+                # Force rebuild by clearing cached function and app name
+                self._runner_fn = None
+                self._current_deps_id = None
+                self._modal_app = None
+                self.app = None  # Force new app name to avoid stale deployment
+
+                # Rebuild with state config (for volume mounting) and deploy
+                self._ensure_function(agent)
+                self._modal_app.deploy()
+
+                print(
+                    f"Volume attachment error. Redeployed from '{old_app}' to '{self.app}'"
+                )
+
+                # Explicitly lookup from the NEW app (not cached reference)
+                runner = modal.Function.from_name(self.app, "_agex_runner")
+                gen = run_gen(runner)
+                result = self._process_messages(gen, on_event, on_token)
+            else:
+                raise
 
         return result
 

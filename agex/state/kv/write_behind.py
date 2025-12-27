@@ -81,3 +81,8 @@ class WriteBehind(KVStore):
         """
         self.flush()
         return self.store.cas(key, value, expected)
+
+    def clear(self) -> None:
+        """Flush pending writes and clear the underlying store."""
+        self.flush()
+        self.store.clear()

@@ -80,3 +80,8 @@ class KVStore(ABC):
             success = store.cas('my_key', b'initial', expected=None)
         """
         pass
+
+    @abstractmethod
+    def clear(self) -> None:
+        """Remove all items from the store."""
+        pass
