@@ -203,11 +203,16 @@ class HTTP(Host):
         if agent._state_config is not None:
             state_config = agent._state_config.dump_config()
 
+        # Serialize args and kwargs with cloudpickle to support non-JSON types
+        # (dataclasses, custom objects, etc.)
+        args_payload = cloudpickle.dumps(args)
+        kwargs_payload = cloudpickle.dumps(kwargs)
+
         return {
             "agent_payload": base64.b64encode(agent_payload).decode("utf-8"),
             "task_name": task_name,
-            "args": args,
-            "kwargs": kwargs,
+            "args": base64.b64encode(args_payload).decode("utf-8"),
+            "kwargs": base64.b64encode(kwargs_payload).decode("utf-8"),
             "session": session,
             "state_config": state_config,
         }
