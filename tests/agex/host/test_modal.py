@@ -360,3 +360,22 @@ class TestModalHostHierarchical:
 
         # This should work (no exception raised = success)
         parent.fn(child_task)
+
+
+class TestLiveObjectValidation:
+    """Test live object registration validation."""
+
+    def test_modal_host_rejects_live_objects(self):
+        """Modal host should reject live object registration."""
+        agent = Agent(host=connect_host(provider="modal", app="test", secrets=["test"]))
+
+        class DummyObject:
+            def method(self):
+                return 42
+
+        obj = DummyObject()
+
+        with pytest.raises(
+            ValueError, match="Cannot register live object.*remote host"
+        ):
+            agent.module(obj, name="live_obj")
