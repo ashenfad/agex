@@ -91,8 +91,23 @@ def validate_with_sampling(value: Any, annotation: Any) -> Any:
     # For all other types, or collections below the threshold, validate normally.
     # Special case: for top-level standard dataclass annotations, do not coerce from dict.
     if inspect.isclass(annotation) and is_dataclass(annotation):
+        # Check if value is already an instance of the expected dataclass
         if isinstance(value, annotation):
             return value
+        # SPECIAL: Check if value is a dataclass with the same structure
+        # (handles pickled dataclasses that have different identity but same structure)
+        if is_dataclass(value):
+            # Compare by name and fields
+            if (
+                type(value).__name__ == annotation.__name__
+                and hasattr(value, "__dataclass_fields__")
+                and hasattr(annotation, "__dataclass_fields__")
+            ):
+                value_fields = set(value.__dataclass_fields__.keys())
+                annotation_fields = set(annotation.__dataclass_fields__.keys())
+                if value_fields == annotation_fields:
+                    # Same structure - accept it
+                    return value
         # Block coercion of dict -> dataclass in strict mode
         raise TypeError(
             f"Expected instance of dataclass '{annotation.__name__}', got {type(value).__name__}"
