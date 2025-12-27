@@ -72,11 +72,11 @@ host = connect_host(
     scaledown_window=300,    # Optional: Idle seconds before scale-down
 )
 
-state = connect_state(
-    type="versioned",
-    storage="disk",
-    path="my-agent",  # Used to name the Modal Dict
-)
+# Memory storage: Dict with 7-day TTL (auto-named from agent fingerprint)
+state = connect_state(type="versioned", storage="memory")
+
+# OR Disk storage: Dict + Volume (forever, requires path for Volume naming)
+state = connect_state(type="versioned", storage="disk", path="my-agent")
 
 agent = Agent(
     primer="You are helpful.",
@@ -88,7 +88,9 @@ agent = Agent(
 **Key Features:**
 - **Auto-deploy**: First task execution automatically builds and deploys the Modal function
 - **GPU support**: Specify GPU types for compute-intensive tasks
-- **Fast state**: Uses Modal Dict (lower latency than volume-based storage)
+- **Two storage tiers**:
+  - `memory` → Disk cache + Modal Dict (7-day TTL on inactive keys)
+  - `disk` → Disk cache + Modal Dict + Modal Volume (forever)
 - **Dependency inference**: Automatically detects and installs required packages
 
 **Execution:**
@@ -104,27 +106,29 @@ agent.warmup()  # Builds container image and deploys to Modal
 
 **State Requirements:**
 
-Modal host has specific state constraints:
+Modal host supports two storage modes:
 
 ```python
-# ✅ Disk storage: Uses Modal Dict (session becomes part of Dict name)
+# ✅ Memory: Uses Disk + Modal Dict (7-day TTL on inactive keys)
+# Auto-named from agent fingerprint if no path provided
+state = connect_state(type="versioned", storage="memory")
+
+# ✅ Disk: Uses Disk + Modal Dict + Volume (forever)
+# Requires path to name the Volume
 state = connect_state(type="versioned", storage="disk", path="my-agent")
 
 # ✅ Ephemeral: Fresh state per invocation
 state = connect_state(type="ephemeral")
-
-# ❌ Versioned with memory: Not supported (memory resets between invocations)
-state = connect_state(type="versioned", storage="memory")  # Raises ValueError
 
 # ❌ Live state: Not supported (no persistence between invocations)
 state = connect_state(type="live", storage="disk")  # Raises ValueError
 ```
 
 > [!NOTE]
-> The `path` parameter is used to name the Modal Dict for persistent storage. Each session gets its own Dict instance (`{path}.{session}`) to prevent cross-session conflicts.
+> **Auto-naming**: With `storage="memory"`, Dict names are auto-generated from the agent's fingerprint (e.g., `agex.a1b2c3d4.default`). With `storage="disk"`, the `path` parameter is used to name both the Dict and Volume.
 
 > [!WARNING]
-> Modal Dict entries expire after 7 days of inactivity. Reads refresh the TTL, so active sessions persist indefinitely. However, dormant sessions will lose state silently after the TTL expires.
+> **7-day TTL**: Modal Dict entries expire after 7 days of inactivity. Reads refresh the TTL, so active sessions persist indefinitely. Use `storage="disk"` for truly permanent state.
 
 > [!WARNING]
 > **Modal Sub-Agent Limitation**: Sub-agents with Modal hosts cannot currently be registered as capabilities on parent agents. This prevents double-serialization overhead. This limitation may be relaxed in the future to allow Modal containers to spawn new Modal functions. For now, use HTTP hosts for explicit distributed multi-agent workflows.

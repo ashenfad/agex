@@ -122,6 +122,9 @@ state = connect_state(type="versioned", storage="memory")
 
 **Use for:** Development, testing, single-process applications.
 
+> [!NOTE]
+> On Modal, `memory` storage uses Modal Dict (not in-process memory) with a 7-day TTL on inactive keys. Dict names are auto-generated from the agent's fingerprint. See [Host - Modal](host.md#modalserverless-execution) for details.
+
 ### Disk Storage
 
 Persistent storage that survives restarts:
