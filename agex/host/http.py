@@ -9,7 +9,10 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
-import cloudpickle
+try:
+    import cloudpickle
+except ImportError:
+    cloudpickle = None  # type: ignore
 import httpx
 
 from .base import Host
@@ -64,6 +67,11 @@ class HTTP(Host):
         retries: int = 0,
         _http_client: Any | None = None,
     ):
+        if cloudpickle is None:
+            raise ImportError(
+                "HTTP host requires 'cloudpickle'. Install it with: pip install agex[http]"
+            )
+
         """
         Initialize the HTTP host.
 

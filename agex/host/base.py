@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
+    from agex.host.dependencies import Dependencies
     from agex.state import State
     from agex.state.config import StateConfig
 
@@ -56,6 +57,17 @@ class Host(ABC):
                 url=config["url"],
                 timeout=config.get("timeout", 300.0),
                 retries=config.get("retries", 0),
+            )
+        elif provider == "modal":
+            from agex.host.modal import Modal
+
+            return Modal(
+                app=config["app"],
+                volume=config.get("volume"),
+                secrets=config.get("secrets"),
+                gpu=config.get("gpu"),
+                memory=config.get("memory"),
+                timeout=config.get("timeout", 300.0),
             )
         else:
             raise ValueError(f"Unknown host provider: {provider}")
@@ -144,3 +156,15 @@ class Host(ABC):
             The task result
         """
         ...
+
+    def warmup(self, deps: "Dependencies") -> None:
+        """
+        Pre-warm the host for faster cold starts.
+
+        For serverless hosts (Modal, Beam), this builds the container image
+        and starts a warm instance. For local/HTTP hosts, this is a no-op.
+
+        Args:
+            deps: Dependencies inferred from agent registrations
+        """
+        pass  # Default no-op for Local/HTTP

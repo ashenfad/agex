@@ -8,7 +8,7 @@ The `connect_host()` factory function configures where agent tasks execute. By d
 from agex import connect_host
 
 host = connect_host(
-    provider: Literal["local", "http"] = "local",
+    provider: Literal["local", "http", "modal"] = "local",
     **kwargs,  # Host-specific arguments
 )
 ```
@@ -17,8 +17,31 @@ host = connect_host(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `provider` | `str` | `"local"` | Host provider: `"local"` or `"http"` |
+| `provider` | `str` | `"local"` | Host provider: `"local"`, `"http"`, or `"modal"` |
 | `url` | `str` | | (HTTP only) Server URL, e.g., `"http://localhost:8000"` |
+| `secrets` | `str \| list[str]` | | (Modal only, **required**) Modal secret names for API keys |
+| `app` | `str` | Auto-generated | (Modal only) Modal app name |
+| `gpu` | `str` | `None` | (Modal only) GPU type (e.g., `"A10G"`, `"T4"`, `"A100"`) |
+| `memory` | `int` | `None` | (Modal only) Memory in MB |
+| `timeout` | `float` | `300.0` | Execution timeout in seconds |
+| `scaledown_window` | `int` | `300` | (Modal only) Seconds before idle containers scale down |
+
+## Remote Execution Model
+
+When using remote hosts (HTTP or Modal), **the entire agent ReAct loop executes on the remote server** - not just the final generated code. This includes:
+
+- **LLM calls**: All reasoning and code generation happens server-side
+- **Sandbox evaluation**: Generated code executes in the remote environment
+- **State updates**: State mutations happen using server-accessible storage
+- **Event streaming**: Events and tokens stream back to the client in real-time
+
+**Why this matters:**
+- LLM latency is measured from the server's network location
+- Compute resources (CPU, GPU, memory) are allocated on the remote host
+- API keys and secrets must be configured server-side
+- Only the final result and streaming events are sent back to the client
+
+This architecture enables GPU-accelerated tasks, distributed compute, and cost-effective serverless execution.
 
 ## Host Types
 
@@ -32,6 +55,76 @@ from agex import Agent
 # Implicit local execution
 agent = Agent(primer="You are helpful.")
 ```
+
+### Modal/Serverless Execution
+
+Tasks run on Modal's serverless infrastructure with automatic scaling and GPU support:
+
+```python
+from agex import Agent, connect_host, connect_state
+
+host = connect_host(
+    provider="modal",
+    secrets="llm-keys",       # Required: Modal secret names
+    gpu="A10G",              # Optional: GPU type
+    memory=4096,             # Optional: Memory in MB
+    timeout=600.0,           # Optional: Execution timeout
+    scaledown_window=300,    # Optional: Idle seconds before scale-down
+)
+
+state = connect_state(
+    type="versioned",
+    storage="disk",
+    path="my-agent",  # Used to name the Modal Dict
+)
+
+agent = Agent(
+    primer="You are helpful.",
+    host=host,
+    state=state,
+)
+```
+
+**Key Features:**
+- **Auto-deploy**: First task execution automatically builds and deploys the Modal function
+- **GPU support**: Specify GPU types for compute-intensive tasks
+- **Fast state**: Uses Modal Dict (lower latency than volume-based storage)
+- **Dependency inference**: Automatically detects and installs required packages
+
+**Execution:**
+```python
+# First call auto-deploys and executes
+result = my_task("hello", session="user-123")
+```
+
+**Optional warmup** (pre-builds the image for faster first request):
+```python
+agent.warmup()  # Builds container image and deploys to Modal
+```
+
+**State Requirements:**
+
+Modal host has specific state constraints:
+
+```python
+# ✅ Disk storage: Uses Modal Dict (session becomes part of Dict name)
+state = connect_state(type="versioned", storage="disk", path="my-agent")
+
+# ✅ Ephemeral: Fresh state per invocation
+state = connect_state(type="ephemeral")
+
+# ❌ Versioned with memory: Not supported (memory resets between invocations)
+state = connect_state(type="versioned", storage="memory")  # Raises ValueError
+
+# ❌ Live state: Not supported (no persistence between invocations)
+state = connect_state(type="live", storage="disk")  # Raises ValueError
+```
+
+> [!NOTE]
+> The `path` parameter is used to name the Modal Dict for persistent storage. Each session gets its own Dict instance (`{path}.{session}`) to prevent cross-session conflicts.
+
+> [!WARNING]
+> **Modal Sub-Agent Limitation**: Sub-agents with Modal hosts cannot currently be registered as capabilities on parent agents. This prevents double-serialization overhead. This limitation may be relaxed in the future to allow Modal containers to spawn new Modal functions. For now, use HTTP hosts for explicit distributed multi-agent workflows.
 
 ### HTTP/Remote Execution
 

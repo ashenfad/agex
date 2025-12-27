@@ -46,6 +46,7 @@ dev = [
 test = [
     "pytest",
     "pytest-asyncio",
+    "pytest-timeout",
     "anyio",
     "numpy",
     "pandas",
@@ -57,6 +58,7 @@ test = [
     "uvicorn",
     "fastapi",
     "sse-starlette",
+    "modal",
 ]
 examples = [
     "plotly[express]",
@@ -77,9 +79,13 @@ anthropic = [
 gemini = [
     "google-genai",
 ]
-remote = [
+# Host dependencies
+http = [
     "cloudpickle",
     "httpx",
+]
+modal = [
+    "modal",
 ]
 server = [
     "fastapi",
@@ -87,11 +93,15 @@ server = [
     "sse-starlette",
     "cloudpickle",
 ]
-# Convenience group for all providers
+# Convenience groups
 all-providers = [
     "agex[openai]",
     "agex[anthropic]",
     "agex[gemini]",
+]
+all-hosts = [
+    "agex[http]",
+    "agex[modal]",
 ]
 
 [tool.ruff]

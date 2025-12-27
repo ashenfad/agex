@@ -25,6 +25,7 @@ class StateConfig:
     path: str | None = None
     high_water_bytes: int | None = None
     low_water_bytes: int | None = None
+    options: dict[str, Any] | None = None
 
     def dump_config(self) -> dict[str, Any]:
         """Serialize for remote reconstruction."""

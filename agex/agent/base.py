@@ -9,6 +9,7 @@ from .policy.policy import AgentPolicy
 
 if TYPE_CHECKING:
     from ..host import Host
+    from ..host.dependencies import Dependencies
     from ..state.config import StateConfig
 
 # Global registry mapping fingerprints to agents
@@ -124,6 +125,12 @@ class BaseAgent:
 
         # Create LLM using the resolved configuration
         self.llm = llm or connect_llm()
+        # Store LLM config for serialization and dependency inference
+        self._llm_config = (
+            self.llm.dump_config()
+            if self.llm and hasattr(self.llm, "dump_config")
+            else None
+        )
         # LLM retry setting (timeout comes from llm.timeout_seconds)
         self.llm_max_retries = llm_max_retries
 
@@ -165,11 +172,18 @@ class BaseAgent:
         # Registry for tasks defined via @agent.task
         self._tasks: dict[str, Callable] = {}
 
+        # Dependency tracking (lazy evaluation)
+        self._tracked_modules: set[str] = (
+            set()
+        )  # Module names collected at registration
+        self._cached_dependencies: "Dependencies | None" = None  # Computed on access
+
         # Auto-register this agent
         self.fingerprint = register_agent(self)
 
     def _update_fingerprint(self):
         """Update the fingerprint after registration changes."""
+        self._cached_dependencies = None  # Invalidate dependency cache
         self.fingerprint = register_agent(self)
 
     def __getstate__(self) -> dict[str, Any]:
@@ -246,3 +260,39 @@ class BaseAgent:
         )
 
     def task(self, prompt: str | Callable) -> Callable[..., Any]: ...
+
+    def warmup(self) -> None:
+        """
+        Pre-warm the execution host for faster cold starts.
+
+        For serverless hosts (Modal, Beam), this builds the container image
+        with inferred dependencies and starts a warm instance. For local/HTTP
+        hosts, this is a no-op.
+
+        Example:
+            agent = Agent(
+                host=connect_host(provider="modal", app="my-app"),
+                ...
+            )
+            agent.warmup()  # Build image, start warm container
+            result = my_task()  # Fast execution, no cold start
+        """
+        # Import here to avoid circular dependency at module level
+        from agex.agent.registration import RegistrationMixin
+
+        # Get dependencies from the agent (requires RegistrationMixin)
+        if isinstance(self, RegistrationMixin):
+            deps = self.dependencies
+        else:
+            # Fallback for pure BaseAgent (unlikely in practice)
+            from importlib import metadata
+
+            from agex.host.dependencies import Dependencies
+
+            deps = Dependencies(
+                python_version=f"{__import__('sys').version_info.major}.{__import__('sys').version_info.minor}",
+                agex_version=metadata.version("agex"),
+                packages=[],
+            )
+
+        self._host.warmup(deps)
