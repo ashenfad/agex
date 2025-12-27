@@ -118,3 +118,5 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             log_low_water_tokens=log_low_water_tokens,
             agex_primer_override=agex_primer_override,
         )
+        # Track external package dependencies incrementally
+        self._dependencies: set[str] = set()

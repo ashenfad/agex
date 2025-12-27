@@ -82,12 +82,20 @@ def connect_state(
             f"'versioned' state, but got type='{type}'"
         )
 
+    # Collect optional store-specific parameters
+    options = {
+        k: v
+        for k, v in kwargs.items()
+        if k not in ("path", "high_water_bytes", "low_water_bytes")
+    }
+
     return StateConfig(
         type=type,
         storage=storage,
         path=kwargs.get("path"),
         high_water_bytes=kwargs.get("high_water_bytes"),
         low_water_bytes=kwargs.get("low_water_bytes"),
+        options=options if options else None,
     )
 
 

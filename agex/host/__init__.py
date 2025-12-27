@@ -39,14 +39,14 @@ __all__ = [
 
 
 def connect_host(
-    provider: Literal["local", "http"] = "local",
+    provider: Literal["local", "http", "modal"] = "local",
     **kwargs,
 ) -> Host:
     """
     Create an execution host.
 
     Args:
-        provider: Host provider ("local" or "http")
+        provider: Host provider ("local", "http", or "modal")
         **kwargs: Provider-specific arguments
 
     Provider-specific kwargs:
@@ -57,6 +57,16 @@ def connect_host(
             url: str - Server URL (required)
             timeout: float - Request timeout (default 300.0)
             retries: int - Connection retry attempts (default 0)
+
+        modal:
+            app: str - Modal app name (optional, defaults to "agex-{agent_name}-{fingerprint}")
+            volume: str - Modal volume name for state storage
+            secrets: str | list[str] - Modal secret names (required, e.g. "llm-keys")
+            gpu: str - GPU type (e.g., "A10G", "T4", "A100")
+            memory: int - Memory in MB
+            timeout: float - Execution timeout (default 300.0)
+            detach: bool - Verify deploy/detach mode (default True)
+            scaledown_window: int - Keep containers warm for N seconds (default 300)
 
     Returns:
         A Host instance
@@ -69,6 +79,15 @@ def connect_host(
         # Remote HTTP execution
         host = connect_host(provider="http", url="https://compute.example.com/execute")
         host = connect_host(provider="http", url="http://localhost:8000/execute", timeout=60.0)
+
+        # Modal serverless execution
+        host = connect_host(
+            provider="modal",
+            app="my-app",
+            volume="agex-state",
+            secrets=["llm-keys"],
+            gpu="A10G",
+        )
     """
     if provider == "local":
         return Local()
@@ -78,4 +97,19 @@ def connect_host(
             raise ValueError("HTTP host requires 'url' parameter")
         return HTTP(**kwargs)
 
-    raise ValueError(f"Unknown host provider: {provider}. Available: local, http")
+    if provider == "modal":
+        try:
+            from agex.host.modal import Modal
+        except ModuleNotFoundError as e:
+            if "modal" in str(e):
+                raise ModuleNotFoundError(
+                    "Modal host requires the 'modal' package. "
+                    "Install it with: pip install agex[modal]"
+                ) from None
+            raise
+
+        return Modal(**kwargs)
+
+    raise ValueError(
+        f"Unknown host provider: {provider}. Available: local, http, modal"
+    )

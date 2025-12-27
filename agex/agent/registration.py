@@ -1,6 +1,6 @@
 import inspect
 from types import ModuleType
-from typing import Any, Callable, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, TypeVar, overload
 
 from agex.agent.base import BaseAgent, resolve_agent
 from agex.agent.datatypes import (
@@ -13,6 +13,9 @@ from agex.agent.policy.resolve import make_predicate
 from agex.agent.utils import get_instance_attributes_from_init
 from agex.eval.functions import UserFunction
 from agex.eval.objects import AgexModule
+
+if TYPE_CHECKING:
+    from agex.host.dependencies import Dependencies
 
 T = TypeVar("T", bound=type)
 F = TypeVar("F", bound=Callable[..., Any])
@@ -107,10 +110,31 @@ class RegistrationMixin(BaseAgent):
                         f"a task from a different agent as a callable capability."
                     )
 
+                # Check for nested Modal hosts - not supported
+                # If this is a task from another agent with a Modal host, reject it
+                if owning_agent is not None:
+                    from agex.host.local import Local
+
+                    sub_agent_host = getattr(owning_agent, "_host", None)
+                    if sub_agent_host is not None and not isinstance(
+                        sub_agent_host, Local
+                    ):
+                        host_type = type(sub_agent_host).__name__
+                        raise ValueError(
+                            f"Cannot register task '{final_name}' from a sub-agent with "
+                            f"host={host_type}. When using hierarchical agents with Modal, "
+                            f"sub-agents must use Local host. The parent's Modal container "
+                            f"will execute sub-agent tasks locally."
+                        )
+
                 if final_name in RESERVED_NAMES:
                     raise ValueError(
                         f"The name '{final_name}' is reserved and cannot be registered."
                     )
+                # Track module for lazy dependency resolution
+                if hasattr(f, "__module__"):
+                    self._track_module(f.__module__)
+
                 final_doc = docstring if docstring is not None else f.__doc__
                 self._policy.register_fn(
                     func=f,
@@ -247,6 +271,9 @@ class RegistrationMixin(BaseAgent):
                 for k, v in (final_configure or {}).items()
             }
 
+            # Track module for lazy dependency resolution
+            self._track_module(c.__module__)
+
             self._policy.register_cls(
                 cls=c,
                 name=final_name,
@@ -307,6 +334,8 @@ class RegistrationMixin(BaseAgent):
                 configure=sec_configure,
                 recursive=True,
             )
+            # Track module for lazy dependency resolution
+            self._track_module(obj.__name__ if hasattr(obj, "__name__") else None)
             self._update_fingerprint()
             return None
 
@@ -363,6 +392,8 @@ class RegistrationMixin(BaseAgent):
                 configure=sec_configure,
                 recursive=False,
             )
+            # Track module for lazy dependency resolution
+            self._track_module(obj.__name__ if hasattr(obj, "__name__") else None)
             self._update_fingerprint()
         else:
             sec_configure = {
@@ -392,7 +423,76 @@ class RegistrationMixin(BaseAgent):
             )
             # Store the live instance in the host registry for runtime access
             self._host_object_registry[name] = obj
+            # Track module for lazy dependency resolution
+            if hasattr(obj, "__module__"):
+                self._track_module(obj.__module__)
             self._update_fingerprint()
 
     # NOTE: `_handle_agex_module_inheritance` removed. Inheritance is handled lazily
     # via a child policy namespace of kind "inherited" created in `module()`.
+
+    def _track_module(self, module_name: str | None) -> None:
+        """Record a module name for lazy dependency resolution (fast, no package lookup)."""
+        if module_name:
+            self._tracked_modules.add(module_name)
+
+    @property
+    def dependencies(self) -> "Dependencies":
+        """
+        Software dependencies inferred from registered functions, modules, and classes.
+
+        Returns:
+            Dependencies object containing python version, agex version, and packages.
+
+        Note: Dependencies are computed lazily on first access and cached.
+        The cache is invalidated when registrations change.
+        """
+        import sys
+        from importlib import metadata
+
+        from agex.host.dependencies import Dependencies
+
+        # Return cached if available
+        if self._cached_dependencies is not None:
+            return self._cached_dependencies
+
+        # Build packages list from tracked modules (expensive, but only once)
+        packages: set[str] = set()
+
+        # Cache packages_distributions() result for this computation
+        try:
+            pkg_map = metadata.packages_distributions()
+        except Exception:
+            pkg_map = {}
+
+        for module_name in self._tracked_modules:
+            # Skip standard library and built-ins
+            if (
+                module_name in sys.stdlib_module_names
+                or module_name in sys.builtin_module_names
+            ):
+                continue
+
+            # Get top-level package name
+            top_level = module_name.split(".")[0]
+
+            try:
+                # Map import name to distribution name (e.g. sklearn -> scikit-learn)
+                dist_names = pkg_map.get(top_level)
+                if dist_names:
+                    for pkg in dist_names:
+                        try:
+                            version = metadata.version(pkg)
+                            packages.add(f"{pkg}=={version}")
+                        except metadata.PackageNotFoundError:
+                            pass
+            except Exception:
+                pass
+
+        deps = Dependencies(
+            python_version=f"{sys.version_info.major}.{sys.version_info.minor}",
+            agex_version=metadata.version("agex"),
+            packages=sorted(list(packages)),
+        )
+        self._cached_dependencies = deps
+        return deps

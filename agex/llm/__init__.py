@@ -80,7 +80,7 @@ def connect_llm(
     if final_provider == "gemini":
         if Gemini is None:
             raise ImportError(
-                "Gemini provider requires the 'google-generativeai' package. "
+                "Gemini provider requires the 'google-genai' package. "
                 'Install it with: pip install "agex[gemini]"'
             )
         return Gemini(**config)
