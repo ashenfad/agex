@@ -498,6 +498,14 @@ class RegistrationMixin(BaseAgent):
                             packages.add(f"{pkg}=={version}")
                         except metadata.PackageNotFoundError:
                             pass
+                else:
+                    # Fallback for Python 3.10 where packages_distributions() may be incomplete
+                    # Try using the module name directly as package name (works for most packages)
+                    try:
+                        version = metadata.version(top_level)
+                        packages.add(f"{top_level}=={version}")
+                    except metadata.PackageNotFoundError:
+                        pass
             except Exception:
                 pass
 
