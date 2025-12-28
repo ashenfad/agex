@@ -117,10 +117,8 @@ class Volume(KVStore):
 
     # ---- Read operations ----
 
-    def get(self, key: str) -> bytes | None:
-        """Get bytes value for key, or None if not found."""
-        self._ensure_reload()
-
+    def _raw_get(self, key: str) -> bytes | None:
+        """Read file without reload (internal use after _ensure_reload)."""
         start = time.perf_counter()
         path = self._key_path(key)
 
@@ -137,12 +135,17 @@ class Volume(KVStore):
 
         return None
 
+    def get(self, key: str) -> bytes | None:
+        """Get bytes value for key, or None if not found."""
+        self._ensure_reload()
+        return self._raw_get(key)
+
     def get_many(self, *args: str) -> Mapping[str, bytes]:
         """Get multiple keys, returning only keys that exist."""
         self._ensure_reload()
         result = {}
         for key in args:
-            value = self.get(key)
+            value = self._raw_get(key)  # Use _raw_get to avoid redundant reloads
             if value is not None:
                 result[key] = value
         return result

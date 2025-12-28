@@ -62,12 +62,12 @@ class Host(ABC):
             from agex.host.modal import Modal
 
             return Modal(
-                app=config["app"],
-                volume=config.get("volume"),
+                app=config.get("app"),
                 secrets=config.get("secrets"),
                 gpu=config.get("gpu"),
                 memory=config.get("memory"),
                 timeout=config.get("timeout", 300.0),
+                scaledown_window=config.get("scaledown_window", 300),
             )
         else:
             raise ValueError(f"Unknown host provider: {provider}")

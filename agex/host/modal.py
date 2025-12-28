@@ -19,6 +19,30 @@ if TYPE_CHECKING:
     from agex.state.config import StateConfig
 
 
+# ---- Cloudpickle serialization helpers ----
+# Used for streaming results between Modal container and client
+
+
+def _serialize_result(result: Any) -> dict:
+    """Serialize a result for streaming with cloudpickle."""
+    import cloudpickle
+
+    return {
+        "type": "result",
+        "data": cloudpickle.dumps(result),
+        "encoding": "cloudpickle",
+    }
+
+
+def _deserialize_result(msg: dict) -> Any:
+    """Deserialize a result message, handling cloudpickle encoding."""
+    if msg.get("encoding") == "cloudpickle":
+        import cloudpickle
+
+        return cloudpickle.loads(msg["data"])
+    return msg["data"]
+
+
 def _agex_runner(
     agent_bytes: bytes,
     task_name: str,
@@ -97,13 +121,7 @@ def _agex_runner(
                 result = asyncio.run(result)
 
             # Manually serialize result to prevent Modal from doing it in the IO loop
-            stream_queue.put(
-                {
-                    "type": "result",
-                    "data": cloudpickle.dumps(result),
-                    "encoding": "cloudpickle",
-                }
-            )
+            stream_queue.put(_serialize_result(result))
 
         except Exception as e:
             import traceback
@@ -705,7 +723,6 @@ class Modal(Host):
         Raises:
             RuntimeError: If an error message is received
         """
-        import cloudpickle
 
         result = None
         for msg in gen:
@@ -715,12 +732,7 @@ class Modal(Host):
             elif msg_type == "token" and on_token:
                 on_token(msg["data"])
             elif msg_type == "result":
-                # Check for encoding
-                if msg.get("encoding") == "cloudpickle":
-                    # Deserialize manually serialized result
-                    result = cloudpickle.loads(msg["data"])
-                else:
-                    result = msg["data"]
+                result = _deserialize_result(msg)
             elif msg_type == "error":
                 raise RuntimeError(msg["data"])
         return result
