@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2025-12-27
+
+### Added
+- **Modal Host**: New `agex.host.modal` module for severless agents
+- **Modal Storage**: Two-tier state persistence for Modal host
+  - `memory` storage using Modal Dict (7-day TTL, auto-named from fingerprint)
+  - `disk` storage using Modal Dict + Volume (permanent, requires path)
+- **`agent.state()`**: Inspect runtime state for debugging (local execution only)
+
 ## [0.8.0] - 2025-12-25
 
 ### Added
@@ -84,7 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed event token count defaults and detail thresholds
   - Garbage collection restricted to orphaned events only
 
-[0.8.0]: https://github.com/ashenfad/agex/releases/tag/v0.7.1
+[0.8.1]: https://github.com/ashenfad/agex/releases/tag/v0.8.1
+[0.8.0]: https://github.com/ashenfad/agex/releases/tag/v0.8.0
 [0.7.1]: https://github.com/ashenfad/agex/releases/tag/v0.7.1
 [0.7.0]: https://github.com/ashenfad/agex/releases/tag/v0.7.0
 [0.6.0]: https://github.com/ashenfad/agex/releases/tag/v0.6.0
