@@ -358,6 +358,40 @@ class TestModalHostHierarchical:
         # This should work (no exception raised = success)
         parent.fn(child_task)
 
+    def test_subagent_with_state_on_modal_parent_rejected(self):
+        """Sub-agents with persistent state are rejected when parent uses Modal."""
+        from agex.host import Local
+        from agex.state import connect_state
+
+        parent = Agent(host=connect_host(provider="modal", secrets=["llm-keys"]))
+        child = Agent(
+            host=Local(),
+            state=connect_state(type="versioned", storage="memory"),
+        )
+
+        @child.task
+        def child_task() -> str:
+            """Child task."""
+            ...
+
+        with pytest.raises(ValueError, match="sub-agents cannot have persistent state"):
+            parent.fn(child_task)
+
+    def test_subagent_ephemeral_on_modal_parent_allowed(self):
+        """Sub-agents with ephemeral state are allowed when parent uses Modal."""
+        from agex.host import Local
+
+        parent = Agent(host=connect_host(provider="modal", secrets=["llm-keys"]))
+        child = Agent(host=Local())  # No state = ephemeral
+
+        @child.task
+        def child_task() -> str:
+            """Child task."""
+            ...
+
+        # This should work (no exception raised = success)
+        parent.fn(child_task)
+
 
 class TestLiveObjectValidation:
     """Test live object registration validation."""
