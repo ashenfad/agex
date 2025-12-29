@@ -1,28 +1,36 @@
-# The Big Picture: Agents That Think in Code
+# The Big Picture: Code as the Only Interface
 
-Many agentic frameworks adopt JSON tooling as the communication medium between your code and AI agents. This choice often means designing new tool-friendly abstractions and serialization when working with existing codebases. 
+Many agentic frameworks use JSON tooling as the communication layer between your code and AI agents. Agents select from predefined tools, pass JSON-serialized arguments, and receive JSON-serialized results. This creates a boundary: your Python objects must be converted to JSON and back, and you must write tool definitions that wrap your existing code.
 
-`agex` takes a different approach: **agents work directly with your Python runtime**. Instead of JSON interfaces, agents think in code and operate on real Python objects.
+`agex` eliminates this boundary entirely: **agents operate exclusively in Python**. There are no tools to define, no JSON to serialize, no selection step. Agents write Python code that runs directly in your runtime and works with real Python objects.
 
-## Core Philosophy: Code as the Language of Reasoning
+## Core Philosophy: Python is the Agent's Native Language
 
-The idea is that **code is language made formal enough to get stuff done**. The same tools that help human developers manage complexity work naturally for AI agents:
+Agents don't choose between "using tools" and "writing code." In agex, **everything is code**:
 
-- **REPLs** for interactive exploration and step-by-step reasoning
-- **`dir()` and `help()`** for discovering capabilities  
-- **State inspection** like `print` for understanding structure
-- **Imports for whitelisted modules** for accessing functionality
-- **Function definitions** for building reusable tools
+- Returning a result: `task_success("hello")`
+- Calling a function: just call it
+- Building data structures: native Python syntax
+- Exploring capabilities: `dir()` and `help()`
+- Debugging: `print()` to see output
+- Creating reusable logic: define functions
 
-Instead of inventing new agent interaction patterns, `agex` adapts the tools developers have used for decades.
+This isn't code generation as a feature—it's code as the fundamental medium. Agents operate in a sandboxed Python environment where the same patterns developers use (introspection, iteration, composition) work naturally for AI.
 
-## Implementation Foundation
+## How It Works
 
-This philosophy shapes how agex works:
+Agents operate in a **generate → execute → observe** loop:
 
-- **REPL-Like Environment** - Agents operate in familiar, persistent environments where they can introspect (`help`, `dir`), see their own output (`print`, `view_image`), and build solutions iteratively
-- **Natural Error Handling** - Validation errors and exceptions appear in the agent's stdout just like in a real Python environment, creating natural debugging loops
-- **Flexible State Management** - Tasks can run in live mode or with persistent state that captures the agent's entire workspace, enabling both simple single-shot tasks and complex workflows where agents keep and reuse their own functions
+1. **Generate**: The LLM generates a block of Python code based on the task and available capabilities
+2. **Execute**: The framework runs this code in a secure sandbox with only whitelisted capabilities
+3. **Observe**: Output (prints, errors, return values) flows back to the agent for the next iteration
+
+This creates a natural development experience:
+
+- **Iterative refinement** - Agents see their output, adjust their approach, and try again
+- **Natural error handling** - Exceptions appear in stdout just like in a real Python environment
+- **Persistent workspace** - With versioned state, agents can define functions, store variables, and build solutions across multiple iterations
+- **Familiar debugging** - `print()`, `dir()`, `help()` work as expected
 
 
 ## The Middle Road: Guidance Through a Curated Environment
@@ -31,11 +39,9 @@ Agentic frameworks often present a stark choice: provide agents with rigid, pre-
 
 `agex` is designed to be the middle road.
 
-The whitelist registration system is more than just a security feature; it is a tool for **guidance**. By carefully selecting which functions, classes, and modules you expose, you are effectively designing a **"micro-DSL" (Domain-Specific Language)** for your agent.
+The whitelist registration system is more than just a security feature; it is a tool for **guidance**. By carefully selecting which functions, classes, and modules you expose, you are providing conceptual guide-rails for your agent.
 
-This curated environment helps guide the agent toward a correct solution by limiting its scope of action to only the most relevant capabilities. It prevents the agent from getting lost in the vastness of a full compute environment and encourages it to compose the building blocks you provide. This "micro-DSL" can be as small or as large as you need, from a handful of functions to broad access to a library, giving you fine-grained control over the balance of guidance and freedom.
-
-This philosophy of providing guidance through a curated environment is the primary design principle. A useful side-effect of this approach is a robust security model. By limiting the agent's world to only the capabilities you provide, you inherently prevent it from accessing unintended and potentially unsafe parts of your system. Security becomes a natural outcome of thoughtful agent design.
+This curated environment helps lead the agent toward a correct solution by limiting its scope of action to only the most relevant capabilities. It prevents the agent from getting lost in the vastness of a full compute environment and encourages it to compose the building blocks you provide.
 
 ### Registration, Not Tool-Making
 
