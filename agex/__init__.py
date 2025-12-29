@@ -1,8 +1,9 @@
 from .agent import Agent, MemberSpec, TaskFail, clear_agent_registry
 from .agent.console import pprint_events, pprint_tokens
-from .agent.datatypes import TaskClarify, TaskTimeout
+from .agent.datatypes import TaskCancelled, TaskClarify, TaskTimeout
 from .agent.events import (
     ActionEvent,
+    CancelledEvent,
     ClarifyEvent,
     ErrorEvent,
     Event,
@@ -37,6 +38,7 @@ __all__ = [
     "TaskFail",
     "TaskClarify",
     "TaskTimeout",
+    "TaskCancelled",
     # Registration
     "MemberSpec",
     # Events
@@ -46,6 +48,7 @@ __all__ = [
     "OutputEvent",
     "SuccessEvent",
     "FailEvent",
+    "CancelledEvent",
     "ClarifyEvent",
     "ErrorEvent",
     "SummaryEvent",

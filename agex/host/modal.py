@@ -6,11 +6,14 @@ on Modal's serverless infrastructure. Functions are created programmatically
 from the agent's dependencies and host configuration — no pre-deployment required.
 """
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from agex.host.base import Host
 from agex.host.local import Local
+from agex.state import Live, Versioned
+from agex.state.kv.modal_dict import ModalDict
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
@@ -834,3 +837,87 @@ class Modal(Host):
                 agent, task_name, args, kwargs, session, on_event, on_token
             ),
         )
+
+    def state(
+        self,
+        config: "StateConfig | None",
+        session: str,
+        fingerprint: str = "",
+    ) -> "State":
+        """
+        Get state for client-side access.
+
+        This allows callers to access the same Modal Dict/Volume used by
+        remote task execution, enabling operations like cancel, rollback,
+        and inspection.
+
+        Note: Requires Modal SDK to be installed and authenticated on the client.
+        """
+
+        if config is None:
+            return Live()
+
+        state_type = config.type
+        storage = config.storage
+
+        if state_type == "ephemeral":
+            return Live()
+
+        if state_type != "versioned":
+            # Live/other types rejected at validation - fallback for safety
+            return Live()
+
+        # --- Versioned state ---
+
+        config_path = config.path or ""
+
+        def sanitize_name(name: str) -> str:
+            """Sanitize name for Modal Dict/Volume naming."""
+            name = name.replace("~", "home")
+            name = re.sub(r"[^a-zA-Z0-9._-]+", ".", name)
+            name = name.strip(".")
+            return name or "state"
+
+        # Determine base name (same logic as ModalLocal.resolve_state)
+        if config_path:
+            base_name = sanitize_name(config_path)
+        else:
+            fp_short = fingerprint[:12] if fingerprint else "default"
+            base_name = f"agex.{fp_short}"
+
+        # Session-scoped names
+        dict_name = f"{base_name}.{session}"
+
+        # Connect to Modal Dict (no local disk cache for client-side access)
+        source = ModalDict(name=dict_name, prefix=base_name)
+
+        if storage == "disk":
+            # Also connect to Volume for disk storage
+            from agex.state.kv.composite import Composite
+            from agex.state.kv.modal_volume import Volume
+
+            volume_name = base_name
+            volume = Volume(volume_name, prefix=session)
+            kv = Composite([source, volume])
+        else:
+            kv = source
+
+        # Create Versioned and verify state exists
+        versioned = Versioned(store=kv)
+
+        # Check that state has been initialized (has history)
+        try:
+            history = versioned.history()
+            if not history:
+                raise ValueError(
+                    f"No state found for session '{session}'. "
+                    f"Run a task first to initialize state."
+                )
+        except Exception as e:
+            if "No state found" in str(e):
+                raise
+            raise ValueError(
+                f"Could not access Modal state for session '{session}': {e}"
+            ) from e
+
+        return versioned

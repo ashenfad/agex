@@ -157,3 +157,16 @@ class Local(Host):
             call_kwargs["on_token"] = on_token
 
         return await task_fn(*args, **call_kwargs)
+
+    def state(
+        self,
+        config: "StateConfig | None",
+        session: str,
+        fingerprint: str = "",
+    ) -> "State":
+        """Get state for client-side access.
+
+        For Local host, this is the same as resolve_state since we have
+        direct access to the state.
+        """
+        return self.resolve_state(config, session, fingerprint)

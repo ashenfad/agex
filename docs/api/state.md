@@ -79,7 +79,7 @@ agent = Agent(
 
 ## Session Management
 
-The `session` parameter isolates state between different users or conversations:
+The `session` parameter isolates state between different users or conversations. You can also access state directly via [`agent.state(session)`](agent.md#statesession-str--default).
 
 ```python
 agent = Agent(

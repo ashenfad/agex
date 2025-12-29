@@ -686,6 +686,50 @@ class FailEvent(BaseEvent):
         )
 
 
+class CancelledEvent(BaseEvent):
+    """Fired when the task is cancelled via external request."""
+
+    task_name: str
+    iterations_completed: int
+
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        text = f"🛑 Task '{self.task_name}' cancelled after {self.iterations_completed} iterations"
+        tokens = count_tokens(text)
+        self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens  # No separate low-detail rendering
+        return self
+
+    def __str__(self) -> str:
+        """Detailed string with cancellation info."""
+        base = super().__str__()
+        return f"{base}\n  Task: {self.task_name}\n  Iterations: {self.iterations_completed}"
+
+    def _repr_markdown_(self) -> str:
+        """Rich markdown with cancellation details."""
+        base = super()._repr_markdown_()
+        return f"""{base}  
+**Task:** `{self.task_name}`  
+**Iterations completed:** {self.iterations_completed}"""
+
+    def _repr_html_(self) -> str:
+        """Rich HTML representation for IPython/Jupyter environments."""
+        content = _event_section(
+            f"🛑 Task `{self.task_name}` cancelled",
+            f"Completed {self.iterations_completed} iteration(s) before cancellation",
+            "#fb8500",
+        )
+
+        return _event_html_container(
+            "🛑",
+            "CancelledEvent",
+            self.full_namespace,
+            self.timestamp,
+            content,
+            self.commit_hash,
+        )
+
+
 class ClarifyEvent(BaseEvent):
     """Fired when the task is paused for clarification."""
 
@@ -847,6 +891,7 @@ Event = (
     | ErrorEvent
     | SuccessEvent
     | FailEvent
+    | CancelledEvent
     | ClarifyEvent
     | SummaryEvent
 )

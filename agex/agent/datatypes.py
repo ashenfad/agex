@@ -50,6 +50,15 @@ class TaskTimeout(_AgentExit):
 
 
 @dataclass
+class TaskCancelled(_AgentExit):
+    """Signal that task was cancelled via external request."""
+
+    message: str
+    task_name: str
+    iterations_completed: int = 0
+
+
+@dataclass
 class LLMFail(_AgentExit):
     """Uncatchable signal that the LLM call failed (after retries)."""
 

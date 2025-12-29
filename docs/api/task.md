@@ -204,6 +204,59 @@ def critical_task() -> dict:  # type: ignore[return-value]
 
 See [State - Concurrent Task Handling](state.md#concurrent-task-handling) for implementation details.
 
+### Task Cancellation
+
+Long-running tasks can be cancelled using the `cancel()` method on the task wrapper. This gracefully stops execution at the next iteration boundary.
+
+```python
+import threading
+
+@agent.task
+def long_running_task() -> str:
+    """A task that may need to be cancelled."""
+    pass
+
+# Start task in background
+def run():
+    try:
+        result = long_running_task()
+    except TaskCancelled as e:
+        print(f"Cancelled after {e.iterations_completed} iterations")
+
+thread = threading.Thread(target=run)
+thread.start()
+
+# Cancel from main thread
+long_running_task.cancel()
+
+# Or cancel a specific session
+long_running_task.cancel(session="user_123")
+```
+
+**How it works:**
+
+1. `cancel()` writes a sentinel to the underlying state store
+2. The task loop checks for this sentinel at the start of each iteration
+3. When detected, a `TaskCancelled` exception is raised
+4. A `CancelledEvent` is recorded in the event log
+
+**Requirements:**
+
+- **State**: The agent must be configured with persistent state (`Versioned` with `disk` storage recommended)
+- **Shared state**: For cross-thread/process cancellation, both the canceller and the running task must access the same state store
+
+```python
+from agex import Agent, connect_state, TaskCancelled
+
+agent = Agent(
+    state=connect_state(type="versioned", storage="disk", path="/tmp/agent-state"),
+)
+```
+
+> [!NOTE]
+> Cancellation is checked between LLM iterations, not mid-execution. If the agent is in the middle of a long function call or waiting for an LLM response, cancellation will take effect after that operation completes.
+
+
 ### on_event Parameter
 
 - **Optional**: `on_event: Callable[[BaseEvent], None] | None = None`

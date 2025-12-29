@@ -246,6 +246,39 @@ class Versioned(State):
             removed_from_commit = True
         return removed_from_live or removed_from_commit
 
+    def set_raw(self, key: str, value: Any) -> None:
+        """
+        Write directly to the underlying KV store, bypassing versioned commits.
+
+        This is for cross-process signals (like cancellation) that need to be
+        immediately visible to other Versioned instances on the same store.
+        The value is pickled automatically.
+
+        WARNING: Values set this way are NOT part of the commit history and
+        will not be visible via regular get() calls.
+        """
+        self.long_term.set(key, pickle.dumps(value))
+
+    def get_raw(self, key: str) -> Any | None:
+        """
+        Read directly from the underlying KV store, bypassing versioned commits.
+
+        This is for cross-process signals (like cancellation) that were written
+        via set_raw(). Returns None if key doesn't exist.
+        """
+        data = self.long_term.get(key)
+        if data is not None:
+            return pickle.loads(data)
+        return None
+
+    def remove_raw(self, key: str) -> None:
+        """
+        Remove directly from the underlying KV store, bypassing versioned commits.
+
+        This is for cleaning up cross-process signals written via set_raw().
+        """
+        self.long_term.remove(key)
+
     def keys(self) -> Iterable[str]:
         return set(self.live.keys()) | set(self.commit_keys.keys()) - self.removed
 
