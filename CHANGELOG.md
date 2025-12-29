@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2025-12-29
+
+### Added
+- **Modal Local Packages**: Automatic support for local Python packages in Modal deployments
+  - Uses Modal's `add_local_python_source()` for packages in editable mode or local directories
+  - `Dependencies` dataclass now tracks `local_packages` separately from PyPI packages
+
 ## [0.8.2] - 2025-12-28
 
 ### Added
@@ -107,6 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed event token count defaults and detail thresholds
   - Garbage collection restricted to orphaned events only
 
+[0.8.3]: https://github.com/ashenfad/agex/releases/tag/v0.8.3
 [0.8.2]: https://github.com/ashenfad/agex/releases/tag/v0.8.2
 [0.8.1]: https://github.com/ashenfad/agex/releases/tag/v0.8.1
 [0.8.0]: https://github.com/ashenfad/agex/releases/tag/v0.8.0
