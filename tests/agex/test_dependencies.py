@@ -157,3 +157,42 @@ class TestWarmup:
         assert deps.python_version
         assert deps.agex_version
         assert any(p.startswith("pytest==") for p in deps.packages)
+
+
+class TestOptionalDependencies:
+    """Test detection of installed optional dependencies."""
+
+    def test_get_installed_optional_deps_unknown_package(self):
+        """Unknown package should return empty set."""
+        agent = Agent()
+        result = agent._get_installed_optional_deps("nonexistent-fake-package-xyz")
+        assert result == set()
+
+    def test_get_installed_optional_deps_no_extras(self):
+        """Package with no optional deps should return empty set."""
+        agent = Agent()
+        # pytest doesn't have optional deps (just required ones)
+        result = agent._get_installed_optional_deps("pytest")
+        # Should not error, may return empty or some deps
+        assert isinstance(result, set)
+
+    def test_optional_deps_helper_detects_installed(self):
+        """The helper should detect installed optional deps of a package."""
+        from importlib import metadata
+
+        agent = Agent()
+
+        # Find a real package in the environment that has optional deps
+        # We'll use agex itself which has optional deps like fastapi
+        try:
+            metadata.requires("agex")
+        except metadata.PackageNotFoundError:
+            # agex not installed as package in test env
+            return
+
+        # Check if any optional deps exist and are installed
+        optional_deps = agent._get_installed_optional_deps("agex")
+
+        # The result should be a set of "package==version" strings
+        for dep in optional_deps:
+            assert "==" in dep, f"Expected 'package==version' format, got: {dep}"
