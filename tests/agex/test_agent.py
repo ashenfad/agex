@@ -677,7 +677,7 @@ def test_task_input_dataclass_pickling():
 
     # Verify inputs were stored and are pickleable
     state = agent._host.resolve_state(config, "test_session")
-    inputs = state.get("test_agent/inputs")
+    inputs = state.get("inputs")  # No longer namespaced
     assert inputs is not None
     assert inputs.message == "hello"
     assert inputs.value == 42
@@ -736,7 +736,7 @@ def test_unserializable_object_in_state_is_handled_gracefully():
 
     # Pre-populate the state with a serializable object.
     state = agent._host.resolve_state(config, "test_session")
-    state.set("test_agent/my_object", {"a": 1})
+    state.set("my_object", {"a": 1})  # No longer namespaced
     state.snapshot()
 
     # Run the task. This will mutate my_object and then try to snapshot.
@@ -752,7 +752,7 @@ def test_unserializable_object_in_state_is_handled_gracefully():
 
     # Directly check that the variable is now a marker
     with pytest.raises(UnpicklableVariableError) as exc_info:
-        state.get("test_agent/my_object")
+        state.get("my_object")  # No longer namespaced
 
     # Verify the error message is helpful
     error_msg = str(exc_info.value)
@@ -828,8 +828,8 @@ def test_shallow_validation_on_agent_output():
 
     # Pre-populate state to avoid parsing large literals in the agent's code
     state = agent._host.resolve_state(config, "test_session")
-    state.set("test_agent/invalid_dict", large_invalid_dict)
-    state.set("test_agent/valid_dict", large_valid_dict)
+    state.set("invalid_dict", large_invalid_dict)  # No longer namespaced
+    state.set("valid_dict", large_valid_dict)  # No longer namespaced
 
     result = produce_large_dict(session="test_session")  # type: ignore
 
@@ -917,7 +917,7 @@ def test_task_setup_functionality():
     assert setup_event.code == 'setup_var = "Hello from setup!"'
 
     # Check that setup variable is available in state
-    setup_value = state.get("setup_test_agent/setup_var")
+    setup_value = state.get("setup_var")  # No longer namespaced
     assert setup_value == "Hello from setup!"
 
 

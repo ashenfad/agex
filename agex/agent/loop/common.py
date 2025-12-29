@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from agex.agent.datatypes import (
     LLMFail,
+    TaskCancelled,
     TaskClarify,
     TaskContinue,
     TaskFail,
@@ -71,6 +72,7 @@ __all__ = [
     "TaskFail",
     "TaskSuccess",
     "TaskTimeout",
+    "TaskCancelled",
     "_AgentExit",
     "ActionEvent",
     "ClarifyEvent",
@@ -93,9 +95,47 @@ __all__ = [
     "is_live_root",
     "add_event_to_log",
     "get_events_from_log",
+    "check_cancellation",
 ]
 
 MAX_USER_FUNCTIONS_IN_RECAP = 12
+
+
+def check_cancellation(
+    task_name: str,
+    versioned_state: Versioned | None,
+    exec_state: Any,
+) -> bool:
+    """
+    Check if a cancellation sentinel is present for the given task.
+
+    Reads directly from the underlying KV store for Versioned state to ensure
+    immediate visibility of cancellation requests from other threads/processes.
+
+    Args:
+        task_name: Name of the task to check cancellation for
+        versioned_state: The Versioned state if present, or None
+        exec_state: The execution state (Live or Namespaced)
+
+    Returns:
+        True if cancellation was detected (and sentinel was cleaned up), False otherwise
+    """
+    cancel_key = f"__agex_cancel__{task_name}"
+
+    if isinstance(versioned_state, Versioned):
+        # Read directly from KV store for immediate visibility
+        if versioned_state.get_raw(cancel_key):
+            # Clean up the sentinel
+            versioned_state.remove_raw(cancel_key)
+            return True
+    else:
+        # Live/Namespaced state - check exec_state directly
+        if exec_state.get(cancel_key):
+            exec_state.remove(cancel_key)
+            return True
+
+    return False
+
 
 # Task control guidance message (shown when agent forgets to signal completion)
 TASK_CONTROL_GUIDANCE = (
@@ -120,7 +160,7 @@ def initialize_exec_state(
     inputs_instance: Any,
     return_type: type,
     session: str = "default",
-) -> tuple[Namespaced, Versioned | None]:
+) -> tuple[Versioned | Live | Namespaced, Versioned | None]:
     """
     Initialize the execution state based on the provided state argument.
 
@@ -137,6 +177,7 @@ def initialize_exec_state(
         or if the state is Live/ephemeral).
     """
     versioned_state: Versioned | None = None
+    exec_state: Versioned | Live | Namespaced
 
     if isinstance(state, Namespaced):
         # Namespaced = someone else owns versioning, we just work within namespace
@@ -145,14 +186,14 @@ def initialize_exec_state(
     elif isinstance(state, Versioned):
         # Versioned = we're responsible for versioning this state
         versioned_state = state
-        exec_state = Namespaced(versioned_state, namespace=agent_name)
+        exec_state = state  # No namespacing - use directly
     elif isinstance(state, Live):
         # Live = ephemeral in-memory state, no snapshotting needed
-        exec_state = Namespaced(state, namespace=agent_name)
+        exec_state = state  # No namespacing - use directly
         versioned_state = None
     else:
         # None = we create and own new live state (no persistence by default)
-        exec_state = Namespaced(Live(), namespace=agent_name)
+        exec_state = Live()
 
     # Add inputs and expected return type to state for agent access
     if inputs_instance is not None:

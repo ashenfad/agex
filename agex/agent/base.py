@@ -300,13 +300,15 @@ class BaseAgent:
 
     def state(self, session: str = "default") -> "State":
         """
-        Get the state object for a session (local execution only).
+        Get the state object for a session.
 
-        Note: This retrieves the runtime state object for inspection.
-        For configuring state, see Agent(state=connect_state(...)).
+        This allows client-side access to the same state used by task execution,
+        enabling operations like:
+        - Inspecting state with view() and events()
+        - Rolling back to previous commits
+        - Cancelling running tasks
 
-        Useful for debugging with view() and events():
-
+        Example:
             from agex import Agent, connect_state, view, events
 
             agent = Agent(state=connect_state(type="versioned", storage="memory"))
@@ -331,18 +333,7 @@ class BaseAgent:
             The state object for this session
 
         Raises:
-            RuntimeError: If agent uses remote execution (HTTP/Modal host).
-                State is not locally accessible for remote hosts.
+            NotImplementedError: If the host doesn't support client-side state access
+            ValueError: If the state doesn't exist yet (run a task first)
         """
-        from agex.host.local import Local
-
-        if not isinstance(self._host, Local):
-            raise RuntimeError(
-                f"state() only works with Local host. "
-                f"Agent is using {type(self._host).__name__} host where state "
-                f"is not locally accessible. For debugging, use local execution "
-                f"or inspect state on the remote server."
-            )
-
-        # Delegate to host to resolve/retrieve state
-        return self._host.resolve_state(self._state_config, session)
+        return self._host.state(self._state_config, session, self.fingerprint or "")

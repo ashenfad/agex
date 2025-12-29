@@ -97,6 +97,8 @@ Alternatively, register submodules directly (e.g., `ox.routing`) when you want t
 
 View a snapshot of an agent's memory (`Versioned` or `Live` state). This is useful for debugging the outcome of an agent's execution.
 
+Get a state object via [`agent.state()`](agent.md#statesession-str--default).
+
 **Note:** State inspection requires local execution. For agents using remote hosts (HTTP/Modal), state is not locally accessible.
 
 ```python

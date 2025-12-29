@@ -157,6 +157,33 @@ class Host(ABC):
         """
         ...
 
+    def state(
+        self,
+        config: "StateConfig | None",
+        session: str,
+        fingerprint: str = "",
+    ) -> "State":
+        """
+        Get state for client-side access.
+
+        This allows callers to access the same state used by task execution,
+        enabling operations like cancel, rollback, and inspection.
+
+        Args:
+            config: State configuration (None = ephemeral)
+            session: Session identifier
+            fingerprint: Agent fingerprint for state naming
+
+        Returns:
+            A State instance for client-side access
+
+        Raises:
+            NotImplementedError: If this host doesn't support client-side state access
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} doesn't support client-side state access"
+        )
+
     def warmup(self, deps: "Dependencies") -> None:
         """
         Pre-warm the host for faster cold starts.

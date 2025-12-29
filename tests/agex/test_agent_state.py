@@ -78,7 +78,7 @@ class TestAgentState:
         assert state1 is state2
 
     def test_state_raises_for_http_host(self):
-        """state() raises for HTTP host."""
+        """state() raises NotImplementedError for HTTP host."""
         from agex.host import connect_host
 
         llm = Dummy(responses=[])
@@ -87,7 +87,9 @@ class TestAgentState:
             llm=llm,
         )
 
-        with pytest.raises(RuntimeError, match="only works with Local host"):
+        with pytest.raises(
+            NotImplementedError, match="doesn't support client-side state access"
+        ):
             agent.state()
 
     def test_state_with_view(self):

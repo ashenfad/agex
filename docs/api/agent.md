@@ -144,6 +144,50 @@ Maximum time for a single block of agent-generated code to execute (*not* LLM ca
 
 Maximum think-act cycles per task. Raises `TaskTimeout` if exceeded.
 
+## Methods
+
+### `.state(session: str = "default")`
+
+Returns the agent's state object for a given session. This is useful for:
+- Inspecting state with `view(state)` (see [View API](view.md))
+- Reading event history with `events(state)` (see [Events API](events.md))
+- Task cancellation (see [Task Cancellation](task.md#task-cancellation))
+
+```python
+from agex import Agent, connect_state, view, events
+
+agent = Agent(
+    state=connect_state(type="versioned", storage="disk", path="/tmp/state"),
+)
+
+@agent.task
+def my_task() -> str:
+    """Do something."""
+    pass
+
+my_task()
+
+# Inspect state
+state = agent.state()  # Default session
+print(view(state))
+
+# Get events
+for event in events(state):
+    print(event)
+
+# Specific session
+state = agent.state(session="user_123")
+```
+
+**Host compatibility:**
+
+| Host | Access |
+|------|--------|
+| Local | Full access |
+| HTTP | ❌ Not supported (state is on remote server) |
+| Modal | Full access |
+
+
 ## Capabilities Primer
 
 By default, the agent's system message includes capabilities rendered from registrations. You can override this with curated text:

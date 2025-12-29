@@ -397,6 +397,45 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             def __repr__(self):
                 return f"<agex.task {self._agent_name}/{self._task_name} at {hex(id(self))}>"
 
+            def cancel(self, session: str = "default") -> None:
+                """
+                Request cancellation of this task on the given session.
+
+                Writes a cancellation sentinel to state that the task loop
+                will check between iterations. The task will stop gracefully
+                at the next checkpoint.
+
+                Args:
+                    session: Session identifier (default: "default")
+
+                Raises:
+                    NotImplementedError: If the host doesn't support client-side state access
+                    ValueError: If the state doesn't exist yet
+                """
+                agent = getattr(self, "__agex_agent__", None)
+                if agent is None:
+                    raise RuntimeError("TaskWrapper has no associated agent")
+
+                from agex.state import Versioned
+
+                state = agent.state(session)
+                if state is None:
+                    raise RuntimeError(
+                        f"Cannot cancel task '{self._task_name}': agent has no state configured. "
+                        "Cancellation requires state=connect_state(...) on the agent."
+                    )
+
+                # Write task-specific cancellation sentinel
+                cancel_key = f"__agex_cancel__{self._task_name}"
+
+                # Write directly to underlying KV store for immediate visibility
+                # (bypasses versioned commits so running tasks can see it)
+                if isinstance(state, Versioned):
+                    state.set_raw(cancel_key, True)
+                else:
+                    # Live state - just set normally
+                    state.set(cancel_key, True)
+
         # Helper to bind and validate arguments for both sync and async wrappers
         def _bind_and_validate(*args, **kwargs):
             # Bind to the new signature that includes the 'session', 'on_event', and 'on_token' parameters

@@ -12,6 +12,7 @@ import inspect
 from functools import partial
 from typing import Any, Callable
 
+from agex.agent.events import CancelledEvent
 from agex.agent.summarization import maybe_summarize_event_log
 from agex.agent.utils import call_sync_or_async
 from agex.eval.core import evaluate_program
@@ -25,6 +26,7 @@ from .common import (
     LLMFail,
     Namespaced,
     SuccessEvent,
+    TaskCancelled,
     TaskClarify,
     TaskContinue,
     TaskFail,
@@ -34,6 +36,8 @@ from .common import (
     Versioned,
     _AgentExit,
     add_event_to_log,
+    # Helpers
+    check_cancellation,
     check_for_task_call,
     create_action_event,
     create_clarify_event,
@@ -168,6 +172,31 @@ class AsyncLoopMixin:
 
         # Main task loop
         for iteration in range(self.max_iterations):
+            # Check for cancellation at the start of each iteration
+            if check_cancellation(task_name, versioned_state, exec_state):
+                # Snapshot before raising to preserve state
+                if versioned_state is not None:
+                    versioned_state.snapshot()
+
+                # Record CancelledEvent in the log
+                cancelled_event = CancelledEvent(
+                    agent_name=self.name,
+                    task_name=task_name,
+                    iterations_completed=iteration,
+                )
+                add_event_to_log(exec_state, cancelled_event, on_event=None)
+                if on_event:
+                    res = call_sync_or_async(on_event, cancelled_event)
+                    if inspect.isawaitable(res):
+                        await res
+                yield cancelled_event
+
+                raise TaskCancelled(
+                    message=f"Task '{task_name}' was cancelled",
+                    task_name=task_name,
+                    iterations_completed=iteration,
+                )
+
             maybe_summarize_event_log(self, exec_state, system_message, on_event)
             all_events = get_events_from_log(exec_state)
             forefront_msg = self._get_forefront_message(iteration, exec_state)
@@ -310,7 +339,9 @@ class AsyncLoopMixin:
                     result = versioned_state.snapshot()
                     if result.unsaved_keys:
                         warning_output = create_unsaved_warning(
-                            self.name, result.unsaved_keys, f"{self.name}/"
+                            self.name,
+                            result.unsaved_keys,
+                            "",  # No namespace prefix
                         )
                         add_event_to_log(exec_state, warning_output, on_event=None)
                         if on_event:
@@ -325,7 +356,9 @@ class AsyncLoopMixin:
             result = versioned_state.snapshot()
             if result.unsaved_keys:
                 warning_output = create_unsaved_warning(
-                    self.name, result.unsaved_keys, f"{self.name}/"
+                    self.name,
+                    result.unsaved_keys,
+                    "",  # No namespace prefix
                 )
                 add_event_to_log(exec_state, warning_output, on_event=None)
                 if on_event:
