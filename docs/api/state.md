@@ -176,36 +176,75 @@ See [Task - Concurrency Control](task.md#concurrency-control) for details.
 
 Versioned state handles unpicklable objects gracefully. Agents can use database cursors, file handles, etc. - they work for single-turn use. Accessing them in later turns shows a clear error with solutions.
 
-## Advanced: Direct State Objects
+## Advanced: Direct State Construction
 
-For advanced use cases, you can create state objects directly:
+> [!NOTE]
+> Most users should use `connect_state()` for configuration. Direct construction is for advanced use cases requiring fine-grained control or custom storage backends.
+
+For advanced use cases, you can construct state objects directly instead of using the factory function:
+
+### Direct Versioned State
 
 ```python
-from agex import Versioned, Live, Disk
+from agex import Versioned, Live, Disk, Memory
 
-# Direct Versioned with disk backend
+# Equivalent to connect_state(type="versioned", storage="disk", path="/path")
 state = Versioned(Disk("/path/to/storage"))
 
-# With garbage collection for long-running agents
-from agex import GCVersioned
+# Equivalent to connect_state(type="versioned", storage="memory")
+state = Versioned(Memory())
+
+# Equivalent to connect_state(type="live")
+state = Live()
+```
+
+### Garbage Collection for Long-Running Agents
+
+For agents that accumulate large state histories over many iterations, use `GCVersioned` to automatically prune old commits:
+
+```python
+from agex import GCVersioned, Disk
+
 state = GCVersioned(
     Disk("/path/to/storage"),
-    high_water_bytes=100 * 1024 * 1024,  # 100MB
+    high_water_bytes=100 * 1024 * 1024,  # Trigger GC at 100MB
+    low_water_bytes=50 * 1024 * 1024,    # Target 50MB after GC
 )
 ```
 
+When state size exceeds `high_water_bytes`, the oldest commits are pruned until size drops below `low_water_bytes`. This prevents unbounded growth in long-running agents.
+
 ### Custom Storage Backends
 
-Implement the `KVStore` interface for custom backends:
+Implement the `KVStore` interface to use custom storage backends (Redis, S3, etc.):
 
 ```python
 from agex.state.kv import KVStore
 
 class RedisStore(KVStore):
-    def get(self, key: str) -> bytes | None: ...
-    def set(self, key: str, value: bytes) -> None: ...
-    def cas(self, key: str, value: bytes, expected: bytes | None) -> bool: ...
-    # ... other abstract methods
+    def get(self, key: str) -> bytes | None:
+        """Retrieve value for key, or None if not found."""
+        ...
+    
+    def set(self, key: str, value: bytes) -> None:
+        """Store value for key."""
+        ...
+    
+    def cas(self, key: str, value: bytes, expected: bytes | None) -> bool:
+        """Compare-and-swap: set value only if current value matches expected."""
+        ...
+    
+    def delete(self, key: str) -> None:
+        """Delete key."""
+        ...
+    
+    def list_keys(self, prefix: str = "") -> list[str]:
+        """List all keys with optional prefix filter."""
+        ...
+
+# Use with Versioned state
+from agex import Versioned
+state = Versioned(RedisStore(host="localhost", port=6379))
 ```
 
 ## Quick Reference
