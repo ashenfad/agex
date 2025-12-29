@@ -131,7 +131,11 @@ state = connect_state(type="live", storage="disk")  # Raises ValueError
 > **7-day TTL**: Modal Dict entries expire after 7 days of inactivity. Reads refresh the TTL, so active sessions persist indefinitely. Use `storage="disk"` for truly permanent state.
 
 > [!WARNING]
-> **Modal Sub-Agent Limitation**: Sub-agents with Modal hosts cannot currently be registered as capabilities on parent agents. This prevents double-serialization overhead. This limitation may be relaxed in the future to allow Modal containers to spawn new Modal functions. For now, use HTTP hosts for explicit distributed multi-agent workflows.
+> **Modal Sub-Agent Limitations**:
+> - **No nested Modal hosts**: Sub-agents with Modal hosts cannot yet be registered on parent agents.
+> - **No sub-agent state**: When the parent uses Modal, sub-agents cannot yet have persistent state (`type="versioned"` or `type="live"`). Sub-agents must use ephemeral state (no `state=` parameter).
+>
+> For multi-agent workflows requiring sub-agent persistence, run the parent locally.
 
 ### HTTP/Remote Execution
 

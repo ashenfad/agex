@@ -127,6 +127,25 @@ class RegistrationMixin(BaseAgent):
                             f"will execute sub-agent tasks locally."
                         )
 
+                    # Check for sub-agent state when parent uses Modal
+                    # Sub-agents with persistent state aren't supported on Modal yet
+                    # because Modal Dict/Volume for sub-agents can't be provisioned
+                    parent_host = getattr(self, "_host", None)
+                    if parent_host is not None and not isinstance(parent_host, Local):
+                        sub_agent_state = getattr(owning_agent, "_state_config", None)
+                        if sub_agent_state is not None:
+                            state_type = getattr(sub_agent_state, "type", "ephemeral")
+                            if state_type != "ephemeral":
+                                parent_host_type = type(parent_host).__name__
+                                raise ValueError(
+                                    f"Cannot register task '{final_name}' from a sub-agent "
+                                    f"with state=connect_state(type='{state_type}', ...). "
+                                    f"When the parent agent uses {parent_host_type} host, "
+                                    f"sub-agents cannot have persistent state. "
+                                    f"Use state=None (ephemeral) for sub-agents, or run "
+                                    f"the parent locally."
+                                )
+
                 if final_name in RESERVED_NAMES:
                     raise ValueError(
                         f"The name '{final_name}' is reserved and cannot be registered."
