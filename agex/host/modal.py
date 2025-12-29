@@ -526,6 +526,13 @@ class Modal(Host):
             if extra_packages:
                 image = image.pip_install(*extra_packages)
 
+        # Add local packages to the image via add_local_python_source
+        # IMPORTANT: This must come AFTER all pip_install calls
+        # Modal mounts these at startup rather than embedding in image layer
+        if deps.local_packages:
+            for pkg_name in deps.local_packages:
+                image = image.add_local_python_source(pkg_name)
+
         # Configure secrets
         modal_secrets = [modal.Secret.from_name(s) for s in self.secrets]
 

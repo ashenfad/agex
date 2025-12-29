@@ -8,6 +8,7 @@ class Dependencies:
     python_version: str
     agex_version: str
     packages: list[str] = field(default_factory=list)
+    local_packages: list[str] = field(default_factory=list)
 
     @property
     def id(self) -> str:
@@ -15,7 +16,11 @@ class Dependencies:
         import hashlib
 
         # Sort packages to ensure stable ID
-        payload = f"py{self.python_version}-agex{self.agex_version}-" + "-".join(
-            sorted(self.packages)
+        # Include both PyPI packages and local packages in hash
+        payload = (
+            f"py{self.python_version}-agex{self.agex_version}-"
+            + "-".join(sorted(self.packages))
+            + "-local-"
+            + "-".join(sorted(self.local_packages))
         )
         return hashlib.sha256(payload.encode()).hexdigest()[:12]
