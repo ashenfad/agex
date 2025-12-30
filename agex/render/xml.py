@@ -9,6 +9,8 @@ from typing import Any, List
 
 from agex.agent.events import (
     ActionEvent,
+    CancelledEvent,
+    ClarifyEvent,
     ErrorEvent,
     Event,
     FailEvent,
@@ -19,13 +21,21 @@ from agex.agent.events import (
     TaskStartEvent,
 )
 from agex.llm.core import ContentPart, ImagePart, TextPart
-from agex.llm.xml import TAG_OBSERVATION, TAG_PYTHON, TAG_THINKING, TAG_TITLE
+from agex.llm.xml import (
+    TAG_CANCELLED,
+    TAG_CLARIFY,
+    TAG_FAIL,
+    TAG_OBSERVATION,
+    TAG_PYTHON,
+    TAG_SUCCESS,
+    TAG_THINKING,
+    TAG_TITLE,
+)
 from agex.render.primitives import (
     HI_DETAIL_BUDGET,
     LOW_DETAIL_BUDGET,
-    render_fail,
+    ValueRenderer,
     render_output_parts_full,
-    render_success,
     render_summary,
     render_task_start,
 )
@@ -114,14 +124,36 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                     messages.append({"role": "user", "content": content})
 
         elif isinstance(event, SuccessEvent):
-            # Render success marker with appropriate budget
-            text, _ = render_success(event.result, budget=budget)
-            messages.append({"role": "assistant", "content": text})
+            # Render result and wrap in TASK_SUCCESS tag
+            # We use ValueRenderer directly to get the string representation
+            # instead of render_success which adds emoji text
+
+            # Use similar logic to render_success but without the emoji wrapper
+            estimated_chars = budget * 4
+            max_depth = 2 if budget == LOW_DETAIL_BUDGET else 4
+            max_items = 10 if budget == LOW_DETAIL_BUDGET else 25
+
+            renderer = ValueRenderer(
+                max_len=estimated_chars,
+                max_depth=max_depth,
+                max_items=max_items,
+            )
+            rendered = renderer.render(event.result)
+
+            content = f"<{TAG_SUCCESS}>{rendered}</{TAG_SUCCESS}>"
+            messages.append({"role": "assistant", "content": content})
 
         elif isinstance(event, FailEvent):
-            # Render fail marker using primitives
-            text, _ = render_fail(event.message)
-            messages.append({"role": "assistant", "content": text})
+            content = f"<{TAG_FAIL}>{event.message}</{TAG_FAIL}>"
+            messages.append({"role": "assistant", "content": content})
+
+        elif isinstance(event, ClarifyEvent):
+            content = f"<{TAG_CLARIFY}>{event.message}</{TAG_CLARIFY}>"
+            messages.append({"role": "assistant", "content": content})
+
+        elif isinstance(event, CancelledEvent):
+            content = f"<{TAG_CANCELLED}>Task '{event.task_name}' cancelled after {event.iterations_completed} iterations</{TAG_CANCELLED}>"
+            messages.append({"role": "assistant", "content": content})
 
         elif isinstance(event, SummaryEvent):
             # Render summary event using primitives

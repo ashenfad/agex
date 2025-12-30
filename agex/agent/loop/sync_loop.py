@@ -77,6 +77,15 @@ class SyncLoopMixin:
         )
         events_yielded = len(events(exec_state))
 
+        # Clear any stale cancellation signal from a previous run.
+        # This handles the race condition where a cancel arrives just as the previous
+        # task finishes - we don't want it to immediately cancel this fresh task.
+        cancel_key = f"__agex_cancel__{task_name}"
+        if versioned_state is not None:
+            versioned_state.remove_raw(cancel_key)
+        elif hasattr(exec_state, "remove"):
+            exec_state.remove(cancel_key)
+
         # Build system message and initial task message
         system_message = self._build_system_message()
         initial_task_message = self._build_task_message(
@@ -134,11 +143,7 @@ class SyncLoopMixin:
         for iteration in range(self.max_iterations):
             # Check for cancellation at the start of each iteration
             if check_cancellation(task_name, versioned_state, exec_state):
-                # Snapshot before raising to preserve state
-                if versioned_state is not None:
-                    versioned_state.snapshot()
-
-                # Record CancelledEvent in the log
+                # Record CancelledEvent in the log FIRST
                 cancelled_event = CancelledEvent(
                     agent_name=self.name,
                     task_name=task_name,
@@ -146,6 +151,10 @@ class SyncLoopMixin:
                 )
                 add_event_to_log(exec_state, cancelled_event, on_event=on_event)
                 yield cancelled_event
+
+                # Snapshot AFTER adding the event so it's included
+                if versioned_state is not None:
+                    versioned_state.snapshot()
 
                 raise TaskCancelled(
                     message=f"Task '{task_name}' was cancelled",
@@ -266,7 +275,7 @@ class SyncLoopMixin:
                         warning_output = create_unsaved_warning(
                             self.name,
                             result.unsaved_keys,
-                            "",  # No namespace prefix
+                            list(exec_state.keys()),
                         )
                         add_event_to_log(exec_state, warning_output, on_event=on_event)
                         yield warning_output
@@ -352,13 +361,14 @@ class SyncLoopMixin:
                 if versioned_state is not None:
                     versioned_state.reset()
 
-            except (TaskFail, TaskClarify):
+            except (TaskFail, TaskClarify, _AgentExit):
                 if versioned_state is not None:
                     try:
                         if on_conflict == "abandon":
                             versioned_state.merge(on_conflict="abandon")
                         else:
                             versioned_state.merge()
+
                     except ConcurrencyError:
                         if on_conflict != "abandon":
                             raise

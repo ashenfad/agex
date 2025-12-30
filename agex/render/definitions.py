@@ -44,9 +44,19 @@ def _is_sub_agent_function(fn: Any) -> bool:
 
 
 def _render_type_annotation(
-    annotation: Any, available_classes: set[str] | None = None
+    annotation: Any,
+    available_classes: set[str] | None = None,
+    strip_all_modules: bool = False,
 ) -> str:
-    """Renders a type annotation to a string, handling complex types."""
+    """Renders a type annotation to a string, handling complex types.
+
+    Args:
+        annotation: The type annotation to render
+        available_classes: Set of class names that are directly available (no import needed)
+        strip_all_modules: If True, strip ALL module prefixes from type names.
+                          Use this for directly-registered classes where all referenced
+                          types are implicitly available.
+    """
     if annotation is inspect.Parameter.empty or annotation is None:
         return ""
 
@@ -56,6 +66,20 @@ def _render_type_annotation(
     # Clean up common boilerplate for better readability
     s = s.replace("typing.", "")
     s = s.replace("<class '", "").replace("'>", "")
+
+    # If strip_all_modules is True, remove ALL module prefixes
+    # This is used for directly-registered classes where referenced types
+    # (like ResponsePart in Response.parts) are implicitly available
+    if strip_all_modules:
+        import re
+
+        # Match any module path prefix (e.g., "foo.bar.baz.ClassName" -> "ClassName")
+        # Handle patterns like: module.submodule.ClassName, __main__.ClassName
+        s = re.sub(
+            r"\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\.([A-Z][a-zA-Z0-9_]*)\b",
+            r"\1",
+            s,
+        )
 
     # Clean up module prefixes for available classes
     if available_classes:
@@ -130,6 +154,7 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
                         spec_to_render,
                         available_classes=available_classes,
                         full=full,
+                        strip_all_modules=True,  # Direct registrations - strip all module prefixes
                     )
                 )
 
@@ -693,6 +718,7 @@ def _render_function(
     is_method=False,
     available_classes: set[str] | None = None,
     full: bool = False,
+    strip_all_modules: bool = False,
 ) -> str:
     """Renders a single function or method signature."""
     prefix = indent
@@ -739,7 +765,9 @@ def _render_function(
             continue
 
         param_str = p_name
-        type_str = _render_type_annotation(p.annotation, available_classes)
+        type_str = _render_type_annotation(
+            p.annotation, available_classes, strip_all_modules=strip_all_modules
+        )
         if type_str:
             param_str += f": {type_str}"
 
@@ -749,7 +777,9 @@ def _render_function(
 
     return_str = ""
     ret_type_str = _render_type_annotation(
-        signature.return_annotation, available_classes
+        signature.return_annotation,
+        available_classes,
+        strip_all_modules=strip_all_modules,
     )
     if ret_type_str:
         return_str = f" -> {ret_type_str}"
@@ -780,6 +810,7 @@ def _render_class(
     indent: str = "",
     available_classes: set[str] | None = None,
     full: bool = False,
+    strip_all_modules: bool = False,
 ) -> str:
     """Renders a single class definition based on its visibility."""
     member_indent = indent + "    "
@@ -788,6 +819,16 @@ def _render_class(
     if full or spec.visibility == "high":
         cls_doc = getattr(spec.cls, "__doc__", None)
         if cls_doc:
+            # For directly-registered classes, strip module prefixes from docstring
+            # (e.g., dataclass auto-generated signatures contain module.ClassName)
+            if strip_all_modules:
+                import re
+
+                cls_doc = re.sub(
+                    r"\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\.([A-Z][a-zA-Z0-9_]*)\b",
+                    r"\1",
+                    cls_doc,
+                )
             output.append(_render_docstring(cls_doc, indent=member_indent, full=full))
     init_str = []
     attr_strs = []
@@ -821,6 +862,7 @@ def _render_class(
                 is_method=True,
                 available_classes=available_classes,
                 full=full,
+                strip_all_modules=strip_all_modules,
             )
         )
 
@@ -856,7 +898,7 @@ def _render_class(
                 continue
             type_hint = ""
             if attr_name in attr_type_hints:
-                type_hint = f": {_render_type_annotation(attr_type_hints[attr_name], available_classes)}"
+                type_hint = f": {_render_type_annotation(attr_type_hints[attr_name], available_classes, strip_all_modules=strip_all_modules)}"
             attr_strs.append(f"{member_indent}{attr_name}{type_hint}")
 
         # Render methods
@@ -887,6 +929,7 @@ def _render_class(
                     is_method=True,
                     available_classes=available_classes,
                     full=full,
+                    strip_all_modules=strip_all_modules,
                 )
             )
 
