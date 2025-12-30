@@ -308,6 +308,15 @@ class Versioned(State):
             else:
                 current_hash = None
 
+    @property
+    def initial_commit(self) -> str:
+        """
+        Return the hash of the initial (root) commit.
+        Useful for reverting state completely to the beginning.
+        """
+        # History yields newest-first, so the last item is the initial commit
+        return list(self.history())[-1]
+
     def _detect_mutations(self) -> tuple[dict[str, bytes], list[str]]:
         """Detect mutations in accessed objects and auto-save them.
 
@@ -545,11 +554,65 @@ class Versioned(State):
         Args:
             commit_hash: The commit to checkout
         """
-        # First, validate that the commit is in our history.
-        if commit_hash not in list(self.history()):
+        # Validate that the commit exists
+        if self.long_term.get(COMMIT_KEYSET % commit_hash) is None:
             return None
 
         return Versioned(self.long_term, commit_hash=commit_hash)
+
+    def revert_to(self, commit_hash: str) -> bool:
+        """
+        Reset HEAD to a previous commit, discarding later history.
+
+        This moves HEAD backward to the specified commit, making all
+        commits after it orphaned. Orphaned commits can be cleaned up
+        by GCVersioned.
+
+        Args:
+            commit_hash: The commit to revert to (must be in history)
+
+        Returns:
+            True if revert succeeded, False if commit not in history
+        """
+        # Validate that the commit exists
+        if self.long_term.get(COMMIT_KEYSET % commit_hash) is None:
+            return False
+
+        # Update HEAD to point to this commit
+        self.long_term.set(HEAD_COMMIT, pickle.dumps(commit_hash))
+
+        # Reset local state to match (same logic as reset())
+        self.current_commit = commit_hash
+        self.base_commit = commit_hash
+
+        # Reload commit keys
+        commit_keyset_bytes = self.long_term.get(COMMIT_KEYSET % commit_hash)
+        if commit_keyset_bytes is not None:
+            self.commit_keys = pickle.loads(commit_keyset_bytes)
+        else:
+            self.commit_keys = {}
+
+        # Reload metadata
+        meta_bytes = self.long_term.get(META_KEY % commit_hash)
+        if meta_bytes is not None:
+            try:
+                self.meta = pickle.loads(meta_bytes)
+            except Exception:
+                self.meta = {}
+        else:
+            self.meta = {}
+
+        # Reset working state
+        self.live = Live()
+        self.removed = set()
+        self.accessed_objects.clear()
+        self._touch_counter = (
+            max((entry.last_touch for entry in self.meta.values()), default=0)
+            if self.meta
+            else 0
+        )
+
+        return True
 
     def diffs(self, commit_hash: str | None = None) -> dict[str, Any]:
         """
