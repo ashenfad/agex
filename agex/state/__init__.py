@@ -10,12 +10,13 @@ from .kv import KVStore
 from .live import Live
 from .namespaced import Namespaced
 from .scoped import Scoped
-from .versioned import ConcurrencyError, Versioned
+from .versioned import ConcurrencyError, Versioned, get_commit_hash
 
 __all__ = [
     "State",
     "StateConfig",
     "is_live_root",
+    "get_commit_hash",
     "Live",
     "KVStore",
     "Namespaced",

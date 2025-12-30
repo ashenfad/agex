@@ -49,8 +49,9 @@ from .common import (
     create_task_start_event,
     create_unsaved_warning,
     events,
-    get_events_from_log,
     # State helpers
+    get_commit_hash,
+    get_events_from_log,
     initialize_exec_state,
     is_live_root,
     yield_new_events,
@@ -183,12 +184,17 @@ class AsyncLoopMixin:
         for iteration in range(self.max_iterations):
             # Check for cancellation at the start of each iteration
             if check_cancellation(task_name, versioned_state, exec_state):
+                # Pre-generate commit hash so the terminal event can reference
+                # the commit that will include it
+                next_commit = get_commit_hash() if versioned_state else None
+
                 # Record CancelledEvent in the log FIRST
                 cancelled_event = CancelledEvent(
                     agent_name=self.name,
                     task_name=task_name,
                     iterations_completed=iteration,
                 )
+                cancelled_event.commit_hash = next_commit
                 add_event_to_log(exec_state, cancelled_event, on_event=None)
                 if on_event:
                     res = call_sync_or_async(on_event, cancelled_event)
@@ -198,7 +204,7 @@ class AsyncLoopMixin:
 
                 # Snapshot AFTER adding the event so it's included
                 if versioned_state is not None:
-                    versioned_state.snapshot()
+                    versioned_state.snapshot(commit_hash=next_commit)
 
                 raise TaskCancelled(
                     message=f"Task '{task_name}' was cancelled",
@@ -256,13 +262,23 @@ class AsyncLoopMixin:
                     yield event
                 events_yielded = len(events(exec_state))
 
+                # Pre-generate commit hash so the terminal event can reference
+                # the commit that will include it
+                next_commit = get_commit_hash() if versioned_state else None
+
                 success_event = create_success_event(self.name, task_signal.result)
+                success_event.commit_hash = next_commit
                 add_event_to_log(exec_state, success_event, on_event=None)
                 if on_event:
                     res = call_sync_or_async(on_event, success_event)
                     if inspect.isawaitable(res):
                         await res
                 yield success_event
+
+                # Snapshot with the pre-generated hash so event.commit_hash matches
+                if versioned_state is not None:
+                    versioned_state.snapshot(commit_hash=next_commit)
+
                 return
 
             except TaskContinue:
@@ -276,13 +292,22 @@ class AsyncLoopMixin:
                     yield event
                 events_yielded = len(events(exec_state))
 
+                # Pre-generate commit hash so the terminal event can reference
+                # the commit that will include it
+                next_commit = get_commit_hash() if versioned_state else None
+
                 clarify_event = create_clarify_event(self.name, task_clarify.message)
+                clarify_event.commit_hash = next_commit
                 add_event_to_log(exec_state, clarify_event, on_event=None)
                 if on_event:
                     res = call_sync_or_async(on_event, clarify_event)
                     if inspect.isawaitable(res):
                         await res
                 yield clarify_event
+
+                # Snapshot with the pre-generated hash so event.commit_hash matches
+                if versioned_state is not None:
+                    versioned_state.snapshot(commit_hash=next_commit)
 
                 if isinstance(state, Namespaced):
                     raise EvalError(
@@ -296,13 +321,22 @@ class AsyncLoopMixin:
                     yield event
                 events_yielded = len(events(exec_state))
 
+                # Pre-generate commit hash so the terminal event can reference
+                # the commit that will include it
+                next_commit = get_commit_hash() if versioned_state else None
+
                 fail_event = create_fail_event(self.name, task_fail.message)
+                fail_event.commit_hash = next_commit
                 add_event_to_log(exec_state, fail_event, on_event=None)
                 if on_event:
                     res = call_sync_or_async(on_event, fail_event)
                     if inspect.isawaitable(res):
                         await res
                 yield fail_event
+
+                # Snapshot with the pre-generated hash so event.commit_hash matches
+                if versioned_state is not None:
+                    versioned_state.snapshot(commit_hash=next_commit)
 
                 if isinstance(state, Namespaced):
                     raise EvalError(f"Sub-agent failed: {task_fail.message}", None)

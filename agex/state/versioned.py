@@ -354,7 +354,15 @@ class Versioned(State):
 
         return mutations, unsavable_keys
 
-    def snapshot(self) -> SnapshotResult:
+    def snapshot(self, commit_hash: str | None = None) -> SnapshotResult:
+        """Create a new commit with the current changes.
+
+        Args:
+            commit_hash: Optional pre-generated commit hash. If provided, this hash
+                will be used for the new commit. This is useful when the commit hash
+                needs to be known before the snapshot is taken (e.g., for stamping
+                terminal events with their post-snapshot commit).
+        """
         # First, detect any mutations in accessed objects
         mutations, unsavable_keys = self._detect_mutations()
         unsaved_keys = list(unsavable_keys)
@@ -364,7 +372,7 @@ class Versioned(State):
             self.accessed_objects.clear()  # Clear tracking
             return SnapshotResult(self.current_commit, unsaved_keys)
 
-        new_hash = _get_commit_hash()
+        new_hash = commit_hash or _get_commit_hash()
         diffs = {}
         new_commit_keys = {}
         new_meta: dict[str, MetaEntry] = {}

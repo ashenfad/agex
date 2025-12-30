@@ -41,6 +41,7 @@ from agex.state import (
     Namespaced,
     Versioned,
     events,
+    get_commit_hash,
     is_live_root,
 )
 from agex.state.log import add_event_to_log, get_events_from_log
@@ -60,6 +61,7 @@ __all__ = [
     "create_guidance_output",
     "create_unsaved_warning",
     # State helpers
+    "get_commit_hash",
     "initialize_exec_state",
     "check_for_task_call",
     "strip_namespace_prefix",
