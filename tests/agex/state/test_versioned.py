@@ -364,3 +364,140 @@ def test_reset_reloads_from_head():
     assert state2.get("b") is None
     assert state2.current_commit == state1.current_commit
     assert state2.base_commit == state1.current_commit
+
+
+def test_revert_to_moves_head_to_earlier_commit():
+    """Test that revert_to moves HEAD to an earlier commit."""
+    import pickle
+
+    from agex.state.versioned import HEAD_COMMIT
+
+    store = kv.Memory()
+    state = Versioned(store)
+
+    # Create some history
+    state.set("a", 1)
+    state.snapshot()
+    state.merge()
+    commit1 = state.current_commit
+
+    state.set("a", 2)
+    state.snapshot()
+    state.merge()
+
+    state.set("a", 3)
+    state.snapshot()
+    state.merge()
+    commit3 = state.current_commit
+
+    # Verify we're at commit3
+    assert state.get("a") == 3
+    assert state.current_commit == commit3
+
+    # Revert to commit1
+    result = state.revert_to(commit1)
+    assert result is True
+
+    # Verify state is now at commit1
+    assert state.get("a") == 1
+    assert state.current_commit == commit1
+    assert state.base_commit == commit1
+
+    # HEAD should be updated in the store
+    head = pickle.loads(store.get(HEAD_COMMIT))
+    assert head == commit1
+
+
+def test_revert_to_orphans_later_commits():
+    """Test that revert_to leaves later commits as orphans."""
+    store = kv.Memory()
+    state = Versioned(store)
+
+    # Create some history
+    state.set("a", 1)
+    state.snapshot()
+    state.merge()
+    commit1 = state.current_commit
+
+    state.set("a", 2)
+    state.snapshot()
+    state.merge()
+    commit2 = state.current_commit
+
+    # Revert to commit1
+    state.revert_to(commit1)
+
+    # History should only go back to commit1, not to commit2
+    history = list(state.history())
+    assert commit1 in history
+    assert commit2 not in history  # commit2 is now orphaned
+
+
+def test_revert_to_returns_false_for_invalid_commit():
+    """Test that revert_to returns False for commits not in history."""
+    store = kv.Memory()
+    state = Versioned(store)
+
+    state.set("a", 1)
+    state.snapshot()
+    state.merge()
+
+    # Try to revert to a non-existent commit
+    result = state.revert_to("nonexistent_hash")
+    assert result is False
+
+    # State should be unchanged
+    assert state.get("a") == 1
+
+
+def test_revert_to_clears_local_changes():
+    """Test that revert_to clears any uncommitted local changes."""
+    store = kv.Memory()
+    state = Versioned(store)
+
+    state.set("a", 1)
+    state.snapshot()
+    state.merge()
+    commit1 = state.current_commit
+
+    # Make local changes without committing
+    state.set("b", 2)
+
+    # Revert to commit1
+    state.revert_to(commit1)
+
+    # Local changes should be gone
+    assert state.get("a") == 1
+    assert state.get("b") is None
+    assert "b" not in list(state.keys())
+
+
+def test_versioned_initial_commit():
+    """Test that initial_commit returns the root commit hash."""
+    store = kv.Memory()
+    state = Versioned(store)
+
+    # Initial state has one commit (the root)
+    root = state.current_commit
+    assert root is not None
+    assert state.initial_commit == root
+
+    # Add more commits
+    state.set("a", 1)
+    state.snapshot()
+    commit1 = state.current_commit
+
+    state.set("b", 2)
+    state.snapshot()
+    commit2 = state.current_commit
+
+    # initial_commit should remain the same
+    assert state.initial_commit == root
+    assert state.initial_commit != commit1
+    assert state.initial_commit != commit2
+
+    # Revert to initial works
+    state.revert_to(state.initial_commit)
+    assert state.current_commit == root
+    assert state.get("a") is None
+    assert state.get("b") is None

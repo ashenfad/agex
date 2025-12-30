@@ -142,7 +142,10 @@ state = connect_state(type="versioned", storage="disk", path="/var/agex/state")
 
 ### Automatic Checkpointing
 
-Every agent iteration creates a snapshot. You can inspect or rollback to any point:
+Every agent iteration creates a snapshot. You can inspect historical states or revert the agent to a previous point in time.
+
+**Inspecting History (Read-Only)**
+Use `checkout()` to get a read-only view of the state at a specific commit:
 
 ```python
 from agex import events, view
@@ -150,11 +153,25 @@ from agex import events, view
 # Get events after a task run
 all_events = events(resolved_state)
 
-# Each event has a commit_hash for time-travel debugging
+# Inspect state as it was when an action occurred
 action = all_events[0]
 historical = resolved_state.checkout(action.commit_hash)
 print(view(historical, focus="full"))
 ```
+
+**Reverting State (Destructive)**
+Use `revert_to()` to move the agent's HEAD back to a previous commit. This orphans all subsequent commits (which can be cleaned up by GC).
+
+```python
+# Revert to the state after a specific successful task
+success_event = all_events[-1]
+resolved_state.revert_to(success_event.commit_hash)
+
+# The agent continues from this point as if later actions never happened
+```
+
+> [!TIP]
+> Use `state.initial_commit` to get the hash of the very first commit (the empty root state). This is useful for resetting the agent completely.
 
 ### Concurrent Task Handling
 
