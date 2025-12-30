@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] - 2025-12-29
+
+### Fixed
+- **Cancellation Persistence**: `CancelledEvent` and preceding events now correctly persisted to disk
+  - Moved `snapshot()` after cancellation event is added to log in sync/async loops
+- **Stale Cancel Signals**: Cancel signals from previous task runs no longer affect subsequent tasks
+  - Clears any pre-existing cancellation sentinel at task start
+- **Class Registration Rendering**: Type hints in registered classes now show clean names
+  - Strips module prefixes from type annotations (e.g., `ResponsePart` instead of `agex_ui.core.responses.ResponsePart`)
+  - Applies to class docstrings, `__init__` signatures, and attribute types
+
 ## [0.8.3] - 2025-12-29
 
 ### Added
@@ -114,6 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed event token count defaults and detail thresholds
   - Garbage collection restricted to orphaned events only
 
+[0.8.4]: https://github.com/ashenfad/agex/releases/tag/v0.8.4
 [0.8.3]: https://github.com/ashenfad/agex/releases/tag/v0.8.3
 [0.8.2]: https://github.com/ashenfad/agex/releases/tag/v0.8.2
 [0.8.1]: https://github.com/ashenfad/agex/releases/tag/v0.8.1
