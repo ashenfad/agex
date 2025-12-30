@@ -48,6 +48,9 @@ class Dummy(LLM):
         self.summary_response: str | None = None
         self.summary_exception: Exception | None = None
 
+        # Renderer selection
+        self.renderer = kwargs.get("renderer", "markdown")
+
     def dump_config(self) -> dict:
         """Serialize client configuration for transport."""
         # Serialize LLMResponse objects; skip Exceptions (can't serialize)
@@ -83,14 +86,20 @@ class Dummy(LLM):
         self.all_systems.append(system)
         self.all_events.append(events)
 
-        # Exercise the same rendering path as real clients
-        # This will call render_item_stream() and _serialize_image_to_base64()
-        # allowing us to see what happens when images fail to serialize
-        from agex.render.events import render_events_as_markdown
+        # Exercise the rendering path
+        renderer_type = getattr(self, "renderer", "markdown")
 
         has_unsupported_images = False
         try:
-            messages_dicts = render_events_as_markdown(events)
+            if renderer_type == "xml":
+                from agex.render.xml import render_events_as_xml
+
+                messages_dicts = render_events_as_xml(events)
+            else:
+                from agex.render.events import render_events_as_markdown
+
+                messages_dicts = render_events_as_markdown(events)
+
             # Store rendered messages for inspection
             self.all_rendered_messages = getattr(self, "all_rendered_messages", [])
             self.all_rendered_messages.append(messages_dicts)

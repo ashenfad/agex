@@ -64,23 +64,25 @@ class TestRenderEventsAsXML:
         assert "6" in messages[0]["content"]
 
     def test_success_event(self):
-        """Test rendering SuccessEvent."""
+        """Test rendering SuccessEvent with XML tag."""
         events = [SuccessEvent(agent_name="test_agent", result=6)]
         messages = render_events_as_xml(events)
 
         assert len(messages) == 1
         assert messages[0]["role"] == "assistant"
-        assert "✅ Task completed:" in messages[0]["content"]
+        assert "<TASK_SUCCESS>" in messages[0]["content"]
+        assert "</TASK_SUCCESS>" in messages[0]["content"]
         assert "6" in messages[0]["content"]
 
     def test_fail_event(self):
-        """Test rendering FailEvent."""
+        """Test rendering FailEvent with XML tag."""
         events = [FailEvent(agent_name="test_agent", message="Invalid input")]
         messages = render_events_as_xml(events)
 
         assert len(messages) == 1
         assert messages[0]["role"] == "assistant"
-        assert "❌ Task failed:" in messages[0]["content"]
+        assert "<TASK_FAIL>" in messages[0]["content"]
+        assert "</TASK_FAIL>" in messages[0]["content"]
         assert "Invalid input" in messages[0]["content"]
 
     def test_multiple_events(self):

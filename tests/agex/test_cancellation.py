@@ -79,14 +79,14 @@ class TestTaskCancellation:
         assert _get_cancel_sentinel(bob_state, "my_task") is None
 
     def test_task_raises_cancelled_when_sentinel_present(self):
-        """Task raises TaskCancelled when sentinel is in state at iteration start."""
-        # Use multiple responses - first succeeds, second should be cancelled
+        """Task raises TaskCancelled when sentinel is set during execution."""
+        # Use multiple responses - first iteration sets cancel, second should be cancelled
         llm = Dummy(
             responses=[
-                # First task run - completes normally
-                LLMResponse(thinking="First", code='task_success("first")'),
-                # Second task run - won't complete due to cancel
-                LLMResponse(thinking="Second", code='task_success("second")'),
+                # First iteration - task_continue to allow another iteration
+                LLMResponse(thinking="First", code='task_continue("working")'),
+                # Second iteration - won't complete due to cancel
+                LLMResponse(thinking="Second", code='task_success("done")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -96,17 +96,19 @@ class TestTaskCancellation:
             """A task that can be cancelled."""
             pass
 
-        # First run succeeds
-        result = cancellable_task()
-        assert result == "first"
+        iteration_count = [0]
 
-        # Set cancellation sentinel before second run (directly in KV store)
-        state = agent.state()
-        _set_cancel_sentinel(state, "cancellable_task")
+        def on_event(event):
+            # Set cancel after first ActionEvent (during first iteration)
+            if type(event).__name__ == "ActionEvent":
+                iteration_count[0] += 1
+                if iteration_count[0] == 1:
+                    state = agent.state()
+                    _set_cancel_sentinel(state, "cancellable_task")
 
-        # Second run should raise TaskCancelled
+        # Run should raise TaskCancelled on second iteration
         with pytest.raises(TaskCancelled) as exc_info:
-            cancellable_task()
+            cancellable_task(on_event=on_event)
 
         assert exc_info.value.task_name == "cancellable_task"
         assert "cancelled" in exc_info.value.message.lower()
@@ -115,7 +117,7 @@ class TestTaskCancellation:
         """When task is cancelled, sentinel is removed from state."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="First", code='task_success("ok")'),
+                LLMResponse(thinking="First", code='task_continue("working")'),
                 LLMResponse(thinking="Second", code='task_success("ok")'),
             ]
         )
@@ -126,30 +128,28 @@ class TestTaskCancellation:
             """Task."""
             pass
 
-        # First run to initialize state
-        my_task()
-
-        # Set sentinel (directly in KV store)
-        state = agent.state()
-        _set_cancel_sentinel(state, "my_task")
+        def on_event(event):
+            # Set cancel after first ActionEvent
+            if type(event).__name__ == "ActionEvent":
+                state = agent.state()
+                _set_cancel_sentinel(state, "my_task")
 
         # Run should raise but clean up sentinel
         with pytest.raises(TaskCancelled):
-            my_task()
+            my_task(on_event=on_event)
 
-        # Sentinel should be gone
+        # Sentinel should be gone (cleaned up by check_cancellation)
         state = agent.state()
         assert _get_cancel_sentinel(state, "my_task") is None
 
     def test_cancelled_iterations_completed(self):
         """TaskCancelled includes iterations_completed count."""
-        # Task that requires multiple iterations
+        # Task that runs multiple iterations before cancel
         llm = Dummy(
             responses=[
-                # First run - complete
-                LLMResponse(thinking="Working", code='task_success("done")'),
-                # Second run - will be cancelled at start (0 iterations)
-                LLMResponse(thinking="Working", code='task_success("done")'),
+                LLMResponse(thinking="Iteration 0", code='task_continue("working")'),
+                LLMResponse(thinking="Iteration 1", code='task_continue("working")'),
+                LLMResponse(thinking="Won't run", code='task_success("done")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -159,26 +159,32 @@ class TestTaskCancellation:
             """Task."""
             pass
 
-        # First run
-        my_task()
+        iteration_count = [0]
 
-        # Set sentinel before second run (directly in KV store)
-        state = agent.state()
-        _set_cancel_sentinel(state, "my_task")
+        def on_event(event):
+            # Set cancel after second ActionEvent (iteration 1)
+            if type(event).__name__ == "ActionEvent":
+                iteration_count[0] += 1
+                if iteration_count[0] == 2:
+                    state = agent.state()
+                    _set_cancel_sentinel(state, "my_task")
 
-        # Second run cancelled at iteration 0
+        # Run should be cancelled at iteration 2
         with pytest.raises(TaskCancelled) as exc_info:
-            my_task()
+            my_task(on_event=on_event)
 
-        assert exc_info.value.iterations_completed == 0
+        # Should have completed 2 iterations before cancellation
+        assert exc_info.value.iterations_completed == 2
 
     def test_different_tasks_have_separate_sentinels(self):
         """Each task has its own cancel sentinel."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="A", code='task_success("a")'),
+                # task_a iter 0 - task_continue then cancel set
+                LLMResponse(thinking="A0", code='task_continue("a0")'),
+                # task_a iter 1 - not reached, cancel detected
+                # task_b uses this next
                 LLMResponse(thinking="B", code='task_success("b")'),
-                LLMResponse(thinking="A2", code='task_success("a2")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -193,16 +199,19 @@ class TestTaskCancellation:
             """Task B."""
             pass
 
-        # Run both to initialize
-        task_a()
-        task_b()
+        def on_event_cancel_a(event):
+            # Set cancel for task_a after first ActionEvent
+            if type(event).__name__ == "ActionEvent":
+                state = agent.state()
+                _set_cancel_sentinel(state, "task_a")
 
-        # Cancel only task_a
-        task_a.cancel()
-
-        # task_a should be cancelled
+        # task_a should be cancelled (cancel set during first iteration)
         with pytest.raises(TaskCancelled):
-            task_a()
+            task_a(on_event=on_event_cancel_a)
+
+        # task_b should NOT be cancelled (different sentinel)
+        result = task_b()
+        assert result == "b"
 
     def test_cancel_with_versioned_disk_state(self, tmp_path):
         """cancel() works with disk-backed versioned state."""
@@ -231,17 +240,65 @@ class TestTaskCancellation:
         state = agent.state()
         assert _get_cancel_sentinel(state, "my_task") is True
 
+    def test_cancelled_tag_rendering(self):
+        """Verify that cancellation is rendered in history with the correct XML tag."""
+        from agex.llm.xml import TAG_CANCELLED
+
+        llm = Dummy(
+            responses=[
+                # Run 1: First iteration (task_continue), cancel set during this
+                LLMResponse(thinking="Run 1 iter 0", code='task_continue("working")'),
+                # Run 1: Won't complete due to cancel
+                LLMResponse(thinking="Run 1 iter 1", code='task_success("done")'),
+                # Run 2: Should see history of Run 1 cancellation
+                LLMResponse(thinking="Run 2", code='task_success("done")'),
+            ],
+            renderer="xml",  # Enable XML rendering for verification of tags
+        )
+        agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
+
+        @agent.task
+        def my_task() -> str:
+            """Task."""
+            pass
+
+        def on_event_set_cancel(event):
+            # Set cancel after first ActionEvent
+            if type(event).__name__ == "ActionEvent":
+                state = agent.state()
+                _set_cancel_sentinel(state, "my_task")
+
+        # Run 1: Should raise TaskCancelled and log event
+        with pytest.raises(TaskCancelled):
+            my_task(on_event=on_event_set_cancel)
+
+        # Run 2: Should see the cancellation in history
+        my_task()
+
+        # Inspect messages sent to LLM in the last call
+        # all_rendered_messages is list of message lists
+        last_call_messages = llm.all_rendered_messages[-1]
+
+        # Convert messages to single string for search
+        history_text = str(last_call_messages)
+
+        # Verify XML tag is present
+        expected_tag = f"<{TAG_CANCELLED}>"
+        assert (
+            expected_tag in history_text
+        ), f"Expected {expected_tag} in history, got: {history_text}"
+
 
 class TestTaskCancellationAsync:
     """Async-specific cancellation tests."""
 
     @pytest.mark.asyncio
     async def test_async_task_raises_cancelled(self):
-        """Async task raises TaskCancelled when sentinel is present."""
+        """Async task raises TaskCancelled when cancel is set during execution."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="First", code='task_success("first")'),
-                LLMResponse(thinking="Second", code='task_success("second")'),
+                LLMResponse(thinking="First", code='task_continue("working")'),
+                LLMResponse(thinking="Second", code='task_success("done")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -251,17 +308,15 @@ class TestTaskCancellationAsync:
             """Async task."""
             pass
 
-        # First run succeeds
-        result = await async_task()
-        assert result == "first"
+        async def on_event_set_cancel(event):
+            # Set cancel after first ActionEvent
+            if type(event).__name__ == "ActionEvent":
+                state = agent.state()
+                _set_cancel_sentinel(state, "async_task")
 
-        # Set sentinel (directly in KV store)
-        state = agent.state()
-        _set_cancel_sentinel(state, "async_task")
-
-        # Second run should be cancelled
+        # Should be cancelled on second iteration
         with pytest.raises(TaskCancelled):
-            await async_task()
+            await async_task(on_event=on_event_set_cancel)
 
 
 class TestCancelledEvent:
@@ -273,7 +328,7 @@ class TestCancelledEvent:
 
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Working", code='task_success("done")'),
+                LLMResponse(thinking="First", code='task_continue("working")'),
                 LLMResponse(thinking="Second", code='task_success("done")'),
             ]
         )
@@ -284,16 +339,15 @@ class TestCancelledEvent:
             """Task."""
             pass
 
-        # First run to initialize state
-        my_task()
-
-        # Set sentinel (directly in KV store)
-        state = agent.state()
-        _set_cancel_sentinel(state, "my_task")
+        def on_event_set_cancel(event):
+            # Set cancel after first ActionEvent
+            if type(event).__name__ == "ActionEvent":
+                state = agent.state()
+                _set_cancel_sentinel(state, "my_task")
 
         # Run should raise
         with pytest.raises(TaskCancelled):
-            my_task()
+            my_task(on_event=on_event_set_cancel)
 
         # Check that CancelledEvent was recorded
         state = agent.state()
@@ -302,7 +356,7 @@ class TestCancelledEvent:
 
         assert len(cancelled_events) == 1
         assert cancelled_events[0].task_name == "my_task"
-        assert cancelled_events[0].iterations_completed == 0
+        assert cancelled_events[0].iterations_completed == 1
 
     def test_cancelled_event_callback(self):
         """on_event callback receives CancelledEvent."""
@@ -310,7 +364,7 @@ class TestCancelledEvent:
 
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Working", code='task_success("done")'),
+                LLMResponse(thinking="Working", code='task_continue("working")'),
                 LLMResponse(thinking="Second", code='task_success("done")'),
             ]
         )
@@ -321,18 +375,20 @@ class TestCancelledEvent:
             """Task."""
             pass
 
-        # First run
-        my_task()
-
-        # Set sentinel (directly in KV store)
-        state = agent.state()
-        _set_cancel_sentinel(state, "my_task")
-
         # Track events via callback
         received_events = []
+        cancel_set = [False]
+
+        def on_event(event):
+            received_events.append(event)
+            # Set cancel after first ActionEvent
+            if not cancel_set[0] and type(event).__name__ == "ActionEvent":
+                cancel_set[0] = True
+                state = agent.state()
+                _set_cancel_sentinel(state, "my_task")
 
         with pytest.raises(TaskCancelled):
-            my_task(on_event=lambda e: received_events.append(e))
+            my_task(on_event=on_event)
 
         # Check that callback received CancelledEvent
         cancelled_events = [e for e in received_events if isinstance(e, CancelledEvent)]
@@ -414,12 +470,14 @@ class TestConcurrentCancellation:
         # Should have completed at least 1 iteration before cancellation
         assert result_holder["exception"].iterations_completed >= 1
 
-    def test_cancel_before_task_starts(self, tmp_path):
-        """Cancel before task even starts - should cancel on first iteration."""
+    def test_stale_cancel_signal_cleared_at_task_start(self, tmp_path):
+        """Stale cancel signal from previous run is cleared when new task starts."""
         llm = Dummy(
             responses=[
                 LLMResponse(thinking="First run", code='task_success("first")'),
-                LLMResponse(thinking="Won't run", code='task_success("second")'),
+                LLMResponse(
+                    thinking="Second run should complete", code='task_success("second")'
+                ),
             ]
         )
         agent = Agent(
@@ -432,17 +490,16 @@ class TestConcurrentCancellation:
             """A task."""
             pass
 
-        # Initialize state by running once
-        my_task()
+        # First run initializes state
+        result1 = my_task()
+        assert result1 == "first"
 
-        # Cancel before starting second run
+        # Set cancel signal (simulating a late cancel after task finished)
         my_task.cancel()
 
-        # Now run - should be cancelled at iteration 0
-        with pytest.raises(TaskCancelled) as exc_info:
-            my_task()
-
-        assert exc_info.value.iterations_completed == 0
+        # Second run should NOT be cancelled - stale signal should be cleared
+        result2 = my_task()
+        assert result2 == "second"  # Task completed normally, stale signal was cleared
 
     def test_cancel_sentinel_persists_to_disk(self, tmp_path):
         """Verify that cancel sentinel is persisted to disk storage."""
@@ -473,12 +530,14 @@ class TestConcurrentCancellation:
         assert _get_cancel_sentinel(state, "my_task") is True
 
     @pytest.mark.asyncio
-    async def test_async_cancel_before_execution(self, tmp_path):
-        """Cancel async task before it runs."""
+    async def test_async_stale_cancel_signal_cleared(self, tmp_path):
+        """Stale cancel signal is cleared at async task start."""
         llm = Dummy(
             responses=[
                 LLMResponse(thinking="Init", code='task_success("first")'),
-                LLMResponse(thinking="Won't run", code='task_success("second")'),
+                LLMResponse(
+                    thinking="Second run completes", code='task_success("second")'
+                ),
             ]
         )
         agent = Agent(
@@ -492,14 +551,15 @@ class TestConcurrentCancellation:
             pass
 
         # Initialize
-        await async_task()
+        result1 = await async_task()
+        assert result1 == "first"
 
-        # Cancel
+        # Set stale cancel (simulating late cancel after task finished)
         async_task.cancel()
 
-        # Should be cancelled on next run
-        with pytest.raises(TaskCancelled):
-            await async_task()
+        # Should NOT be cancelled - stale signal cleared
+        result2 = await async_task()
+        assert result2 == "second"
 
     @pytest.mark.asyncio
     async def test_async_cancel_during_multi_iteration_task(self, tmp_path):
