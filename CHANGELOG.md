@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.8.5] - 2025-12-30
+
+### Added
+- **State Reversion**: New `state.revert_to(commit_hash)` method to rollback agent state to a previous point
+- **Event Commits**: Terminal events (`SuccessEvent`, etc.) now capture the commit hash *after* the result is snapshotted
+  - Enables "revert to this result" workflows using `state.revert_to(event.commit_hash)`
+
 ## [0.8.4] - 2025-12-29
 
 ### Fixed
@@ -125,6 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed event token count defaults and detail thresholds
   - Garbage collection restricted to orphaned events only
 
+[0.8.5]: https://github.com/ashenfad/agex/releases/tag/v0.8.5
 [0.8.4]: https://github.com/ashenfad/agex/releases/tag/v0.8.4
 [0.8.3]: https://github.com/ashenfad/agex/releases/tag/v0.8.3
 [0.8.2]: https://github.com/ashenfad/agex/releases/tag/v0.8.2
