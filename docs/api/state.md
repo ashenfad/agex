@@ -11,6 +11,7 @@ state_config = connect_state(
     type: Literal["versioned", "live"] = "versioned",
     storage: Literal["memory", "disk"] = "memory",
     path: str | None = None,  # Required for disk storage
+    init: Callable[[], dict] | dict | None = None,  # Initialize state vars
 )
 ```
 
@@ -21,6 +22,7 @@ state_config = connect_state(
 | `type` | `str` | `"versioned"` | State type: `"versioned"` (with checkpointing) or `"live"` (in-memory only) |
 | `storage` | `str` | `"memory"` | Storage backend: `"memory"` or `"disk"` |
 | `path` | `str \| None` | `None` | Path for disk storage (required when `storage="disk"`) |
+| `init` | `Callable \| dict \| None` | `None` | Initialize state variables on first session creation |
 
 ## State Types
 
@@ -137,6 +139,41 @@ state = connect_state(type="versioned", storage="disk", path="/var/agex/state")
 ```
 
 **Use for:** Production, remote execution, long-running workflows.
+
+## State Initialization
+
+The `init` parameter lets you populate state variables when a session is first created. This is useful for loading data that should be mutable within state (e.g., calendars, datasets, config objects).
+
+```python
+from agex import Agent, connect_state
+
+def load_initial_data():
+    """Called once per new session."""
+    return {
+        "calendar": load_calendar("events.ics"),
+        "config": {"theme": "dark", "locale": "en"},
+    }
+
+agent = Agent(
+    primer="You manage my calendar.",
+    state=connect_state(
+        type="versioned",
+        storage="disk",
+        path="/tmp/agex/calendar",
+        init=load_initial_data,  # Callable - deferred until first session
+    ),
+)
+```
+
+**How it works:**
+1. On first access to a session, `init()` is called (or dict is used directly)
+2. Each key-value pair is set in state
+3. A sentinel (`__agex_init__`) marks the session as initialized
+4. For versioned state, a snapshot is committed
+5. Subsequent calls skip init (sentinel detected)
+
+> [!TIP]
+> Use a callable for lazy initialization - it defers loading until the session is actually created, avoiding work at agent definition time.
 
 ## Features of Versioned State
 
