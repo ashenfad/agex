@@ -12,6 +12,31 @@ if TYPE_CHECKING:
     from agex.host.dependencies import Dependencies
     from agex.state import State
     from agex.state.config import StateConfig
+    from agex.state.kv import KVStore
+
+
+def apply_init_if_fresh(
+    state: "State",
+    kv: "KVStore",
+    init: "Callable[[], dict[str, Any]] | dict[str, Any] | None",
+) -> None:
+    """Apply init vars if state is fresh (no sentinel).
+
+    Args:
+        state: The state object to initialize variables on
+        kv: The underlying KVStore to check for sentinel
+        init: Callable or dict of init variables (or None to skip)
+    """
+    if init is not None and "__agex_init__" not in kv:
+        init_vars = init() if callable(init) else init
+        for key, value in init_vars.items():
+            state.set(key, value)
+        state.set("__agex_init__", True)
+        # Commit snapshot for versioned state
+        from agex.state import Versioned
+
+        if isinstance(state, Versioned):
+            state.snapshot()
 
 
 class Host(ABC):

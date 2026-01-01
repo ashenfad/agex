@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from agex.host.base import Host
+from agex.host.base import Host, apply_init_if_fresh
 from agex.host.local import Local
 from agex.state import Live, Versioned
 from agex.state.kv.modal_dict import ModalDict
@@ -297,7 +297,9 @@ class ModalLocal(Local):
 
             cache = Disk(str(cache_dir))
             kv = Composite([cache, source, volume])
-            return Versioned(store=kv)
+            state = Versioned(store=kv)
+            apply_init_if_fresh(state, kv, config.init)
+            return state
 
         else:
             # Two-tier: Disk → ModalDict (memory storage)
@@ -314,7 +316,9 @@ class ModalLocal(Local):
 
             cache = Disk(str(cache_dir))
             kv = Composite([cache, source])
-            return Versioned(store=kv)
+            state = Versioned(store=kv)
+            apply_init_if_fresh(state, kv, config.init)
+            return state
 
     def execute(
         self,

@@ -85,6 +85,8 @@ class Local(Host):
         from agex.state import Live, Versioned
         from agex.state.gc import GCVersioned
 
+        from .base import apply_init_if_fresh
+
         if config.type == "versioned":
             state: "State" = Versioned(store=kv)
             # Wrap with GC if high_water_bytes is set
@@ -94,11 +96,15 @@ class Local(Host):
                     high_water_bytes=config.high_water_bytes,
                     low_water_bytes=config.low_water_bytes,
                 )
-            return state
         elif config.type == "live":
-            return Live()
+            state = Live()
         else:  # ephemeral
-            return Live()
+            state = Live()
+
+        # Apply init if provided and state is fresh
+        apply_init_if_fresh(state, kv, config.init)
+
+        return state
 
     def execute(
         self,

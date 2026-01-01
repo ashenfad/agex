@@ -1,6 +1,6 @@
 """A state management system for tic agents."""
 
-from typing import Literal, cast
+from typing import Any, Callable, Literal, cast
 
 from ..agent.events import Event
 from .config import StateConfig
@@ -32,6 +32,7 @@ __all__ = [
 def connect_state(
     type: Literal["ephemeral", "versioned", "live"],
     storage: str | None = None,
+    init: "Callable[[], dict[str, Any]] | dict[str, Any] | None" = None,
     **kwargs,
 ) -> StateConfig:
     """
@@ -40,6 +41,9 @@ def connect_state(
     Args:
         type: State semantics ("ephemeral", "versioned", or "live")
         storage: Storage backend ("memory" or "disk"). Not required for ephemeral.
+        init: Callable or dict to initialize state variables on first session creation.
+              If a callable, it will be invoked when the session is first created.
+              The returned dict keys become variable names in the agent's namespace.
         **kwargs: Type and storage-specific arguments
 
     Storage-specific kwargs:
@@ -66,6 +70,14 @@ def connect_state(
             storage="disk",
             path="~/.agex/state",
             high_water_bytes=100_000_000,
+        )
+
+        # Versioned with initial variables
+        connect_state(
+            type="versioned",
+            storage="disk",
+            path="/tmp/agex/tmnt",
+            init=lambda: {"leo": load_cal("leo.ics"), ...},
         )
     """
     # Validate storage requirements
@@ -97,6 +109,7 @@ def connect_state(
         high_water_bytes=kwargs.get("high_water_bytes"),
         low_water_bytes=kwargs.get("low_water_bytes"),
         options=options if options else None,
+        init=init,
     )
 
 
