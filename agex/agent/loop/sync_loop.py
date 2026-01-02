@@ -41,13 +41,11 @@ from .common import (
     create_success_event,
     # Event factories
     create_task_start_event,
-    create_unsaved_warning,
     events,
     # State helpers
     get_commit_hash,
     get_events_from_log,
     initialize_exec_state,
-    is_live_root,
     yield_new_events,
 )
 
@@ -301,32 +299,6 @@ class SyncLoopMixin:
                     add_event_to_log(exec_state, guidance_output, on_event=on_event)
                     yield guidance_output
                     events_yielded += 1
-
-            finally:
-                if versioned_state is not None and not is_live_root(exec_state):
-                    result = versioned_state.snapshot()
-                    if result.unsaved_keys:
-                        warning_output = create_unsaved_warning(
-                            self.name,
-                            result.unsaved_keys,
-                            list(exec_state.keys()),
-                        )
-                        add_event_to_log(exec_state, warning_output, on_event=on_event)
-                        yield warning_output
-                        events_yielded += 1
-
-        # Final snapshot
-        if versioned_state is not None:
-            result = versioned_state.snapshot()
-            if result.unsaved_keys:
-                warning_output = create_unsaved_warning(
-                    self.name,
-                    result.unsaved_keys,
-                    "",  # No namespace prefix
-                )
-                add_event_to_log(exec_state, warning_output, on_event=on_event)
-                yield warning_output
-                events_yielded += 1
 
         raise TaskTimeout(
             f"Task '{task_name}' exceeded maximum iterations ({self.max_iterations})"
