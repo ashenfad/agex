@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.8.6] - 2026-01-02
+
+### Added
+- **State Init Variables**: Variables from `connect_state(init={...})` are now available in the agent's execution namespace
+
+### Changed
+- **Per-Task Snapshots**: State is now only snapshotted on task completion (success, fail, clarify, cancelled)
+
 ## [0.8.5] - 2025-12-30
 
 ### Added
@@ -133,6 +141,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed event token count defaults and detail thresholds
   - Garbage collection restricted to orphaned events only
 
+[0.8.6]: https://github.com/ashenfad/agex/releases/tag/v0.8.6
 [0.8.5]: https://github.com/ashenfad/agex/releases/tag/v0.8.5
 [0.8.4]: https://github.com/ashenfad/agex/releases/tag/v0.8.4
 [0.8.3]: https://github.com/ashenfad/agex/releases/tag/v0.8.3
