@@ -47,13 +47,11 @@ from .common import (
     create_success_event,
     # Event factories
     create_task_start_event,
-    create_unsaved_warning,
     events,
     # State helpers
     get_commit_hash,
     get_events_from_log,
     initialize_exec_state,
-    is_live_root,
     yield_new_events,
 )
 
@@ -376,40 +374,6 @@ class AsyncLoopMixin:
                             await res
                     yield guidance_output
                     events_yielded += 1
-
-            finally:
-                if versioned_state is not None and not is_live_root(exec_state):
-                    result = versioned_state.snapshot()
-                    if result.unsaved_keys:
-                        warning_output = create_unsaved_warning(
-                            self.name,
-                            result.unsaved_keys,
-                            "",  # No namespace prefix
-                        )
-                        add_event_to_log(exec_state, warning_output, on_event=None)
-                        if on_event:
-                            res = call_sync_or_async(on_event, warning_output)
-                            if inspect.isawaitable(res):
-                                await res
-                        yield warning_output
-                        events_yielded += 1
-
-        # Final snapshot
-        if versioned_state is not None:
-            result = versioned_state.snapshot()
-            if result.unsaved_keys:
-                warning_output = create_unsaved_warning(
-                    self.name,
-                    result.unsaved_keys,
-                    "",  # No namespace prefix
-                )
-                add_event_to_log(exec_state, warning_output, on_event=None)
-                if on_event:
-                    res = call_sync_or_async(on_event, warning_output)
-                    if inspect.isawaitable(res):
-                        await res
-                yield warning_output
-                events_yielded += 1
 
         raise TaskTimeout(
             f"Task '{task_name}' exceeded maximum iterations ({self.max_iterations})"
