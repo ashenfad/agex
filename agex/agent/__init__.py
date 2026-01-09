@@ -6,6 +6,7 @@ from ..llm import LLM
 from .base import BaseAgent, clear_agent_registry, register_agent, resolve_agent
 
 if TYPE_CHECKING:
+    from ..fs.config import FSConfig
     from ..state.config import StateConfig
 
 # Data types and exceptions
@@ -75,6 +76,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         host: Host | None = None,
         # State configuration (optional, defaults to ephemeral)
         state: "StateConfig | None" = None,
+        # Filesystem configuration (optional, defaults to no access)
+        fs: "FSConfig | None" = None,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
@@ -97,6 +100,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
                 Use HTTP(url=...) for remote execution.
             state: State configuration (optional). Use connect_state() to create.
                 Defaults to ephemeral (fresh state per task call).
+            fs: Filesystem configuration (optional). Use connect_fs() to create.
+                Enables virtual filesystem access for agents.
             log_high_water_tokens: Trigger event log summarization when total tokens
                 exceed this threshold. If None, no summarization is performed.
             log_low_water_tokens: Target token count after summarization. Defaults to
@@ -114,6 +119,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             llm_max_retries=llm_max_retries,
             host=host,
             state=state,
+            fs=fs,
             log_high_water_tokens=log_high_water_tokens,
             log_low_water_tokens=log_low_water_tokens,
             agex_primer_override=agex_primer_override,

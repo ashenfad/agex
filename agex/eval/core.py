@@ -137,14 +137,34 @@ def evaluate_program(
         main_loop=main_loop,
     )
 
+    # Set up VFS context if agent has filesystem configured
+    vfs_context = None
+    if hasattr(agent, "_fs_config") and agent._fs_config is not None:
+        from agex.fs import VirtualFS, swap_agent_fs_functions, with_virtual_fs
+
+        # Swap any registered fs functions (like open) with VFS-aware wrappers
+        # This handles the case where agent.fn(open) registered the real function
+        swap_agent_fs_functions(agent)
+
+        vfs = VirtualFS(state)
+        vfs_context = with_virtual_fs(vfs)
+
     try:
-        evaluator.visit(tree)
-    except _ReturnException as e:
-        # Convert return statement outside function to a helpful error
-        raise EvalError(
-            "'return' outside function. You're in an agent environment, not a regular Python function. "
-            "Use task_success(result) to complete your task, not return.",
-            e.node,
-        )
+        # Enter VFS context if configured
+        if vfs_context is not None:
+            vfs_context.__enter__()
+
+        try:
+            evaluator.visit(tree)
+        except _ReturnException as e:
+            # Convert return statement outside function to a helpful error
+            raise EvalError(
+                "'return' outside function. You're in an agent environment, not a regular Python function. "
+                "Use task_success(result) to complete your task, not return.",
+                e.node,
+            )
     finally:
         evaluator.cleanup_with_bindings()
+        # Exit VFS context if we entered it
+        if vfs_context is not None:
+            vfs_context.__exit__(None, None, None)
