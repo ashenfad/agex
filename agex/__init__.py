@@ -13,6 +13,7 @@ from .agent.events import (
     SummaryEvent,
     TaskStartEvent,
 )
+from .fs import connect_fs
 from .host import Host, connect_host
 from .llm import LLM, connect_llm
 from .render.capabilities import summarize_capabilities
@@ -34,6 +35,8 @@ __all__ = [
     "Live",
     "Namespaced",
     "events",
+    # Filesystem
+    "connect_fs",
     # Task Control Exceptions & Functions
     "TaskFail",
     "TaskClarify",

@@ -8,6 +8,8 @@ from .fingerprint import compute_agent_fingerprint_from_policy
 from .policy.policy import AgentPolicy
 
 if TYPE_CHECKING:
+    from ..fs.config import FSConfig
+    from ..fs.virtual import VirtualFS
     from ..host import Host
     from ..host.dependencies import Dependencies
     from ..state import State
@@ -109,6 +111,8 @@ class BaseAgent:
         host: "Host | None" = None,
         # State configuration (optional, defaults to ephemeral)
         state: "StateConfig | None" = None,
+        # Filesystem configuration (optional, defaults to no access)
+        fs: "FSConfig | None" = None,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
@@ -142,6 +146,9 @@ class BaseAgent:
 
         # State configuration (None = ephemeral)
         self._state_config: "StateConfig | None" = state
+
+        # Filesystem configuration (None = no access)
+        self._fs_config: "FSConfig | None" = fs
 
         # Validate state config is compatible with the host
         if self._state_config is not None:
@@ -337,3 +344,44 @@ class BaseAgent:
             ValueError: If the state doesn't exist yet (run a task first)
         """
         return self._host.state(self._state_config, session, self.fingerprint or "")
+
+    def fs(self, session: str = "default") -> "VirtualFS":
+        """
+        Get filesystem accessor for a session.
+
+        This allows external code (like UI) to read/write files to the virtual
+        filesystem that is accessible to agent tasks. Files are stored in the
+        agent's state and participate in versioning.
+
+        Example:
+            from agex import Agent, connect_fs, connect_state
+
+            agent = Agent(
+                state=connect_state(type="versioned", storage="disk", path="/tmp/state"),
+                fs=connect_fs(type="virtual"),
+            )
+
+            # Upload a file from UI
+            fs = agent.fs()
+            fs.write("shared/data.csv", csv_bytes)
+
+            # File is now accessible to agent tasks via open()
+
+        Args:
+            session: Session identifier (default: "default")
+
+        Returns:
+            VirtualFS interface with read(), write(), list(), exists(), remove() methods
+
+        Raises:
+            ValueError: If agent was not configured with fs=connect_fs(...)
+        """
+        if not self._fs_config:
+            raise ValueError(
+                "Agent not configured with filesystem. Use fs=connect_fs(...)"
+            )
+
+        from agex.fs import VirtualFS
+
+        state = self.state(session)
+        return VirtualFS(state)
