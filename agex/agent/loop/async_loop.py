@@ -165,6 +165,7 @@ class AsyncLoopMixin:
                         program=setup,
                         agent=self,
                         state=exec_state,
+                        session=session,  # ADDED
                         eval_timeout_seconds=self.eval_timeout_seconds,
                         on_event=setup_on_event,
                         on_token=thread_safe_on_token,
@@ -248,6 +249,7 @@ class AsyncLoopMixin:
                             program=code_to_evaluate,
                             agent=self,
                             state=exec_state,
+                            session=session,  # ADDED
                             eval_timeout_seconds=self.eval_timeout_seconds,
                             on_event=thread_safe_on_event,
                             on_token=thread_safe_on_token,

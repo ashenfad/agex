@@ -1,14 +1,26 @@
 # Filesystem Configuration
 
-The `connect_fs()` factory function configures agent filesystem access. By default, agents have no filesystem access. You can enable a virtual filesystem (VFS) backed by agent state.
+The `connect_fs()` factory function configures agent filesystem access. By default, agents with IO capabilities (e.g., via `register_io()`) have unrestricted access to the host filesystem. Use `connect_fs()` to restrict access to:
+- **Virtual filesystem (VFS)**: In-memory filesystem backed by agent state
+- **Isolated filesystem**: Real filesystem access restricted to a specific directory
+
+> [!NOTE]
+> When `fs=connect_fs(...)` is configured, `register_io()` is automatically applied during task execution, giving the agent access to file operations (`open()`, `os.listdir()`, etc.) that are routed through VFS or validated against the isolated root.
 
 ## `connect_fs()` API
 
 ```python
 from agex import connect_fs
 
+# Virtual filesystem (in-memory, state-backed)
+fs_config = connect_fs(type="virtual")
+
+# Isolated filesystem (real filesystem, path-restricted)
 fs_config = connect_fs(
-    type: Literal["virtual"] = "virtual",
+    type="isolated",
+    root="/path/to/workspace",  # Required: must exist
+    tracking=True,              # Optional: emit FileEvents
+    per_session=True,           # Optional: create session subdirectories
 )
 ```
 
@@ -16,26 +28,25 @@ fs_config = connect_fs(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `type` | `str` | `"virtual"` | Filesystem type: `"virtual"` (in-memory/state-backed). Future versions may support `"real"` for sandboxed local access. |
+| `type` | `str` | `"virtual"` | Filesystem type: `"virtual"` or `"isolated"` |
+| `root` | `str` | — | (isolated only) Absolute path to root directory. Must exist. |
+| `tracking` | `bool` | `False` | (isolated only) Whether to track file changes for FileEvents |
+| `per_session` | `bool` | `False` | (isolated only) Whether to create session-specific subdirectories |
 
 ## Virtual Filesystem (VFS)
 
-The Virtual Filesystem provides a secure, state-backed filesystem for agents. It allows agents to perform standard Python file operations (`open()`, `os.listdir()`, etc.) that are routed to the agent's state instead of the host's real filesystem.
+The Virtual Filesystem provides a secure, state-backed filesystem for agents. Files exist only in memory/state, not on the host filesystem.
 
 ### Key Features
 
-*   **State-Backed**: Files are stored as keys in the agent's state (e.g., in memory or on disk, depending on `connect_state`).
-*   **Versioned**: If using `versioned` state, file changes are checkpointed and can be rolled back along with variable changes.
-*   **Secure**: Agents cannot access the host's real filesystem, preventing accidental or malicious damage.
-*   **Standard Library Support**: Common filesystem operations (`open()`, `os.listdir()`, `os.path.exists()`, `os.stat()`, etc.) are automatically patched to work with VFS.
-*   **Metadata**: Tracks creation time, modification time, and size for all files.
-*   **Events**: Emits `FileEvent` when files are added, modified, or removed (by user or agent).
+- **State-Backed**: Files stored as keys in agent state
+- **Versioned**: If using `versioned` state, file changes are checkpointed and can be rolled back
+- **Secure**: No access to host filesystem
+- **Standard Library Support**: `open()`, `os.listdir()`, `os.path.exists()`, `os.stat()`, etc.
+- **Metadata**: Tracks creation time, modification time, and size
+- **Events**: Emits `FileEvent` when files are added, modified, or removed
 
-## Usage
-
-### 1. Configure the Agent
-
-Enable the VFS by passing `fs=connect_fs()` to the Agent constructor:
+### Usage
 
 ```python
 from agex import Agent, connect_fs, connect_state
@@ -46,12 +57,112 @@ agent = Agent(
 )
 ```
 
-### 2. External File Access (User Side)
+## Isolated Filesystem
 
-Use the `agent.fs(session)` accessor to manage files from outside the agent (e.g., uploading files from a UI):
+The Isolated Filesystem provides restricted access to a real directory on the host filesystem. All operations are validated to stay within the root boundary.
+
+### Key Features
+
+- **Real Files**: Operates on actual filesystem (not in-memory)
+- **Path Restriction**: All paths validated to stay within root directory
+- **Security**: Prevents path traversal attacks (`../`, symlinks pointing outside)
+- **Optional Tracking**: Enable `tracking=True` to emit `FileEvent` for changes
+- **Standard Library Support**: Same Python file operations as VFS
+
+### Usage
 
 ```python
-# Get VFS for the default session
+from agex import Agent, connect_fs
+
+agent = Agent(
+    fs=connect_fs(
+        type="isolated",
+        root="/path/to/project",
+        tracking=True,  # Optional: emit FileEvents
+    ),
+)
+```
+
+### Per-Session Isolation
+
+By default, all sessions share the same root directory. Use `per_session=True` to automatically create session-specific subdirectories:
+
+```python
+# Enable per-session isolation
+agent = Agent(
+    fs=connect_fs(
+        type="isolated",
+        root="/data",
+        per_session=True,
+    ),
+)
+
+# Each session gets its own subdirectory
+fs1 = agent.fs(session="user_123")  # Works in /data/user_123/
+fs2 = agent.fs(session="user_456")  # Works in /data/user_456/
+
+# Sessions are completely isolated
+fs1.write("config.txt", b"user 123 settings")
+fs2.write("config.txt", b"user 456 settings")
+```
+
+**Use case**: Multi-tenant applications where each user/session needs isolated file storage.
+
+### Security
+
+The isolated filesystem protects against common filesystem attacks:
+
+- **Path Traversal**: `../../../etc/passwd` → blocked
+- **Absolute Paths**: `/etc/passwd` → blocked  
+- **Symlink Escapes**: Symlinks pointing outside root → blocked
+- **Generic Errors**: No information leakage about host filesystem
+
+```python
+# Agent tries to escape - gets PermissionError
+with open("../../../etc/passwd") as f:  # ❌ Blocked
+    pass
+
+# Agent works within root - works fine
+with open("data/input.txt") as f:  # ✅ Works
+    data = f.read()
+```
+
+### Modal Volumes
+
+Isolated filesystem works seamlessly with Modal volumes:
+
+```python
+# On Modal
+volume = modal.Volume.from_name("my-data")
+
+@app.function(volumes={"/vol": volume})
+def run_agent():
+    agent = Agent(
+        fs=connect_fs(type="isolated", root="/vol/workspace"),
+    )
+    # Agent reads/writes to volume
+```
+
+## Choosing Between VFS and Isolated
+
+| Use Case | Recommended |
+|----------|-------------|
+| Ephemeral workspaces | `virtual` |
+| Testing/development | `virtual` |
+| Processing user uploads (temporary) | `virtual` |
+| State-backed persistence (with versioning) | `virtual` |
+| Accessing existing project files | `isolated` |
+| Working with real files/directories | `isolated` |
+| Per-session isolation in multi-tenant apps | `isolated` with `per_session=True` |
+| Modal/cloud deployments with volumes | `isolated` |
+
+**Note**: Both can persist - VFS persists through state (e.g., `storage="disk"`), isolated persists through real filesystem.
+
+## External File Access (User Side)
+
+Use `agent.fs(session)` to manage files from outside the agent:
+
+```python
 fs = agent.fs(session="default")
 
 # Write a file (upload)
@@ -64,74 +175,46 @@ print(fs.list("data/"))  # ['sales.csv']
 content = fs.read("data/sales.csv")
 ```
 
-### 3. Agent File Access (Task Side)
+This works identically for both `virtual` and `isolated` filesystem types.
 
-Inside a task, the agent can use standard Python file operations. These are automatically intercepted and routed to the VFS:
+## Agent File Access (Task Side)
+
+Inside a task, agents use standard Python file operations:
 
 ```python
 @agent.task
 def analyze_sales():
-    # Standard Python file operations work transparently
     import os
 
     if os.path.exists("data/sales.csv"):
         with open("data/sales.csv", "r") as f:
             data = f.read()
         
-        # os.stat() is also supported for metadata access
-        stat_info = os.stat("data/sales.csv")
-        file_size = stat_info.st_size
-        
-        # Write output
         with open("report.txt", "w") as f:
-            f.write(f"Analyzed {len(data)} bytes (size: {file_size})")
+            f.write(f"Analyzed {len(data)} bytes")
 ```
 
-## Agent Integration
+Operations are automatically routed to VFS or validated against isolated root.
 
-### `agent.fs(session)` API
+## Events
 
-The accessor returned by `agent.fs()` provides a high-level API for VFS manipulation:
+File changes emit `FileEvent` to the event log:
 
-```python
-class AgentAwareVFS:
-    def write(self, path: str, content: bytes) -> None: ...
-    def read(self, path: str) -> bytes: ...
-    def list(self, path: str = "/") -> list[str]: ...
-    def remove(self, path: str) -> None: ...
-    def exists(self, path: str) -> bool: ...
-    
-    # Metadata
-    def stat(self, path: str) -> FileMetadata: ...
-    def list_detailed(self, path: str = "/") -> list[FileInfo]: ...
-```
-
-### Metadata
-
-The VFS tracks metadata for every file. You can access this via `stat()` or `list_detailed()`:
-
-```python
-files = agent.fs().list_detailed("data/")
-for f in files:
-    print(f"{f.name} ({f.size} bytes) - Modified: {f.modified_at}")
-```
-
-### Events
-
-File changes emit `FileEvent` to the event log. This provides visibility into what files were created or changed during a task or via external upload.
-
-*   **User Uploads**: Emitted immediately when calling `fs.write()`.
-*   **Agent Changes**: Batched and emitted at the end of the agent's turn.
+- **VFS**: Always emits events
+- **Isolated**: Emits events when `tracking=True`
 
 ```python
 from agex import events
 
 for event in events(agent.state()):
     if event.type == "file":
-        print(f"File changes: {event.added}, {event.modified}")
+        print(f"Source: {event.file_source}")  # "user" or "agent"
+        print(f"Added: {event.added}")
+        print(f"Modified: {event.modified}")
+        print(f"Removed: {event.removed}")
 ```
 
 ## Next Steps
 
 - **[Agent](agent.md)**: Configure agents
-- **[State](state.md)**: Files are stored in state
+- **[State](state.md)**: Files are stored in state (VFS)

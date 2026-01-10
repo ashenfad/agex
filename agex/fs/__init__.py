@@ -1,18 +1,30 @@
-"""Virtual filesystem support for agex agents.
+"""Filesystem support for agex agents.
 
-This module provides a state-backed virtual filesystem that agents can access
-via standard Python file operations (open, listdir, etc.).
+This module provides both virtual (in-memory) and isolated (restricted real)
+filesystem access for agents via standard Python file operations.
 
 Public API:
     connect_fs: Factory function for configuring filesystem access
     VirtualFS: State-backed virtual filesystem implementation
-    with_virtual_fs: Context manager for setting VFS in current async context
-    swap_agent_fs_functions: Swap registered fs functions with VFS-aware versions
+    IsolatedFS: Real filesystem with path restriction
+    with_virtual_fs: Context manager for virtual FS
+    with_isolated_fs: Context manager for isolated FS
+    swap_agent_fs_functions: Swap registered fs functions with FS-aware versions
 """
 
 from agex.fs.aware import AgentAwareVFS
-from agex.fs.config import FSConfig, connect_fs
-from agex.fs.patching import swap_agent_fs_functions, with_virtual_fs
+from agex.fs.config import (
+    FSConfig,
+    IsolatedFSConfig,
+    VirtualFSConfig,
+    connect_fs,
+)
+from agex.fs.isolated import IsolatedFS
+from agex.fs.patching import (
+    swap_agent_fs_functions,
+    with_isolated_fs,
+    with_virtual_fs,
+)
 from agex.fs.virtual import FileInfo, FileMetadata, VirtualFile, VirtualFS
 
 __all__ = [
@@ -21,8 +33,12 @@ __all__ = [
     "FSConfig",
     "FileInfo",
     "FileMetadata",
-    "VirtualFS",
-    "VirtualFile",
-    "with_virtual_fs",
+    "IsolatedFS",
+    "IsolatedFSConfig",
     "swap_agent_fs_functions",
+    "VirtualFile",
+    "VirtualFS",
+    "VirtualFSConfig",
+    "with_isolated_fs",
+    "with_virtual_fs",
 ]

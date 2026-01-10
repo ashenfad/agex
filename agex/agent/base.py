@@ -349,9 +349,11 @@ class BaseAgent:
         """
         Get filesystem accessor for a session.
 
-        This allows external code (like UI) to read/write files to the virtual
-        filesystem that is accessible to agent tasks. Files are stored in the
-        agent's state and participate in versioning.
+        This allows external code (like UI) to read/write files to the
+        filesystem that is accessible to agent tasks.
+
+        For virtual fs: Files are stored in agent state and participate in versioning.
+        For isolated fs: Files are in the real filesystem, restricted to root directory.
 
         File operations via this accessor automatically emit FileEvents
         so agents can see external file changes in their context.
@@ -359,9 +361,15 @@ class BaseAgent:
         Example:
             from agex import Agent, connect_fs, connect_state
 
+            # Virtual filesystem
             agent = Agent(
                 state=connect_state(type="versioned", storage="disk", path="/tmp/state"),
                 fs=connect_fs(type="virtual"),
+            )
+
+            # Isolated filesystem
+            agent = Agent(
+                fs=connect_fs(type="isolated", root="/project", tracking=True),
             )
 
             # Upload a file from UI
@@ -384,8 +392,28 @@ class BaseAgent:
                 "Agent not configured with filesystem. Use fs=connect_fs(...)"
             )
 
-        from agex.fs import AgentAwareVFS, VirtualFS
+        from agex.fs import AgentAwareVFS, IsolatedFS, VirtualFS
+        from agex.fs.config import IsolatedFSConfig, VirtualFSConfig
 
         state = self.state(session)
-        vfs = VirtualFS(state)
-        return AgentAwareVFS(vfs, state, self.name)
+
+        if isinstance(self._fs_config, VirtualFSConfig):
+            vfs = VirtualFS(state)
+            return AgentAwareVFS(vfs, state, self.name)
+
+        elif isinstance(self._fs_config, IsolatedFSConfig):
+            from agex.eval.core import _get_session_root
+
+            # For isolated fs, only use state if tracking is enabled
+            tracking_state = state if self._fs_config.tracking else None
+
+            # Get session-specific root if per_session is enabled
+            root = _get_session_root(
+                self._fs_config.root, session, self._fs_config.per_session
+            )
+
+            isolated_fs = IsolatedFS(root, tracking_state)
+            return AgentAwareVFS(isolated_fs, state, self.name)
+
+        else:
+            raise ValueError(f"Unsupported filesystem config: {type(self._fs_config)}")
