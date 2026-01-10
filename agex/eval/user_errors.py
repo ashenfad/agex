@@ -76,3 +76,9 @@ class AgexOverflowError(AgexArithmeticError):
     """Raised when the result of an arithmetic operation is too large to be represented."""
 
     pass
+
+
+class AgexAssertionError(AgexError):
+    """Raised when an assert statement fails."""
+
+    pass
