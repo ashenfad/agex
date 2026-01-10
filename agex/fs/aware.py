@@ -71,36 +71,53 @@ class AgentAwareVFS:
 
     # Write operations - emit events
 
+    def _merge(self) -> None:
+        """Merge commits to make changes visible to other sessions."""
+        if hasattr(self._state, "merge"):
+            self._state.merge()
+
     def write(self, path: str, content: bytes) -> None:
-        """Write file and emit event."""
+        """Write file and emit event atomically."""
         is_new = not self._vfs.exists(path)
-        self._vfs.write(path, content)
         self._emit_event(
             added=[path] if is_new else [],
             modified=[path] if not is_new else [],
         )
+        self._vfs.write(path, content)  # Snapshots file + event together
+        self._merge()
 
     def write_many(self, files: dict[str, bytes]) -> None:
-        """Write multiple files and emit single event."""
+        """Write multiple files and emit single event atomically."""
         added = [p for p in files if not self._vfs.exists(p)]
         modified = [p for p in files if self._vfs.exists(p)]
-        self._vfs.write_many(files)
         self._emit_event(added=added, modified=modified)
+        self._vfs.write_many(files)  # Snapshots files + event together
+        self._merge()
 
     def remove(self, path: str) -> None:
-        """Remove file and emit event."""
-        self._vfs.remove(path)
+        """Remove file and emit event atomically."""
+        if not self._vfs.exists(path):
+            raise FileNotFoundError(path)
         self._emit_event(removed=[path])
+        self._vfs.remove(path)  # Snapshots removal + event together
+        self._merge()
 
     def remove_many(self, paths: list[str]) -> None:
-        """Remove multiple files and emit single event."""
-        self._vfs.remove_many(paths)
+        """Remove multiple files and emit single event atomically."""
+        missing = [p for p in paths if not self._vfs.exists(p)]
+        if missing:
+            raise FileNotFoundError(f"Files not found: {', '.join(missing)}")
         self._emit_event(removed=paths)
+        self._vfs.remove_many(paths)  # Snapshots removals + event together
+        self._merge()
 
     def rename(self, src: str, dst: str) -> None:
-        """Rename file and emit event (as removed + added)."""
-        self._vfs.rename(src, dst)
+        """Rename file and emit event atomically."""
+        if not self._vfs.exists(src):
+            raise FileNotFoundError(src)
         self._emit_event(removed=[src], added=[dst])
+        self._vfs.rename(src, dst)  # Snapshots rename + event together
+        self._merge()
 
     # Read-only operations - delegate without events
 
