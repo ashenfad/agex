@@ -55,7 +55,6 @@ task_success(content)""",
             fs=connect_fs(type="virtual"),
             llm=llm,
         )
-        agent.fn(open)  # Register open for file operations
 
         # Upload a file via external API
         fs = agent.fs()
