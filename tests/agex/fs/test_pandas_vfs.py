@@ -1,6 +1,6 @@
 import pandas as pd
 
-from agex import Agent, connect_fs, connect_state, pprint_events
+from agex import Agent, connect_fs, connect_state
 from agex.llm import Dummy, LLMResponse
 
 
@@ -50,7 +50,7 @@ task_success("Processed data")
         """Process the data."""
         pass
 
-    result = process_data(on_event=pprint_events)
+    result = process_data()
 
     # 4. Verify results
     assert result == "Processed data"
