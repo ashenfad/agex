@@ -149,6 +149,13 @@ def evaluate_program(
         vfs = VirtualFS(state)
         vfs_context = with_virtual_fs(vfs)
 
+        # Snapshot metadata AFTER setting up context but BEFORE execution
+        # Note: We capture the VFS reference for later metadata comparison
+        metadata_before = vfs.get_metadata_snapshot()
+    else:
+        vfs = None
+        metadata_before = None
+
     try:
         # Enter VFS context if configured
         if vfs_context is not None:
@@ -168,3 +175,45 @@ def evaluate_program(
         # Exit VFS context if we entered it
         if vfs_context is not None:
             vfs_context.__exit__(None, None, None)
+
+        # Emit FileEvent if files changed during execution
+        if vfs is not None and metadata_before is not None:
+            _emit_file_event_if_changed(agent, state, vfs, metadata_before, on_event)
+
+
+def _emit_file_event_if_changed(
+    agent: BaseAgent,
+    state: State,
+    vfs,
+    metadata_before: dict,
+    on_event: Callable[[Any], None] | None,
+) -> None:
+    """Emit FileEvent if files changed during agent code execution."""
+    from agex.agent.events import FileEvent
+    from agex.state.log import add_event_to_log
+
+    metadata_after = vfs.get_metadata_snapshot()
+
+    before_paths = set(metadata_before.keys())
+    after_paths = set(metadata_after.keys())
+
+    added = list(after_paths - before_paths)
+    removed = list(before_paths - after_paths)
+
+    # Modified = same path but different modified_at timestamp
+    modified = [
+        p
+        for p in before_paths & after_paths
+        if metadata_before[p].modified_at != metadata_after[p].modified_at
+    ]
+
+    # Only emit if something actually changed
+    if added or modified or removed:
+        event = FileEvent(
+            agent_name=agent.name,
+            file_source="agent",
+            added=added,
+            modified=modified,
+            removed=removed,
+        )
+        add_event_to_log(state, event, on_event=on_event)

@@ -14,6 +14,7 @@ from agex.agent.events import (
     ErrorEvent,
     Event,
     FailEvent,
+    FileEvent,
     OutputEvent,
     SuccessEvent,
     SummaryEvent,
@@ -165,6 +166,18 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
         elif isinstance(event, SystemNoteEvent):
             # Render system note as a user message (transient context)
             messages.append({"role": "user", "content": event.message})
+
+        elif isinstance(event, FileEvent):
+            # Render file changes with XML tags
+            parts = []
+            if event.added:
+                parts.append(f"Added: {', '.join(event.added)}")
+            if event.modified:
+                parts.append(f"Modified: {', '.join(event.modified)}")
+            if event.removed:
+                parts.append(f"Removed: {', '.join(event.removed)}")
+            content = f"<FILE_CHANGES source='{event.file_source}'>{'; '.join(parts)}</FILE_CHANGES>"
+            messages.append({"role": "user", "content": content})
 
     return messages
 

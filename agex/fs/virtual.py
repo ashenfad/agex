@@ -64,15 +64,19 @@ class VirtualFile:
         mode: The file mode ('w', 'wb', 'a', 'ab').
     """
 
-    def __init__(self, state: "State", key: str, path: str, mode: str):
+    def __init__(
+        self, vfs: "VirtualFS", state: "State", key: str, path: str, mode: str
+    ):
         """Initialize a writable virtual file.
 
         Args:
+            vfs: The VirtualFS instance for metadata tracking.
             state: State backend for persistence.
             key: Encoded state key for this file.
             path: Original file path (for error messages).
             mode: File open mode.
         """
+        self._vfs = vfs
         self._state = state
         self._key = key
         self._path = path
@@ -131,7 +135,7 @@ class VirtualFile:
         pass
 
     def close(self) -> None:
-        """Close the file and persist content to state."""
+        """Close the file and persist content to state with metadata tracking."""
         if self._closed:
             return
 
@@ -139,7 +143,10 @@ class VirtualFile:
         if isinstance(content, str):
             content = content.encode("utf-8")
 
-        self._state.set(self._key, content)
+        # Use VFS write to get proper metadata tracking
+        # snapshot=False since we're typically in a multi-file context
+        self._vfs.write(self._path, content, snapshot=False)
+
         self._closed = True
 
     @property
@@ -241,6 +248,16 @@ class VirtualFS:
 
         self._set_metadata(metadata)
 
+    def get_metadata_snapshot(self) -> dict[str, FileMetadata]:
+        """Get a copy of current file metadata for change detection.
+
+        Used to compare before/after agent turns to detect file changes.
+
+        Returns:
+            Copy of metadata dict (safe to modify).
+        """
+        return self._get_metadata().copy()
+
     def _encode_path(self, path: str) -> str:
         """Convert file path to state key.
 
@@ -308,7 +325,7 @@ class VirtualFS:
 
         elif "w" in mode or "a" in mode:
             # Write or append mode
-            return VirtualFile(self._state, key, path, mode)
+            return VirtualFile(self, self._state, key, path, mode)
 
         else:
             raise ValueError(f"Invalid mode: {mode}")

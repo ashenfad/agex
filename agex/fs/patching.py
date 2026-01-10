@@ -246,9 +246,8 @@ def swap_agent_fs_functions(agent: Any) -> None:
     if not hasattr(agent, "_policy"):
         return
 
-    main_ns = agent._policy.namespaces.get("__main__")
-    if main_ns is None:
-        return
+    # Ensure __main__ namespace exists (creates if missing)
+    main_ns = agent._policy._get_or_create_main()
 
     # Swap registered fs functions with VFS-aware wrappers
     fn_objects = main_ns.fn_objects
@@ -272,6 +271,16 @@ def swap_agent_fs_functions(agent: Any) -> None:
         agent.cls(io.BytesIO, name="BytesIO")
     if VirtualFile not in registered_classes:
         agent.cls(VirtualFile, name="VirtualFile")
+
+    # Auto-register open if not already registered
+    # Register the VFS wrapper directly so it works with VFS context
+    # Need to update both fns (for resolution check) and fn_objects (for actual function)
+    registered_funcs = set(fn_objects.keys())
+    if "open" not in registered_funcs:
+        from agex.agent.datatypes import MemberSpec
+
+        main_ns.fns["open"] = MemberSpec()  # Add to fns for resolution check
+        fn_objects["open"] = _vfs_open  # Add actual wrapper function
 
 
 # Apply patches at module import

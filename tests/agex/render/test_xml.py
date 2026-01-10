@@ -3,6 +3,7 @@
 from agex.agent.events import (
     ActionEvent,
     FailEvent,
+    FileEvent,
     OutputEvent,
     SuccessEvent,
     TaskStartEvent,
@@ -121,3 +122,28 @@ class TestRenderEventsAsXML:
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
         assert messages[0]["content"] == "FOREFRONT NOTE"
+
+    def test_file_event(self):
+        """Test rendering FileEvent with XML tags."""
+        events = [
+            FileEvent(
+                agent_name="test_agent",
+                file_source="user",
+                added=["file1.txt", "file2.txt"],
+                modified=["file3.txt"],
+                removed=[],
+            )
+        ]
+        messages = render_events_as_xml(events)
+
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        content = messages[0]["content"]
+        assert "<FILE_CHANGES" in content
+        assert "</FILE_CHANGES>" in content
+        assert "source='user'" in content
+        assert "file1.txt" in content
+        assert "file2.txt" in content
+        assert "file3.txt" in content
+        assert "Added:" in content
+        assert "Modified:" in content

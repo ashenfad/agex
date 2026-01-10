@@ -8,8 +8,8 @@ from .fingerprint import compute_agent_fingerprint_from_policy
 from .policy.policy import AgentPolicy
 
 if TYPE_CHECKING:
+    from ..fs.aware import AgentAwareVFS
     from ..fs.config import FSConfig
-    from ..fs.virtual import VirtualFS
     from ..host import Host
     from ..host.dependencies import Dependencies
     from ..state import State
@@ -345,13 +345,16 @@ class BaseAgent:
         """
         return self._host.state(self._state_config, session, self.fingerprint or "")
 
-    def fs(self, session: str = "default") -> "VirtualFS":
+    def fs(self, session: str = "default") -> "AgentAwareVFS":
         """
         Get filesystem accessor for a session.
 
         This allows external code (like UI) to read/write files to the virtual
         filesystem that is accessible to agent tasks. Files are stored in the
         agent's state and participate in versioning.
+
+        File operations via this accessor automatically emit FileEvents
+        so agents can see external file changes in their context.
 
         Example:
             from agex import Agent, connect_fs, connect_state
@@ -371,7 +374,7 @@ class BaseAgent:
             session: Session identifier (default: "default")
 
         Returns:
-            VirtualFS interface with read(), write(), list(), exists(), remove() methods
+            AgentAwareVFS interface with read(), write(), list(), exists(), remove() methods
 
         Raises:
             ValueError: If agent was not configured with fs=connect_fs(...)
@@ -381,7 +384,8 @@ class BaseAgent:
                 "Agent not configured with filesystem. Use fs=connect_fs(...)"
             )
 
-        from agex.fs import VirtualFS
+        from agex.fs import AgentAwareVFS, VirtualFS
 
         state = self.state(session)
-        return VirtualFS(state)
+        vfs = VirtualFS(state)
+        return AgentAwareVFS(vfs, state, self.name)

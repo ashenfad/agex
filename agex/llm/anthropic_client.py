@@ -260,13 +260,12 @@ class Anthropic(LLM):
 
         Uses standard streaming API with XML parsing for token-level updates.
         """
-        from agex.render.xml import render_events_as_xml
 
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
 
         # Use XML rendering for streaming (instead of tool calling)
-        messages_dicts = render_events_as_xml(events)
+        messages_dicts = events
 
         # Convert to Anthropic format
         conversation_messages = [
