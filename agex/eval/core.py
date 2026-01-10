@@ -99,10 +99,32 @@ class Evaluator(
         self.visit(node.value)
 
 
+def _get_session_root(root: str, session: str, per_session: bool) -> str:
+    """Get session-specific root path if per_session is enabled.
+
+    Args:
+        root: Base root directory
+        session: Session identifier
+        per_session: Whether to create session subdirectories
+
+    Returns:
+        Root path (with session subdir if per_session=True)
+    """
+    if not per_session:
+        return root
+
+    from pathlib import Path
+
+    session_root = Path(root) / session
+    session_root.mkdir(parents=True, exist_ok=True)
+    return str(session_root)
+
+
 def evaluate_program(
     program: str,
     agent: BaseAgent,
     state: State,
+    session: str = "default",
     eval_timeout_seconds: float | None = None,
     on_event: Callable[[Any], None] | None = None,
     on_token: Callable[[Any], None] | None = None,
@@ -116,6 +138,7 @@ def evaluate_program(
         program: The Python code to execute
         agent: The agent providing the execution context
         state: The state to execute in
+        session: Session identifier for per-session filesystem isolation
         eval_timeout_seconds: Optional timeout override. If None, uses agent.eval_timeout_seconds
         on_event: Optional handler to call for each event
         on_token: Optional handler to call for each token
@@ -137,29 +160,47 @@ def evaluate_program(
         main_loop=main_loop,
     )
 
-    # Set up VFS context if agent has filesystem configured
-    vfs_context = None
+    # Set up filesystem context if agent has filesystem configured
+    fs_context = None
+    fs_instance = None
     if hasattr(agent, "_fs_config") and agent._fs_config is not None:
-        from agex.fs import VirtualFS, swap_agent_fs_functions, with_virtual_fs
+        from agex.fs import (
+            IsolatedFS,
+            VirtualFS,
+            swap_agent_fs_functions,
+            with_isolated_fs,
+            with_virtual_fs,
+        )
+        from agex.fs.config import IsolatedFSConfig, VirtualFSConfig
 
-        # Swap any registered fs functions (like open) with VFS-aware wrappers
+        # Swap any registered fs functions (like open) with FS-aware wrappers
         # This handles the case where agent.fn(open) registered the real function
         swap_agent_fs_functions(agent)
 
-        vfs = VirtualFS(state)
-        vfs_context = with_virtual_fs(vfs)
+        if isinstance(agent._fs_config, VirtualFSConfig):
+            fs_instance = VirtualFS(state)
+            fs_context = with_virtual_fs(fs_instance)
+        elif isinstance(agent._fs_config, IsolatedFSConfig):
+            # For isolated FS, only use state if tracking is enabled
+            tracking_state = state if agent._fs_config.tracking else None
+
+            # Get session-specific root if per_session is enabled
+            root = _get_session_root(
+                agent._fs_config.root, session, agent._fs_config.per_session
+            )
+
+            fs_instance = IsolatedFS(root, tracking_state)
+            fs_context = with_isolated_fs(fs_instance)
 
         # Snapshot metadata AFTER setting up context but BEFORE execution
-        # Note: We capture the VFS reference for later metadata comparison
-        metadata_before = vfs.get_metadata_snapshot()
+        metadata_before = fs_instance.get_metadata_snapshot() if fs_instance else None
     else:
-        vfs = None
         metadata_before = None
 
     try:
-        # Enter VFS context if configured
-        if vfs_context is not None:
-            vfs_context.__enter__()
+        # Enter filesystem context if configured
+        if fs_context is not None:
+            fs_context.__enter__()
 
         try:
             evaluator.visit(tree)
@@ -172,19 +213,21 @@ def evaluate_program(
             )
     finally:
         evaluator.cleanup_with_bindings()
-        # Exit VFS context if we entered it
-        if vfs_context is not None:
-            vfs_context.__exit__(None, None, None)
+        # Exit filesystem context if we entered it
+        if fs_context is not None:
+            fs_context.__exit__(None, None, None)
 
         # Emit FileEvent if files changed during execution
-        if vfs is not None and metadata_before is not None:
-            _emit_file_event_if_changed(agent, state, vfs, metadata_before, on_event)
+        if fs_instance is not None and metadata_before is not None:
+            _emit_file_event_if_changed(
+                agent, state, fs_instance, metadata_before, on_event
+            )
 
 
 def _emit_file_event_if_changed(
     agent: BaseAgent,
     state: State,
-    vfs,
+    fs,  # VirtualFS or IsolatedFS instance
     metadata_before: dict,
     on_event: Callable[[Any], None] | None,
 ) -> None:
@@ -192,7 +235,7 @@ def _emit_file_event_if_changed(
     from agex.agent.events import FileEvent
     from agex.state.log import add_event_to_log
 
-    metadata_after = vfs.get_metadata_snapshot()
+    metadata_after = fs.get_metadata_snapshot()
 
     before_paths = set(metadata_before.keys())
     after_paths = set(metadata_after.keys())

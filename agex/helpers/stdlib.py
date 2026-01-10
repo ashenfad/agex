@@ -44,8 +44,17 @@ RANDOM_EXCLUDE = [
 
 def register_io(agent: Agent) -> None:
     """Register IO related modules with the agent for VFS operations."""
-    # File-like objects needed by VirtualFile
+    # File-like objects needed by VirtualFile and IsolatedFS
     agent.module(io, visibility="low", include=["BytesIO", "StringIO", "TextIOWrapper"])
+
+    # Register actual file types from _io module (C implementation)
+    # These are the real types returned by builtin open() in isolated FS
+    import _io
+
+    agent.cls(_io.TextIOWrapper, visibility="low")
+    agent.cls(_io.BufferedReader, visibility="low")
+    agent.cls(_io.BufferedWriter, visibility="low")
+    agent.cls(_io.BufferedRandom, visibility="low")
 
     # File system operations (VFS-aware wrappers exist for these)
     # Note: os.path is a submodule, need to register separately
@@ -71,7 +80,15 @@ def register_io(agent: Agent) -> None:
     # Common serialization formats for file content
     agent.module(json, visibility="low")
     agent.module(csv, visibility="low")
-    agent.module(pathlib, visibility="low")
+
+    # pathlib - exclude methods that bypass VFS wrappers
+    # Agents must use open() instead of Path.read_text()  etc.
+    agent.module(
+        pathlib,
+        visibility="low",
+        exclude=["Path.open", "Path.read_*", "Path.write_*"],
+    )
+
     agent.fn(open, visibility="low")
     # Note: open() is auto-registered by swap_agent_fs_functions when VFS is configured
 

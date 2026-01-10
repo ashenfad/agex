@@ -69,3 +69,25 @@ Registers the `plotly` library for creating interactive visualizations.
 -   Registers `plotly` and sub-modules.
 -   Excludes functions related to writing files or showing plots directly (e.g., `write_image`, `show`), as these are side-effects that should be handled by the user's code, not the agent's.
 -   All modules and classes are registered with `visibility="low"`.
+
+### `register_io(agent)`
+
+Registers IO-related modules for file operations. Used with VFS and isolated filesystems.
+
+-   **File objects**: `io.BytesIO`, `io.StringIO`, `io.TextIOWrapper` (plus the internal `_io` types for real file objects)
+-   **OS operations**: `os.listdir`, `os.remove`, `os.mkdir`, `os.makedirs`, `os.rename`, `os.stat`
+-   **Path utilities**: `os.path.exists`, `os.path.isfile`, `os.path.isdir`, `os.path.join`, `os.path.basename`, `os.path.dirname`, `os.path.splitext`
+-   **Data formats**: `json`, `csv`, `pathlib`
+-   **Built-in**: `open()`
+
+> [!NOTE]
+> When an agent is configured with `fs=connect_fs(...)`, `register_io()` is called automatically during task execution. You typically don't need to call it manually.
+
+```python
+from agex import Agent
+from agex.helpers import register_io
+
+# Manual registration (not usually needed with connect_fs)
+agent = Agent()
+register_io(agent)
+```

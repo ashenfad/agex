@@ -1,11 +1,11 @@
-"""Filesystem patching infrastructure for VirtualFS.
+"""Filesystem patching infrastructure for VirtualFS and IsolatedFS.
 
 Provides context-aware patching of Python's filesystem operations (builtins.open,
-os.listdir, etc.) to route to VirtualFS when active. Uses contextvars for
-async-safe isolation between concurrent agent tasks.
+os.listdir, etc.) to route to VirtualFS or IsolatedFS when active. Uses contextvars
+for async-safe isolation between concurrent agent tasks.
 
 The patching is applied once at module import. Each patched function checks
-the _current_vfs context variable to determine whether to use VirtualFS or
+the context variables to determine whether to use VirtualFS, IsolatedFS, or
 the real filesystem.
 """
 
@@ -19,10 +19,15 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
+    from agex.fs.isolated import IsolatedFS
     from agex.fs.virtual import VirtualFS
 
 
-# Context variable holding the current VFS (None = use real filesystem)
+# Context variables holding the current filesystems
+# Isolated FS is checked first, then virtual FS, then real filesystem
+_current_isolated_fs: contextvars.ContextVar[IsolatedFS | None] = (
+    contextvars.ContextVar("agex_current_isolated_fs", default=None)
+)
 _current_vfs: contextvars.ContextVar[VirtualFS | None] = contextvars.ContextVar(
     "agex_current_vfs", default=None
 )
@@ -51,66 +56,112 @@ _vfs_wrappers: dict[Any, Any] = {}
 
 
 def _vfs_open(path: Any, mode: str = "r", **kwargs: Any) -> Any:
-    """VFS-aware open() replacement."""
+    """Filesystem-aware open() replacement.
+
+    Checks isolated FS first, then virtual FS, then real filesystem.
+    """
+    # Check isolated FS first
+    isolated = _current_isolated_fs.get()
+    if isolated is not None and isinstance(path, str):
+        return isolated.open(path, mode, **kwargs)
+
+    # Then check virtual FS
     vfs = _current_vfs.get()
     if vfs is not None and isinstance(path, str):
         return vfs.open(path, mode, **kwargs)
+
     return _originals["open"](path, mode, **kwargs)
 
 
 def _vfs_listdir(path: str = ".") -> list[str]:
-    """VFS-aware os.listdir() replacement."""
+    """Filesystem-aware os.listdir() replacement."""
+    isolated = _current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.listdir(path)
+
     vfs = _current_vfs.get()
     if vfs is not None:
         return vfs.list(path)
+
     return _originals["listdir"](path)
 
 
 def _vfs_remove(path: str, **kwargs: Any) -> None:
-    """VFS-aware os.remove() replacement."""
+    """Filesystem-aware os.remove() replacement."""
+    isolated = _current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.remove(path)
+
     vfs = _current_vfs.get()
     if vfs is not None:
         return vfs.remove(path, snapshot=False)
+
     return _originals["remove"](path, **kwargs)
 
 
 def _vfs_unlink(path: str, **kwargs: Any) -> None:
-    """VFS-aware os.unlink() replacement (alias for remove)."""
+    """Filesystem-aware os.unlink() replacement (alias for remove)."""
+    isolated = _current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.remove(path)
+
     vfs = _current_vfs.get()
     if vfs is not None:
         return vfs.remove(path, snapshot=False)
+
     return _originals["unlink"](path, **kwargs)
 
 
 def _vfs_mkdir(path: str, mode: int = 0o777, **kwargs: Any) -> None:
-    """VFS-aware os.mkdir() replacement."""
+    """Filesystem-aware os.mkdir() replacement."""
+    isolated = _current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.mkdir(path)
+
     vfs = _current_vfs.get()
     if vfs is not None:
         return vfs.mkdir(path)
+
     return _originals["mkdir"](path, mode, **kwargs)
 
 
 def _vfs_makedirs(path: str, mode: int = 0o777, exist_ok: bool = False) -> None:
-    """VFS-aware os.makedirs() replacement."""
+    """Filesystem-aware os.makedirs() replacement."""
+    isolated = _current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.mkdir(path, parents=True, exist_ok=exist_ok)
+
     vfs = _current_vfs.get()
     if vfs is not None:
         return vfs.makedirs(path, exist_ok=exist_ok)
+
     return _originals["makedirs"](path, mode, exist_ok=exist_ok)
 
 
 def _vfs_rename(src: str, dst: str, **kwargs: Any) -> None:
-    """VFS-aware os.rename() replacement."""
+    """Filesystem-aware os.rename() replacement."""
+    isolated = _current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.rename(src, dst)
+
     vfs = _current_vfs.get()
     if vfs is not None:
         return vfs.rename(src, dst, snapshot=False)
+
     return _originals["rename"](src, dst, **kwargs)
 
 
 def _vfs_stat(path: str, **kwargs: Any) -> Any:
-    """VFS-aware os.stat() replacement.
+    """Filesystem-aware os.stat() replacement.
 
-    Returns stat_result with metadata from VirtualFS when active.
+    Returns stat_result with metadata from filesystem when active.
     """
+    # Check isolated FS first - it uses real stat
+    isolated = _current_isolated_fs.get()
+    if isolated is not None:
+        return _originals["stat"](str(path), **kwargs)
+
+    # Then check virtual FS
     vfs = _current_vfs.get()
     if vfs is not None:
         import stat as stat_module
@@ -180,34 +231,54 @@ def _vfs_stat(path: str, **kwargs: Any) -> Any:
 
 
 def _vfs_exists(path: str, **kwargs: Any) -> bool:
-    """VFS-aware os.path.exists() replacement."""
+    """Filesystem-aware os.path.exists() replacement."""
+    isolated = _current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.exists(path)
+
     vfs = _current_vfs.get()
     if vfs is not None:
         return vfs.exists(path)
+
     return _originals["exists"](path, **kwargs)
 
 
 def _vfs_isfile(path: str, **kwargs: Any) -> bool:
-    """VFS-aware os.path.isfile() replacement."""
+    """Filesystem-aware os.path.isfile() replacement."""
+    isolated = _current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.isfile(path)
+
     vfs = _current_vfs.get()
     if vfs is not None:
         return vfs.isfile(path)
+
     return _originals["isfile"](path, **kwargs)
 
 
 def _vfs_isdir(path: str, **kwargs: Any) -> bool:
-    """VFS-aware os.path.isdir() replacement."""
+    """Filesystem-aware os.path.isdir() replacement."""
+    isolated = _current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.isdir(path)
+
     vfs = _current_vfs.get()
     if vfs is not None:
         return vfs.isdir(path)
+
     return _originals["isdir"](path, **kwargs)
 
 
 def _vfs_getsize(path: str, **kwargs: Any) -> int:
-    """VFS-aware os.path.getsize() replacement."""
+    """Filesystem-aware os.path.getsize() replacement."""
+    isolated = _current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.stat(path).size
+
     vfs = _current_vfs.get()
     if vfs is not None:
         return vfs.getsize(path)
+
     return _originals["getsize"](path, **kwargs)
 
 
@@ -278,6 +349,35 @@ def with_virtual_fs(vfs: "VirtualFS") -> Iterator[None]:
         _current_vfs.reset(token)
 
 
+@contextmanager
+def with_isolated_fs(isolated_fs: "IsolatedFS") -> Iterator[None]:
+    """Set isolated FS for current async context.
+
+    This context manager sets the isolated filesystem for the duration of
+    the with block. It is async-safe - concurrent async tasks each get
+    their own context.
+
+    Args:
+        isolated_fs: IsolatedFS instance to use.
+
+    Yields:
+        None. File operations within the block will use the isolated FS.
+
+    Example:
+        >>> from agex.fs import IsolatedFS
+        >>> isolated = IsolatedFS(root="/path/to/project")
+        >>> with with_isolated_fs(isolated):
+        ...     with open("data.csv", "w") as f:
+        ...         f.write("a,b,c")
+        ...     # File is written to real filesystem within root
+    """
+    token = _current_isolated_fs.set(isolated_fs)
+    try:
+        yield
+    finally:
+        _current_isolated_fs.reset(token)
+
+
 def get_current_vfs() -> "VirtualFS | None":
     """Get the current VFS for the async context.
 
@@ -285,6 +385,15 @@ def get_current_vfs() -> "VirtualFS | None":
         The current VirtualFS, or None if not in a VFS context.
     """
     return _current_vfs.get()
+
+
+def get_current_isolated_fs() -> "IsolatedFS | None":
+    """Get the current isolated FS for the async context.
+
+    Returns:
+        The current IsolatedFS, or None if not in an isolated FS context.
+    """
+    return _current_isolated_fs.get()
 
 
 def swap_agent_fs_functions(agent: Any) -> None:
