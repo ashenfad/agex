@@ -42,6 +42,40 @@ RANDOM_EXCLUDE = [
 ]
 
 
+def register_io(agent: Agent) -> None:
+    """Register IO related modules with the agent for VFS operations."""
+    # File-like objects needed by VirtualFile
+    agent.module(io, visibility="low", include=["BytesIO", "StringIO", "TextIOWrapper"])
+
+    # File system operations (VFS-aware wrappers exist for these)
+    # Note: os.path is a submodule, need to register separately
+    agent.module(
+        os,
+        visibility="low",
+        include=["listdir", "remove", "unlink", "mkdir", "makedirs", "rename", "stat"],
+    )
+    agent.module(
+        os.path,
+        visibility="low",
+        include=[
+            "exists",
+            "isfile",
+            "isdir",
+            "join",
+            "basename",
+            "dirname",
+            "splitext",
+        ],
+    )
+
+    # Common serialization formats for file content
+    agent.module(json, visibility="low")
+    agent.module(csv, visibility="low")
+    agent.module(pathlib, visibility="low")
+    agent.fn(open, visibility="low")
+    # Note: open() is auto-registered by swap_agent_fs_functions when VFS is configured
+
+
 def register_stdlib(agent: Agent, io_friendly: bool = False) -> None:
     """Register useful Python standard library modules with the agent."""
 
@@ -82,46 +116,9 @@ def register_stdlib(agent: Agent, io_friendly: bool = False) -> None:
     # IO and temporary file handling
     agent.module(tempfile, visibility="low")
     if io_friendly:
-        agent.module(io, visibility="low")
-        agent.module(os, visibility="low")
+        register_io(agent)
     else:
         agent.module(
             io, visibility="low", include=["BytesIO", "StringIO", "TextIOWrapper"]
         )
     agent.module(typing, visibility="low")
-
-
-def register_io(agent: Agent) -> None:
-    """Register IO related modules with the agent for VFS operations."""
-    # File-like objects needed by VirtualFile
-    agent.module(io, visibility="low", include=["BytesIO", "StringIO", "TextIOWrapper"])
-
-    # File system operations (VFS-aware wrappers exist for these)
-    # Note: os.path is a submodule, need to register separately
-    agent.module(
-        os,
-        visibility="low",
-        include=["listdir", "remove", "unlink", "mkdir", "makedirs", "rename", "stat"],
-    )
-    agent.module(
-        os.path,
-        visibility="low",
-        include=[
-            "exists",
-            "isfile",
-            "isdir",
-            "join",
-            "basename",
-            "dirname",
-            "splitext",
-        ],
-    )
-
-    # Common serialization formats for file content
-    agent.module(json, visibility="low", include=["loads", "dumps", "load", "dump"])
-    agent.module(
-        csv, visibility="low", include=["reader", "writer", "DictReader", "DictWriter"]
-    )
-    agent.module(pathlib, visibility="low")
-    agent.fn(open, visibility="low")
-    # Note: open() is auto-registered by swap_agent_fs_functions when VFS is configured
