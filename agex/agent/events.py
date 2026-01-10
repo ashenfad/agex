@@ -884,6 +884,90 @@ class SummaryEvent(BaseEvent):
         )
 
 
+class FileEvent(BaseEvent):
+    """Fired when files are added, modified, or removed.
+
+    Emitted after external API calls (source="user") or at end of agent
+    turns (source="agent") when files have changed.
+    """
+
+    file_source: Literal[
+        "user", "agent"
+    ]  # Renamed to avoid conflict with BaseEvent.source
+    added: list[str] = []
+    modified: list[str] = []
+    removed: list[str] = []
+
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        # Build summary text for token counting
+        parts = []
+        if self.added:
+            parts.append(f"Added: {', '.join(self.added)}")
+        if self.modified:
+            parts.append(f"Modified: {', '.join(self.modified)}")
+        if self.removed:
+            parts.append(f"Removed: {', '.join(self.removed)}")
+        text = f"[File changes by {self.file_source}] " + "; ".join(parts)
+        tokens = count_tokens(text)
+        self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens
+        return self
+
+    def __str__(self) -> str:
+        """Detailed string with file change summary."""
+        base = super().__str__()
+        counts = []
+        if self.added:
+            counts.append(f"{len(self.added)} added")
+        if self.modified:
+            counts.append(f"{len(self.modified)} modified")
+        if self.removed:
+            counts.append(f"{len(self.removed)} removed")
+        summary = ", ".join(counts) if counts else "no changes"
+        return f"{base}\n  Source: {self.file_source}\n  Files: {summary}"
+
+    def _repr_markdown_(self) -> str:
+        """Rich markdown with file lists."""
+        base = super()._repr_markdown_()
+        sections = []
+        if self.added:
+            sections.append(f"**Added:** {', '.join(self.added)}")
+        if self.modified:
+            sections.append(f"**Modified:** {', '.join(self.modified)}")
+        if self.removed:
+            sections.append(f"**Removed:** {', '.join(self.removed)}")
+        content = "\n".join(sections) if sections else "*No file changes*"
+        return f"{base}\n**Source:** {self.file_source}\n\n{content}"
+
+    def _repr_html_(self) -> str:
+        """Rich HTML representation for IPython/Jupyter environments."""
+        sections = []
+        if self.added:
+            files_list = ", ".join(f"`{f}`" for f in self.added)
+            sections.append(_event_section("📁 Added:", files_list, "#28a745"))
+        if self.modified:
+            files_list = ", ".join(f"`{f}`" for f in self.modified)
+            sections.append(_event_section("✏️ Modified:", files_list, "#0366d6"))
+        if self.removed:
+            files_list = ", ".join(f"`{f}`" for f in self.removed)
+            sections.append(_event_section("🗑️ Removed:", files_list, "#d73a49"))
+
+        if not sections:
+            sections.append(_event_section("📂 Files:", "No changes", "#6a737d"))
+
+        content = "".join(sections)
+
+        return _event_html_container(
+            "📁",
+            f"FileEvent ({self.file_source})",
+            self.full_namespace,
+            self.timestamp,
+            content,
+            self.commit_hash,
+        )
+
+
 Event = (
     TaskStartEvent
     | ActionEvent
@@ -894,6 +978,7 @@ Event = (
     | CancelledEvent
     | ClarifyEvent
     | SummaryEvent
+    | FileEvent
 )
 
 

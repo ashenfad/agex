@@ -10,11 +10,13 @@ Public API:
     swap_agent_fs_functions: Swap registered fs functions with VFS-aware versions
 """
 
+from agex.fs.aware import AgentAwareVFS
 from agex.fs.config import FSConfig, connect_fs
 from agex.fs.patching import swap_agent_fs_functions, with_virtual_fs
 from agex.fs.virtual import FileInfo, FileMetadata, VirtualFile, VirtualFS
 
 __all__ = [
+    "AgentAwareVFS",
     "connect_fs",
     "FSConfig",
     "FileInfo",
