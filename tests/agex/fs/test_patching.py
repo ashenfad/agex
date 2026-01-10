@@ -77,16 +77,60 @@ class TestPatchingBasics:
             assert os.path.isfile("file.txt") is True
             assert os.path.isfile("dir") is False
 
-    def test_stat_raises_in_vfs_context(self):
-        """Test that os.stat() raises NotImplementedError in VFS context."""
+    def test_stat_file(self):
+        """Test that os.stat() returns proper metadata for VFS files."""
+        import stat as stat_module
+
         state = Live()
         vfs = VirtualFS(state)
 
-        vfs.write("file.txt", b"content")
+        vfs.write("file.txt", b"hello world")
 
         with with_virtual_fs(vfs):
-            with pytest.raises(NotImplementedError, match="os.stat.*not supported"):
-                os.stat("file.txt")
+            stat_result = os.stat("file.txt")
+
+            # Verify file type and permissions
+            assert stat_module.S_ISREG(stat_result.st_mode)
+            assert stat_result.st_mode & 0o777 == 0o644
+
+            # Verify size
+            assert stat_result.st_size == 11
+
+            # Verify timestamps exist (should be recent)
+            import time
+
+            now = time.time()
+            assert stat_result.st_mtime <= now
+            assert stat_result.st_ctime <= now
+            assert stat_result.st_mtime > now - 10  # Created within last 10 seconds
+
+    def test_stat_directory(self):
+        """Test that os.stat() works for VFS directories."""
+        import stat as stat_module
+
+        state = Live()
+        vfs = VirtualFS(state)
+
+        vfs.write("dir/file.txt", b"content")
+
+        with with_virtual_fs(vfs):
+            stat_result = os.stat("dir")
+
+            # Verify directory type and permissions
+            assert stat_module.S_ISDIR(stat_result.st_mode)
+            assert stat_result.st_mode & 0o777 == 0o755
+
+            # Verify size is zero for directories
+            assert stat_result.st_size == 0
+
+    def test_stat_nonexistent(self):
+        """Test that os.stat() raises FileNotFoundError for missing paths."""
+        state = Live()
+        vfs = VirtualFS(state)
+
+        with with_virtual_fs(vfs):
+            with pytest.raises(FileNotFoundError, match="No such file or directory"):
+                os.stat("nonexistent.txt")
 
 
 class TestAsyncSafety:

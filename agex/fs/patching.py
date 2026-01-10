@@ -109,11 +109,73 @@ def _vfs_rename(src: str, dst: str, **kwargs: Any) -> None:
 def _vfs_stat(path: str, **kwargs: Any) -> Any:
     """VFS-aware os.stat() replacement.
 
-    Raises NotImplementedError when VFS is active to prevent information leaks.
+    Returns stat_result with metadata from VirtualFS when active.
     """
     vfs = _current_vfs.get()
     if vfs is not None:
-        raise NotImplementedError("os.stat() is not supported in virtual filesystem")
+        import stat as stat_module
+        from datetime import datetime
+
+        # Convert pathlib.Path to string if needed (pandas may pass Path objects)
+        path = str(path)
+
+        # Check if it's a file
+        if vfs.isfile(path):
+            metadata = vfs.stat(path)
+
+            # Parse ISO timestamps to epoch floats
+            try:
+                created_ts = datetime.fromisoformat(metadata.created_at).timestamp()
+                modified_ts = datetime.fromisoformat(metadata.modified_at).timestamp()
+            except (ValueError, AttributeError):
+                # Fallback to current time if parsing fails
+                import time
+
+                created_ts = modified_ts = time.time()
+
+            # Construct stat_result for file
+            # Mock values for permissions (0o644), UID/GID (1000), device info
+            return os.stat_result(
+                (
+                    stat_module.S_IFREG | 0o644,  # st_mode: regular file, rw-r--r--
+                    0,  # st_ino: inode (not meaningful in VFS)
+                    0,  # st_dev: device (not meaningful in VFS)
+                    1,  # st_nlink: number of hard links
+                    1000,  # st_uid: user ID (mocked)
+                    1000,  # st_gid: group ID (mocked)
+                    metadata.size,  # st_size: file size in bytes
+                    modified_ts,  # st_atime: access time
+                    modified_ts,  # st_mtime: modification time
+                    created_ts,  # st_ctime: creation time
+                )
+            )
+
+        # Check if it's a directory
+        elif vfs.isdir(path):
+            import time
+
+            current_time = time.time()
+
+            # Construct stat_result for directory
+            return os.stat_result(
+                (
+                    stat_module.S_IFDIR | 0o755,  # st_mode: directory, rwxr-xr-x
+                    0,  # st_ino
+                    0,  # st_dev
+                    2,  # st_nlink: directories typically have 2+
+                    1000,  # st_uid
+                    1000,  # st_gid
+                    0,  # st_size: directories are zero
+                    current_time,  # st_atime
+                    current_time,  # st_mtime
+                    current_time,  # st_ctime
+                )
+            )
+
+        # Path doesn't exist
+        else:
+            raise FileNotFoundError(f"[Errno 2] No such file or directory: '{path}'")
+
     return _originals["stat"](path, **kwargs)
 
 
@@ -241,7 +303,6 @@ def swap_agent_fs_functions(agent: Any) -> None:
     Args:
         agent: The agent whose registered functions should be swapped.
     """
-    import io
 
     if not hasattr(agent, "_policy"):
         return
@@ -249,14 +310,18 @@ def swap_agent_fs_functions(agent: Any) -> None:
     # Ensure __main__ namespace exists (creates if missing)
     main_ns = agent._policy._get_or_create_main()
 
+    # Ensure IO modules are available (late import to avoid cycles)
+    from agex.helpers.stdlib import register_io
+
+    register_io(agent)
+
     # Swap registered fs functions with VFS-aware wrappers
     fn_objects = main_ns.fn_objects
     for name, func in list(fn_objects.items()):
         if func in _vfs_wrappers:
             fn_objects[name] = _vfs_wrappers[func]
 
-    # Register file-like classes so .read()/.write() methods work
-    # VirtualFS.open() returns these, so they need to be accessible
+    # Register VirtualFile class so agents can interact with file objects
     if not hasattr(agent, "cls"):
         return
 
@@ -265,22 +330,8 @@ def swap_agent_fs_functions(agent: Any) -> None:
 
     # Only register if not already registered
     registered_classes = {rc.cls for rc in main_ns.classes.values()}
-    if io.StringIO not in registered_classes:
-        agent.cls(io.StringIO, name="StringIO")
-    if io.BytesIO not in registered_classes:
-        agent.cls(io.BytesIO, name="BytesIO")
     if VirtualFile not in registered_classes:
         agent.cls(VirtualFile, name="VirtualFile")
-
-    # Auto-register open if not already registered
-    # Register the VFS wrapper directly so it works with VFS context
-    # Need to update both fns (for resolution check) and fn_objects (for actual function)
-    registered_funcs = set(fn_objects.keys())
-    if "open" not in registered_funcs:
-        from agex.agent.datatypes import MemberSpec
-
-        main_ns.fns["open"] = MemberSpec()  # Add to fns for resolution check
-        fn_objects["open"] = _vfs_open  # Add actual wrapper function
 
 
 # Apply patches at module import
