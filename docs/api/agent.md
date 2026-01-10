@@ -15,6 +15,7 @@ Agent(
     llm_max_retries: int = 2,
     host: Host | None = None,
     state: StateConfig | None = None,
+    fs: FSConfig | None = None,
     log_high_water_tokens: int | None = None,
     log_low_water_tokens: int | None = None,
 )
@@ -33,6 +34,7 @@ Agent(
 | `llm_max_retries` | `int` | `2` | Number of times to retry a failed LLM completion |
 | `host` | `Host \| None` | `None` | Execution host from `connect_host()`. If `None`, runs locally. See [Host Configuration](host.md). |
 | `state` | `StateConfig \| None` | `None` | State config from `connect_state()`. If `None`, tasks are stateless. See [State Configuration](state.md). |
+| `fs` | `FSConfig \| None` | `None` | Filesystem config from `connect_fs()`. If `None`, no filesystem access. See [Filesystem Configuration](fs.md). |
 | `log_high_water_tokens` | `int \| None` | `None` | Trigger event log summarization when tokens exceed this threshold |
 | `log_low_water_tokens` | `int \| None` | `None` | Target token count after summarization (defaults to 50% of high water) |
 
@@ -113,6 +115,22 @@ agent = Agent(
 ```
 
 See **[Host Configuration](host.md)** for remote execution and distributed deployments.
+
+### Filesystem Configuration
+
+Configure secure, state-backed filesystem access:
+
+```python
+from agex import Agent, connect_fs
+
+# Enable virtual filesystem
+agent = Agent(
+    state=connect_state(type="versioned", storage="disk", path="/tmp/state"),
+    fs=connect_fs(type="virtual"),
+)
+```
+
+See **[Filesystem Configuration](fs.md)** for virtual filesystems, file uploads, and events.
 
 ## Properties
 
@@ -264,5 +282,6 @@ Use for A/B testing system prompts or model-specific optimizations.
 - **[LLM Configuration](llm.md)**: Providers, models, and API options
 - **[State Configuration](state.md)**: Memory, persistence, and sessions
 - **[Host Configuration](host.md)**: Local and remote execution
+- **[Filesystem Configuration](fs.md)**: Virtual filesystem and file events
 - **[Registration](registration.md)**: Expose capabilities with `.fn()`, `.cls()`, `.module()`
 - **[Task](task.md)**: Define agent tasks with `@agent.task`

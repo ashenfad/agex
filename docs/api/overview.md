@@ -24,6 +24,9 @@ Configure LLM providers, models, timeouts, and connection settings. Support for 
 - **[Host](host.md)** -
 Configure execution environments (`local` vs `http`). Deploy agents to remote servers and manage distributed workflows.
 
+- **[Filesystem](fs.md)** -
+Enable secure, state-backed virtual filesystems (`virtual`) for agents. Manage file uploads, metadata, and file events.
+
 - **[Events](events.md)** -
 Access comprehensive agent execution events for debugging, monitoring, and multi-agent coordination. Real-time introspection into agent thinking and actions.
 
