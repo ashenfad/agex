@@ -1,7 +1,7 @@
 import pytest
 
 from agex.eval.error import EvalError
-from agex.eval.user_errors import AgexNameError, AgexTypeError
+from agex.eval.user_errors import AgexAssertionError, AgexNameError, AgexTypeError
 
 from .helpers import eval_and_get_state
 
@@ -219,3 +219,22 @@ signals[0][5] += 1.0
 """
     state = eval_and_get_state(program, include_numpy=True)
     assert state.get("signals")[0][5] == 1.0
+
+
+def test_assert_success():
+    program = "assert True"
+    eval_and_get_state(program)
+    program = "assert 1 == 1"
+    eval_and_get_state(program)
+
+
+def test_assert_failure_no_msg():
+    with pytest.raises(AgexAssertionError) as e:
+        eval_and_get_state("assert False")
+    assert e.value.message == ""
+
+
+def test_assert_failure_with_msg():
+    with pytest.raises(AgexAssertionError) as e:
+        eval_and_get_state("assert 1 == 2, 'Math is broken'")
+    assert "Math is broken" in str(e.value)

@@ -7,6 +7,7 @@ from agex.eval.builtins import dataclass
 from agex.eval.functions import UserFunction, _ReturnException
 from agex.eval.objects import BoundInstanceObject
 from agex.eval.user_errors import (
+    AgexAssertionError,
     AgexAttributeError,
     AgexError,
     AgexIndexError,
@@ -311,6 +312,18 @@ class StatementEvaluator(BaseEvaluator):
             else:
                 target = self._resolve_target(target_node)
                 target.set_value(value, self.state)
+
+    def visit_Assert(self, node: ast.Assert) -> None:
+        """Handles assert statements."""
+        test_condition = self.visit(node.test)
+
+        if not test_condition:
+            msg = None
+            if node.msg:
+                msg = self.visit(node.msg)
+
+            error_msg = str(msg) if msg is not None else ""
+            raise AgexAssertionError(error_msg, node)
 
     def visit_Delete(self, node: ast.Delete) -> None:
         """Handles the 'del' statement."""
