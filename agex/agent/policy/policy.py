@@ -57,6 +57,25 @@ class AgentPolicy:
             recursive=recursive,
         )
         self.namespaces[mod_name] = spec
+
+        # Populate _class_namespaces for classes in the module
+        # This allows method access on instances of these classes
+        if not isinstance(module, str):
+            import inspect
+
+            from .resolve import make_predicate
+
+            include_pred = make_predicate(include)
+            exclude_pred = make_predicate(exclude)
+
+            # Iterate through module members and register classes
+            for member_name in dir(module):
+                if include_pred(member_name) and not exclude_pred(member_name):
+                    member = getattr(module, member_name)
+                    if inspect.isclass(member):
+                        # Register this class in _class_namespaces so methods are accessible
+                        self._class_namespaces[member] = spec
+
         return spec
 
     def register_instance(
