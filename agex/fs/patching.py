@@ -55,11 +55,14 @@ _vfs_wrappers: dict[Any, Any] = {}
 # VFS-aware wrapper functions
 
 
-def _vfs_open(path: Any, mode: str = "r", **kwargs: Any) -> Any:
+def _vfs_open(path: Any, *args: Any, **kwargs: Any) -> Any:
     """Filesystem-aware open() replacement.
 
     Checks isolated FS first, then virtual FS, then real filesystem.
     """
+    # Extract mode if provided, default to "r"
+    mode = args[0] if args else kwargs.get("mode", "r")
+
     # Check isolated FS first
     isolated = _current_isolated_fs.get()
     if isolated is not None and isinstance(path, str):
@@ -70,7 +73,7 @@ def _vfs_open(path: Any, mode: str = "r", **kwargs: Any) -> Any:
     if vfs is not None and isinstance(path, str):
         return vfs.open(path, mode, **kwargs)
 
-    return _originals["open"](path, mode, **kwargs)
+    return _originals["open"](path, *args, **kwargs)
 
 
 def _vfs_listdir(path: str = ".") -> list[str]:
