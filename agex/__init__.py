@@ -35,7 +35,7 @@ __all__ = [
     "Live",
     "Namespaced",
     "events",
-    # Filesystem
+    # FileSystem
     "connect_fs",
     # Task Control Exceptions & Functions
     "TaskFail",
