@@ -1,6 +1,6 @@
 """Agent-aware VFS wrapper that emits events for file changes.
 
-This module provides AgentAwareVFS, a wrapper around VirtualFS that:
+This module provides AgentAwareFS, a wrapper around VirtualFS that:
 1. Emits FileEvent for external API calls (user uploads/deletions)
 2. Provides the same interface as VirtualFS for seamless use
 """
@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from typing import Callable
 
-from agex.fs.virtual import FileInfo, FileMetadata, VirtualFS
+from agex.fs.base import FileSystem
+from agex.fs.virtual import FileInfo, FileMetadata
 from agex.state.core import State
 
 
-class AgentAwareVFS:
-    """VFS wrapper that emits events for agent/user visibility.
+class AgentAwareFS(FileSystem):
+    """FS wrapper that emits events for agent/user visibility.
 
     Used by agent.fs() to provide file access that automatically
     logs FileEvents when files are modified externally.
@@ -28,7 +29,7 @@ class AgentAwareVFS:
 
     def __init__(
         self,
-        vfs: VirtualFS,
+        fs: FileSystem,
         state: State,
         agent_name: str,
         on_event: Callable | None = None,
@@ -36,12 +37,12 @@ class AgentAwareVFS:
         """Initialize wrapper.
 
         Args:
-            vfs: The underlying VirtualFS instance.
+            fs: The underlying FileSystem instance.
             state: The state to log events to.
             agent_name: Name of the agent for event attribution.
             on_event: Optional callback for event notification.
         """
-        self._vfs = vfs
+        self._fs = fs
         self._state = state
         self._agent_name = agent_name
         self._on_event = on_event
@@ -78,89 +79,93 @@ class AgentAwareVFS:
 
     def write(self, path: str, content: bytes) -> None:
         """Write file and emit event atomically."""
-        is_new = not self._vfs.exists(path)
+        is_new = not self._fs.exists(path)
         self._emit_event(
             added=[path] if is_new else [],
             modified=[path] if not is_new else [],
         )
-        self._vfs.write(path, content)  # Snapshots file + event together
+        self._fs.write(path, content)  # Snapshots file + event together
         self._merge()
 
     def write_many(self, files: dict[str, bytes]) -> None:
         """Write multiple files and emit single event atomically."""
-        added = [p for p in files if not self._vfs.exists(p)]
-        modified = [p for p in files if self._vfs.exists(p)]
+        added = [p for p in files if not self._fs.exists(p)]
+        modified = [p for p in files if self._fs.exists(p)]
         self._emit_event(added=added, modified=modified)
-        self._vfs.write_many(files)  # Snapshots files + event together
+        self._fs.write_many(files)  # Snapshots files + event together
         self._merge()
 
     def remove(self, path: str) -> None:
         """Remove file and emit event atomically."""
-        if not self._vfs.exists(path):
+        if not self._fs.exists(path):
             raise FileNotFoundError(path)
         self._emit_event(removed=[path])
-        self._vfs.remove(path)  # Snapshots removal + event together
+        self._fs.remove(path)  # Snapshots removal + event together
         self._merge()
 
     def remove_many(self, paths: list[str]) -> None:
         """Remove multiple files and emit single event atomically."""
-        missing = [p for p in paths if not self._vfs.exists(p)]
+        missing = [p for p in paths if not self._fs.exists(p)]
         if missing:
             raise FileNotFoundError(f"Files not found: {', '.join(missing)}")
         self._emit_event(removed=paths)
-        self._vfs.remove_many(paths)  # Snapshots removals + event together
+        self._fs.remove_many(paths)  # Snapshots removals + event together
         self._merge()
 
     def rename(self, src: str, dst: str) -> None:
         """Rename file and emit event atomically."""
-        if not self._vfs.exists(src):
+        if not self._fs.exists(src):
             raise FileNotFoundError(src)
         self._emit_event(removed=[src], added=[dst])
-        self._vfs.rename(src, dst)  # Snapshots rename + event together
+        self._fs.rename(src, dst)  # Snapshots rename + event together
         self._merge()
 
     # Read-only operations - delegate without events
 
     def read(self, path: str) -> bytes:
         """Read file (no event)."""
-        return self._vfs.read(path)
+        return self._fs.read(path)
 
     def exists(self, path: str) -> bool:
         """Check if path exists (no event)."""
-        return self._vfs.exists(path)
+        return self._fs.exists(path)
 
     def isfile(self, path: str) -> bool:
         """Check if path is a file (no event)."""
-        return self._vfs.isfile(path)
+        return self._fs.isfile(path)
 
     def isdir(self, path: str) -> bool:
         """Check if path is a directory (no event)."""
-        return self._vfs.isdir(path)
+        return self._fs.isdir(path)
 
     def list(self, path: str = "/") -> list[str]:
         """List directory (no event)."""
-        return self._vfs.list(path)
+        return self._fs.list(path)
 
     def list_detailed(self, path: str = "/") -> list[FileInfo]:
         """List directory with metadata (no event)."""
-        return self._vfs.list_detailed(path)
+        return self._fs.list_detailed(path)
 
     def stat(self, path: str) -> FileMetadata:
         """Get file metadata (no event)."""
-        return self._vfs.stat(path)
+        return self._fs.stat(path)
 
     def getsize(self, path: str) -> int:
         """Get file size (no event)."""
-        return self._vfs.getsize(path)
+        return self._fs.getsize(path)
 
     def open(self, path: str, mode: str = "r"):
         """Open file (no event - writes happen at close)."""
-        return self._vfs.open(path, mode)
+        return self._fs.open(path, mode)
 
     def mkdir(self, path: str, exist_ok: bool = True) -> None:
         """Create directory (no event - directories are implicit)."""
-        self._vfs.mkdir(path, exist_ok)
+        self._fs.mkdir(path, exist_ok)
 
     def makedirs(self, path: str, exist_ok: bool = True) -> None:
         """Create directory tree (no event - directories are implicit)."""
-        self._vfs.makedirs(path, exist_ok)
+        self._fs.makedirs(path, exist_ok)
+
+    def get_metadata_snapshot(self) -> dict[str, FileMetadata]:
+        """Get snapshot of all file metadata."""
+        return self._fs.get_metadata_snapshot()

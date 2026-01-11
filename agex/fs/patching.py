@@ -1,4 +1,4 @@
-"""Filesystem patching infrastructure for VirtualFS and IsolatedFS.
+"""FileSystem patching infrastructure for VirtualFS and IsolatedFS.
 
 Provides context-aware patching of Python's filesystem operations (builtins.open,
 os.listdir, etc.) to route to VirtualFS or IsolatedFS when active. Uses contextvars
@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
+    from agex.fs.base import FileSystem
     from agex.fs.isolated import IsolatedFS
     from agex.fs.virtual import VirtualFS
 
@@ -56,7 +57,7 @@ _vfs_wrappers: dict[Any, Any] = {}
 
 
 def _vfs_open(path: Any, *args: Any, **kwargs: Any) -> Any:
-    """Filesystem-aware open() replacement.
+    """FileSystem-aware open() replacement.
 
     Checks isolated FS first, then virtual FS, then real filesystem.
     """
@@ -77,7 +78,7 @@ def _vfs_open(path: Any, *args: Any, **kwargs: Any) -> Any:
 
 
 def _vfs_listdir(path: str = ".") -> list[str]:
-    """Filesystem-aware os.listdir() replacement."""
+    """FileSystem-aware os.listdir() replacement."""
     isolated = _current_isolated_fs.get()
     if isolated is not None:
         return isolated.listdir(path)
@@ -90,7 +91,7 @@ def _vfs_listdir(path: str = ".") -> list[str]:
 
 
 def _vfs_remove(path: str, **kwargs: Any) -> None:
-    """Filesystem-aware os.remove() replacement."""
+    """FileSystem-aware os.remove() replacement."""
     isolated = _current_isolated_fs.get()
     if isolated is not None:
         return isolated.remove(path)
@@ -103,7 +104,7 @@ def _vfs_remove(path: str, **kwargs: Any) -> None:
 
 
 def _vfs_unlink(path: str, **kwargs: Any) -> None:
-    """Filesystem-aware os.unlink() replacement (alias for remove)."""
+    """FileSystem-aware os.unlink() replacement (alias for remove)."""
     isolated = _current_isolated_fs.get()
     if isolated is not None:
         return isolated.remove(path)
@@ -116,7 +117,7 @@ def _vfs_unlink(path: str, **kwargs: Any) -> None:
 
 
 def _vfs_mkdir(path: str, mode: int = 0o777, **kwargs: Any) -> None:
-    """Filesystem-aware os.mkdir() replacement."""
+    """FileSystem-aware os.mkdir() replacement."""
     isolated = _current_isolated_fs.get()
     if isolated is not None:
         return isolated.mkdir(path)
@@ -129,7 +130,7 @@ def _vfs_mkdir(path: str, mode: int = 0o777, **kwargs: Any) -> None:
 
 
 def _vfs_makedirs(path: str, mode: int = 0o777, exist_ok: bool = False) -> None:
-    """Filesystem-aware os.makedirs() replacement."""
+    """FileSystem-aware os.makedirs() replacement."""
     isolated = _current_isolated_fs.get()
     if isolated is not None:
         return isolated.mkdir(path, parents=True, exist_ok=exist_ok)
@@ -142,7 +143,7 @@ def _vfs_makedirs(path: str, mode: int = 0o777, exist_ok: bool = False) -> None:
 
 
 def _vfs_rename(src: str, dst: str, **kwargs: Any) -> None:
-    """Filesystem-aware os.rename() replacement."""
+    """FileSystem-aware os.rename() replacement."""
     isolated = _current_isolated_fs.get()
     if isolated is not None:
         return isolated.rename(src, dst)
@@ -155,7 +156,7 @@ def _vfs_rename(src: str, dst: str, **kwargs: Any) -> None:
 
 
 def _vfs_stat(path: str, **kwargs: Any) -> Any:
-    """Filesystem-aware os.stat() replacement.
+    """FileSystem-aware os.stat() replacement.
 
     Returns stat_result with metadata from filesystem when active.
     """
@@ -234,7 +235,7 @@ def _vfs_stat(path: str, **kwargs: Any) -> Any:
 
 
 def _vfs_exists(path: str, **kwargs: Any) -> bool:
-    """Filesystem-aware os.path.exists() replacement."""
+    """FileSystem-aware os.path.exists() replacement."""
     isolated = _current_isolated_fs.get()
     if isolated is not None:
         return isolated.exists(path)
@@ -247,7 +248,7 @@ def _vfs_exists(path: str, **kwargs: Any) -> bool:
 
 
 def _vfs_isfile(path: str, **kwargs: Any) -> bool:
-    """Filesystem-aware os.path.isfile() replacement."""
+    """FileSystem-aware os.path.isfile() replacement."""
     isolated = _current_isolated_fs.get()
     if isolated is not None:
         return isolated.isfile(path)
@@ -260,7 +261,7 @@ def _vfs_isfile(path: str, **kwargs: Any) -> bool:
 
 
 def _vfs_isdir(path: str, **kwargs: Any) -> bool:
-    """Filesystem-aware os.path.isdir() replacement."""
+    """FileSystem-aware os.path.isdir() replacement."""
     isolated = _current_isolated_fs.get()
     if isolated is not None:
         return isolated.isdir(path)
@@ -273,7 +274,7 @@ def _vfs_isdir(path: str, **kwargs: Any) -> bool:
 
 
 def _vfs_getsize(path: str, **kwargs: Any) -> int:
-    """Filesystem-aware os.path.getsize() replacement."""
+    """FileSystem-aware os.path.getsize() replacement."""
     isolated = _current_isolated_fs.get()
     if isolated is not None:
         return isolated.stat(path).size
@@ -379,6 +380,42 @@ def with_isolated_fs(isolated_fs: "IsolatedFS") -> Iterator[None]:
         yield
     finally:
         _current_isolated_fs.reset(token)
+
+
+@contextmanager
+def with_fs_context(fs: "FileSystem") -> Iterator[None]:
+    """Set FS for current async context based on filesystem type.
+
+    Dispatches to the appropriate context manager based on filesystem type.
+    This is the unified entry point for filesystem context management.
+
+    Args:
+        fs: FileSystem instance (VirtualFS, IsolatedFS, or AgentAwareFS) to use.
+
+    Yields:
+        None. File operations within the block will use the filesystem.
+
+    Example:
+        >>> with with_fs_context(fs):
+        ...     with open("data.csv", "w") as f:
+        ...         f.write("a,b,c")
+        ...     # File is written to the appropriate filesystem
+    """
+    from agex.fs.aware import AgentAwareFS
+    from agex.fs.isolated import IsolatedFS
+    from agex.fs.virtual import VirtualFS
+
+    # Unwrap AgentAwareFS to get the underlying filesystem
+    actual_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
+
+    if isinstance(actual_fs, VirtualFS):
+        with with_virtual_fs(actual_fs):
+            yield
+    elif isinstance(actual_fs, IsolatedFS):
+        with with_isolated_fs(actual_fs):
+            yield
+    else:
+        raise TypeError(f"Unknown filesystem type: {type(actual_fs)}")
 
 
 def get_current_vfs() -> "VirtualFS | None":

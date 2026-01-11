@@ -1,4 +1,4 @@
-"""Filesystem support for agex agents.
+"""FileSystem support for agex agents.
 
 This module provides both virtual (in-memory) and isolated (restricted real)
 filesystem access for agents via standard Python file operations.
@@ -12,7 +12,7 @@ Public API:
     swap_agent_fs_functions: Swap registered fs functions with FS-aware versions
 """
 
-from agex.fs.aware import AgentAwareVFS
+from agex.fs.aware import AgentAwareFS
 from agex.fs.config import (
     FSConfig,
     IsolatedFSConfig,
@@ -22,13 +22,14 @@ from agex.fs.config import (
 from agex.fs.isolated import IsolatedFS
 from agex.fs.patching import (
     swap_agent_fs_functions,
+    with_fs_context,
     with_isolated_fs,
     with_virtual_fs,
 )
 from agex.fs.virtual import FileInfo, FileMetadata, VirtualFile, VirtualFS
 
 __all__ = [
-    "AgentAwareVFS",
+    "AgentAwareFS",
     "connect_fs",
     "FSConfig",
     "FileInfo",
@@ -39,6 +40,7 @@ __all__ = [
     "VirtualFile",
     "VirtualFS",
     "VirtualFSConfig",
+    "with_fs_context",
     "with_isolated_fs",
     "with_virtual_fs",
 ]

@@ -106,6 +106,18 @@ class Resolver:
 
         # AgexModule attribute access with JIT resolution
         if isinstance(value, AgexModule):
+            # First check if this is a registered submodule
+            parent_ns = self.agent._policy.namespaces.get(value.name)  # type: ignore[attr-defined]
+            if (
+                parent_ns
+                and hasattr(parent_ns, "submodules")
+                and attr_name in parent_ns.submodules
+            ):
+                child_ns_name = parent_ns.submodules[attr_name]
+                return AgexModule(
+                    name=child_ns_name, agent_fingerprint=self.agent.fingerprint
+                )
+
             # Prefer exact namespace match
             res = self.agent._policy.resolve_module_member(value.name, attr_name)
             # If no exact match, try resolving against the nearest registered parent namespace
@@ -244,22 +256,38 @@ class Resolver:
 
         res = self.agent._policy.resolve_module_member(module_name, member_name)
         if res is None:
+            # Check if module_name is a dotted path like "os.path" where the submodule
+            # is registered separately. Look for parent.submodule relationships.
+            if "." in module_name:
+                parts = module_name.rsplit(".", 1)
+                if len(parts) == 2:
+                    parent_name, child_name = parts
+                    parent_ns = self.agent._policy.namespaces.get(parent_name)  # type: ignore[attr-defined]
+                    if parent_ns and hasattr(parent_ns, "submodules"):
+                        actual_child_ns_name = parent_ns.submodules.get(child_name)
+                        if actual_child_ns_name:
+                            # Try resolving from the actual child namespace
+                            res = self.agent._policy.resolve_module_member(
+                                actual_child_ns_name, member_name
+                            )
+
             # Fallback for recursive parents: allow 'from parent.child import leaf'
-            parent_ns_name = None
-            for ns_name, ns in self.agent._policy.namespaces.items():  # type: ignore[attr-defined]
-                if getattr(ns, "kind", None) != "module":
-                    continue
-                if not getattr(ns, "recursive", False):
-                    continue
-                if module_name.startswith(ns_name + "."):
-                    parent_ns_name = ns_name
-                    break
-            if parent_ns_name is not None:
-                suffix = module_name[len(parent_ns_name) + 1 :]
-                dotted_member = f"{suffix}.{member_name}"
-                res = self.agent._policy.resolve_module_member(
-                    parent_ns_name, dotted_member
-                )
+            if res is None:
+                parent_ns_name = None
+                for ns_name, ns in self.agent._policy.namespaces.items():  # type: ignore[attr-defined]
+                    if getattr(ns, "kind", None) != "module":
+                        continue
+                    if not getattr(ns, "recursive", False):
+                        continue
+                    if module_name.startswith(ns_name + "."):
+                        parent_ns_name = ns_name
+                        break
+                if parent_ns_name is not None:
+                    suffix = module_name[len(parent_ns_name) + 1 :]
+                    dotted_member = f"{suffix}.{member_name}"
+                    res = self.agent._policy.resolve_module_member(
+                        parent_ns_name, dotted_member
+                    )
         if res is None:
             raise EvalError(
                 f"Cannot import name '{member_name}' from module '{module_name}'.",

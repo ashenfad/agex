@@ -122,6 +122,18 @@ class Versioned(State):
         )
 
     @property
+    def latest_head(self) -> str | None:
+        """Get the latest HEAD commit hash from the KV store.
+
+        This reads directly from the KV store, so it reflects any updates
+        made by other Versioned instances sharing the same store.
+        """
+        head_bytes = self.long_term.get(HEAD_COMMIT)
+        if head_bytes:
+            return pickle.loads(head_bytes)
+        return None
+
+    @property
     def base_store(self) -> "State":
         return self
 

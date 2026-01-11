@@ -12,11 +12,11 @@ from typing import Any
 
 from agex.state import State
 
-from .virtual import FileMetadata
+from .base import FileInfo, FileMetadata, FileSystem
 
 
-class IsolatedFS:
-    """Filesystem interface restricted to a root directory.
+class IsolatedFS(FileSystem):
+    """FileSystem interface restricted to a root directory.
 
     All file operations are validated to ensure paths stay within the
     configured root directory. Optionally tracks file changes for FileEvents.
@@ -372,7 +372,7 @@ class IsolatedFS:
         """
         return self._get_metadata().copy()
 
-    # VirtualFS-compatible aliases for AgentAwareVFS
+    # VirtualFS-compatible aliases for AgentAwareFS
 
     def list(self, path: str = ".") -> list[str]:
         """List directory contents (alias for listdir)."""
@@ -404,17 +404,15 @@ class IsolatedFS:
         for path in paths:
             self.remove(path)
 
-    def list_detailed(self, path: str = ".") -> list[dict]:
+    def list_detailed(self, path: str = ".") -> list[FileInfo]:
         """List directory with detailed file information.
 
         Args:
             path: Directory path to list.
 
         Returns:
-            List of dictionaries with file info (name, size, timestamps).
+            List of FileInfo objects with file info (name, size, timestamps).
         """
-        from .virtual import FileInfo
-
         resolved = self._validate_path(path)
         if not resolved.is_dir():
             raise NotADirectoryError(f"Not a directory: {path}")

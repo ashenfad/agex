@@ -3,6 +3,7 @@ import asyncio
 from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
+from agex.fs.base import FileSystem
 from agex.state.core import State
 
 from .base import BaseEvaluator
@@ -124,8 +125,10 @@ def evaluate_program(
     program: str,
     agent: BaseAgent,
     state: State,
-    session: str = "default",
     eval_timeout_seconds: float | None = None,
+    *,
+    fs: FileSystem | None = None,
+    session: str = "default",
     on_event: Callable[[Any], None] | None = None,
     on_token: Callable[[Any], None] | None = None,
     main_loop: asyncio.AbstractEventLoop | None = None,
@@ -138,8 +141,9 @@ def evaluate_program(
         program: The Python code to execute
         agent: The agent providing the execution context
         state: The state to execute in
-        session: Session identifier for per-session filesystem isolation
         eval_timeout_seconds: Optional timeout override. If None, uses agent.eval_timeout_seconds
+        fs: Optional filesystem instance to use for file operations (keyword-only)
+        session: Session identifier (unused, kept for API compatibility, keyword-only)
         on_event: Optional handler to call for each event
         on_token: Optional handler to call for each token
         main_loop: Optional asyncio loop for bridging async calls from the thread
@@ -160,42 +164,15 @@ def evaluate_program(
         main_loop=main_loop,
     )
 
-    # Set up filesystem context if agent has filesystem configured
+    # Set up filesystem context if fs is provided
     fs_context = None
-    fs_instance = None
-    if hasattr(agent, "_fs_config") and agent._fs_config is not None:
-        from agex.fs import (
-            IsolatedFS,
-            VirtualFS,
-            swap_agent_fs_functions,
-            with_isolated_fs,
-            with_virtual_fs,
-        )
-        from agex.fs.config import IsolatedFSConfig, VirtualFSConfig
+    if fs is not None:
+        from agex.fs import swap_agent_fs_functions, with_fs_context
 
         # Swap any registered fs functions (like open) with FS-aware wrappers
         # This handles the case where agent.fn(open) registered the real function
         swap_agent_fs_functions(agent)
-
-        if isinstance(agent._fs_config, VirtualFSConfig):
-            fs_instance = VirtualFS(state)
-            fs_context = with_virtual_fs(fs_instance)
-        elif isinstance(agent._fs_config, IsolatedFSConfig):
-            # For isolated FS, only use state if tracking is enabled
-            tracking_state = state if agent._fs_config.tracking else None
-
-            # Get session-specific root if per_session is enabled
-            root = _get_session_root(
-                agent._fs_config.root, session, agent._fs_config.per_session
-            )
-
-            fs_instance = IsolatedFS(root, tracking_state)
-            fs_context = with_isolated_fs(fs_instance)
-
-        # Snapshot metadata AFTER setting up context but BEFORE execution
-        metadata_before = fs_instance.get_metadata_snapshot() if fs_instance else None
-    else:
-        metadata_before = None
+        fs_context = with_fs_context(fs)
 
     try:
         # Enter filesystem context if configured
@@ -216,47 +193,3 @@ def evaluate_program(
         # Exit filesystem context if we entered it
         if fs_context is not None:
             fs_context.__exit__(None, None, None)
-
-        # Emit FileEvent if files changed during execution
-        if fs_instance is not None and metadata_before is not None:
-            _emit_file_event_if_changed(
-                agent, state, fs_instance, metadata_before, on_event
-            )
-
-
-def _emit_file_event_if_changed(
-    agent: BaseAgent,
-    state: State,
-    fs,  # VirtualFS or IsolatedFS instance
-    metadata_before: dict,
-    on_event: Callable[[Any], None] | None,
-) -> None:
-    """Emit FileEvent if files changed during agent code execution."""
-    from agex.agent.events import FileEvent
-    from agex.state.log import add_event_to_log
-
-    metadata_after = fs.get_metadata_snapshot()
-
-    before_paths = set(metadata_before.keys())
-    after_paths = set(metadata_after.keys())
-
-    added = list(after_paths - before_paths)
-    removed = list(before_paths - after_paths)
-
-    # Modified = same path but different modified_at timestamp
-    modified = [
-        p
-        for p in before_paths & after_paths
-        if metadata_before[p].modified_at != metadata_after[p].modified_at
-    ]
-
-    # Only emit if something actually changed
-    if added or modified or removed:
-        event = FileEvent(
-            agent_name=agent.name,
-            file_source="agent",
-            added=added,
-            modified=modified,
-            removed=removed,
-        )
-        add_event_to_log(state, event, on_event=on_event)

@@ -6,7 +6,10 @@ Contains the sync versions of the task loop generator and run methods.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from agex.fs.base import FileSystem
 
 from agex.agent.events import CancelledEvent
 from agex.agent.summarization import maybe_summarize_event_log
@@ -46,6 +49,7 @@ from .common import (
     get_commit_hash,
     get_events_from_log,
     initialize_exec_state,
+    maybe_file_event,
     yield_new_events,
 )
 
@@ -61,6 +65,7 @@ class SyncLoopMixin:
         inputs_instance: Any,
         return_type: type,
         state: Versioned | Live | Namespaced | None,
+        fs: FileSystem | None,
         session: str = "default",
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
@@ -126,8 +131,9 @@ class SyncLoopMixin:
                     setup,
                     self,
                     exec_state,
+                    self.eval_timeout_seconds,
+                    fs=fs,
                     session=session,
-                    eval_timeout_seconds=self.eval_timeout_seconds,
                     on_event=setup_on_event,
                     on_token=on_token,
                 )
@@ -196,8 +202,9 @@ class SyncLoopMixin:
                         code_to_evaluate,
                         self,
                         exec_state,
+                        self.eval_timeout_seconds,
+                        fs=fs,
                         session=session,
-                        eval_timeout_seconds=self.eval_timeout_seconds,
                         on_event=on_event,
                         on_token=on_token,
                     )
@@ -332,6 +339,12 @@ class SyncLoopMixin:
             if isinstance(base, Versioned):
                 versioned_state = base
 
+        if self._fs_config:
+            fs = self.fs(session=session)
+            fs_metadata_before = fs.get_metadata_snapshot()
+        else:
+            fs = None
+
         for attempt in range(max_conflict_retries + 1):
             try:
                 generator = self._task_loop_generator(
@@ -341,6 +354,7 @@ class SyncLoopMixin:
                     inputs_instance,
                     return_type,
                     state,
+                    fs,
                     session=session,
                     on_event=on_event,
                     on_token=on_token,
@@ -353,11 +367,22 @@ class SyncLoopMixin:
                 except StopIteration as e:
                     result = e.value
 
+                if fs:
+                    fs_metadata_after = fs.get_metadata_snapshot()
+                    file_event = maybe_file_event(
+                        self.name, fs_metadata_before, fs_metadata_after
+                    )
+                    if file_event:
+                        add_event_to_log(state, file_event)
+
                 if versioned_state is not None:
-                    if on_conflict == "abandon":
-                        versioned_state.merge(on_conflict="abandon")
-                    else:
-                        versioned_state.merge()
+                    success = versioned_state.merge(on_conflict=on_conflict)
+                    if not success:
+                        raise ConcurrencyError("Failed to merge state")
+
+                if fs and file_event and on_event:
+                    # Emit file event after potential merge
+                    on_event(file_event)
 
                 return result
 

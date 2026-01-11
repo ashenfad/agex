@@ -54,6 +54,10 @@ class Namespace:
     # Inheritance: view onto another namespace
     parent: "Namespace | None" = None
 
+    # Maps attribute names to child namespace names for registered submodules
+    # E.g., for 'os' namespace: {"path": "os.path"} when os.path is also registered
+    submodules: dict[str, str] = field(default_factory=dict)
+
     # Internal spec for virtual/main
     fns: dict[str, MemberSpec] = field(default_factory=dict, init=False)
     fn_objects: dict[str, Callable] = field(default_factory=dict, init=False)
