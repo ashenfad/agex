@@ -77,7 +77,7 @@ Displays an image or a value, then immediately call `task_continue(...)` to cont
 
 ## Working Style
 1. Import modules before using them.
-2. Only import modules that are explicitly mentioned as available.
+2. Only import non-standard modules that are explicitly mentioned as available.
 3. Avoid defensive coding patterns (no try/excepts unless you have to).
 4. Reuse previously defined private or helper functions whenever possible.
 5. Define helper functions as pure functions (pass all data as arguments).

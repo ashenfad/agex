@@ -69,10 +69,18 @@ class Local(Host):
 
         # For disk storage, create with session-namespaced path
         if config.storage == "disk":
-            path = os.path.expanduser(config.path or "")
-            session_path = os.path.join(path, "sessions", session)
-            kv = Disk(session_path)
-            return self._create_state(config, kv)
+            # Cache disk-backed states to ensure singleton instance per session
+            # This is critical for split-brain avoidance where multiple components
+            # (e.g., task loop and agent.fs()) resolve the same state.
+            cache_key = f"{config.type}:{session}:{config.path}"
+
+            if cache_key not in self._session_cache:
+                path = os.path.expanduser(config.path or "")
+                session_path = os.path.join(path, "sessions", session)
+                kv = Disk(session_path)
+                self._session_cache[cache_key] = self._create_state(config, kv)
+
+            return self._session_cache[cache_key]
 
         # Fallback for unspecified storage (treat as memory)
         cache_key = f"{config.type}:{session}"

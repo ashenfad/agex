@@ -55,7 +55,7 @@ from .common import (
     get_commit_hash,
     get_events_from_log,
     initialize_exec_state,
-    maybe_file_event,
+    maybe_add_file_event,
     yield_new_events,
 )
 
@@ -72,6 +72,7 @@ class AsyncLoopMixin:
         return_type: type,
         state: Versioned | Live | Namespaced | None,
         fs: FileSystem | None,
+        fs_metadata_before: dict,
         session: str = "default",
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
@@ -273,6 +274,13 @@ class AsyncLoopMixin:
                 # the commit that will include it
                 next_commit = get_commit_hash() if versioned_state else None
 
+                # Check for file changes and add to log before snapshot
+                file_event = maybe_add_file_event(
+                    fs, fs_metadata_before, exec_state, self.name, next_commit
+                )
+                if file_event:
+                    yield file_event
+
                 success_event = create_success_event(self.name, task_signal.result)
                 success_event.commit_hash = next_commit
                 add_event_to_log(exec_state, success_event, on_event=None)
@@ -303,6 +311,13 @@ class AsyncLoopMixin:
                 # the commit that will include it
                 next_commit = get_commit_hash() if versioned_state else None
 
+                # Check for file changes and add to log before snapshot
+                file_event = maybe_add_file_event(
+                    fs, fs_metadata_before, exec_state, self.name, next_commit
+                )
+                if file_event:
+                    yield file_event
+
                 clarify_event = create_clarify_event(self.name, task_clarify.message)
                 clarify_event.commit_hash = next_commit
                 add_event_to_log(exec_state, clarify_event, on_event=None)
@@ -331,6 +346,13 @@ class AsyncLoopMixin:
                 # Pre-generate commit hash so the terminal event can reference
                 # the commit that will include it
                 next_commit = get_commit_hash() if versioned_state else None
+
+                # Check for file changes and add to log before snapshot
+                file_event = maybe_add_file_event(
+                    fs, fs_metadata_before, exec_state, self.name, next_commit
+                )
+                if file_event:
+                    yield file_event
 
                 fail_event = create_fail_event(self.name, task_fail.message)
                 fail_event.commit_hash = next_commit
@@ -418,10 +440,12 @@ class AsyncLoopMixin:
             fs_metadata_before = fs.get_metadata_snapshot()
         else:
             fs = None
+            fs_metadata_before = {}
 
         for attempt in range(max_conflict_retries + 1):
             try:
                 result = None
+                file_events = []  # Track FileEvents for post-merge emission
                 generator = self._atask_loop_generator(
                     task_name,
                     docstring,
@@ -430,6 +454,7 @@ class AsyncLoopMixin:
                     return_type,
                     state,
                     fs,
+                    fs_metadata_before,
                     session=session,
                     on_event=on_event,
                     on_token=on_token,
@@ -437,25 +462,23 @@ class AsyncLoopMixin:
                 )
 
                 async for event in generator:
-                    if isinstance(event, SuccessEvent):
-                        result = event.result
+                    # Track FileEvents but don't emit yet - wait for merge
+                    from agex.agent.events import FileEvent
 
-                if fs:
-                    fs_metadata_after = fs.get_metadata_snapshot()
-                    file_event = maybe_file_event(
-                        self.name, fs_metadata_before, fs_metadata_after
-                    )
-                    if file_event:
-                        add_event_to_log(state, file_event)
+                    if isinstance(event, FileEvent):
+                        file_events.append(event)
+                    elif isinstance(event, SuccessEvent):
+                        result = event.result
 
                 if versioned_state is not None:
                     success = versioned_state.merge(on_conflict=on_conflict)
                     if not success:
                         raise ConcurrencyError("Failed to merge state")
 
-                if fs and file_event and on_event:
-                    # Emit file event after potential merge
-                    on_event(file_event)
+                # Emit FileEvents after merge
+                for file_event in file_events:
+                    if on_event:
+                        on_event(file_event)
 
                 return result
 
@@ -477,4 +500,10 @@ class AsyncLoopMixin:
                     except ConcurrencyError:
                         if on_conflict != "abandon":
                             raise
+
+                # Emit FileEvents after merge
+                for file_event in file_events:
+                    if on_event:
+                        on_event(file_event)
+
                 raise

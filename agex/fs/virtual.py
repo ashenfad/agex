@@ -389,7 +389,11 @@ class VirtualFS(FileSystem):
             List of file/directory names in the directory.
         """
         # Normalize path
-        path = path.strip("/")
+        path = path.strip()
+        if path == "." or path == "./":
+            path = ""
+        else:
+            path = path.strip("/")
         if path:
             path = path + "/"
 
@@ -439,7 +443,13 @@ class VirtualFS(FileSystem):
             return True
 
         # Check for directory (any file with this prefix)
-        path = path.strip("/")
+        path = path.strip()
+        if path == "." or path == "./":
+            return True
+        else:
+            path = path.strip("/")
+            if not path:
+                return True
         if path:
             prefix = path + "/"
             for k in self._state.keys():
@@ -478,6 +488,9 @@ class VirtualFS(FileSystem):
             True if path is a directory, False otherwise.
         """
         # Root is always a directory
+        path = path.strip()
+        if path == "." or path == "./":
+            return True
         path = path.strip("/")
         if not path:
             return True
@@ -529,7 +542,6 @@ class VirtualFS(FileSystem):
         # Remove from metadata
         metadata = self._get_metadata()
         metadata.pop(path, None)
-        print("ADAM --- meta after remove", metadata)
         self._set_metadata(metadata)
 
         # Snapshot if requested and state supports it (after successful removal)
@@ -677,6 +689,13 @@ class VirtualFS(FileSystem):
         # Get file list from existing list() method
         names = self.list(path)
 
+        # Normalize path similar to list() methods to build correct full paths
+        normalized_path = path.strip()
+        if normalized_path == "." or normalized_path == "./":
+            normalized_path = ""
+        else:
+            normalized_path = normalized_path.strip("/")
+
         # Load all metadata once
         all_metadata = self._get_metadata()
 
@@ -684,10 +703,10 @@ class VirtualFS(FileSystem):
         result = []
         for name in names:
             # Construct full path
-            if path == "/":
+            if not normalized_path:
                 full_path = name
             else:
-                full_path = f"{path.strip('/')}/{name}"
+                full_path = f"{normalized_path}/{name}"
 
             # Check if it's a directory
             is_dir = self.isdir(full_path)
