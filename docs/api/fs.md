@@ -1,4 +1,4 @@
-# Filesystem Configuration
+# FileSystem Configuration
 
 The `connect_fs()` factory function configures agent filesystem access. By default, agents with IO capabilities (e.g., via `register_io()`) have unrestricted access to the host filesystem. Use `connect_fs()` to restrict access to:
 - **Virtual filesystem (VFS)**: In-memory filesystem backed by agent state
@@ -28,14 +28,14 @@ fs_config = connect_fs(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `type` | `str` | `"virtual"` | Filesystem type: `"virtual"` or `"isolated"` |
+| `type` | `str` | `"virtual"` | FileSystem type: `"virtual"` or `"isolated"` |
 | `root` | `str` | — | (isolated only) Absolute path to root directory. Must exist. |
 | `tracking` | `bool` | `False` | (isolated only) Whether to track file changes for FileEvents |
 | `per_session` | `bool` | `False` | (isolated only) Whether to create session-specific subdirectories |
 
-## Virtual Filesystem (VFS)
+## Virtual FileSystem (VFS)
 
-The Virtual Filesystem provides a secure, state-backed filesystem for agents. Files exist only in memory/state, not on the host filesystem.
+The Virtual FileSystem provides a secure, state-backed filesystem for agents. Files exist only in memory/state, not on the host filesystem.
 
 ### Key Features
 
@@ -57,9 +57,9 @@ agent = Agent(
 )
 ```
 
-## Isolated Filesystem
+## Isolated FileSystem
 
-The Isolated Filesystem provides restricted access to a real directory on the host filesystem. All operations are validated to stay within the root boundary.
+The Isolated FileSystem provides restricted access to a real directory on the host filesystem. All operations are validated to stay within the root boundary.
 
 ### Key Features
 

@@ -49,7 +49,7 @@ def connect_fs(
     Creates a filesystem configuration that can be passed to Agent().
 
     Args:
-        type: Filesystem type.
+        type: FileSystem type.
             - "virtual": In-memory filesystem backed by agent state.
                         Files persist with state and participate in versioning.
             - "isolated": Real filesystem restricted to a directory.

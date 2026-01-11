@@ -8,7 +8,7 @@ from .fingerprint import compute_agent_fingerprint_from_policy
 from .policy.policy import AgentPolicy
 
 if TYPE_CHECKING:
-    from ..fs.aware import AgentAwareVFS
+    from ..fs.aware import AgentAwareFS
     from ..fs.config import FSConfig
     from ..host import Host
     from ..host.dependencies import Dependencies
@@ -111,7 +111,7 @@ class BaseAgent:
         host: "Host | None" = None,
         # State configuration (optional, defaults to ephemeral)
         state: "StateConfig | None" = None,
-        # Filesystem configuration (optional, defaults to no access)
+        # FileSystem configuration (optional, defaults to no access)
         fs: "FSConfig | None" = None,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
@@ -147,7 +147,7 @@ class BaseAgent:
         # State configuration (None = ephemeral)
         self._state_config: "StateConfig | None" = state
 
-        # Filesystem configuration (None = no access)
+        # FileSystem configuration (None = no access)
         self._fs_config: "FSConfig | None" = fs
 
         # Validate state config is compatible with the host
@@ -345,7 +345,7 @@ class BaseAgent:
         """
         return self._host.state(self._state_config, session, self.fingerprint or "")
 
-    def fs(self, session: str = "default") -> "AgentAwareVFS":
+    def fs(self, session: str = "default") -> "AgentAwareFS":
         """
         Get filesystem accessor for a session.
 
@@ -382,7 +382,7 @@ class BaseAgent:
             session: Session identifier (default: "default")
 
         Returns:
-            AgentAwareVFS interface with read(), write(), list(), exists(), remove() methods
+            AgentAwareFS interface with read(), write(), list(), exists(), remove() methods
 
         Raises:
             ValueError: If agent was not configured with fs=connect_fs(...)
@@ -392,14 +392,14 @@ class BaseAgent:
                 "Agent not configured with filesystem. Use fs=connect_fs(...)"
             )
 
-        from agex.fs import AgentAwareVFS, IsolatedFS, VirtualFS
+        from agex.fs import AgentAwareFS, IsolatedFS, VirtualFS
         from agex.fs.config import IsolatedFSConfig, VirtualFSConfig
 
         state = self.state(session)
 
         if isinstance(self._fs_config, VirtualFSConfig):
             vfs = VirtualFS(state)
-            return AgentAwareVFS(vfs, state, self.name)
+            return AgentAwareFS(vfs, state, self.name)
 
         elif isinstance(self._fs_config, IsolatedFSConfig):
             from agex.eval.core import _get_session_root
@@ -413,7 +413,7 @@ class BaseAgent:
             )
 
             isolated_fs = IsolatedFS(root, tracking_state)
-            return AgentAwareVFS(isolated_fs, state, self.name)
+            return AgentAwareFS(isolated_fs, state, self.name)
 
         else:
             raise ValueError(f"Unsupported filesystem config: {type(self._fs_config)}")

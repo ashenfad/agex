@@ -76,7 +76,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         host: Host | None = None,
         # State configuration (optional, defaults to ephemeral)
         state: "StateConfig | None" = None,
-        # Filesystem configuration (optional, defaults to no access)
+        # FileSystem configuration (optional, defaults to no access)
         fs: "FSConfig | None" = None,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
@@ -100,7 +100,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
                 Use HTTP(url=...) for remote execution.
             state: State configuration (optional). Use connect_state() to create.
                 Defaults to ephemeral (fresh state per task call).
-            fs: Filesystem configuration (optional). Use connect_fs() to create.
+            fs: FileSystem configuration (optional). Use connect_fs() to create.
                 Enables virtual filesystem access for agents.
             log_high_water_tokens: Trigger event log summarization when total tokens
                 exceed this threshold. If None, no summarization is performed.
