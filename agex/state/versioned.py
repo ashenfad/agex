@@ -253,7 +253,7 @@ class Versioned(State):
 
         removed_from_live = self.live.remove(key)
         removed_from_commit = False
-        if not removed_from_live and key in self.commit_keys:
+        if key in self.commit_keys:
             self.removed.add(key)
             removed_from_commit = True
         return removed_from_live or removed_from_commit
@@ -471,6 +471,8 @@ class Versioned(State):
         self.removed = set()
         self.live = Live()
         self.accessed_objects.clear()  # Clear mutation tracking
+        self.meta = new_meta
+
         self.meta = new_meta
 
         return SnapshotResult(new_hash, unsaved_keys)

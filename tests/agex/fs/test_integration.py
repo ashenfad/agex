@@ -1,10 +1,17 @@
 """Integration tests for VirtualFS with agex agents."""
 
+import shutil
+
 import pytest
 
-from agex import Agent, clear_agent_registry, connect_fs, connect_state
+from agex import Agent, clear_agent_registry, connect_fs, connect_state, pprint_events
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
 class TestAgentVFSIntegration:
@@ -16,7 +23,7 @@ class TestAgentVFSIntegration:
 
     def test_agent_without_fs(self):
         """Test that agent without fs raises error when accessing fs()."""
-        agent = Agent()
+        agent = Agent(llm=Dummy())
 
         with pytest.raises(ValueError, match="not configured with filesystem"):
             agent.fs()
@@ -26,6 +33,7 @@ class TestAgentVFSIntegration:
         agent = Agent(
             state=connect_state(type="live", storage="memory"),
             fs=connect_fs(type="virtual"),
+            llm=Dummy(),
         )
 
         fs = agent.fs()
@@ -156,6 +164,7 @@ task_success("appended")""",
         agent = Agent(
             state=connect_state(type="versioned", storage="memory"),
             fs=connect_fs(type="virtual"),
+            llm=Dummy(),
         )
 
         fs = agent.fs()
@@ -174,6 +183,7 @@ task_success("appended")""",
         agent = Agent(
             state=connect_state(type="versioned", storage="memory"),
             fs=connect_fs(type="virtual"),
+            llm=Dummy(),
         )
 
         fs_session1 = agent.fs(session="session1")
@@ -278,3 +288,100 @@ task_success("created")""",
         assert isinstance(data, dict)
         assert data["key"] == "value"
         assert data["number"] == 42
+
+
+class TestRemoval:
+    """Test VFS works with real Python libraries."""
+
+    def test_removal_sync(self):
+        """Test that pandas can read CSV from VFS."""
+
+        llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="",
+                    code="""
+import os;
+os.remove("data.csv");
+task_success("removed")
+""",
+                )
+            ]
+        )
+
+        shutil.rmtree("/tmp/agex/fs-test", ignore_errors=True)
+        agent = Agent(
+            state=connect_state(
+                type="versioned", storage="disk", path="/tmp/agex/fs-test"
+            ),
+            fs=connect_fs(type="virtual"),
+            llm=llm,
+        )
+
+        # Upload CSV via fs()
+        fs = agent.fs()
+        csv_content = b"name,age\nAlice,30\nBob,25"
+        fs.write("data.csv", csv_content)
+
+        @agent.task
+        def do_a_thing() -> str:
+            """Do a thing."""
+            pass
+
+        fs = agent.fs()
+        print("Before:")
+        print(fs.list())
+
+        do_a_thing(on_event=pprint_events)
+
+        fs = agent.fs()
+        print("After:")
+        print(fs.list())
+        assert not fs.list()  # should be empty
+
+    @pytest.mark.anyio(backend="asyncio")
+    async def test_removal_async(self):
+        """Test that pandas can read CSV from VFS."""
+
+        llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="",
+                    code="""
+import os;
+os.remove("data.csv");
+task_success("removed")
+""",
+                )
+            ]
+        )
+
+        shutil.rmtree("/tmp/agex/fs-test", ignore_errors=True)
+        agent = Agent(
+            state=connect_state(
+                type="versioned", storage="disk", path="/tmp/agex/fs-test"
+            ),
+            fs=connect_fs(type="virtual"),
+            llm=llm,
+        )
+
+        # Upload CSV via fs()
+        fs = agent.fs()
+        csv_content = b"name,age\nAlice,30\nBob,25"
+        fs.write("data.csv", csv_content)
+
+        @agent.task
+        async def do_a_thing() -> str:
+            """Do a thing."""
+            pass
+
+        fs = agent.fs()
+        print("Before:")
+        print(fs.list())
+
+        await do_a_thing(on_event=pprint_events)
+
+        fs = agent.fs()
+        print("After:")
+        print(fs.list())
+        assert not fs.list()  # should be empty

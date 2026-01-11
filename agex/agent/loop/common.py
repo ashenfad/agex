@@ -66,6 +66,8 @@ __all__ = [
     "check_for_task_call",
     "strip_namespace_prefix",
     "yield_new_events",
+    "maybe_file_event",
+    "maybe_add_file_event",
     # Re-exports
     "ValidationError",
     "LLMFail",
@@ -388,3 +390,41 @@ def maybe_file_event(
             removed=removed,
         )
     return None
+
+
+def maybe_add_file_event(
+    fs,
+    fs_metadata_before: dict,
+    exec_state,
+    agent_name: str,
+    commit_hash: str | None,
+):
+    """Check for file changes and add FileEvent to log if needed.
+
+    This should be called BEFORE snapshot so the FileEvent is included in the commit.
+    The FileEvent should be yielded to the caller, but NOT emitted via on_event yet.
+    Emission happens after merge.
+
+    Args:
+        fs: The filesystem instance (or None if no fs)
+        fs_metadata_before: Snapshot of file metadata before execution
+        exec_state: The execution state to add the event to
+        agent_name: Name of the agent
+        commit_hash: Pre-generated commit hash for the event
+
+    Returns:
+        The FileEvent if created, None otherwise
+    """
+
+    if not fs:
+        return None
+
+    fs_metadata_after = fs.get_metadata_snapshot()
+    file_event = maybe_file_event(agent_name, fs_metadata_before, fs_metadata_after)
+
+    if file_event:
+        file_event.commit_hash = commit_hash
+        # Add to log WITHOUT on_event - we'll emit after merge
+        add_event_to_log(exec_state, file_event)
+
+    return file_event
