@@ -6,10 +6,12 @@ with optional file change tracking via FileEvents.
 
 from __future__ import annotations
 
+import io
 import pickle
 from pathlib import Path
 from typing import Any
 
+from agex.fs.context import suspend_fs_interception
 from agex.state import State
 
 from .base import FileInfo, FileMetadata, FileSystem
@@ -39,15 +41,17 @@ class IsolatedFS(FileSystem):
         Raises:
             ValueError: If root is not an absolute path or doesn't exist.
         """
-        root_path = Path(root)
-        if not root_path.is_absolute():
-            raise ValueError(f"Root must be absolute path: {root}")
+        # Suspend interception during init to ensure real verify works even if VFS active
+        with suspend_fs_interception():
+            root_path = Path(root)
+            if not root_path.is_absolute():
+                raise ValueError(f"Root must be absolute path: {root}")
 
-        self.root = root_path.resolve()
-        if not self.root.exists():
-            raise ValueError(f"Root directory does not exist: {root}")
-        if not self.root.is_dir():
-            raise ValueError(f"Root must be a directory: {root}")
+            self.root = root_path.resolve()
+            if not self.root.exists():
+                raise ValueError(f"Root directory does not exist: {root}")
+            if not self.root.is_dir():
+                raise ValueError(f"Root must be a directory: {root}")
 
         self._state = state
 
@@ -63,26 +67,27 @@ class IsolatedFS(FileSystem):
         Raises:
             PermissionError: If path escapes root directory.
         """
-        p = Path(path)
+        with suspend_fs_interception():
+            p = Path(path)
 
-        # Reject absolute paths that don't start with root
-        if p.is_absolute():
+            # Reject absolute paths that don't start with root
+            if p.is_absolute():
+                try:
+                    # Check if it's already within root
+                    p.relative_to(self.root)
+                except ValueError:
+                    raise PermissionError("Path outside root")
+
+            # Resolve relative to root (handles .., symlinks, etc.)
+            resolved = (self.root / p).resolve()
+
+            # Final boundary check
             try:
-                # Check if it's already within root
-                p.relative_to(self.root)
+                resolved.relative_to(self.root)
             except ValueError:
                 raise PermissionError("Path outside root")
 
-        # Resolve relative to root (handles .., symlinks, etc.)
-        resolved = (self.root / p).resolve()
-
-        # Final boundary check
-        try:
-            resolved.relative_to(self.root)
-        except ValueError:
-            raise PermissionError("Path outside root")
-
-        return resolved
+            return resolved
 
     def _get_metadata(self) -> dict[str, FileMetadata]:
         """Get current metadata dictionary from state."""
@@ -166,210 +171,123 @@ class IsolatedFS(FileSystem):
             PermissionError: If path is outside root.
             FileNotFoundError: If file doesn't exist (read mode).
         """
-        resolved = self._validate_path(path)
+        # Suspend for the whole operation including validation and opening
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
 
-        # Open the file
-        f = open(resolved, mode, **kwargs)
+            # Open the file calling io.open to be extra safe
+            f = io.open(resolved, mode, **kwargs)
 
-        # Track metadata for write/append modes
-        if any(m in mode for m in ["w", "a", "+"]):
-            # Register callback to update metadata on close
-            original_close = f.close
+            # Track metadata for write/append modes
+            if any(m in mode for m in ["w", "a", "+"]):
+                # Register callback to update metadata on close
+                original_close = f.close
 
-            def tracked_close():
-                original_close()
-                if resolved.exists():
-                    self._update_file_metadata(path, resolved.stat().st_size)
+                def tracked_close():
+                    # Need to check exists/stat which also need suspension
+                    with suspend_fs_interception():
+                        original_close()
+                        if resolved.exists():
+                            # Note: self._update_file_metadata calls _validate_path which suspends,
+                            # but resolved.stat() needs suspension here.
+                            self._update_file_metadata(path, resolved.stat().st_size)
 
-            f.close = tracked_close
+                f.close = tracked_close
 
-        return f
+            return f
 
     def read(self, path: str) -> bytes:
-        """Read entire file as bytes.
-
-        Args:
-            path: File path to read.
-
-        Returns:
-            File contents as bytes.
-
-        Raises:
-            PermissionError: If path is outside root.
-            FileNotFoundError: If file doesn't exist.
-        """
-        resolved = self._validate_path(path)
-        return resolved.read_bytes()
+        """Read entire file as bytes."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
+            return resolved.read_bytes()
 
     def write(self, path: str, content: bytes) -> None:
-        """Write bytes to file, creating parent directories if needed.
-
-        Args:
-            path: File path to write.
-            content: Bytes to write.
-
-        Raises:
-            PermissionError: If path is outside root.
-        """
-        resolved = self._validate_path(path)
-        resolved.parent.mkdir(parents=True, exist_ok=True)
-        resolved.write_bytes(content)
-        self._update_file_metadata(path, len(content))
+        """Write bytes to file, creating parent directories if needed."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            resolved.write_bytes(content)
+            self._update_file_metadata(path, len(content))
 
     def exists(self, path: str) -> bool:
-        """Check if path exists.
-
-        Args:
-            path: Path to check.
-
-        Returns:
-            True if path exists within root.
-
-        Raises:
-            PermissionError: If path is outside root.
-        """
-        resolved = self._validate_path(path)
-        return resolved.exists()
+        """Check if path exists."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
+            return resolved.exists()
 
     def isfile(self, path: str) -> bool:
-        """Check if path is a file.
-
-        Args:
-            path: Path to check.
-
-        Returns:
-            True if path is a file.
-
-        Raises:
-            PermissionError: If path is outside root.
-        """
-        resolved = self._validate_path(path)
-        return resolved.is_file()
+        """Check if path is a file."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
+            return resolved.is_file()
 
     def isdir(self, path: str) -> bool:
-        """Check if path is a directory.
-
-        Args:
-            path: Path to check.
-
-        Returns:
-            True if path is a directory.
-
-        Raises:
-            PermissionError: If path is outside root.
-        """
-        resolved = self._validate_path(path)
-        return resolved.is_dir()
+        """Check if path is a directory."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
+            return resolved.is_dir()
 
     def listdir(self, path: str = ".") -> list[str]:
-        """List directory contents.
-
-        Args:
-            path: Directory path to list (default: root).
-
-        Returns:
-            List of filenames in directory.
-
-        Raises:
-            PermissionError: If path is outside root.
-            NotADirectoryError: If path is not a directory.
-        """
-        resolved = self._validate_path(path)
-        if not resolved.is_dir():
-            raise NotADirectoryError(f"Not a directory: {path}")
-        return [p.name for p in resolved.iterdir()]
+        """List directory contents."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
+            if not resolved.is_dir():
+                raise NotADirectoryError(f"Not a directory: {path}")
+            return [p.name for p in resolved.iterdir()]
 
     def remove(self, path: str) -> None:
-        """Remove a file.
-
-        Args:
-            path: File path to remove.
-
-        Raises:
-            PermissionError: If path is outside root.
-            FileNotFoundError: If file doesn't exist.
-            IsADirectoryError: If path is a directory.
-        """
-        resolved = self._validate_path(path)
-        if resolved.is_dir():
-            raise IsADirectoryError(f"Is a directory: {path}")
-        resolved.unlink()
-        self._remove_file_metadata(path)
+        """Remove a file."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
+            if resolved.is_dir():
+                raise IsADirectoryError(f"Is a directory: {path}")
+            resolved.unlink()
+            self._remove_file_metadata(path)
 
     def mkdir(self, path: str, parents: bool = False, exist_ok: bool = False) -> None:
-        """Create a directory.
-
-        Args:
-            path: Directory path to create.
-            parents: Create parent directories if needed.
-            exist_ok: Don't raise error if directory exists.
-
-        Raises:
-            PermissionError: If path is outside root.
-            FileExistsError: If directory exists and exist_ok=False.
-        """
-        resolved = self._validate_path(path)
-        resolved.mkdir(parents=parents, exist_ok=exist_ok)
+        """Create a directory."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
+            resolved.mkdir(parents=parents, exist_ok=exist_ok)
 
     def rename(self, src: str, dst: str) -> None:
-        """Rename/move a file or directory.
+        """Rename/move a file or directory."""
+        with suspend_fs_interception():
+            src_resolved = self._validate_path(src)
+            dst_resolved = self._validate_path(dst)
 
-        Args:
-            src: Source path.
-            dst: Destination path.
-
-        Raises:
-            PermissionError: If either path is outside root.
-            FileNotFoundError: If source doesn't exist.
-        """
-        src_resolved = self._validate_path(src)
-        dst_resolved = self._validate_path(dst)
-
-        # Track metadata change if it's a file
-        if src_resolved.is_file():
-            self._remove_file_metadata(src)
-            size = src_resolved.stat().st_size
-            src_resolved.rename(dst_resolved)
-            self._update_file_metadata(dst, size)
-        else:
-            src_resolved.rename(dst_resolved)
+            # Track metadata change if it's a file
+            if src_resolved.is_file():
+                self._remove_file_metadata(src)
+                size = src_resolved.stat().st_size
+                src_resolved.rename(dst_resolved)
+                self._update_file_metadata(dst, size)
+            else:
+                src_resolved.rename(dst_resolved)
 
     def stat(self, path: str) -> FileMetadata:
-        """Get file metadata.
+        """Get file metadata."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
+            if not resolved.exists():
+                raise FileNotFoundError(f"No such file: {path}")
 
-        Args:
-            path: File path to stat.
+            stat_result = resolved.stat()
+            from datetime import datetime, timezone
 
-        Returns:
-            FileMetadata with size and timestamps.
-
-        Raises:
-            PermissionError: If path is outside root.
-            FileNotFoundError: If file doesn't exist.
-        """
-        resolved = self._validate_path(path)
-        if not resolved.exists():
-            raise FileNotFoundError(f"No such file: {path}")
-
-        stat_result = resolved.stat()
-        from datetime import datetime, timezone
-
-        return FileMetadata(
-            size=stat_result.st_size,
-            created_at=datetime.fromtimestamp(
-                stat_result.st_ctime, tz=timezone.utc
-            ).isoformat(),
-            modified_at=datetime.fromtimestamp(
-                stat_result.st_mtime, tz=timezone.utc
-            ).isoformat(),
-        )
+            return FileMetadata(
+                size=stat_result.st_size,
+                created_at=datetime.fromtimestamp(
+                    stat_result.st_ctime, tz=timezone.utc
+                ).isoformat(),
+                modified_at=datetime.fromtimestamp(
+                    stat_result.st_mtime, tz=timezone.utc
+                ).isoformat(),
+            )
 
     def get_metadata_snapshot(self) -> dict[str, FileMetadata]:
-        """Get current metadata snapshot for all tracked files.
-
-        Returns:
-            Dictionary mapping file paths to metadata.
-        """
+        """Get current metadata snapshot for all tracked files."""
         return self._get_metadata().copy()
 
     # VirtualFS-compatible aliases for AgentAwareFS
@@ -387,67 +305,55 @@ class IsolatedFS(FileSystem):
         self.mkdir(path, parents=True, exist_ok=exist_ok)
 
     def write_many(self, files: dict[str, bytes]) -> None:
-        """Write multiple files at once.
-
-        Args:
-            files: Dictionary mapping file paths to content bytes.
-        """
+        """Write multiple files at once."""
         for path, content in files.items():
             self.write(path, content)
 
     def remove_many(self, paths: list[str]) -> None:
-        """Remove multiple files at once.
-
-        Args:
-            paths: List of file paths to remove.
-        """
+        """Remove multiple files at once."""
         for path in paths:
             self.remove(path)
 
     def list_detailed(self, path: str = ".") -> list[FileInfo]:
-        """List directory with detailed file information.
+        """List directory with detailed file information."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
 
-        Args:
-            path: Directory path to list.
+            if not resolved.is_dir():
+                raise NotADirectoryError(f"Not a directory: {path}")
 
-        Returns:
-            List of FileInfo objects with file info (name, size, timestamps).
-        """
-        resolved = self._validate_path(path)
-        if not resolved.is_dir():
-            raise NotADirectoryError(f"Not a directory: {path}")
+            result = []
+            for item in resolved.iterdir():
+                rel_path = str(item.relative_to(self.root))
 
-        result = []
-        for item in resolved.iterdir():
-            rel_path = str(item.relative_to(self.root))
-            if item.is_file():
-                stat_info = item.stat()
-                from datetime import datetime, timezone
+                if item.is_file():
+                    stat_info = item.stat()
+                    from datetime import datetime, timezone
 
-                result.append(
-                    FileInfo(
-                        name=item.name,
-                        path=rel_path,
-                        is_dir=False,
-                        size=stat_info.st_size,
-                        created_at=datetime.fromtimestamp(
-                            stat_info.st_ctime, tz=timezone.utc
-                        ).isoformat(),
-                        modified_at=datetime.fromtimestamp(
-                            stat_info.st_mtime, tz=timezone.utc
-                        ).isoformat(),
+                    result.append(
+                        FileInfo(
+                            name=item.name,
+                            path=rel_path,
+                            is_dir=False,
+                            size=stat_info.st_size,
+                            created_at=datetime.fromtimestamp(
+                                stat_info.st_ctime, tz=timezone.utc
+                            ).isoformat(),
+                            modified_at=datetime.fromtimestamp(
+                                stat_info.st_mtime, tz=timezone.utc
+                            ).isoformat(),
+                        )
                     )
-                )
-            else:
-                result.append(
-                    FileInfo(
-                        name=item.name,
-                        path=rel_path,
-                        is_dir=True,
-                        size=0,
-                        created_at="",
-                        modified_at="",
+                else:
+                    result.append(
+                        FileInfo(
+                            name=item.name,
+                            path=rel_path,
+                            is_dir=True,
+                            size=0,
+                            created_at="",
+                            modified_at="",
+                        )
                     )
-                )
 
         return result
