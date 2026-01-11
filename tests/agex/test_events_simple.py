@@ -109,19 +109,9 @@ class TestEventsSimple:
         # Get events from the agent's namespace
         event_list = [e for e in events(state) if e.full_namespace == "print_agent"]
 
-        print("=== EVENTS DEBUG ===")
-        for i, event in enumerate(event_list):
-            print(f"{i}: {type(event).__name__}")
-            if hasattr(event, "parts") and isinstance(event, OutputEvent):
-                print(f"   Parts: {event.parts}")
-
         # Look for any OutputEvents
         output_events = [e for e in event_list if isinstance(e, OutputEvent)]
 
-        # This test will help us understand what's happening
-        print(f"Found {len(output_events)} OutputEvents")
-
-        # For now, let's just verify the task completes
         assert result == "done"
         success_events = [e for e in event_list if isinstance(e, SuccessEvent)]
         assert len(success_events) == 1
