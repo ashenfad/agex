@@ -2,6 +2,7 @@ from types import ModuleType
 from typing import Any, Callable
 
 from ..datatypes import MemberSpec
+from ._sync import _sync_submodule_attributes
 from .datatypes import (
     RESERVED_NAMES,
     Namespace,
@@ -75,6 +76,9 @@ class AgentPolicy:
                     if inspect.isclass(member):
                         # Register this class in _class_namespaces so methods are accessible
                         self._class_namespaces[member] = spec
+
+        # Sync submodule attributes so parent.child works when both are registered
+        _sync_submodule_attributes(self.namespaces)
 
         return spec
 

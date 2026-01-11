@@ -66,16 +66,16 @@ class TestFileEvent:
         assert "Modified" in html
 
 
-class TestAgentAwareVFSEvents:
-    """Test that AgentAwareVFS emits correct FileEvents."""
+class TestAgentAwareFSEvents:
+    """Test that AgentAwareFS emits correct FileEvents."""
 
     def test_write_emits_event_for_new_file(self):
         """Test that writing a new file emits FileEvent with added."""
-        from agex.fs import AgentAwareVFS
+        from agex.fs import AgentAwareFS
 
         state = Live()
         vfs = VirtualFS(state)
-        aware_vfs = AgentAwareVFS(vfs, state, "test_agent")
+        aware_vfs = AgentAwareFS(vfs, state, "test_agent")
 
         aware_vfs.write("new.txt", b"content")
 
@@ -88,13 +88,13 @@ class TestAgentAwareVFSEvents:
 
     def test_write_emits_event_for_modified_file(self):
         """Test that overwriting a file emits FileEvent with modified."""
-        from agex.fs import AgentAwareVFS
+        from agex.fs import AgentAwareFS
 
         state = Live()
         vfs = VirtualFS(state)
         vfs.write("existing.txt", b"original")  # Create without AgentAware
 
-        aware_vfs = AgentAwareVFS(vfs, state, "test_agent")
+        aware_vfs = AgentAwareFS(vfs, state, "test_agent")
         aware_vfs.write("existing.txt", b"updated")
 
         events = get_events_from_log(state)
@@ -105,13 +105,13 @@ class TestAgentAwareVFSEvents:
 
     def test_remove_emits_event(self):
         """Test that removing a file emits FileEvent with removed."""
-        from agex.fs import AgentAwareVFS
+        from agex.fs import AgentAwareFS
 
         state = Live()
         vfs = VirtualFS(state)
         vfs.write("to_delete.txt", b"content")
 
-        aware_vfs = AgentAwareVFS(vfs, state, "test_agent")
+        aware_vfs = AgentAwareFS(vfs, state, "test_agent")
         aware_vfs.remove("to_delete.txt")
 
         events = get_events_from_log(state)
@@ -121,13 +121,13 @@ class TestAgentAwareVFSEvents:
 
     def test_write_many_emits_single_event(self):
         """Test that write_many emits one event for all files."""
-        from agex.fs import AgentAwareVFS
+        from agex.fs import AgentAwareFS
 
         state = Live()
         vfs = VirtualFS(state)
         vfs.write("existing.txt", b"original")
 
-        aware_vfs = AgentAwareVFS(vfs, state, "test_agent")
+        aware_vfs = AgentAwareFS(vfs, state, "test_agent")
         aware_vfs.write_many(
             {
                 "new1.txt": b"content1",
@@ -144,13 +144,13 @@ class TestAgentAwareVFSEvents:
 
     def test_rename_emits_removed_and_added(self):
         """Test that rename emits both removed and added."""
-        from agex.fs import AgentAwareVFS
+        from agex.fs import AgentAwareFS
 
         state = Live()
         vfs = VirtualFS(state)
         vfs.write("old.txt", b"content")
 
-        aware_vfs = AgentAwareVFS(vfs, state, "test_agent")
+        aware_vfs = AgentAwareFS(vfs, state, "test_agent")
         aware_vfs.rename("old.txt", "new.txt")
 
         events = get_events_from_log(state)
@@ -161,13 +161,13 @@ class TestAgentAwareVFSEvents:
 
     def test_read_does_not_emit_event(self):
         """Test that read operations don't emit events."""
-        from agex.fs import AgentAwareVFS
+        from agex.fs import AgentAwareFS
 
         state = Live()
         vfs = VirtualFS(state)
         vfs.write("file.txt", b"content")
 
-        aware_vfs = AgentAwareVFS(vfs, state, "test_agent")
+        aware_vfs = AgentAwareFS(vfs, state, "test_agent")
         aware_vfs.read("file.txt")
         aware_vfs.exists("file.txt")
         aware_vfs.list("/")

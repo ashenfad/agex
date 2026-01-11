@@ -10,7 +10,10 @@ import asyncio
 import contextvars
 import inspect
 from functools import partial
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from agex.fs.base import FileSystem
 
 from agex.agent.events import CancelledEvent
 from agex.agent.summarization import maybe_summarize_event_log
@@ -52,6 +55,7 @@ from .common import (
     get_commit_hash,
     get_events_from_log,
     initialize_exec_state,
+    maybe_file_event,
     yield_new_events,
 )
 
@@ -67,6 +71,7 @@ class AsyncLoopMixin:
         inputs_instance: Any,
         return_type: type,
         state: Versioned | Live | Namespaced | None,
+        fs: FileSystem | None,
         session: str = "default",
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
@@ -162,11 +167,12 @@ class AsyncLoopMixin:
                     partial(
                         ctx.run,
                         evaluate_program,
-                        program=setup,
-                        agent=self,
-                        state=exec_state,
-                        session=session,  # ADDED
-                        eval_timeout_seconds=self.eval_timeout_seconds,
+                        setup,
+                        self,
+                        exec_state,
+                        self.eval_timeout_seconds,
+                        fs=fs,
+                        session=session,
                         on_event=setup_on_event,
                         on_token=thread_safe_on_token,
                         main_loop=loop,
@@ -246,11 +252,12 @@ class AsyncLoopMixin:
                         partial(
                             ctx.run,
                             evaluate_program,
-                            program=code_to_evaluate,
-                            agent=self,
-                            state=exec_state,
-                            session=session,  # ADDED
-                            eval_timeout_seconds=self.eval_timeout_seconds,
+                            code_to_evaluate,
+                            self,
+                            exec_state,
+                            self.eval_timeout_seconds,
+                            fs=fs,
+                            session=session,
                             on_event=thread_safe_on_event,
                             on_token=thread_safe_on_token,
                             main_loop=loop,
@@ -397,6 +404,7 @@ class AsyncLoopMixin:
         max_conflict_retries: int = 3,
     ):
         """Async version of _run_task_loop."""
+
         versioned_state: Versioned | None = None
         if isinstance(state, Versioned):
             versioned_state = state
@@ -404,6 +412,12 @@ class AsyncLoopMixin:
             base = state.base_store
             if isinstance(base, Versioned):
                 versioned_state = base
+
+        if self._fs_config:
+            fs = self.fs(session=session)
+            fs_metadata_before = fs.get_metadata_snapshot()
+        else:
+            fs = None
 
         for attempt in range(max_conflict_retries + 1):
             try:
@@ -415,6 +429,7 @@ class AsyncLoopMixin:
                     inputs_instance,
                     return_type,
                     state,
+                    fs,
                     session=session,
                     on_event=on_event,
                     on_token=on_token,
@@ -425,11 +440,22 @@ class AsyncLoopMixin:
                     if isinstance(event, SuccessEvent):
                         result = event.result
 
+                if fs:
+                    fs_metadata_after = fs.get_metadata_snapshot()
+                    file_event = maybe_file_event(
+                        self.name, fs_metadata_before, fs_metadata_after
+                    )
+                    if file_event:
+                        add_event_to_log(state, file_event)
+
                 if versioned_state is not None:
-                    if on_conflict == "abandon":
-                        versioned_state.merge(on_conflict="abandon")
-                    else:
-                        versioned_state.merge()
+                    success = versioned_state.merge(on_conflict=on_conflict)
+                    if not success:
+                        raise ConcurrencyError("Failed to merge state")
+
+                if fs and file_event and on_event:
+                    # Emit file event after potential merge
+                    on_event(file_event)
 
                 return result
 

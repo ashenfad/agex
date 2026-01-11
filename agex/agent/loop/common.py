@@ -355,3 +355,36 @@ def create_transient_event(
     if last_timestamp:
         event.timestamp = last_timestamp
     return event
+
+
+def maybe_file_event(
+    agent_name: str,
+    metadata_before: dict,
+    metadata_after: dict,
+) -> None:
+    """Emit FileEvent if files changed during agent code execution."""
+    from agex.agent.events import FileEvent
+
+    before_paths = set(metadata_before.keys())
+    after_paths = set(metadata_after.keys())
+
+    added = list(after_paths - before_paths)
+    removed = list(before_paths - after_paths)
+
+    # Modified = same path but different modified_at timestamp
+    modified = [
+        p
+        for p in before_paths & after_paths
+        if metadata_before[p].modified_at != metadata_after[p].modified_at
+    ]
+
+    # Only emit if something actually changed
+    if added or modified or removed:
+        return FileEvent(
+            agent_name=agent_name,
+            file_source="agent",
+            added=added,
+            modified=modified,
+            removed=removed,
+        )
+    return None

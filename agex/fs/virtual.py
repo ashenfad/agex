@@ -9,7 +9,6 @@ from __future__ import annotations
 import base64
 import io
 import pickle
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -17,40 +16,7 @@ if TYPE_CHECKING:
     from agex.state import State
 
 
-@dataclass
-class FileMetadata:
-    """Metadata for a single file in VirtualFS.
-
-    Attributes:
-        size: File size in bytes.
-        created_at: ISO 8601 timestamp when file was created (UTC).
-        modified_at: ISO 8601 timestamp when file was last modified (UTC).
-    """
-
-    size: int
-    created_at: str
-    modified_at: str
-
-
-@dataclass
-class FileInfo:
-    """Complete file information for UI display.
-
-    Attributes:
-        name: File or directory name (basename).
-        path: Full path to file or directory.
-        size: File size in bytes (0 for directories).
-        created_at: ISO 8601 timestamp when created (UTC).
-        modified_at: ISO 8601 timestamp when last modified (UTC).
-        is_dir: True if this is a directory, False if file.
-    """
-
-    name: str
-    path: str
-    size: int
-    created_at: str
-    modified_at: str
-    is_dir: bool
+from .base import FileInfo, FileMetadata, FileSystem
 
 
 class VirtualFile:
@@ -161,7 +127,7 @@ class VirtualFile:
         self.close()
 
 
-class VirtualFS:
+class VirtualFS(FileSystem):
     """State-backed virtual filesystem with metadata tracking.
 
     Provides file operations backed by agent state. Each file is stored
@@ -563,6 +529,7 @@ class VirtualFS:
         # Remove from metadata
         metadata = self._get_metadata()
         metadata.pop(path, None)
+        print("ADAM --- meta after remove", metadata)
         self._set_metadata(metadata)
 
         # Snapshot if requested and state supports it (after successful removal)
