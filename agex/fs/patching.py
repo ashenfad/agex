@@ -12,26 +12,21 @@ the real filesystem.
 from __future__ import annotations
 
 import builtins
-import contextvars
 import os
 import os.path
+import site
+import sys
 from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
+
+from agex.fs.context import current_isolated_fs, current_vfs
 
 if TYPE_CHECKING:
     from agex.fs.base import FileSystem
     from agex.fs.isolated import IsolatedFS
     from agex.fs.virtual import VirtualFS
 
-
-# Context variables holding the current filesystems
-# Isolated FS is checked first, then virtual FS, then real filesystem
-_current_isolated_fs: contextvars.ContextVar[IsolatedFS | None] = (
-    contextvars.ContextVar("agex_current_isolated_fs", default=None)
-)
-_current_vfs: contextvars.ContextVar[VirtualFS | None] = contextvars.ContextVar(
-    "agex_current_vfs", default=None
-)
 
 # Store original implementations once at import
 _originals: dict[str, Any] = {
@@ -53,6 +48,40 @@ _originals: dict[str, Any] = {
 _vfs_wrappers: dict[Any, Any] = {}
 
 
+# Define safe system paths for read-only passthrough
+# We allow access to stdlib and site-packages even when VFS/IsolatedFS is active
+# to support libraries that load their own resources (e.g., plotly, transformers).
+def _get_safe_paths() -> list[str]:
+    paths = {
+        sys.base_prefix,
+        sys.prefix,
+        sys.exec_prefix,
+        sys.base_exec_prefix,
+    }
+    # Add site packages
+    for p in site.getsitepackages():
+        paths.add(p)
+    if hasattr(site, "getusersitepackages"):
+        paths.add(site.getusersitepackages())
+
+    # Resolve all paths
+    return [str(Path(p).resolve()) for p in paths if os.path.exists(p)]
+
+
+_SAFE_SYSTEM_PATHS = _get_safe_paths()
+
+
+def _is_safe_system_path(path: str | Path) -> bool:
+    """Check if path is within a safe system directory."""
+    try:
+        # Resolve to absolute path using os.path.realpath to avoid Path.resolve() -> os.stat() recursion.
+        # os.path.realpath uses os.lstat which is not patched.
+        path_str = os.path.realpath(path)
+        return any(path_str.startswith(sp) for sp in _SAFE_SYSTEM_PATHS)
+    except (OSError, ValueError):
+        return False
+
+
 # VFS-aware wrapper functions
 
 
@@ -65,38 +94,78 @@ def _vfs_open(path: Any, *args: Any, **kwargs: Any) -> Any:
     mode = args[0] if args else kwargs.get("mode", "r")
 
     # Check isolated FS first
-    isolated = _current_isolated_fs.get()
-    if isolated is not None and isinstance(path, str):
-        return isolated.open(path, mode, **kwargs)
+    isolated = current_isolated_fs.get()
+    if isolated is not None and isinstance(path, (str, Path)):
+        try:
+            return isolated.open(str(path), mode, **kwargs)
+        except (PermissionError, FileNotFoundError):
+            # If read-only and permitted system path, fall through to original
+            if (
+                "w" not in mode
+                and "a" not in mode
+                and "+" not in mode
+                and "x" not in mode
+                and _is_safe_system_path(path)
+            ):
+                return _originals["open"](path, *args, **kwargs)
+            raise
 
     # Then check virtual FS
-    vfs = _current_vfs.get()
-    if vfs is not None and isinstance(path, str):
-        return vfs.open(path, mode, **kwargs)
+    vfs = current_vfs.get()
+    if vfs is not None and isinstance(path, (str, Path)):
+        try:
+            return vfs.open(str(path), mode, **kwargs)
+        except FileNotFoundError:
+            # If read-only and permitted system path, fall through to original
+            if (
+                "w" not in mode
+                and "a" not in mode
+                and "+" not in mode
+                and "x" not in mode
+                and _is_safe_system_path(path)
+            ):
+                return _originals["open"](path, *args, **kwargs)
+            raise
 
     return _originals["open"](path, *args, **kwargs)
 
 
 def _vfs_listdir(path: str = ".") -> list[str]:
     """FileSystem-aware os.listdir() replacement."""
-    isolated = _current_isolated_fs.get()
+    isolated = current_isolated_fs.get()
     if isolated is not None:
-        return isolated.listdir(path)
+        try:
+            return isolated.listdir(path)
+        except (PermissionError, FileNotFoundError, NotADirectoryError):
+            if _is_safe_system_path(path):
+                return _originals["listdir"](path)
+            raise
 
-    vfs = _current_vfs.get()
+    vfs = current_vfs.get()
     if vfs is not None:
-        return vfs.list(path)
+        # Check if directory exists in VFS
+        if vfs.isdir(path):
+            return vfs.list(path)
+
+        # If not in VFS, check if it's a safe system path
+        if _is_safe_system_path(path) and _originals["isdir"](path):
+            return _originals["listdir"](path)
+
+        # Otherwise raise FileNotFoundError if VFS thought it was missing
+        # (vfs.list returns empty list for "any prefix", but real listdir errors if valid dir not found)
+        # However, VFS.isdir returned False, so we should error unless safe path.
+        raise FileNotFoundError(f"[Errno 2] No such file or directory: '{path}'")
 
     return _originals["listdir"](path)
 
 
 def _vfs_remove(path: str, **kwargs: Any) -> None:
     """FileSystem-aware os.remove() replacement."""
-    isolated = _current_isolated_fs.get()
+    isolated = current_isolated_fs.get()
     if isolated is not None:
         return isolated.remove(path)
 
-    vfs = _current_vfs.get()
+    vfs = current_vfs.get()
     if vfs is not None:
         return vfs.remove(path, snapshot=False)
 
@@ -105,11 +174,11 @@ def _vfs_remove(path: str, **kwargs: Any) -> None:
 
 def _vfs_unlink(path: str, **kwargs: Any) -> None:
     """FileSystem-aware os.unlink() replacement (alias for remove)."""
-    isolated = _current_isolated_fs.get()
+    isolated = current_isolated_fs.get()
     if isolated is not None:
         return isolated.remove(path)
 
-    vfs = _current_vfs.get()
+    vfs = current_vfs.get()
     if vfs is not None:
         return vfs.remove(path, snapshot=False)
 
@@ -118,11 +187,11 @@ def _vfs_unlink(path: str, **kwargs: Any) -> None:
 
 def _vfs_mkdir(path: str, mode: int = 0o777, **kwargs: Any) -> None:
     """FileSystem-aware os.mkdir() replacement."""
-    isolated = _current_isolated_fs.get()
+    isolated = current_isolated_fs.get()
     if isolated is not None:
         return isolated.mkdir(path)
 
-    vfs = _current_vfs.get()
+    vfs = current_vfs.get()
     if vfs is not None:
         return vfs.mkdir(path)
 
@@ -131,11 +200,11 @@ def _vfs_mkdir(path: str, mode: int = 0o777, **kwargs: Any) -> None:
 
 def _vfs_makedirs(path: str, mode: int = 0o777, exist_ok: bool = False) -> None:
     """FileSystem-aware os.makedirs() replacement."""
-    isolated = _current_isolated_fs.get()
+    isolated = current_isolated_fs.get()
     if isolated is not None:
         return isolated.mkdir(path, parents=True, exist_ok=exist_ok)
 
-    vfs = _current_vfs.get()
+    vfs = current_vfs.get()
     if vfs is not None:
         return vfs.makedirs(path, exist_ok=exist_ok)
 
@@ -144,11 +213,11 @@ def _vfs_makedirs(path: str, mode: int = 0o777, exist_ok: bool = False) -> None:
 
 def _vfs_rename(src: str, dst: str, **kwargs: Any) -> None:
     """FileSystem-aware os.rename() replacement."""
-    isolated = _current_isolated_fs.get()
+    isolated = current_isolated_fs.get()
     if isolated is not None:
         return isolated.rename(src, dst)
 
-    vfs = _current_vfs.get()
+    vfs = current_vfs.get()
     if vfs is not None:
         return vfs.rename(src, dst, snapshot=False)
 
@@ -161,22 +230,27 @@ def _vfs_stat(path: str, **kwargs: Any) -> Any:
     Returns stat_result with metadata from filesystem when active.
     """
     # Check isolated FS first - it uses real stat
-    isolated = _current_isolated_fs.get()
+    isolated = current_isolated_fs.get()
     if isolated is not None:
-        return _originals["stat"](str(path), **kwargs)
+        try:
+            return isolated.stat(str(path))
+        except (PermissionError, FileNotFoundError):
+            if _is_safe_system_path(path):
+                return _originals["stat"](path, **kwargs)
+            raise
 
     # Then check virtual FS
-    vfs = _current_vfs.get()
+    vfs = current_vfs.get()
     if vfs is not None:
         import stat as stat_module
         from datetime import datetime
 
         # Convert pathlib.Path to string if needed (pandas may pass Path objects)
-        path = str(path)
+        path_str = str(path)
 
         # Check if it's a file
-        if vfs.isfile(path):
-            metadata = vfs.stat(path)
+        if vfs.isfile(path_str):
+            metadata = vfs.stat(path_str)
 
             # Parse ISO timestamps to epoch floats
             try:
@@ -206,7 +280,7 @@ def _vfs_stat(path: str, **kwargs: Any) -> Any:
             )
 
         # Check if it's a directory
-        elif vfs.isdir(path):
+        elif vfs.isdir(path_str):
             import time
 
             current_time = time.time()
@@ -227,8 +301,12 @@ def _vfs_stat(path: str, **kwargs: Any) -> Any:
                 )
             )
 
-        # Path doesn't exist
+        # Path doesn't exist in VFS
         else:
+            # Check safe paths before raising
+            if _is_safe_system_path(path):
+                return _originals["stat"](path, **kwargs)
+
             raise FileNotFoundError(f"[Errno 2] No such file or directory: '{path}'")
 
     return _originals["stat"](path, **kwargs)
@@ -236,52 +314,89 @@ def _vfs_stat(path: str, **kwargs: Any) -> Any:
 
 def _vfs_exists(path: str, **kwargs: Any) -> bool:
     """FileSystem-aware os.path.exists() replacement."""
-    isolated = _current_isolated_fs.get()
+    isolated = current_isolated_fs.get()
     if isolated is not None:
-        return isolated.exists(path)
+        try:
+            return isolated.exists(path)
+        except PermissionError:
+            if _is_safe_system_path(path):
+                return _originals["exists"](path, **kwargs)
+            return False
 
-    vfs = _current_vfs.get()
+    vfs = current_vfs.get()
     if vfs is not None:
-        return vfs.exists(path)
+        if vfs.exists(path):
+            return True
+        if _is_safe_system_path(path):
+            return _originals["exists"](path, **kwargs)
+        return False
 
     return _originals["exists"](path, **kwargs)
 
 
 def _vfs_isfile(path: str, **kwargs: Any) -> bool:
     """FileSystem-aware os.path.isfile() replacement."""
-    isolated = _current_isolated_fs.get()
+    isolated = current_isolated_fs.get()
     if isolated is not None:
-        return isolated.isfile(path)
+        try:
+            return isolated.isfile(path)
+        except PermissionError:
+            if _is_safe_system_path(path):
+                return _originals["isfile"](path, **kwargs)
+            return False
 
-    vfs = _current_vfs.get()
+    vfs = current_vfs.get()
     if vfs is not None:
-        return vfs.isfile(path)
+        if vfs.isfile(path):
+            return True
+        if _is_safe_system_path(path):
+            return _originals["isfile"](path, **kwargs)
+        return False
 
     return _originals["isfile"](path, **kwargs)
 
 
 def _vfs_isdir(path: str, **kwargs: Any) -> bool:
     """FileSystem-aware os.path.isdir() replacement."""
-    isolated = _current_isolated_fs.get()
+    isolated = current_isolated_fs.get()
     if isolated is not None:
-        return isolated.isdir(path)
+        try:
+            return isolated.isdir(path)
+        except PermissionError:
+            if _is_safe_system_path(path):
+                return _originals["isdir"](path, **kwargs)
+            return False
 
-    vfs = _current_vfs.get()
+    vfs = current_vfs.get()
     if vfs is not None:
-        return vfs.isdir(path)
+        if vfs.isdir(path):
+            return True
+        if _is_safe_system_path(path):
+            return _originals["isdir"](path, **kwargs)
+        return False
 
     return _originals["isdir"](path, **kwargs)
 
 
 def _vfs_getsize(path: str, **kwargs: Any) -> int:
     """FileSystem-aware os.path.getsize() replacement."""
-    isolated = _current_isolated_fs.get()
+    isolated = current_isolated_fs.get()
     if isolated is not None:
-        return isolated.stat(path).size
+        try:
+            return isolated.stat(path).size
+        except (PermissionError, FileNotFoundError):
+            if _is_safe_system_path(path):
+                return _originals["getsize"](path, **kwargs)
+            raise
 
-    vfs = _current_vfs.get()
+    vfs = current_vfs.get()
     if vfs is not None:
-        return vfs.getsize(path)
+        try:
+            return vfs.getsize(path)
+        except FileNotFoundError:
+            if _is_safe_system_path(path):
+                return _originals["getsize"](path, **kwargs)
+            raise
 
     return _originals["getsize"](path, **kwargs)
 
@@ -346,11 +461,11 @@ def with_virtual_fs(vfs: "VirtualFS") -> Iterator[None]:
         ...         f.write("a,b,c")
         ...     # File is written to VFS, not real filesystem
     """
-    token = _current_vfs.set(vfs)
+    token = current_vfs.set(vfs)
     try:
         yield
     finally:
-        _current_vfs.reset(token)
+        current_vfs.reset(token)
 
 
 @contextmanager
@@ -375,11 +490,11 @@ def with_isolated_fs(isolated_fs: "IsolatedFS") -> Iterator[None]:
         ...         f.write("a,b,c")
         ...     # File is written to real filesystem within root
     """
-    token = _current_isolated_fs.set(isolated_fs)
+    token = current_isolated_fs.set(isolated_fs)
     try:
         yield
     finally:
-        _current_isolated_fs.reset(token)
+        current_isolated_fs.reset(token)
 
 
 @contextmanager
@@ -424,7 +539,7 @@ def get_current_vfs() -> "VirtualFS | None":
     Returns:
         The current VirtualFS, or None if not in a VFS context.
     """
-    return _current_vfs.get()
+    return current_vfs.get()
 
 
 def get_current_isolated_fs() -> "IsolatedFS | None":
@@ -433,7 +548,7 @@ def get_current_isolated_fs() -> "IsolatedFS | None":
     Returns:
         The current IsolatedFS, or None if not in an isolated FS context.
     """
-    return _current_isolated_fs.get()
+    return current_isolated_fs.get()
 
 
 def swap_agent_fs_functions(agent: Any) -> None:

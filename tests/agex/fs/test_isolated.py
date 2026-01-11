@@ -2,7 +2,7 @@
 
 import pytest
 
-from agex import Agent, connect_fs
+from agex import Agent, connect_fs, pprint_events
 from agex.fs import IsolatedFS
 from agex.llm import Dummy, LLMResponse
 from agex.state import Versioned
@@ -264,7 +264,7 @@ task_success('done')
             """Process files."""
             pass
 
-        result = process()
+        result = process(on_event=pprint_events)
 
         assert result == "done"
         assert (tmp_path / "output.txt").read_text() == "HELLO"
