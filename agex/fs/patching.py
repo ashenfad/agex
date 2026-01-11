@@ -143,9 +143,10 @@ def _vfs_listdir(path: str = ".") -> list[str]:
 
     vfs = current_vfs.get()
     if vfs is not None:
+        path_str = str(path)
         # Check if directory exists in VFS
-        if vfs.isdir(path):
-            return vfs.list(path)
+        if vfs.isdir(path_str):
+            return vfs.list(path_str)
 
         # If not in VFS, check if it's a safe system path
         if _is_safe_system_path(path) and _originals["isdir"](path):
@@ -167,7 +168,7 @@ def _vfs_remove(path: str, **kwargs: Any) -> None:
 
     vfs = current_vfs.get()
     if vfs is not None:
-        return vfs.remove(path, snapshot=False)
+        return vfs.remove(str(path), snapshot=False)
 
     return _originals["remove"](path, **kwargs)
 
@@ -180,7 +181,7 @@ def _vfs_unlink(path: str, **kwargs: Any) -> None:
 
     vfs = current_vfs.get()
     if vfs is not None:
-        return vfs.remove(path, snapshot=False)
+        return vfs.remove(str(path), snapshot=False)
 
     return _originals["unlink"](path, **kwargs)
 
@@ -193,7 +194,7 @@ def _vfs_mkdir(path: str, mode: int = 0o777, **kwargs: Any) -> None:
 
     vfs = current_vfs.get()
     if vfs is not None:
-        return vfs.mkdir(path)
+        return vfs.mkdir(str(path))
 
     return _originals["mkdir"](path, mode, **kwargs)
 
@@ -206,7 +207,7 @@ def _vfs_makedirs(path: str, mode: int = 0o777, exist_ok: bool = False) -> None:
 
     vfs = current_vfs.get()
     if vfs is not None:
-        return vfs.makedirs(path, exist_ok=exist_ok)
+        return vfs.makedirs(str(path), exist_ok=exist_ok)
 
     return _originals["makedirs"](path, mode, exist_ok=exist_ok)
 
@@ -219,7 +220,7 @@ def _vfs_rename(src: str, dst: str, **kwargs: Any) -> None:
 
     vfs = current_vfs.get()
     if vfs is not None:
-        return vfs.rename(src, dst, snapshot=False)
+        return vfs.rename(str(src), str(dst), snapshot=False)
 
     return _originals["rename"](src, dst, **kwargs)
 
@@ -325,7 +326,8 @@ def _vfs_exists(path: str, **kwargs: Any) -> bool:
 
     vfs = current_vfs.get()
     if vfs is not None:
-        if vfs.exists(path):
+        path_str = str(path)
+        if vfs.exists(path_str):
             return True
         if _is_safe_system_path(path):
             return _originals["exists"](path, **kwargs)
@@ -347,7 +349,8 @@ def _vfs_isfile(path: str, **kwargs: Any) -> bool:
 
     vfs = current_vfs.get()
     if vfs is not None:
-        if vfs.isfile(path):
+        path_str = str(path)
+        if vfs.isfile(path_str):
             return True
         if _is_safe_system_path(path):
             return _originals["isfile"](path, **kwargs)
@@ -369,7 +372,8 @@ def _vfs_isdir(path: str, **kwargs: Any) -> bool:
 
     vfs = current_vfs.get()
     if vfs is not None:
-        if vfs.isdir(path):
+        path_str = str(path)
+        if vfs.isdir(path_str):
             return True
         if _is_safe_system_path(path):
             return _originals["isdir"](path, **kwargs)
@@ -392,7 +396,7 @@ def _vfs_getsize(path: str, **kwargs: Any) -> int:
     vfs = current_vfs.get()
     if vfs is not None:
         try:
-            return vfs.getsize(path)
+            return vfs.getsize(str(path))
         except FileNotFoundError:
             if _is_safe_system_path(path):
                 return _originals["getsize"](path, **kwargs)
