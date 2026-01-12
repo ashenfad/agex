@@ -20,6 +20,7 @@ import pathlib
 import site
 import sys
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
@@ -41,6 +42,7 @@ _originals: dict[str, Any] = {
     "makedirs": os.makedirs,
     "rename": os.rename,
     "stat": os.stat,
+    "lstat": os.lstat,
     "exists": os.path.exists,
     "isfile": os.path.isfile,
     "isdir": os.path.isdir,
@@ -78,12 +80,21 @@ def _get_safe_paths() -> list[str]:
 _SAFE_SYSTEM_PATHS = _get_safe_paths()
 
 
+# Recursion guard for safe path checks
+_in_safe_path_check: ContextVar[bool] = ContextVar("in_safe_path_check", default=False)
+
+
 def _is_safe_system_path(path: str | Path) -> bool:
     """Check if path is within a safe system directory."""
     try:
-        # Resolve to absolute path using os.path.realpath to avoid Path.resolve() -> os.stat() recursion.
-        # os.path.realpath uses os.lstat which is not patched.
-        path_str = os.path.realpath(path)
+        # Prevent recursion when realpath calls lstat/stat
+        token = _in_safe_path_check.set(True)
+        try:
+            # Resolve to absolute path using os.path.realpath
+            path_str = os.path.realpath(path)
+        finally:
+            _in_safe_path_check.reset(token)
+
         return any(path_str.startswith(sp) for sp in _SAFE_SYSTEM_PATHS)
     except (OSError, ValueError):
         return False
@@ -389,6 +400,10 @@ def _vfs_stat(path: str, **kwargs: Any) -> Any:
 
     Returns stat_result with metadata from filesystem when active.
     """
+    # Break recursion from realpath -> lstat -> _vfs_stat
+    if _in_safe_path_check.get():
+        return _originals["stat"](path, **kwargs)
+
     # Check isolated FS first - it uses real stat
     isolated = current_isolated_fs.get()
     if isolated is not None:
@@ -670,6 +685,7 @@ def apply_patches() -> None:
     os.makedirs = _vfs_makedirs  # type: ignore[assignment]
     os.rename = _vfs_rename  # type: ignore[assignment]
     os.stat = _vfs_stat  # type: ignore[assignment]
+    os.lstat = _vfs_stat  # type: ignore[assignment]
     os.scandir = _vfs_scandir  # type: ignore[assignment]
     os.getcwd = _vfs_getcwd  # type: ignore[assignment]
     os.utime = _vfs_utime  # type: ignore[assignment]
@@ -710,6 +726,8 @@ def apply_patches() -> None:
         accessor = pathlib._NormalAccessor  # type: ignore
         if hasattr(accessor, "stat"):
             accessor.stat = staticmethod(_vfs_stat)  # staticmethod on class
+        if hasattr(accessor, "lstat"):
+            accessor.lstat = staticmethod(_vfs_stat)
         if hasattr(accessor, "scandir"):
             accessor.scandir = staticmethod(_vfs_scandir)
         if hasattr(accessor, "open"):
@@ -728,6 +746,17 @@ def apply_patches() -> None:
             accessor.listdir = staticmethod(_vfs_listdir)
         if hasattr(accessor, "getcwd"):
             accessor.getcwd = staticmethod(_vfs_getcwd)
+
+    # Patch pathlib.Path._globber (Python 3.13+)
+    # It captures os.scandir/lstat at definition time
+    if hasattr(pathlib.Path, "_globber"):
+        globber = pathlib.Path._globber  # type: ignore
+        if hasattr(globber, "scandir"):
+            globber.scandir = staticmethod(_vfs_scandir)
+        if hasattr(globber, "lstat"):
+            globber.lstat = staticmethod(
+                _vfs_stat
+            )  # _vfs_stat handles VFS and delegates safely
 
 
 @contextmanager

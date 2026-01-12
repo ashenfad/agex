@@ -286,3 +286,21 @@ class TestPathlibIntegration:
             assert os.getcwd() == "/"
             assert str(Path(".").resolve()) == "/"
             assert str(Path(".").absolute()) == "/"
+
+    def test_lstat_vfs(self):
+        """Test Path.lstat() and os.lstat() work with VFS."""
+        state = Live()
+        vfs = VirtualFS(state)
+        vfs.write("file.txt", b"content")
+
+        with with_virtual_fs(vfs):
+            p = Path("file.txt")
+
+            # Test Path.lstat()
+            st = p.lstat()
+            assert st.st_size == 7
+            assert st.st_mtime > 0
+
+            # Test os.lstat()
+            st_os = os.lstat("file.txt")
+            assert st_os.st_size == 7
