@@ -11,10 +11,15 @@ from agex.state import Versioned
 class TestIsolatedFSPathValidation:
     """Test path validation and security."""
 
-    def test_rejects_nonexistent_root(self):
-        """Root directory must exist."""
-        with pytest.raises(ValueError, match="does not exist"):
-            IsolatedFS(root="/nonexistent/directory")
+    def test_creates_nonexistent_root(self, tmp_path):
+        """Non-existent root directory should be automatically created."""
+        new_root = tmp_path / "new_dir"
+        assert not new_root.exists()
+
+        IsolatedFS(root=str(new_root))
+
+        assert new_root.exists()
+        assert new_root.is_dir()
 
     def test_rejects_relative_root(self):
         """Root must be absolute path."""
