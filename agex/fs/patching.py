@@ -16,6 +16,7 @@ import errno
 import io
 import os
 import os.path
+import pathlib
 import site
 import sys
 from contextlib import contextmanager
@@ -281,9 +282,7 @@ def _vfs_scandir(path: str = ".") -> Any:
                 names = vfs.list(path_str)
                 for name in names:
                     # Construct child path for stat
-                    child_path = (
-                        os.path.join(path_str, name) if path_str != "." else name
-                    )
+                    child_path = os.path.join(path_str, name)
 
                     try:
                         # Get stat (using _vfs_stat which handles VFS logic)
@@ -691,7 +690,35 @@ def apply_patches() -> None:
     _vfs_exists.__name__ = "exists"
     _vfs_isfile.__name__ = "isfile"
     _vfs_isdir.__name__ = "isdir"
+    _vfs_isfile.__name__ = "isfile"
+    _vfs_isdir.__name__ = "isdir"
     _vfs_getsize.__name__ = "getsize"
+
+    # Patch pathlib internal accessor (Python < 3.11, e.g. 3.10)
+    # Older pathlib implementations cache os functions in _NormalAccessor
+    # So we need to patch those cached references directly.
+    if hasattr(pathlib, "_NormalAccessor"):
+        accessor = pathlib._NormalAccessor  # type: ignore
+        if hasattr(accessor, "stat"):
+            accessor.stat = staticmethod(_vfs_stat)  # staticmethod on class
+        if hasattr(accessor, "scandir"):
+            accessor.scandir = staticmethod(_vfs_scandir)
+        if hasattr(accessor, "open"):
+            accessor.open = staticmethod(_vfs_open)
+        if hasattr(accessor, "unlink"):
+            accessor.unlink = staticmethod(_vfs_unlink)
+        if hasattr(accessor, "rmdir"):
+            accessor.rmdir = staticmethod(
+                _vfs_remove
+            )  # rmdir/remove often same or similar enough
+        if hasattr(accessor, "rename"):
+            accessor.rename = staticmethod(_vfs_rename)
+        if hasattr(accessor, "mkdir"):
+            accessor.mkdir = staticmethod(_vfs_mkdir)
+        if hasattr(accessor, "listdir"):
+            accessor.listdir = staticmethod(_vfs_listdir)
+        if hasattr(accessor, "getcwd"):
+            accessor.getcwd = staticmethod(_vfs_getcwd)
 
 
 @contextmanager
