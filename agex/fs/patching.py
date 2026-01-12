@@ -202,6 +202,15 @@ class MockDirEntry:
     def inode(self) -> int:
         return 0
 
+    def __str__(self) -> str:
+        return self.path
+
+    def __fspath__(self) -> str:
+        return self.path
+
+    def __bytes__(self) -> bytes:
+        return os.fsencode(self.path)
+
     def __repr__(self) -> str:
         return f"<MockDirEntry '{self.name}'>"
 
