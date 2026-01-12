@@ -489,7 +489,36 @@ def _vfs_stat(path: str, **kwargs: Any) -> Any:
                 errno.ENOENT, f"No such file or directory: '{path}'", path
             )
 
+    # Fallback to original stat
     return _originals["stat"](path, **kwargs)
+
+
+def _vfs_lstat(path: str, **kwargs: Any) -> Any:
+    """FileSystem-aware os.lstat() replacement."""
+    # Break recursion from realpath -> lstat -> _vfs_lstat
+    if _in_safe_path_check.get():
+        return _originals["lstat"](path, **kwargs)
+
+    # Check isolated FS first - it uses real lstat
+    isolated = current_isolated_fs.get()
+    if isolated is not None:
+        try:
+            # For IsolatedFS, we want the real lstat result
+            resolved = isolated._validate_path(path)
+            # Use lstat explicitly to preserve symlink information
+            return _originals["lstat"](str(resolved), **kwargs)
+        except (PermissionError, FileNotFoundError, NotADirectoryError):
+            if _is_safe_system_path(path):
+                return _originals["lstat"](path, **kwargs)
+            raise
+
+    # Then check virtual FS (same as stat since VFS has no symlinks yet)
+    vfs = current_vfs.get()
+    if vfs is not None:
+        return _vfs_stat(path, **kwargs)
+
+    # Fallback to original lstat
+    return _originals["lstat"](path, **kwargs)
 
 
 def _vfs_exists(path: str, **kwargs: Any) -> bool:
@@ -685,7 +714,7 @@ def apply_patches() -> None:
     os.makedirs = _vfs_makedirs  # type: ignore[assignment]
     os.rename = _vfs_rename  # type: ignore[assignment]
     os.stat = _vfs_stat  # type: ignore[assignment]
-    os.lstat = _vfs_stat  # type: ignore[assignment]
+    os.lstat = _vfs_lstat  # type: ignore[assignment]
     os.scandir = _vfs_scandir  # type: ignore[assignment]
     os.getcwd = _vfs_getcwd  # type: ignore[assignment]
     os.utime = _vfs_utime  # type: ignore[assignment]
@@ -727,7 +756,7 @@ def apply_patches() -> None:
         if hasattr(accessor, "stat"):
             accessor.stat = staticmethod(_vfs_stat)  # staticmethod on class
         if hasattr(accessor, "lstat"):
-            accessor.lstat = staticmethod(_vfs_stat)
+            accessor.lstat = staticmethod(_vfs_lstat)
         if hasattr(accessor, "scandir"):
             accessor.scandir = staticmethod(_vfs_scandir)
         if hasattr(accessor, "open"):
@@ -755,7 +784,7 @@ def apply_patches() -> None:
             globber.scandir = staticmethod(_vfs_scandir)
         if hasattr(globber, "lstat"):
             globber.lstat = staticmethod(
-                _vfs_stat
+                _vfs_lstat
             )  # _vfs_stat handles VFS and delegates safely
 
 
