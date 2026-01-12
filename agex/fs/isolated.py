@@ -49,7 +49,7 @@ class IsolatedFS(FileSystem):
 
             self.root = root_path.resolve()
             if not self.root.exists():
-                raise ValueError(f"Root directory does not exist: {root}")
+                self.root.mkdir(parents=True, exist_ok=True)
             if not self.root.is_dir():
                 raise ValueError(f"Root must be a directory: {root}")
 
