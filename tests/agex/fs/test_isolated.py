@@ -52,11 +52,27 @@ class TestIsolatedFSPathValidation:
         """Absolute paths outside root should be blocked."""
         fs = IsolatedFS(root=str(tmp_path))
 
-        with pytest.raises(PermissionError, match="outside root"):
+    def test_absolute_paths_are_rerooted(self, tmp_path):
+        """Absolute paths are treated as relative to the isolated root."""
+        fs = IsolatedFS(root=str(tmp_path))
+
+        # Create a file at $ROOT/foo.txt
+        (tmp_path / "foo.txt").write_text("data")
+
+        # Open valid re-rooted absolute path
+        # /foo.txt -> $ROOT/foo.txt
+        with fs.open("/foo.txt", "r") as f:
+            assert f.read() == "data"
+
+        # Open invalid re-rooted path
+        # /etc/passwd -> $ROOT/etc/passwd (which likely handles missing file)
+        with pytest.raises(FileNotFoundError):
             fs.open("/etc/passwd")
 
+        # But path traversal should STILL be blocked
+        # /../../etc/passwd -> $ROOT/../etc/passwd -> OUTSIDE
         with pytest.raises(PermissionError, match="outside root"):
-            fs.read("/tmp/outside.txt")
+            fs.open("/../../etc/passwd")
 
     def test_symlink_to_outside_blocked(self, tmp_path):
         """Symlinks pointing outside root should be blocked."""

@@ -70,13 +70,10 @@ class IsolatedFS(FileSystem):
         with suspend_fs_interception():
             p = Path(path)
 
-            # Reject absolute paths that don't start with root
+            # Treat absolute paths as relative to the isolated root (chroot-like)
+            # e.g. /foo -> foo, / -> .
             if p.is_absolute():
-                try:
-                    # Check if it's already within root
-                    p.relative_to(self.root)
-                except ValueError:
-                    raise PermissionError("Path outside root")
+                p = p.relative_to(p.anchor)
 
             # Resolve relative to root (handles .., symlinks, etc.)
             resolved = (self.root / p).resolve()
@@ -85,7 +82,9 @@ class IsolatedFS(FileSystem):
             try:
                 resolved.relative_to(self.root)
             except ValueError:
-                raise PermissionError("Path outside root")
+                raise PermissionError(
+                    f"Path outside root: {resolved} (root: {self.root})"
+                )
 
             return resolved
 
