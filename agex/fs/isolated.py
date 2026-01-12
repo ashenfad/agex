@@ -73,10 +73,17 @@ class IsolatedFS(FileSystem):
             # Treat absolute paths as relative to the isolated root (chroot-like)
             # e.g. /foo -> foo, / -> .
             if p.is_absolute():
-                p = p.relative_to(p.anchor)
-
-            # Resolve relative to root (handles .., symlinks, etc.)
-            resolved = (self.root / p).resolve()
+                # If path is already inside root (e.g. from resolve()), use it as is
+                try:
+                    p.relative_to(self.root)
+                    resolved = p.resolve()
+                except ValueError:
+                    # If absolute but outside root (e.g. /etc/passwd), treat as relative to root
+                    p = p.relative_to(p.anchor)
+                    resolved = (self.root / p).resolve()
+            else:
+                # Resolve relative to root (handles .., symlinks, etc.)
+                resolved = (self.root / p).resolve()
 
             # Final boundary check
             try:
