@@ -12,6 +12,8 @@ the real filesystem.
 from __future__ import annotations
 
 import builtins
+import errno
+import io
 import os
 import os.path
 import site
@@ -42,6 +44,10 @@ _originals: dict[str, Any] = {
     "isfile": os.path.isfile,
     "isdir": os.path.isdir,
     "getsize": os.path.getsize,
+    "scandir": os.scandir,
+    "getcwd": os.getcwd,
+    "utime": os.utime,
+    "touch": Path.touch,
 }
 
 # Will be populated after wrapper functions are defined
@@ -155,9 +161,154 @@ def _vfs_listdir(path: str = ".") -> list[str]:
         # Otherwise raise FileNotFoundError if VFS thought it was missing
         # (vfs.list returns empty list for "any prefix", but real listdir errors if valid dir not found)
         # However, VFS.isdir returned False, so we should error unless safe path.
-        raise FileNotFoundError(f"[Errno 2] No such file or directory: '{path}'")
+        raise FileNotFoundError(
+            errno.ENOENT, f"No such file or directory: '{path}'", path
+        )
 
     return _originals["listdir"](path)
+
+
+class MockDirEntry:
+    """Mock os.DirEntry for VFS items."""
+
+    def __init__(
+        self,
+        name: str,
+        is_dir: bool,
+        stat_result: os.stat_result | None = None,
+        path: str | None = None,
+    ):
+        self.name = name
+        self.path = path if path is not None else name
+        self._is_dir = is_dir
+        self._stat = stat_result
+
+    def is_dir(self, follow_symlinks: bool = True) -> bool:
+        return self._is_dir
+
+    def is_file(self, follow_symlinks: bool = True) -> bool:
+        return not self._is_dir
+
+    def is_symlink(self) -> bool:
+        return False
+
+    def stat(self, follow_symlinks: bool = True) -> os.stat_result:
+        if self._stat is None:
+            # Fallback if no stat provided (shouldn't happen with our usage)
+            raise FileNotFoundError(f"No stat available for {self.name}")
+        return self._stat
+
+    def inode(self) -> int:
+        return 0
+
+    def __repr__(self) -> str:
+        return f"<MockDirEntry '{self.name}'>"
+
+
+class ScandirWrapper:
+    """Wrapper to make generator compatible with os.scandir context manager protocol."""
+
+    def __init__(self, iterator: Iterator[os.DirEntry[str]]):
+        self._iterator = iterator
+
+    def __iter__(self) -> Iterator[os.DirEntry[str]]:
+        return self._iterator
+
+    def __enter__(self) -> "ScandirWrapper":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        pass
+
+
+def _vfs_scandir(path: str = ".") -> Any:
+    """FileSystem-aware os.scandir() replacement."""
+
+    def _scan_gen() -> Iterator[os.DirEntry[str]]:
+        import os
+        import stat
+
+        # Handle IsolatedFS
+        isolated = current_isolated_fs.get()
+        if isolated is not None:
+            try:
+                # Use listdir to get names, then yield MockDirEntries
+                resolved = isolated._validate_path(path)
+
+                # Check resolved path safely using original stat
+                try:
+                    root_st = _originals["stat"](str(resolved))
+                except OSError:
+                    # If we can't stat the resolved path, it doesn't exist or we can't access it
+                    raise NotADirectoryError(f"Not a directory: {path}")
+
+                if not stat.S_ISDIR(root_st.st_mode):
+                    raise NotADirectoryError(f"Not a directory: {path}")
+
+                names = isolated.listdir(path)
+
+                for name in names:
+                    full_path = str(resolved / name)
+                    try:
+                        # Use original stat to avoid recursion
+                        st = _originals["stat"](full_path)
+                        is_d = stat.S_ISDIR(st.st_mode)
+                        # Construct entry path relative to the input path to match os.scandir behavior.
+                        entry_path = os.path.join(path, name)
+                        yield MockDirEntry(name, is_d, st, path=entry_path)  # type: ignore[misc]
+                    except OSError:
+                        # Skip files that disappeared
+                        continue
+                return
+
+            except (PermissionError, FileNotFoundError, NotADirectoryError):
+                if _is_safe_system_path(path):
+                    # We need to yield from the original scandir
+                    with _originals["scandir"](path) as it:
+                        yield from it
+                    return
+                raise
+
+        # Handle VirtualFS
+        vfs = current_vfs.get()
+        if vfs is not None:
+            path_str = str(path)
+
+            # Check if directory exists in VFS
+            if vfs.isdir(path_str):
+                from agex.fs.patching import _vfs_stat  # Use our patched stat helper
+
+                names = vfs.list(path_str)
+                for name in names:
+                    # Construct child path for stat
+                    child_path = (
+                        os.path.join(path_str, name) if path_str != "." else name
+                    )
+
+                    try:
+                        # Get stat (using _vfs_stat which handles VFS logic)
+                        st = _vfs_stat(child_path)
+                        is_d = vfs.isdir(child_path)
+                        yield MockDirEntry(name, is_d, st, path=child_path)  # type: ignore[misc]
+                    except FileNotFoundError:
+                        continue
+                return
+
+            # If not in VFS, check if it's a safe system path
+            if _is_safe_system_path(path) and _originals["isdir"](path):
+                with _originals["scandir"](path) as it:
+                    yield from it
+                return
+
+            raise FileNotFoundError(
+                errno.ENOENT, f"No such file or directory: '{path}'", path
+            )
+
+        # No VFS/IsolatedFS active
+        with _originals["scandir"](path) as it:
+            yield from it
+
+    return ScandirWrapper(_scan_gen())
 
 
 def _vfs_remove(path: str, **kwargs: Any) -> None:
@@ -234,8 +385,11 @@ def _vfs_stat(path: str, **kwargs: Any) -> Any:
     isolated = current_isolated_fs.get()
     if isolated is not None:
         try:
-            return isolated.stat(str(path))
-        except (PermissionError, FileNotFoundError):
+            # For IsolatedFS, we want the real stat result (for pathlib compatibility)
+            # incorrectly usage of internal API but necessary for full stat support
+            resolved = isolated._validate_path(path)
+            return _originals["stat"](str(resolved), **kwargs)
+        except (PermissionError, FileNotFoundError, NotADirectoryError):
             if _is_safe_system_path(path):
                 return _originals["stat"](path, **kwargs)
             raise
@@ -308,7 +462,9 @@ def _vfs_stat(path: str, **kwargs: Any) -> Any:
             if _is_safe_system_path(path):
                 return _originals["stat"](path, **kwargs)
 
-            raise FileNotFoundError(f"[Errno 2] No such file or directory: '{path}'")
+            raise FileNotFoundError(
+                errno.ENOENT, f"No such file or directory: '{path}'", path
+            )
 
     return _originals["stat"](path, **kwargs)
 
@@ -405,6 +561,89 @@ def _vfs_getsize(path: str, **kwargs: Any) -> int:
     return _originals["getsize"](path, **kwargs)
 
 
+def _vfs_getcwd() -> str:
+    """FileSystem-aware os.getcwd() replacement.
+
+    Returns '/' if a virtual or isolated filesystem is active, otherwise
+    returns the real current working directory.
+    """
+    if current_isolated_fs.get() is not None:
+        return "/"
+
+    if current_vfs.get() is not None:
+        return "/"
+
+    return _originals["getcwd"]()
+
+
+def _vfs_utime(
+    path: str | bytes | os.PathLike[Any],
+    times: tuple[int, int] | tuple[float, float] | None = None,
+    **kwargs: Any,
+) -> None:
+    """FileSystem-aware os.utime() replacement."""
+    # We don't currently support VFS timestamp updates, but we want to avoid
+    # implementation-dependent errors when tools try to touch files.
+    # For now, pass through to isolated (which supports it) or swallow for VFS
+    # if the file exists.
+
+    path_str = str(path)
+
+    isolated = current_isolated_fs.get()
+    if isolated is not None:
+        try:
+            return _originals["utime"](
+                str(isolated._validate_path(path_str)), times, **kwargs
+            )
+        except (PermissionError, FileNotFoundError):
+            if _is_safe_system_path(path_str):
+                return _originals["utime"](path_str, times, **kwargs)
+            raise
+
+    vfs = current_vfs.get()
+    if vfs is not None:
+        if vfs.exists(path_str):
+            # TODO: Implement metadata updates in VFS
+            # For now, just silently succeed to allow 'touch' to work
+            return
+
+        if _is_safe_system_path(path_str):
+            return _originals["utime"](path_str, times, **kwargs)
+
+        raise FileNotFoundError(
+            errno.ENOENT, f"No such file or directory: '{path_str}'", path_str
+        )
+
+    return _originals["utime"](path, times, **kwargs)
+
+
+def _vfs_touch(self: Path, mode: int = 0o666, exist_ok: bool = True) -> None:
+    """FileSystem-aware pathlib.Path.touch() replacement.
+
+    This ensures Path.touch() uses the patched open() instead of OS-level open.
+    """
+    if exist_ok:
+        # First try to open for append (to avoid truncation) to check existence/create
+        # But touch semantics are tricky. Simple touch:
+        # 1. If exists, update times (utime)
+        # 2. If not, create empty file
+        try:
+            # Check existence first to decide whether to update timestamps or create
+            if self.exists():
+                os.utime(self, None)
+                return
+        except FileNotFoundError:
+            pass  # Does not exist, proceed to create
+
+        # Create empty file using patched open (append mode safe/create)
+        with builtins.open(self, "a"):
+            pass
+    else:
+        # exist_ok=False: Expect exclusive creation, raise FileExistsError if exists
+        with builtins.open(self, "x"):
+            pass
+
+
 def apply_patches() -> None:
     """Apply VFS-aware patches to builtins and os module.
 
@@ -413,6 +652,7 @@ def apply_patches() -> None:
     """
     # Patch builtins
     builtins.open = _vfs_open  # type: ignore[assignment]
+    io.open = _vfs_open  # type: ignore[assignment]
 
     # Patch os module
     os.listdir = _vfs_listdir  # type: ignore[assignment]
@@ -422,6 +662,12 @@ def apply_patches() -> None:
     os.makedirs = _vfs_makedirs  # type: ignore[assignment]
     os.rename = _vfs_rename  # type: ignore[assignment]
     os.stat = _vfs_stat  # type: ignore[assignment]
+    os.scandir = _vfs_scandir  # type: ignore[assignment]
+    os.getcwd = _vfs_getcwd  # type: ignore[assignment]
+    os.utime = _vfs_utime  # type: ignore[assignment]
+
+    # Patch pathlib.Path.touch
+    Path.touch = _vfs_touch  # type: ignore[assignment]
 
     # Patch os.path
     os.path.exists = _vfs_exists  # type: ignore[assignment]
@@ -439,6 +685,9 @@ def apply_patches() -> None:
     _vfs_makedirs.__name__ = "makedirs"
     _vfs_rename.__name__ = "rename"
     _vfs_stat.__name__ = "stat"
+    _vfs_scandir.__name__ = "scandir"
+    _vfs_getcwd.__name__ = "getcwd"
+    _vfs_utime.__name__ = "utime"
     _vfs_exists.__name__ = "exists"
     _vfs_isfile.__name__ = "isfile"
     _vfs_isdir.__name__ = "isdir"
@@ -617,6 +866,7 @@ _vfs_wrappers.update(
         _originals["makedirs"]: _vfs_makedirs,
         _originals["rename"]: _vfs_rename,
         _originals["stat"]: _vfs_stat,
+        _originals["scandir"]: _vfs_scandir,
         _originals["exists"]: _vfs_exists,
         _originals["isfile"]: _vfs_isfile,
         _originals["isdir"]: _vfs_isdir,

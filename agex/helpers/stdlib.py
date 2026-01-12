@@ -56,6 +56,9 @@ def register_io(agent: Agent) -> None:
     agent.cls(_io.BufferedWriter, visibility="low")
     agent.cls(_io.BufferedRandom, visibility="low")
 
+    # Register os.stat_result so attributes like st_size are accessible
+    agent.cls(os.stat_result, visibility="low")
+
     # File system operations (VFS-aware wrappers exist for these)
     # Note: os.path is a submodule, need to register separately
     agent.module(

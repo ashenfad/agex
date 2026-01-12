@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import pickle
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -110,8 +111,8 @@ class VirtualFile:
             content = content.encode("utf-8")
 
         # Use VFS write to get proper metadata tracking
-        # snapshot=False since we're typically in a multi-file context
-        self._vfs.write(self._path, content, snapshot=False)
+        # snapshot=True so that file operations (like write_text) create commits
+        self._vfs.write(self._path, content, snapshot=True)
 
         self._closed = True
 
@@ -197,6 +198,10 @@ class VirtualFS(FileSystem):
         metadata = self._get_metadata()
         now = self._now_iso()
 
+        if is_new:
+            # Metadata keys must be normalized to match _encode_path
+            path = self._normalize_path(path)
+
         if is_new or path not in metadata:
             # New file - set both created_at and modified_at
             metadata[path] = FileMetadata(
@@ -224,6 +229,23 @@ class VirtualFS(FileSystem):
         """
         return self._get_metadata().copy()
 
+    def _normalize_path(self, path: str) -> str:
+        """Normalize file path for consistent internal keys.
+
+        Args:
+            path: File path (e.g., "./data.csv").
+
+        Returns:
+            Normalized path (e.g., "data.csv").
+        """
+        # Normalize path to canonical form
+        # This handles ./a.py vs a.py, and a/./b vs a/b
+        path = os.path.normpath(path).replace("\\", "/")
+
+        # Remove leading slashes, handle empty/root
+        path = path.lstrip("/") or "/"
+        return path
+
     def _encode_path(self, path: str) -> str:
         """Convert file path to state key.
 
@@ -235,8 +257,7 @@ class VirtualFS(FileSystem):
         Returns:
             State key (e.g., "__vfs_ONQWIZI...").
         """
-        # Normalize path (remove leading slashes, handle empty)
-        path = path.lstrip("/") or "/"
+        path = self._normalize_path(path)
         encoded = base64.b32encode(path.encode()).decode().rstrip("=")
         return f"{self.PREFIX}{encoded}"
 
@@ -278,7 +299,7 @@ class VirtualFS(FileSystem):
         """
         key = self._encode_path(path)
 
-        if "r" in mode and "w" not in mode and "a" not in mode:
+        if "r" in mode and "w" not in mode and "a" not in mode and "x" not in mode:
             # Read mode
             content = self._state.get(key)
             if content is None:
@@ -289,8 +310,11 @@ class VirtualFS(FileSystem):
             else:
                 return io.StringIO(content.decode("utf-8"))
 
-        elif "w" in mode or "a" in mode:
-            # Write or append mode
+        elif "w" in mode or "a" in mode or "x" in mode:
+            # Write, append, or exclusive creation mode
+            if "x" in mode and self.exists(path):
+                raise FileExistsError(f"[Errno 17] File exists: '{path}'")
+
             return VirtualFile(self, self._state, key, path, mode)
 
         else:
@@ -389,12 +413,12 @@ class VirtualFS(FileSystem):
             List of file/directory names in the directory.
         """
         # Normalize path
-        path = path.strip()
-        if path == "." or path == "./":
+        path = self._normalize_path(path)
+
+        # Adjust logic to match original list expectation (empty string for root)
+        if path == "." or path == "/":
             path = ""
         else:
-            path = path.strip("/")
-        if path:
             path = path + "/"
 
         results: set[str] = set()
@@ -443,15 +467,12 @@ class VirtualFS(FileSystem):
             return True
 
         # Check for directory (any file with this prefix)
-        path = path.strip()
-        if path == "." or path == "./":
+        path = self._normalize_path(path)
+        if path == "." or path == "/":
             return True
-        else:
-            path = path.strip("/")
-            if not path:
-                return True
-        if path:
-            prefix = path + "/"
+
+        prefix = path + "/"
+        for k in self._state.keys():
             for k in self._state.keys():
                 # Skip metadata key
                 if k == self.METADATA_KEY:
@@ -488,11 +509,8 @@ class VirtualFS(FileSystem):
             True if path is a directory, False otherwise.
         """
         # Root is always a directory
-        path = path.strip()
-        if path == "." or path == "./":
-            return True
-        path = path.strip("/")
-        if not path:
+        path = self._normalize_path(path)
+        if path == "." or path == "/":
             return True
 
         prefix = path + "/"
@@ -540,6 +558,7 @@ class VirtualFS(FileSystem):
             raise FileNotFoundError(path)
 
         # Remove from metadata
+        path = self._normalize_path(path)
         metadata = self._get_metadata()
         metadata.pop(path, None)
         self._set_metadata(metadata)
@@ -572,6 +591,7 @@ class VirtualFS(FileSystem):
 
         # Remove all files and metadata
         metadata = self._get_metadata()
+        paths = [self._normalize_path(p) for p in paths]
         for path in paths:
             key = self._encode_path(path)
             self._state.remove(key)
@@ -666,6 +686,7 @@ class VirtualFS(FileSystem):
         if not self.isfile(path):
             raise FileNotFoundError(path)
 
+        path = self._normalize_path(path)
         metadata = self._get_metadata()
         return metadata[path]
 
