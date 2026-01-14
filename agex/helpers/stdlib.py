@@ -96,7 +96,7 @@ def register_io(agent: Agent) -> None:
     # Note: open() is auto-registered by swap_agent_fs_functions when VFS is configured
 
 
-def register_stdlib(agent: Agent, io_friendly: bool = False) -> None:
+def register_stdlib(agent: Agent, io_friendly: bool = True) -> None:
     """Register useful Python standard library modules with the agent."""
 
     # Mathematical modules
