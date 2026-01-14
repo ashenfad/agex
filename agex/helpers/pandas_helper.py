@@ -26,7 +26,7 @@ CORE_EXCLUDE = [
 ]
 
 
-def register_pandas(agent: Agent, io_friendly: bool = False) -> None:
+def register_pandas(agent: Agent, io_friendly: bool = True) -> None:
     """Register pandas and its submodules recursively."""
     try:
         import pandas as pd

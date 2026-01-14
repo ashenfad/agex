@@ -37,7 +37,7 @@ CORE_EXCLUDE = [
 ]
 
 
-def register_plotly(agent: Agent, io_friendly: bool = False) -> None:
+def register_plotly(agent: Agent, io_friendly: bool = True) -> None:
     """Register the entire plotly library recursively."""
     try:
         import plotly

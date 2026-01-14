@@ -29,7 +29,7 @@ CORE_EXCLUDE = [
 ]
 
 
-def register_numpy(agent: Agent, io_friendly: bool = False) -> None:
+def register_numpy(agent: Agent, io_friendly: bool = True) -> None:
     """Register the entire numpy library recursively."""
     try:
         import numpy as np
