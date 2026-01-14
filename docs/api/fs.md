@@ -214,7 +214,148 @@ for event in events(agent.state()):
         print(f"Removed: {event.removed}")
 ```
 
+## Host Filesystem Access
+
+By default, when VirtualFS is configured, agents cannot access the host filesystem. With IsolatedFS, agents can only access a restricted directory. However, some trusted libraries (e.g., for OAuth credentials, API keys) may need unrestricted host access. The `host_fs_access` parameter allows whitelisting specific functions, classes, or modules to bypass these restrictions.
+
+> [!WARNING]
+> **Security**: Enabling `host_fs_access` grants unrestricted filesystem access to the registered item. Only use this for trusted libraries.
+
+### Function-Level Access
+
+Grant host filesystem access to a specific function. This example shows registering a function that needs to read configuration files:
+
+```python
+from agex import Agent, connect_fs
+import json
+
+agent = Agent(fs=connect_fs(type="virtual"))
+
+def load_api_config() -> dict:
+    """Load API configuration from host filesystem."""
+    with open("/etc/myapp/api_config.json", 'r') as f:
+        return json.load(f)
+
+# Register with host_fs_access=True
+agent.fn(load_api_config, host_fs_access=True)
+
+@agent.task
+def call_external_api(query: str) -> dict:  # type: ignore[return-value]
+    """Call external API using configuration from host filesystem."""
+    pass
+```
+
+### Class-Level Access
+
+Grant host filesystem access to a class and all its methods. This example uses the Google Calendar library which needs OAuth credentials:
+
+```python
+from gcsa.google_calendar import GoogleCalendar
+
+# Register Google Calendar with host filesystem access
+# (needs to read OAuth credentials from ~/.credentials/)
+agent.cls(GoogleCalendar, host_fs_access=True)
+
+@agent.task
+def check_schedule(date: str) -> list:  # type: ignore[return-value]
+    """Check calendar schedule for the given date."""
+    pass
+```
+
+### Module-Level Access
+
+Grant host filesystem access to all functions/classes in a module. This example uses boto3 which needs AWS credentials:
+
+```python
+import boto3
+
+# Register boto3 with host filesystem access
+# (needs to read ~/.aws/credentials)
+agent.module(boto3, host_fs_access=True)
+
+@agent.task
+def upload_file(filename: str, bucket: str) -> bool:  # type: ignore[return-value]
+    """Upload a file from VFS to S3."""
+    pass
+```
+
+### How It Works
+
+During a call to a function/method with `host_fs_access=True`:
+1. Filesystem patching is temporarily suspended
+2. The function executes with normal filesystem access
+3. Patching resumes after the call completes
+
+Agent code and other registered functions remain isolated:
+
+```python
+agent.fn(load_api_config, host_fs_access=True)
+
+@agent.task
+def use_api() -> dict:  # type: ignore[return-value]
+    """Call API using loaded configuration."""
+    pass
+
+# ✅ Agent can call load_api_config() which reads from host
+# ❌ Agent's own os.open() calls are still blocked
+```
+
+### Per-Method Override
+
+For classes, you can override `host_fs_access` per method:
+
+```python
+from agex import MemberSpec
+
+agent.cls(
+    SomeClass,
+    host_fs_access=True,  # Default for all methods
+    configure={
+        "safe_method": MemberSpec(host_fs_access=False),  # Override
+    }
+)
+```
+
+### Best Practices
+
+- **Minimize Scope**: Only enable `host_fs_access` for specific functions that need it
+- **Trust**: Only whitelist libraries you trust completely
+
+### Security Considerations
+
+**Argument Injection**: Agents can pass arbitrary paths to whitelisted functions:
+
+```python
+agent.fn(read_file, host_fs_access=True)
+
+# Agent could do this:
+result = read_file("/etc/passwd")  # ⚠️ Not prevented
+```
+
+**Exception Message Leaks**: Error messages might reveal host filesystem structure.
+
+**Recommended Mitigation**: Wrap sensitive functions with path validation:
+
+```python
+def read_credentials(filename: str) -> str:
+    """Read credentials file (validates path)."""
+    allowed_dir = "/app/credentials/"
+    full_path = os.path.join(allowed_dir, filename)
+    
+    # Validate path stays within allowed directory
+    if not os.path.realpath(full_path).startswith(allowed_dir):
+        raise ValueError("Invalid credentials path")
+    
+    with open(full_path, 'r') as f:
+        return f.read()
+
+agent.fn(read_credentials, host_fs_access=True)
+```
+
+See [Registration docs](registration.md) for more details on the `host_fs_access` parameter.
+
 ## Next Steps
 
 - **[Agent](agent.md)**: Configure agents
 - **[State](state.md)**: Files are stored in state (VFS)
+- **[Registration](registration.md)**: Register functions/classes/modules with `host_fs_access`

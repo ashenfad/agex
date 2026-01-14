@@ -178,6 +178,40 @@ class CallEvaluator(BaseEvaluator):
             # Re-raise with better context
             raise EvalError(f"Format string error: {e}", None) from e
 
+    def _should_suspend_fs_interception(self, fn: Any) -> bool:
+        """Check if callable has host_fs_access privilege.
+
+        Simply checks if the wrapper object has the host_fs_access field set.
+        For Python bound methods, also checks if the class has __agex_host_fs_access__.
+        For functions from registered modules, walks module hierarchy to find
+        a namespace with host_fs_access=True (supports recursive=True).
+        """
+        # Check wrapper objects directly
+        if getattr(fn, "host_fs_access", False):
+            return True
+
+        # Check if this is a bound method on a registered class
+        if hasattr(fn, "__self__") and hasattr(fn, "__func__"):
+            cls = type(fn.__self__)
+            if getattr(cls, "__agex_host_fs_access__", False):
+                return True
+
+        # Check if function's module has a registered namespace with host_fs_access
+        if callable(fn) and hasattr(fn, "__module__"):
+            module_name = fn.__module__
+            # Walk up module hierarchy to find registered namespace
+            while module_name:
+                ns = self.agent._policy.namespaces.get(module_name)
+                if ns and getattr(ns, "host_fs_access", False):
+                    return True
+                # Try parent module
+                if "." in module_name:
+                    module_name = module_name.rsplit(".", 1)[0]
+                else:
+                    break
+
+        return False
+
     def visit_Call(self, node: ast.Call) -> Any:
         """Handles function calls."""
         call_name = self._callable_name(node.func)
@@ -247,6 +281,33 @@ class CallEvaluator(BaseEvaluator):
 
         fn = self.visit(node.func)
 
+        # Check if this call needs host filesystem access
+        needs_host_fs = self._should_suspend_fs_interception(fn)
+
+        try:
+            # Conditionally wrap with suspend_fs_interception
+            if needs_host_fs:
+                from agex.fs.context import suspend_fs_interception
+
+                with suspend_fs_interception():
+                    return self._execute_call_logic(fn, args, kwargs, node, call_name)
+            else:
+                return self._execute_call_logic(fn, args, kwargs, node, call_name)
+        except AgexError:
+            raise
+        except Exception as e:
+            if isinstance(e, _AgentExit):
+                raise
+            raise EvalError(
+                f"Error calling '{call_name}': {e}",
+                node,
+                cause=e,
+            )
+
+    def _execute_call_logic(
+        self, fn: Any, args: list, kwargs: dict, node: ast.Call, call_name: str
+    ) -> Any:
+        """Execute the actual function call logic."""
         try:
             # Handle calling a AgexClass to create an instance
             if isinstance(fn, (AgexClass, AgexDataClass)):

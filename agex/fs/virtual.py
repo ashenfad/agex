@@ -13,6 +13,8 @@ import pickle
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from agex.fs.context import vfs_defer_snapshots
+
 if TYPE_CHECKING:
     from agex.state import State
 
@@ -111,8 +113,9 @@ class VirtualFile:
             content = content.encode("utf-8")
 
         # Use VFS write to get proper metadata tracking
-        # snapshot=True so that file operations (like write_text) create commits
-        self._vfs.write(self._path, content, snapshot=True)
+        # Check if we should defer snapshots (for agent execution)
+        should_snapshot = not vfs_defer_snapshots.get()
+        self._vfs.write(self._path, content, snapshot=should_snapshot)
 
         self._closed = True
 

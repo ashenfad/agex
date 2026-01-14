@@ -26,6 +26,7 @@ agent.fn(
 | `name` | `str | None` | `None` | Override the function name in the agent environment |
 | `visibility` | `Literal["high", "medium", "low"]` | `"high"` | How prominently to show this function in agent context |
 | `docstring` | `str | None` | `None` | Override the function's docstring for the agent |
+| `host_fs_access` | `bool` | `False` | Allow this function to access the host filesystem even when VFS/IsolatedFS is active (see [FileSystem docs](fs.md#host-filesystem-access)) |
 
 ### Visibility Levels
 
@@ -111,6 +112,7 @@ agent.cls(
 | `visibility` | `Literal["high", "medium", "low"]` | `"high"` | How prominently to show this class |
 | `constructable` | `bool` | `True` | Whether agents can create instances |
 | `configure` | `dict[str, MemberSpec] | None` | `None` | Per-member configuration overrides |
+| `host_fs_access` | `bool` | `False` | Allow this class and its methods to access the host filesystem (see [FileSystem docs](fs.md#host-filesystem-access)) |
 
 ### Usage Patterns
 
@@ -212,6 +214,7 @@ agent.module(
 | `visibility` | `Literal["high", "medium", "low"]` | `"medium"` | Default visibility for registered items |
 | `configure` | `dict[str, MemberSpec] | None` | `None` | Per-member configuration overrides |
 | `recursive` | `bool` | `False` | If `True`, recursively register all sub-modules of the given module. |
+| `host_fs_access` | `bool` | `False` | Allow all functions/classes in this module to access the host filesystem (see [FileSystem docs](fs.md#host-filesystem-access)) |
 
 ### A Note on Instance Registration
 

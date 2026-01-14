@@ -23,6 +23,13 @@ current_vfs: contextvars.ContextVar[VirtualFS | None] = contextvars.ContextVar(
     "agex_current_vfs", default=None
 )
 
+# Control whether VFS should defer snapshots (for agent execution)
+# When True, VirtualFile.close() will not trigger snapshots
+# When False (default), VirtualFile.close() will snapshot normally
+vfs_defer_snapshots: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "agex_vfs_defer_snapshots", default=False
+)
+
 
 @contextmanager
 def suspend_fs_interception() -> Iterator[None]:
