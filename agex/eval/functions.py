@@ -28,6 +28,7 @@ class NativeFunction:
 
     name: str
     fn: Callable[..., Any]
+    host_fs_access: bool = False
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         # Directly call the wrapped native function.

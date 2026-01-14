@@ -126,6 +126,7 @@ class RegistrationMixin(BaseAgent):
         name: str | None = None,
         visibility: Visibility = "high",
         docstring: str | None = None,
+        host_fs_access: bool = False,
     ) -> F: ...
 
     @overload
@@ -136,6 +137,7 @@ class RegistrationMixin(BaseAgent):
         name: str | None = None,
         visibility: Visibility = "high",
         docstring: str | None = None,
+        host_fs_access: bool = False,
     ) -> Callable[[F], F]: ...
 
     def fn(
@@ -145,6 +147,7 @@ class RegistrationMixin(BaseAgent):
         name: str | None = None,
         visibility: Visibility = "high",
         docstring: str | None = None,
+        host_fs_access: bool = False,
     ) -> Callable[..., Any] | Callable[[Callable[..., Any]], Callable[..., Any]]:
         """
         Registers a function with the agent.
@@ -185,6 +188,7 @@ class RegistrationMixin(BaseAgent):
                     name=final_name,
                     visibility=visibility,
                     docstring=final_doc,
+                    host_fs_access=host_fs_access,
                 )
 
                 self._update_fingerprint()
@@ -256,6 +260,7 @@ class RegistrationMixin(BaseAgent):
                     name=final_name,
                     visibility=visibility,
                     docstring=final_doc,
+                    host_fs_access=host_fs_access,
                 )
 
                 self._update_fingerprint()
@@ -287,6 +292,7 @@ class RegistrationMixin(BaseAgent):
         include: Pattern | None = "*",
         exclude: Pattern | None = "_*",
         configure: dict[str, MemberSpec] | None = None,
+        host_fs_access: bool = False,
     ) -> T: ...
 
     @overload
@@ -299,6 +305,7 @@ class RegistrationMixin(BaseAgent):
         include: Pattern | None = "*",
         exclude: Pattern | None = "_*",
         configure: dict[str, MemberSpec] | None = None,
+        host_fs_access: bool = False,
     ) -> Callable[[T], T]: ...
 
     def cls(
@@ -311,6 +318,7 @@ class RegistrationMixin(BaseAgent):
         include: Pattern | None = "*",
         exclude: Pattern | None = "_*",
         configure: dict[str, MemberSpec] | None = None,
+        host_fs_access: bool = False,
     ) -> T | Callable[[T], T]:
         """
         Registers a class with the agent.
@@ -397,7 +405,15 @@ class RegistrationMixin(BaseAgent):
                 include=include,
                 exclude=exclude,
                 configure=sec_final_configure,
+                host_fs_access=host_fs_access,
             )
+
+            # Attach host_fs_access to the class itself so instance methods can check it
+            try:
+                c.__agex_host_fs_access__ = host_fs_access
+            except (AttributeError, TypeError):
+                # Can't set attributes on built-in types, skip
+                pass
 
             self._update_fingerprint()
             return c
@@ -417,6 +433,7 @@ class RegistrationMixin(BaseAgent):
         configure: dict[str, MemberSpec] | None = None,
         exception_mappings: dict[type, type] | None = None,
         recursive: bool = False,
+        host_fs_access: bool = False,
     ) -> None:
         """
         Registers a module or instance object and its members with the agent.
@@ -448,6 +465,7 @@ class RegistrationMixin(BaseAgent):
                 exclude=tuple(exclude) if isinstance(exclude, list) else exclude,
                 configure=sec_configure,
                 recursive=True,
+                host_fs_access=host_fs_access,
             )
             # Track module for lazy dependency resolution
             self._track_module(obj.__name__ if hasattr(obj, "__name__") else None)
@@ -506,6 +524,7 @@ class RegistrationMixin(BaseAgent):
                 exclude=tuple(exclude) if isinstance(exclude, list) else exclude,
                 configure=sec_configure,
                 recursive=False,
+                host_fs_access=host_fs_access,
             )
             # Track module for lazy dependency resolution
             self._track_module(obj.__name__ if hasattr(obj, "__name__") else None)

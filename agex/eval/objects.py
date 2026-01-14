@@ -169,10 +169,12 @@ class BoundInstanceObject:
     def getattr(self, name: str) -> Any:
         """Get a method or property from the live host object."""
         if name in self.reg_object.methods:
+            method_spec = self.reg_object.methods[name]
             return BoundInstanceMethod(
                 reg_object=self.reg_object,
                 host_registry=self.host_registry,
                 method_name=name,
+                host_fs_access=getattr(method_spec, "host_fs_access", False),
             )
         if name in self.reg_object.properties:
             live_instance = self.host_registry[self.reg_object.name]
@@ -239,6 +241,7 @@ class BoundInstanceMethod:
     reg_object: Any  # RegisteredObject
     host_registry: dict[str, Any]
     method_name: str
+    host_fs_access: bool = False
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Look up the live object and call the real method."""

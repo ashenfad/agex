@@ -92,6 +92,7 @@ class MemberSpec:
     visibility: Visibility | None = None
     docstring: str | None = None
     constructable: bool | None = None
+    host_fs_access: bool = False
 
 
 @dataclass

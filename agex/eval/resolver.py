@@ -85,7 +85,14 @@ class Resolver:
         if res is not None and hasattr(res, "fn"):
             from .functions import NativeFunction
 
-            return NativeFunction(name=name, fn=res.fn)  # type: ignore[attr-defined]
+            # Get MemberSpec to extract host_fs_access
+            main_ns = self.agent._policy.namespaces.get("__main__")
+            member_spec = main_ns.fns.get(name) if main_ns else None
+            host_fs_access = (
+                getattr(member_spec, "host_fs_access", False) if member_spec else False
+            )
+
+            return NativeFunction(name=name, fn=res.fn, host_fs_access=host_fs_access)  # type: ignore[attr-defined]
 
         # 5. Registered classes via policy
         res = self.agent._policy.resolve_module_member("__main__", name)

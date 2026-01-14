@@ -17,6 +17,7 @@ import io
 import os
 import os.path
 import pathlib
+import re
 import site
 import sys
 from contextlib import contextmanager
@@ -24,7 +25,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
-from agex.fs.context import current_isolated_fs, current_vfs
+from agex.fs.context import current_isolated_fs, current_vfs, vfs_defer_snapshots
 
 if TYPE_CHECKING:
     from agex.fs.base import FileSystem
@@ -51,6 +52,9 @@ _originals: dict[str, Any] = {
     "getcwd": os.getcwd,
     "utime": os.utime,
     "touch": Path.touch,
+    "expanduser": os.path.expanduser,
+    "getenv": os.getenv,
+    "expandvars": os.path.expandvars,
 }
 
 # Will be populated after wrapper functions are defined
@@ -244,6 +248,9 @@ class ScandirWrapper:
 
 def _vfs_scandir(path: str = ".") -> Any:
     """FileSystem-aware os.scandir() replacement."""
+    # Early return if no VFS/IsolatedFS is active - avoid unnecessary wrapping
+    if current_isolated_fs.get() is None and current_vfs.get() is None:
+        return _originals["scandir"](path)
 
     def _scan_gen() -> Iterator[os.DirEntry[str]]:
         import os
@@ -628,6 +635,57 @@ def _vfs_getcwd() -> str:
     return _originals["getcwd"]()
 
 
+def _vfs_expanduser(path: str | os.PathLike[Any]) -> str:
+    """FileSystem-aware os.path.expanduser() replacement.
+
+    When VFS or IsolatedFS is active, expands '~' to '/' (the virtual root)
+    instead of the real home directory to prevent path leaks.
+    """
+    if current_isolated_fs.get() is not None or current_vfs.get() is not None:
+        path_str = os.fspath(path) if not isinstance(path, str) else path
+        if path_str.startswith("~"):
+            # Replace ~ or ~/... with / or /...
+            return "/" + path_str[2:] if path_str.startswith("~/") else "/"
+        return path_str
+
+    return _originals["expanduser"](path)
+
+
+def _vfs_getenv(key: str, default: str | None = None) -> str | None:
+    """FileSystem-aware os.getenv() replacement.
+
+    When VFS or IsolatedFS is active, returns '/' for 'HOME' requests
+    to prevent home directory path leaks.
+    """
+    if (
+        current_isolated_fs.get() is not None or current_vfs.get() is not None
+    ) and key == "HOME":
+        return "/"
+
+    return _originals["getenv"](key, default)
+
+
+def _vfs_expandvars(path: str | os.PathLike[Any]) -> str:
+    """FileSystem-aware os.path.expandvars() replacement.
+
+    When VFS or IsolatedFS is active, replaces $HOME with '/' to prevent
+    home directory path leaks.
+    """
+    if current_isolated_fs.get() is not None or current_vfs.get() is not None:
+        path_str = os.fspath(path) if not isinstance(path, str) else path
+        # Replace $HOME or ${HOME} with /
+        # Handle $HOME/ -> / not //
+        # First handle $HOME/ or ${HOME}/ patterns to avoid double slashes
+        path_str = re.sub(r"\$HOME/", "/", path_str)
+        path_str = re.sub(r"\$\{HOME\}/", "/", path_str)
+        # Then handle standalone $HOME or ${HOME}
+        path_str = re.sub(r"\$HOME\b", "/", path_str)
+        path_str = re.sub(r"\$\{HOME\}", "/", path_str)
+        return path_str
+
+    return _originals["expandvars"](path)
+
+
 def _vfs_utime(
     path: str | bytes | os.PathLike[Any],
     times: tuple[int, int] | tuple[float, float] | None = None,
@@ -727,6 +785,11 @@ def apply_patches() -> None:
     os.path.isfile = _vfs_isfile  # type: ignore[assignment]
     os.path.isdir = _vfs_isdir  # type: ignore[assignment]
     os.path.getsize = _vfs_getsize  # type: ignore[assignment]
+    os.path.expanduser = _vfs_expanduser  # type: ignore[assignment]
+    os.path.expandvars = _vfs_expandvars  # type: ignore[assignment]
+
+    # Patch os.getenv
+    os.getenv = _vfs_getenv  # type: ignore[assignment]
 
     # Copy metadata from originals to wrappers so agent.fn(open) registers as 'open'
     _vfs_open.__name__ = "open"
@@ -747,6 +810,9 @@ def apply_patches() -> None:
     _vfs_isfile.__name__ = "isfile"
     _vfs_isdir.__name__ = "isdir"
     _vfs_getsize.__name__ = "getsize"
+    _vfs_expanduser.__name__ = "expanduser"
+    _vfs_getenv.__name__ = "getenv"
+    _vfs_expandvars.__name__ = "expandvars"
 
     # Patch pathlib internal accessor (Python < 3.11, e.g. 3.10)
     # Older pathlib implementations cache os functions in _NormalAccessor
@@ -870,14 +936,20 @@ def with_fs_context(fs: "FileSystem") -> Iterator[None]:
     # Unwrap AgentAwareFS to get the underlying filesystem
     actual_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
 
-    if isinstance(actual_fs, VirtualFS):
-        with with_virtual_fs(actual_fs):
-            yield
-    elif isinstance(actual_fs, IsolatedFS):
-        with with_isolated_fs(actual_fs):
-            yield
-    else:
-        raise TypeError(f"Unknown filesystem type: {type(actual_fs)}")
+    # Set defer snapshots flag for agent execution to prevent recursion
+    # with disk-backed state (e.g., DiskCache writing to VFS-intercepted paths)
+    token_defer = vfs_defer_snapshots.set(True)
+    try:
+        if isinstance(actual_fs, VirtualFS):
+            with with_virtual_fs(actual_fs):
+                yield
+        elif isinstance(actual_fs, IsolatedFS):
+            with with_isolated_fs(actual_fs):
+                yield
+        else:
+            raise TypeError(f"Unknown filesystem type: {type(actual_fs)}")
+    finally:
+        vfs_defer_snapshots.reset(token_defer)
 
 
 def get_current_vfs() -> "VirtualFS | None":
