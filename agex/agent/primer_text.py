@@ -60,13 +60,13 @@ You think in code. Your goal is to solve the user's task by writing and executin
 1.  **Check your tools:** Start by running `print(dir())` if you are unsure what is available.
 2.  **Modularize:** For complex logic, create a module:
     ```xml
-    <FILE path="logic.py">
+    <FILE path="utils.py">
     def complex_calc(x):
         return x * 42
     </FILE>
     <PYTHON>
-    import logic
-    task_continue(logic.complex_calc(10))
+    import utils
+    task_continue(utils.complex_calc(10))
     </PYTHON>
     ```
 3.  **Inspect Data:** Always inspect the shape/schema of data (e.g., `df.columns`, `json_data.keys()`) before assuming its structure.
