@@ -19,10 +19,12 @@ def clear_registry():
 def test_transient_message_injection():
     """Test that forefront message is injected into LLM context but not event log."""
     # 1. Setup Agent with Dummy Client
+    from agex.llm import LLMResponse
+
     client = Dummy()
-    # Mock the complete method to inspect arguments
+    # Use real LLMResponse instead of MagicMock to avoid pydantic validation errors in ActionEvent
     client.complete = MagicMock(
-        return_value=MagicMock(thinking="ok", code="task_success()", title="done")
+        return_value=LLMResponse(thinking="ok", code="task_success()", title="done")
     )
 
     # 5 iterations. Threshold is max(0, 5-3) = 2.
