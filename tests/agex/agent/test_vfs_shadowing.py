@@ -1,6 +1,6 @@
 import pytest
 
-from agex import Agent, clear_agent_registry, connect_fs
+from agex import Agent, FileAction, clear_agent_registry, connect_fs
 from agex.agent.events import SystemNoteEvent
 from agex.llm import Dummy, LLMResponse
 
@@ -20,7 +20,11 @@ def test_vfs_shadowing_warning():
         responses=[
             LLMResponse(
                 thinking="I will create a json.py file.",
-                files={"json.py": "def loads(s): return 'shadowed'"},
+                file_actions=[
+                    FileAction(
+                        path="json.py", content="def loads(s): return 'shadowed'"
+                    )
+                ],
                 code="import json\ntask_success(json.loads('{}'))",
             )
         ]

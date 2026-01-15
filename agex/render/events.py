@@ -80,7 +80,7 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
         elif isinstance(event, ActionEvent):
             # ActionEvent always renders at full detail (code is compact already)
             text, _ = render_action_markdown(
-                event.thinking, event.code, event.title, event.files, event.file_modes
+                event.thinking, event.code, event.title, event.file_actions
             )
             messages.append({"role": "assistant", "content": text})
 

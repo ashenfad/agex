@@ -91,9 +91,15 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
 
             # Render files
             files_section = ""
-            if event.files:
-                for path, body in event.files.items():
-                    files_section += f'<{TAG_FILE} path="{path}">{body}</{TAG_FILE}>\n'
+            if event.file_actions:
+                for action in event.file_actions:
+                    mode_attr = (
+                        f' mode="{action.mode}"' if action.mode != "write" else ""
+                    )
+                    files_section += (
+                        f'<{TAG_FILE} path="{action.path}"{mode_attr}>'
+                        f"{action.content}</{TAG_FILE}>\n"
+                    )
 
             content = (
                 f"{title_section}<{TAG_THINKING}>{event.thinking}</{TAG_THINKING}>\n"

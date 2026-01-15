@@ -162,10 +162,19 @@ class Dummy(LLM):
             yield TokenChunk(type="thinking", content=response.thinking, done=False)
             yield TokenChunk(type="thinking", content="", done=True)
 
-        if response.files:
-            for path, content in response.files.items():
-                yield TokenChunk(type="file", content=f"path={path}", done=False)
-                yield TokenChunk(type="file", content=content, done=False)
+        if response.file_actions:
+            for action in response.file_actions:
+                yield TokenChunk(
+                    type="file", content=f'path="{action.path}"', done=False
+                )
+                if action.mode == "append":
+                    # Re-yield path with mode to simulate XML parsing of attributes
+                    yield TokenChunk(
+                        type="file",
+                        content=f'path="{action.path}" mode="append"',
+                        done=False,
+                    )
+                yield TokenChunk(type="file", content=action.content, done=False)
                 yield TokenChunk(type="file", content="", done=True)
 
         if response.terminal:

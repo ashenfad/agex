@@ -266,7 +266,7 @@ def apply_optimistic_file_writes(
     This is called 'optimistic' because it happens before code execution.
     It allows the agent to import modules it just created.
     """
-    if not llm_response.files or not fs:
+    if not llm_response.file_actions or not fs:
         return
 
     from agex.fs.aware import AgentAwareFS
@@ -275,8 +275,8 @@ def apply_optimistic_file_writes(
     # Use underlying FS directly to avoid 'user' source attribution
     # and handle snapshot parameter for VirtualFS
     target_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
-    for path, content in llm_response.files.items():
-        mode = llm_response.file_modes.get(path, "write")
+    for action in llm_response.file_actions:
+        path, content, mode = action.path, action.content, action.mode
         fs_mode = "a" if mode == "append" else "w"
 
         # Check for shadowing
@@ -334,7 +334,7 @@ def create_action_event(
         title=llm_response.title,
         thinking=llm_response.thinking,
         code=llm_response.code,
-        files=llm_response.files,
+        file_actions=llm_response.file_actions,
         source=source,
     )
 

@@ -2,6 +2,7 @@ import pytest
 
 from agex import (
     Agent,
+    FileAction,
     clear_agent_registry,
     connect_fs,
     connect_state,
@@ -30,7 +31,7 @@ def test_vfs_import_multiturn(tmp_path):
     agent1.llm.responses = [
         LLMResponse(
             thinking="I will create utils.py",
-            files={"utils.py": "VAL = 42"},
+            file_actions=[FileAction(path="utils.py", content="VAL = 42")],
             code="import utils\ntask_success(utils.VAL)",
         )
     ]
@@ -74,7 +75,10 @@ def test_vfs_package_import_multiturn(tmp_path):
     agent1.llm.responses = [
         LLMResponse(
             thinking="I will create a package",
-            files={"pkg/__init__.py": "X = 1", "pkg/mod.py": "Y = 2"},
+            file_actions=[
+                FileAction(path="pkg/__init__.py", content="X = 1"),
+                FileAction(path="pkg/mod.py", content="Y = 2"),
+            ],
             code="import pkg.mod\ntask_success((pkg.X, pkg.mod.Y))",
         )
     ]
@@ -119,7 +123,7 @@ def test_vfs_import_multiturn_live():
     agent.llm.responses = [
         LLMResponse(
             thinking="I will create utils.py",
-            files={"utils.py": "VAL = 42"},
+            file_actions=[FileAction(path="utils.py", content="VAL = 42")],
             code="import utils\ntask_success(utils.VAL)",
         )
     ]

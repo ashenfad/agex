@@ -271,8 +271,8 @@ def _format_event_lines(
             )
         body_lines.append(_indent(detail_indent, f"Thinking: {thinking_text}"))
 
-        if event.files:
-            file_names = ", ".join(f"`{f}`" for f in event.files.keys())
+        if event.file_actions:
+            file_names = ", ".join(f"`{action.path}`" for action in event.file_actions)
             body_lines.append(_indent(detail_indent, f"Files: {file_names}"))
 
         code_lines_total = event.code.count("\n") + 1 if event.code else 0

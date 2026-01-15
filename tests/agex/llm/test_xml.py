@@ -166,10 +166,12 @@ class TestParseXMLResponse:
         <PYTHON>pass</PYTHON>
         """
         result = parse_xml_response(xml)
-        assert result.files["test.txt"] == "Line 2"
-        assert result.file_modes["test.txt"] == "append"
-        assert result.files["new.txt"] == "New File"
-        assert result.file_modes["new.txt"] == "write"
+        assert result.file_actions[0].path == "test.txt"
+        assert result.file_actions[0].content == "Line 2"
+        assert result.file_actions[0].mode == "append"
+        assert result.file_actions[1].path == "new.txt"
+        assert result.file_actions[1].content == "New File"
+        assert result.file_actions[1].mode == "write"
 
 
 class TestTokenizeXMLStream:

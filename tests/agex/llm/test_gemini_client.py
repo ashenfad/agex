@@ -84,7 +84,8 @@ def test_gemini_client_complete_wraps_stream():
 
         assert response.title == "My Title"
         assert response.thinking == "Thinking..."
-        assert response.files == {"utils.py": "x=1"}
+        assert response.file_actions[0].path == "utils.py"
+        assert response.file_actions[0].content == "x=1"
         assert response.code == "pass"
 
 

@@ -18,6 +18,8 @@ from typing import (
 
 from pydantic import BaseModel, Field
 
+from agex.agent.datatypes import FileAction
+
 if TYPE_CHECKING:
     from agex.agent.events import Event
 
@@ -132,8 +134,7 @@ class LLMResponse(BaseModel):
     title: str = ""
     thinking: str
     code: str = ""
-    files: dict[str, str] = Field(default_factory=dict)
-    file_modes: dict[str, Literal["write", "append"]] = Field(default_factory=dict)
+    file_actions: list[FileAction] = Field(default_factory=list)
     terminal: str | None = None
 
 
@@ -229,12 +230,21 @@ class ResponseBuilder:
 
     def build(self) -> LLMResponse:
         """Return the final LLMResponse."""
+        from agex.agent.datatypes import FileAction
+
+        file_actions = []
+        for path, parts in self.file_parts.items():
+            content = "".join(parts)
+            mode = self.file_modes.get(path, "write")
+            file_actions.append(
+                FileAction(path=path, content=content, mode=mode)  # type: ignore[arg-type]
+            )
+
         return LLMResponse(
             title="".join(self.title_parts).strip(),
             thinking="".join(self.thinking_parts),
             code="".join(self.code_parts),
-            files={path: "".join(parts) for path, parts in self.file_parts.items()},
-            file_modes=self.file_modes,  # type: ignore[arg-type]
+            file_actions=file_actions,
             terminal="".join(self.terminal_parts) if self.terminal_parts else None,
         )
 

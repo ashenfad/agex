@@ -1,5 +1,6 @@
 """Tests for markdown event rendering."""
 
+from agex.agent.datatypes import FileAction
 from agex.agent.events import (
     ActionEvent,
     FileEvent,
@@ -91,8 +92,9 @@ class TestRenderEventsAsMarkdown:
                 agent_name="test_agent",
                 thinking="I'll append to the file",
                 code="pass",
-                files={"utils.py": "content"},
-                file_modes={"utils.py": "append"},
+                file_actions=[
+                    FileAction(path="utils.py", content="content", mode="append")
+                ],
             )
         ]
         messages = render_events_as_markdown(events)

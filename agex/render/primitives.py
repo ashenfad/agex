@@ -26,6 +26,7 @@ try:
 except ImportError:
     plotly = None  # type: ignore
 
+from ..agent.datatypes import FileAction
 from ..eval.objects import AgexClass, AgexInstance, AgexObject, ImageAction, PrintAction
 from ..llm.core import ContentPart, ImagePart, TextPart
 from ..tokenizers import get_tokenizer
@@ -687,8 +688,7 @@ def render_action_markdown(
     thinking: str,
     code: str,
     title: str = "",
-    files: dict[str, str] | None = None,
-    file_modes: dict[str, str] | None = None,
+    file_actions: list[FileAction] | None = None,
 ) -> tuple[str, int]:
     """
     Render an action event as markdown.
@@ -698,10 +698,11 @@ def render_action_markdown(
     """
     title_section = f"# {title}\n" if title else ""
     files_section = ""
-    if files:
+
+    if file_actions:
         files_section = "## Files\n"
-        for path, content in files.items():
-            mode = (file_modes or {}).get(path, "write")
+        for action in file_actions:
+            path, content, mode = action.path, action.content, action.mode
             mode_suffix = f" (mode: {mode})" if mode != "write" else ""
             files_section += f"### {path}{mode_suffix}\n{content}\n\n"
 
