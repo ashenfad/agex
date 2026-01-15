@@ -47,6 +47,7 @@ def connect_fs(
     """Configure filesystem access for agents.
 
     Creates a filesystem configuration that can be passed to Agent().
+    By default, all agents are configured with type="virtual".
 
     Args:
         type: FileSystem type.
