@@ -121,7 +121,13 @@ class Resolver:
 
         # AgexModule attribute access with JIT resolution
         if isinstance(value, AgexModule):
-            # First check if this is a registered submodule
+            # Check cached submodules first (set via resolve_module)
+            try:
+                return value.getattr(attr_name)
+            except (AgexAttributeError, AttributeError):
+                pass
+
+            # First check if this is a registered submodule in policy
             parent_ns = self.agent._policy.namespaces.get(value.name)  # type: ignore[attr-defined]
             if (
                 parent_ns
@@ -241,36 +247,91 @@ class Resolver:
 
     # --- Import Resolution ---
     def resolve_module(self, module_name: str, state: State, node) -> Any:
-        # 1. Check Policy (Whitelist)
-        # Use policy.resolve_module to check if the module name itself is registered
-        if module_name in self.agent._policy.namespaces:
-            return AgexModule(
-                name=module_name, agent_fingerprint=self.agent.fingerprint
-            )
+        # 1. Access or initialize the shared module cache for this session
+        cache_key = f"__agex_modules__{self.session}"
+        module_cache = state.base_store.get(cache_key)
+        if module_cache is None:
+            module_cache = {}
+            state.base_store.set(cache_key, module_cache)
 
-        # For recursive modules, check if any registered namespace is a parent
-        for ns_name, ns in self.agent._policy.namespaces.items():  # type: ignore[attr-defined]
-            if getattr(ns, "recursive", False) and module_name.startswith(
-                ns_name + "."
-            ):
-                return AgexModule(
-                    name=module_name, agent_fingerprint=self.agent.fingerprint
+        # 2. Split name and resolve iteratively to handle packages/submodules
+        parts = module_name.split(".")
+        current_full_name = ""
+        current_mod = None
+
+        for part in parts:
+            if current_full_name:
+                current_full_name += "." + part
+            else:
+                current_full_name = part
+
+            next_mod = None
+
+            # A. Check Policy FIRST (Prevent Shadowing)
+            if current_full_name in self.agent._policy.namespaces:
+                next_mod = AgexModule(
+                    name=current_full_name, agent_fingerprint=self.agent.fingerprint
+                )
+            else:
+                # Check for recursive policy parents
+                for ns_name, ns in self.agent._policy.namespaces.items():  # type: ignore[attr-defined]
+                    if getattr(ns, "recursive", False) and current_full_name.startswith(
+                        ns_name + "."
+                    ):
+                        next_mod = AgexModule(
+                            name=current_full_name,
+                            agent_fingerprint=self.agent.fingerprint,
+                        )
+                        break
+
+                # Check for child policy matches (implicit parents)
+                if next_mod is None:
+                    for ns_name in self.agent._policy.namespaces:  # type: ignore[attr-defined]
+                        if ns_name.startswith(current_full_name + "."):
+                            next_mod = AgexModule(
+                                name=current_full_name,
+                                agent_fingerprint=self.agent.fingerprint,
+                            )
+                            break
+
+            # B. Check VFS (Reload Support)
+            # If not in policy, check if file exists in VFS
+            if next_mod is None:
+                current_path = current_full_name.replace(".", "/")
+                try:
+                    if self.agent._fs_exists(f"{current_path}.py", self.session):
+                        next_mod = self._load_vfs_module(current_full_name, state, node)
+                    elif self.agent._fs_exists(
+                        f"{current_path}/__init__.py", self.session
+                    ):
+                        next_mod = self._load_vfs_module(current_full_name, state, node)
+                    elif self.agent._fs_exists(f"{current_path}/", self.session):
+                        # Namespace package
+                        next_mod = self._load_vfs_module(current_full_name, state, node)
+                except Exception:
+                    pass
+
+            # C. Check Cache (Fallback for cached policy modules)
+            if next_mod is None and current_full_name in module_cache:
+                next_mod = module_cache[current_full_name]
+
+            if next_mod is None:
+                # Restore original error message for compatibility
+                raise EvalError(
+                    f"Module '{module_name}' is not registered or whitelisted.",
+                    node,
                 )
 
-        # 2. Check VFS
+            # Update cache and parent linkage
+            module_cache[current_full_name] = next_mod
+            state.base_store.set(cache_key, module_cache)
 
-        try:
-            # Check for module file in VFS
-            filename = f"{module_name}.py"
-            if self.agent._fs_exists(filename, self.session):
-                return self._load_vfs_module(module_name, state, node)
-        except Exception:
-            # Filesystem error or not configured - fall through
-            pass
+            if current_mod and hasattr(current_mod, "setattr"):
+                current_mod.setattr(part, next_mod)
 
-        raise EvalError(
-            f"Module '{module_name}' is not registered or whitelisted.", node
-        )
+            current_mod = next_mod
+
+        return current_mod
 
     def _load_vfs_module(self, name: str, state: State, node) -> AgexVFSModule:
         """Load and execute a module from the VFS into a namespaced state."""
@@ -287,34 +348,61 @@ class Resolver:
         root_ns = Namespaced(base, "modules")
         module_state = Namespaced(root_ns, name)
 
-        # NOTE: AgexVFSModules act as modules, so they should be recursive
-        # But `Namespaced` doesn't have a `recursive` attribute.
-        # The `AgexModule` wrapper returned by `resolve_module` handles dotted paths IF
-        # the policy namespace has `recursive=True`.
-        # Here we are returning `AgexVFSModule`.
-
         # CLEAR OLD STATE: ensure clean slate for re-loading/overwriting
-        # descendant_keys() gets all keys including those in deeper sub-namespaces
-        for key in list(module_state.descendant_keys()):
-            module_state.remove(key)
+        # We must preserve sub-namespaces (submodules) during reload!
+        # Only remove non-namespaced keys.
+        from agex.state import Namespaced
 
-        # Read and parse code
-        filename = f"{name}.py"
-        try:
-            code_bytes = self.agent._fs_read(filename, self.session)
-            code = code_bytes.decode("utf-8")
-        except Exception as e:
-            raise EvalError(f"Failed to read module '{name}' from VFS: {e}", node)
+        for key in list(module_state.keys()):
+            val = module_state.get(key)
+            if not isinstance(val, (AgexModule, AgexVFSModule)):
+                module_state.remove(key)
+
+        # Map dotted name to directory/file path: pkg.sub -> pkg/sub
+        path_prefix = name.replace(".", "/")
+
+        # Discovery and Loading Strategy
+        code = None
+        target_path = None
+
+        # 1. Try Package (__init__.py)
+        init_path = f"{path_prefix}/__init__.py"
+        if self.agent._fs_exists(init_path, self.session):
+            target_path = init_path
+        else:
+            # 2. Try Module (.py)
+            py_path = f"{path_prefix}.py"
+            if self.agent._fs_exists(py_path, self.session):
+                target_path = py_path
+
+        if target_path:
+            try:
+                code_bytes = self.agent._fs_read(target_path, self.session)
+                code = code_bytes.decode("utf-8")
+            except Exception as e:
+                raise EvalError(f"Failed to read module '{name}' from VFS: {e}", node)
+
+        # 3. Handle Namespace Package (dir exists but no code yet)
+        if code is None:
+            if not self.agent._fs_exists(f"{path_prefix}/", self.session):
+                raise EvalError(f"Module '{name}' not found in VFS", node)
+            # Namespace package has no top-level code, but state is initialized empty.
+            code = ""
 
         # Execute module code into its namespace
         try:
+            # Set standard module attributes
+            module_state.set("__name__", name)
+            module_state.set("__file__", target_path or f"<virtual:{name}>")
+            module_state.set(
+                "__package__", name.rsplit(".", 1)[0] if "." in name else ""
+            )
+
             evaluate_program(
                 code,
                 self.agent,
                 state=module_state,
                 session=self.session,
-                # Ensure it has access to the same main loop/callbacks if needed
-                # (Evaluator might need to pass these through to Resolver)
             )
         except Exception as e:
             from agex.agent.datatypes import _AgentExit
@@ -405,12 +493,20 @@ class Resolver:
 
         # 2. Check VFS
         try:
-            # Check if this is a VFS module
-            filename = f"{module_name}.py"
-            if self.agent._fs_exists(filename, self.session):
-                # Load module to populate namespaced state
-                vfs_mod = self._load_vfs_module(module_name, state, node)
+            # A. Try loading the base module
+            vfs_mod = self.resolve_module(module_name, state, node)
+
+            # B. Check if member_name is already in the module (function, class, etc)
+            try:
                 return vfs_mod.getattr(member_name)
+            except (AgexAttributeError, AttributeError):
+                # C. Not a member, try resolving as a submodule: from pkg import sub
+                full_sub_name = f"{module_name}.{member_name}"
+                try:
+                    return self.resolve_module(full_sub_name, state, node)
+                except EvalError:
+                    # Not a submodule either
+                    pass
         except Exception:
             pass
 

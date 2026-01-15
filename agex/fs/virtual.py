@@ -166,6 +166,30 @@ class VirtualFS(FileSystem):
             state: State backend for file storage.
         """
         self._state = state
+        self._dir_cache: set[str] | None = None
+
+    def _ensure_dir_cache(self) -> set[str]:
+        """Lazy initialization of directory cache from state keys."""
+        if self._dir_cache is not None:
+            return self._dir_cache
+
+        self._dir_cache = {"", "."}  # Root directories
+        for key in self._state.keys():
+            if key == self.METADATA_KEY or not self._is_vfs_key(key):
+                continue
+
+            try:
+                path = self._decode_path(key)
+                # Add all parent directories
+                parts = path.lstrip("/").split("/")
+                for i in range(len(parts)):
+                    dir_path = "/".join(parts[:i])
+                    self._dir_cache.add(dir_path)
+                    self._dir_cache.add(dir_path + "/")
+            except Exception:
+                continue
+
+        return self._dir_cache
 
     def _now_iso(self) -> str:
         """Get current UTC timestamp as ISO 8601 string with milliseconds."""
@@ -241,6 +265,9 @@ class VirtualFS(FileSystem):
         Returns:
             Normalized path (e.g., "data.csv").
         """
+        if not path or path in (".", "./", "/"):
+            return "/"
+
         # Normalize path to canonical form
         # This handles ./a.py vs a.py, and a/./b vs a/b
         path = os.path.normpath(path).replace("\\", "/")
@@ -363,6 +390,9 @@ class VirtualFS(FileSystem):
         # Update metadata
         self._update_file_metadata(path, len(content), is_new)
 
+        # Invalidate directory cache
+        self._dir_cache = None
+
         # Snapshot if requested and state supports it
         if snapshot and hasattr(self._state, "snapshot"):
             self._state.snapshot()
@@ -398,6 +428,9 @@ class VirtualFS(FileSystem):
             is_new = key not in self._state
             self._state.set(key, content)
             self._update_file_metadata(path, len(content), is_new)
+
+        # Invalidate directory cache
+        self._dir_cache = None
 
         # Create single snapshot if using versioned state
         if hasattr(self._state, "snapshot"):
@@ -469,24 +502,13 @@ class VirtualFS(FileSystem):
         if key in self._state:
             return True
 
-        # Check for directory (any file with this prefix)
+        # Check for directory match in cache
         path = self._normalize_path(path)
-        if path == "." or path == "/":
-            return True
+        if path == "/":
+            path = ""
 
-        prefix = path + "/"
-        for k in self._state.keys():
-            for k in self._state.keys():
-                # Skip metadata key
-                if k == self.METADATA_KEY:
-                    continue
-
-                if self._is_vfs_key(k):
-                    file_path = self._decode_path(k).lstrip("/")
-                    if file_path.startswith(prefix):
-                        return True
-
-        return False
+        cache = self._ensure_dir_cache()
+        return path in cache or (path + "/") in cache
 
     def isfile(self, path: str) -> bool:
         """Check if path is a file.
@@ -511,23 +533,12 @@ class VirtualFS(FileSystem):
         Returns:
             True if path is a directory, False otherwise.
         """
-        # Root is always a directory
         path = self._normalize_path(path)
-        if path == "." or path == "/":
-            return True
+        if path == "/":
+            path = ""
 
-        prefix = path + "/"
-        for key in self._state.keys():
-            # Skip metadata key
-            if key == self.METADATA_KEY:
-                continue
-
-            if self._is_vfs_key(key):
-                file_path = self._decode_path(key).lstrip("/")
-                if file_path.startswith(prefix):
-                    return True
-
-        return False
+        cache = self._ensure_dir_cache()
+        return path in cache or (path + "/") in cache
 
     def getsize(self, path: str) -> int:
         """Get file size in bytes.
@@ -566,6 +577,9 @@ class VirtualFS(FileSystem):
         metadata.pop(path, None)
         self._set_metadata(metadata)
 
+        # Invalidate directory cache
+        self._dir_cache = None
+
         # Snapshot if requested and state supports it (after successful removal)
         if snapshot and hasattr(self._state, "snapshot"):
             self._state.snapshot()
@@ -600,6 +614,9 @@ class VirtualFS(FileSystem):
             self._state.remove(key)
             metadata.pop(path, None)
         self._set_metadata(metadata)
+
+        # Invalidate directory cache
+        self._dir_cache = None
 
         # Create single snapshot if using versioned state
         if hasattr(self._state, "snapshot"):
@@ -645,7 +662,7 @@ class VirtualFS(FileSystem):
         metadata = self._get_metadata()
         src_meta = metadata.get(src)
 
-        # Write destination (this will create new metadata)
+        # Write destination (this will create new metadata and invalidate dir_cache)
         self.write(dst, content, snapshot=False)
 
         # Reload metadata (write() modified it)
@@ -661,7 +678,7 @@ class VirtualFS(FileSystem):
             )
             self._set_metadata(metadata)
 
-        # Remove source (this removes source metadata too)
+        # Remove source (this removes source metadata and invalidates dir_cache again)
         self.remove(src, snapshot=False)
 
         # Snapshot once at the end if requested

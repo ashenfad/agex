@@ -24,6 +24,7 @@ from agex.agent.datatypes import (
 )
 from agex.agent.events import (
     ActionEvent,
+    BaseEvent,
     ClarifyEvent,
     ErrorEvent,
     FailEvent,
@@ -252,7 +253,13 @@ def yield_new_events(
     return all_events[events_yielded_count:]
 
 
-def apply_optimistic_file_writes(llm_response: LLMResponse, fs: Any) -> None:
+def apply_optimistic_file_writes(
+    agent: Any,
+    llm_response: LLMResponse,
+    fs: Any,
+    exec_state: Any,
+    on_event: Callable[[BaseEvent], None] | None = None,
+) -> None:
     """
     Apply file writes from the LLM response to the filesystem.
 
@@ -269,6 +276,20 @@ def apply_optimistic_file_writes(llm_response: LLMResponse, fs: Any) -> None:
     # and handle snapshot parameter for VirtualFS
     target_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
     for path, content in llm_response.files.items():
+        # Check for shadowing
+        if path.endswith(".py"):
+            module_name = path[:-3].replace("/", ".")
+            if module_name in agent._policy.namespaces:
+                warning = SystemNoteEvent(
+                    agent_name="System",
+                    message=(
+                        f"⚠️ Warning: Created file '{path}' shadows registered system "
+                        f"module '{module_name}'. The system module will take precedence "
+                        f"during imports."
+                    ),
+                )
+                add_event_to_log(exec_state, warning, on_event=on_event)
+
         if isinstance(target_fs, VirtualFS):
             target_fs.write(path, content.encode("utf-8"), snapshot=False)
         else:

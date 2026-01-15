@@ -291,9 +291,20 @@ class AgexModule:
     agent_fingerprint: str = (
         ""  # Parent agent who registered this module (for security inheritance)
     )
+    submodules: dict[str, Any] = field(default_factory=dict)
 
     def __repr__(self):
         return f"<agexmodule '{self.name}'>"
+
+    def getattr(self, name: str) -> Any:
+        if name in self.submodules:
+            return self.submodules[name]
+        # JIT resolution will handle other attributes via Resolver
+        raise AgexAttributeError(f"module '{self.name}' has no attribute '{name}'")
+
+    def setattr(self, name: str, value: Any):
+        # Allow attaching submodules
+        self.submodules[name] = value
 
 
 @dataclass
@@ -348,6 +359,7 @@ class AgexVFSModule:
 
         # Reconstruct the namespace hierarchy: modules/<name>
         root_ns = Namespaced(base, "modules")
+        self.state = Namespaced(root_ns, self.name)
         self.state = Namespaced(root_ns, self.name)
 
     def getattr(self, name: str) -> Any:

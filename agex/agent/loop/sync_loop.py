@@ -199,7 +199,9 @@ class SyncLoopMixin:
 
             # Evaluate the code
             try:
-                apply_optimistic_file_writes(llm_response, fs)
+                apply_optimistic_file_writes(
+                    self, llm_response, fs, exec_state, on_event=on_event
+                )
 
                 if code_to_evaluate:
                     evaluate_program(
