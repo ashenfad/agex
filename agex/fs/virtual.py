@@ -368,7 +368,9 @@ class VirtualFS(FileSystem):
             raise FileNotFoundError(path)
         return content
 
-    def write(self, path: str, content: bytes, snapshot: bool = True) -> None:
+    def write(
+        self, path: str, content: bytes, snapshot: bool = True, mode: str = "w"
+    ) -> None:
         """Write bytes to a file.
 
         Args:
@@ -376,10 +378,22 @@ class VirtualFS(FileSystem):
             content: Content to write (must be bytes).
             snapshot: If True, create snapshot after write (for external API).
                      If False, defer snapshot (for agent code via patching).
+            mode: Write mode ('w' for write/overwrite, 'a' for append).
         """
         if not isinstance(content, bytes):
             raise TypeError(f"Expected bytes, got {type(content).__name__}")
         key = self._encode_path(path)
+
+        # Handle append mode
+        if mode == "a":
+            try:
+                existing = self.read(path)
+                content = existing + content
+            except FileNotFoundError:
+                # If file doesn't exist, append behaves like write
+                pass
+        elif mode != "w":
+            raise ValueError(f"Invalid mode: {mode}")
 
         # Check if file exists to determine if this is new or modified
         is_new = key not in self._state

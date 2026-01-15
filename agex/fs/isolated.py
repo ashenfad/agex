@@ -208,13 +208,25 @@ class IsolatedFS(FileSystem):
             resolved = self._validate_path(path)
             return resolved.read_bytes()
 
-    def write(self, path: str, content: bytes) -> None:
-        """Write bytes to file, creating parent directories if needed."""
+    def write(self, path: str, content: bytes, mode: str = "w") -> None:
+        """Write bytes to file, creating parent directories if needed.
+
+        Args:
+            path: File path to write.
+            content: Bytes to write.
+            mode: Write mode ('w' for write, 'a' for append).
+        """
         with suspend_fs_interception():
             resolved = self._validate_path(path)
             resolved.parent.mkdir(parents=True, exist_ok=True)
-            resolved.write_bytes(content)
-            self._update_file_metadata(path, len(content))
+
+            if mode == "a":
+                with resolved.open("ab") as f:
+                    f.write(content)
+            else:
+                resolved.write_bytes(content)
+
+            self._update_file_metadata(path, resolved.stat().st_size)
 
     def exists(self, path: str) -> bool:
         """Check if path exists."""

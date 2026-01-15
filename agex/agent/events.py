@@ -414,11 +414,12 @@ class ActionEvent(BaseEvent):
     thinking: str
     code: str
     files: dict[str, str] = Field(default_factory=dict)
+    file_modes: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _compute_tokens(self):
         _, tokens = render_action_markdown(
-            self.thinking, self.code, self.title, self.files
+            self.thinking, self.code, self.title, self.files, self.file_modes
         )
         self.full_detail_tokens = tokens
         self.low_detail_tokens = tokens  # No separate low-detail rendering
@@ -432,7 +433,13 @@ class ActionEvent(BaseEvent):
             self.thinking[:80] + "..." if len(self.thinking) > 80 else self.thinking
         )
         code_lines = self.code.count("\n") + 1
-        files_text = f"\n  Files: {list(self.files.keys())}" if self.files else ""
+
+        files_info = []
+        for path in self.files:
+            mode = self.file_modes.get(path, "write")
+            files_info.append(f"{path} ({mode})")
+
+        files_text = f"\n  Files: {files_info}" if files_info else ""
         return f"{base}{title_text}\n  Thinking: {thinking_preview}\n  Code: {code_lines} lines{files_text}"
 
     def _repr_markdown_(self) -> str:
@@ -443,8 +450,10 @@ class ActionEvent(BaseEvent):
         files_section = ""
         if self.files:
             files_section = "**Files:**\n"
-            for path, content in self.files.items():
-                files_section += f" - `{path}`\n"
+            for path in self.files:
+                mode = self.file_modes.get(path, "write")
+                mode_suffix = f" ({mode})" if mode != "write" else ""
+                files_section += f" - `{path}`{mode_suffix}\n"
             files_section += "\n"
 
         return f"""{base}  
@@ -469,8 +478,14 @@ class ActionEvent(BaseEvent):
         thinking_section = _event_section("💭 Thinking:", thinking_html, "#0366d6")
 
         if self.files:
-            file_links = ", ".join(f"<code>{f}</code>" for f in self.files.keys())
-            sections.append(_event_section("📁 Created Files:", file_links, "#28a745"))
+            file_links_parts = []
+            for f in self.files:
+                mode = self.file_modes.get(f, "write")
+                mode_suffix = f" <small>({mode})</small>" if mode != "write" else ""
+                file_links_parts.append(f"<code>{f}</code>{mode_suffix}")
+
+            file_links = ", ".join(file_links_parts)
+            sections.append(_event_section("📁 Files:", file_links, "#28a745"))
 
         code_section = _code_section("🐍 Code:", self.code, "#28a745")
 

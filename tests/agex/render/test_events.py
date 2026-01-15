@@ -83,3 +83,20 @@ class TestRenderEventsAsMarkdown:
         assert messages[1]["role"] == "assistant"
         assert messages[2]["role"] == "user"
         assert "[File changes by agent]" in messages[2]["content"]
+
+    def test_action_event_markdown_with_mode(self):
+        """Test ActionEvent rendering with mode attribute."""
+        events = [
+            ActionEvent(
+                agent_name="test_agent",
+                thinking="I'll append to the file",
+                code="pass",
+                files={"utils.py": "content"},
+                file_modes={"utils.py": "append"},
+            )
+        ]
+        messages = render_events_as_markdown(events)
+
+        assert len(messages) == 1
+        content = messages[0]["content"]
+        assert "### utils.py (mode: append)" in content

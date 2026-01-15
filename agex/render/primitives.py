@@ -688,6 +688,7 @@ def render_action_markdown(
     code: str,
     title: str = "",
     files: dict[str, str] | None = None,
+    file_modes: dict[str, str] | None = None,
 ) -> tuple[str, int]:
     """
     Render an action event as markdown.
@@ -700,7 +701,9 @@ def render_action_markdown(
     if files:
         files_section = "## Files\n"
         for path, content in files.items():
-            files_section += f"### {path}\n{content}\n\n"
+            mode = (file_modes or {}).get(path, "write")
+            mode_suffix = f" (mode: {mode})" if mode != "write" else ""
+            files_section += f"### {path}{mode_suffix}\n{content}\n\n"
 
     content = f"{title_section}# Thinking\n{thinking}\n\n{files_section}# Code\n```python\n{code}\n```"
     tokens = count_tokens(content)

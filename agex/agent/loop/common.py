@@ -276,6 +276,9 @@ def apply_optimistic_file_writes(
     # and handle snapshot parameter for VirtualFS
     target_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
     for path, content in llm_response.files.items():
+        mode = llm_response.file_modes.get(path, "write")
+        fs_mode = "a" if mode == "append" else "w"
+
         # Check for shadowing
         if path.endswith(".py"):
             module_name = path[:-3].replace("/", ".")
@@ -291,9 +294,9 @@ def apply_optimistic_file_writes(
                 add_event_to_log(exec_state, warning, on_event=on_event)
 
         if isinstance(target_fs, VirtualFS):
-            target_fs.write(path, content.encode("utf-8"), snapshot=False)
+            target_fs.write(path, content.encode("utf-8"), snapshot=False, mode=fs_mode)
         else:
-            target_fs.write(path, content.encode("utf-8"))
+            target_fs.write(path, content.encode("utf-8"), mode=fs_mode)
 
 
 # =============================================================================

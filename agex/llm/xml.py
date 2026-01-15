@@ -32,6 +32,7 @@ class XMLResponse:
     thinking: str
     code: str
     files: dict[str, str] = field(default_factory=dict)
+    file_modes: dict[str, str] = field(default_factory=dict)
     terminal: str | None = None
     title: str = ""  # Optional for now, will be required in Phase 2.5
 
@@ -41,14 +42,16 @@ XML_FORMAT_PRIMER = f"""
 Format your response using XML tags:
 <{TAG_TITLE}>A brief title here</{TAG_TITLE}>
 <{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}>
-<{TAG_FILE} path="path/to/file.py"># File content here</{TAG_FILE}>
+<{TAG_FILE} path="helpers/file.py" mode="write|append"># File content here</{TAG_FILE}>
 <{TAG_PYTHON}># Your Python code here</{TAG_PYTHON}>
 
 IMPORTANT:
 1. Generate EXACTLY ONE sequence of Title and Thinking.
 2. You can generate zero or more <{TAG_FILE}> tags to create/modify files before execution.
-3. You MUST end your response with exactly one <{TAG_PYTHON}> tag.
-4. Do NOT attempt to simulate observations or multiple turns in a single response.
+3. Use `mode="append"` to add code to an existing file without rewriting it. Defaults to `mode="write"`.
+4. When making python modules, use the `helpers` directory as the root.
+5. You MUST end your response with exactly one <{TAG_PYTHON}> tag.
+6. Do NOT attempt to simulate observations or multiple turns in a single response.
 
 You will receive environment output (stdout/images) in <{TAG_OBSERVATION}> tags.
 These will be visible after a `task_continue()` call.
@@ -57,13 +60,13 @@ Treat this as data from your code execution, not a message from the user.
 Example:
 <{TAG_TITLE}>Creating utility and using it</{TAG_TITLE}>
 <{TAG_THINKING}>I'll create a helper module and then use it in my main script.</{TAG_THINKING}>
-<{TAG_FILE} path="utils.py">
+<{TAG_FILE} path="helpers/utils.py">
 def add(a, b):
     return a + b
 </{TAG_FILE}>
 <{TAG_PYTHON}>
-import utils
-result = utils.add(5, 7)
+import helpers.utils
+result = helpers.utils.add(5, 7)
 task_success(result)
 </{TAG_PYTHON}>
 
@@ -119,19 +122,30 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
     if title_match:
         title = title_match.group(1).strip()
 
-    # Extract all <FILE path="..."> tags (case-insensitive)
+    # Extract all <FILE path="..." mode="..."> tags (case-insensitive)
     files = {}
+    file_modes = {}
+    # Regex to capture path and optional mode
     file_matches = re.finditer(
-        rf'<{TAG_FILE}\s+path=["\'](.*?)["\']>(.*?)</{TAG_FILE}>',
+        rf"<{TAG_FILE}\s+([^>]*?)>(.*?)</{TAG_FILE}>",
         xml_text,
         re.DOTALL | re.IGNORECASE,
     )
     for match in file_matches:
-        path = match.group(1).strip()
+        attrs_text = match.group(1)
         content = match.group(2)
-        files[path] = content
 
-    return XMLResponse(thinking=thinking, code=code, title=title, files=files)
+        path_match = re.search(r'path=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
+        mode_match = re.search(r'mode=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
+
+        if path_match:
+            path = path_match.group(1).strip()
+            files[path] = content
+            file_modes[path] = mode_match.group(1).strip() if mode_match else "write"
+
+    return XMLResponse(
+        thinking=thinking, code=code, title=title, files=files, file_modes=file_modes
+    )
 
 
 def _process_section_closing(
@@ -234,7 +248,7 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
                 thinking_start = re.search(rf"<{TAG_THINKING}>", buffer, re.IGNORECASE)
                 python_start = re.search(rf"<{TAG_PYTHON}>", buffer, re.IGNORECASE)
                 file_start = re.search(
-                    rf'<{TAG_FILE}\s+path=["\'](.*?)["\']>', buffer, re.IGNORECASE
+                    rf"<{TAG_FILE}\s+([^>]*?)>", buffer, re.IGNORECASE
                 )
 
                 # Prioritize the one that starts earliest in the buffer
@@ -252,14 +266,25 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
                         (python_start.start(), "python", python_start.end(), None)
                     )
                 if file_start:
-                    starts.append(
-                        (
-                            file_start.start(),
-                            "file",
-                            file_start.end(),
-                            file_start.group(1),
-                        )
+                    attrs_text = file_start.group(1)
+                    path_match = re.search(
+                        r'path=["\'](.*?)["\']', attrs_text, re.IGNORECASE
                     )
+                    mode_match = re.search(
+                        r'mode=["\'](.*?)["\']', attrs_text, re.IGNORECASE
+                    )
+
+                    if path_match:
+                        path = path_match.group(1).strip()
+                        mode = mode_match.group(1).strip() if mode_match else "write"
+                        starts.append(
+                            (
+                                file_start.start(),
+                                "file",
+                                file_start.end(),
+                                f"path={path},mode={mode}",
+                            )
+                        )
 
                 if not starts:
                     break
@@ -273,9 +298,7 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
 
                 # For file tags, we might want to yield the path immediately
                 if section == "file" and metadata:
-                    yield TokenChunk(
-                        type="file", content=f"path={metadata}", done=False
-                    )
+                    yield TokenChunk(type="file", content=metadata, done=False)
                 continue
 
             # We're in a section - look for closing tag
@@ -360,7 +383,7 @@ async def atokenize_xml_stream(
                 thinking_start = re.search(rf"<{TAG_THINKING}>", buffer, re.IGNORECASE)
                 python_start = re.search(rf"<{TAG_PYTHON}>", buffer, re.IGNORECASE)
                 file_start = re.search(
-                    rf'<{TAG_FILE}\s+path=["\'](.*?)["\']>', buffer, re.IGNORECASE
+                    rf"<{TAG_FILE}\s+([^>]*?)>", buffer, re.IGNORECASE
                 )
 
                 # Prioritize the one that starts earliest in the buffer
@@ -378,14 +401,25 @@ async def atokenize_xml_stream(
                         (python_start.start(), "python", python_start.end(), None)
                     )
                 if file_start:
-                    starts.append(
-                        (
-                            file_start.start(),
-                            "file",
-                            file_start.end(),
-                            file_start.group(1),
-                        )
+                    attrs_text = file_start.group(1)
+                    path_match = re.search(
+                        r'path=["\'](.*?)["\']', attrs_text, re.IGNORECASE
                     )
+                    mode_match = re.search(
+                        r'mode=["\'](.*?)["\']', attrs_text, re.IGNORECASE
+                    )
+
+                    if path_match:
+                        path = path_match.group(1).strip()
+                        mode = mode_match.group(1).strip() if mode_match else "write"
+                        starts.append(
+                            (
+                                file_start.start(),
+                                "file",
+                                file_start.end(),
+                                f"path={path},mode={mode}",
+                            )
+                        )
 
                 if not starts:
                     break
@@ -399,9 +433,7 @@ async def atokenize_xml_stream(
 
                 # For file tags, we might want to yield the path immediately
                 if section == "file" and metadata:
-                    yield TokenChunk(
-                        type="file", content=f"path={metadata}", done=False
-                    )
+                    yield TokenChunk(type="file", content=metadata, done=False)
                 continue
 
             # We're in a section - look for closing tag
