@@ -23,7 +23,16 @@ def test_workspace_recap_in_forefront():
         LLMResponse(
             thinking="Iteration 1: Create utils.py",
             files={
-                "utils.py": 'def add(a: int, b: int) -> int:\n    """Add two numbers."""\n    return a + b'
+                "utils.py": """
+def add(a: int, b: int) -> int:
+    \"\"\"Add two numbers.\"\"\"
+    return a + b
+
+class Processor:
+    \"\"\"Process data.\"\"\"
+    def process(self, data: list):
+        pass
+"""
             },
             code="pass",  # Continue to iteration 2
         ),
@@ -51,6 +60,9 @@ def test_workspace_recap_in_forefront():
     assert "utils.py" in forefront
     assert "def add(a: int, b: int) -> int:" in forefront
     assert '"""Add two numbers."""' in forefront
+    assert "class Processor:" in forefront
+    assert '"""Process data."""' in forefront
+    assert "def process(self, data: list):" in forefront
 
 
 if __name__ == "__main__":

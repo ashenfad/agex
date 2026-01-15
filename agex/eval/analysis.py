@@ -174,7 +174,7 @@ def get_workspace_recap(agent: Any, session: str = "default") -> str:
     if not py_files:
         return ""
 
-    recap = ["[Current Workspace Inventory]"]
+    recap = []
 
     for file_path in sorted(py_files):
         try:
@@ -200,7 +200,18 @@ def get_workspace_recap(agent: Any, session: str = "default") -> str:
                     if doc:
                         first_line = doc.split("\n")[0]
                         recap.append(f'        """{first_line}"""')
-                    # Optionally list methods? Keep it brief for now.
+
+                    # List methods
+                    for item in node.body:
+                        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            # Skip private methods
+                            if item.name.startswith("_") and not item.name.startswith(
+                                "__"
+                            ):
+                                continue
+                            method_sig = render_signature(item)
+                            recap.append(f"        {method_sig}")
+
                     found_anything = True
 
             if not found_anything:
