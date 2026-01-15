@@ -47,7 +47,7 @@ Format your response using XML tags:
 IMPORTANT:
 1. Generate EXACTLY ONE sequence of Title and Thinking.
 2. You can generate zero or more <{TAG_FILE}> tags to create/modify files before execution.
-3. You MUST end your response with exactly one <{TAG_PYTHON}> tag (or terminal command).
+3. You MUST end your response with exactly one <{TAG_PYTHON}> tag.
 4. Do NOT attempt to simulate observations or multiple turns in a single response.
 
 You will receive environment output (stdout/images) in <{TAG_OBSERVATION}> tags.

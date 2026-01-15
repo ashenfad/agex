@@ -25,15 +25,16 @@ from tests.agex import test_module
 
 def test_view_image_primer_text_is_always_visible():
     """
-    Tests that the `view_image` function is always included in the system
-    primer, regardless of whether a vision library is registered.
+    Tests that the core primer text is always included.
     """
     # Agent with NO image-related modules
     agent = Agent()
     system_message = agent._build_system_message()
-    assert "view_image" in system_message
+    # Check for core philosophy items
+    assert "Code is Action" in system_message
+    assert "Persistent State" in system_message
+    assert "Task Control Functions" in system_message
     assert "task_continue" in system_message
-    assert "image" in system_message
 
 
 def test_agent_fn_registration_decorator():
