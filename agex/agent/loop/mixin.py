@@ -187,10 +187,14 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                     title_parts = []
                     thinking_parts = []
                     code_parts = []
+                    file_parts: dict[str, list[str]] = {}
+                    current_file_path: str | None = None
                     seen_sections: dict[str, bool] = {
                         "title": False,
                         "thinking": False,
                         "python": False,
+                        "file": False,
+                        "terminal": False,
                     }
 
                     for token in self.llm.complete_stream(
@@ -201,8 +205,10 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                             and token.type in seen_sections
                             and not seen_sections[token.type]
                         )
+                        # We allow multiple file sections, so only mark 'seen' if it's not a file
                         if start_flag and token.type in seen_sections:
-                            seen_sections[token.type] = True
+                            if token.type != "file":
+                                seen_sections[token.type] = True
 
                         enriched = StreamToken(
                             type=token.type,
@@ -226,11 +232,22 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                             thinking_parts.append(token.content)
                         elif token.type == "python" and not token.done:
                             code_parts.append(token.content)
+                        elif token.type == "file":
+                            if start_flag and token.content.startswith("path="):
+                                current_file_path = token.content[len("path=") :]
+                                file_parts[current_file_path] = []
+                            elif current_file_path and not token.done:
+                                file_parts[current_file_path].append(token.content)
+                            elif token.done:
+                                current_file_path = None
 
                     return LLMResponse(
                         title="".join(title_parts).strip(),
                         thinking="".join(thinking_parts),
                         code="".join(code_parts),
+                        files={
+                            path: "".join(parts) for path, parts in file_parts.items()
+                        },
                     )
                 else:
                     return self.llm.complete(system_message, messages_to_send)
@@ -283,10 +300,14 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                     title_parts = []
                     thinking_parts = []
                     code_parts = []
+                    file_parts: dict[str, list[str]] = {}
+                    current_file_path: str | None = None
                     seen_sections: dict[str, bool] = {
                         "title": False,
                         "thinking": False,
                         "python": False,
+                        "file": False,
+                        "terminal": False,
                     }
 
                     async for token in self.llm.acomplete_stream(
@@ -297,8 +318,10 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                             and token.type in seen_sections
                             and not seen_sections[token.type]
                         )
+                        # We allow multiple file sections, so only mark 'seen' if it's not a file
                         if start_flag and token.type in seen_sections:
-                            seen_sections[token.type] = True
+                            if token.type != "file":
+                                seen_sections[token.type] = True
 
                         enriched = StreamToken(
                             type=token.type,
@@ -324,11 +347,22 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                             thinking_parts.append(token.content)
                         elif token.type == "python" and not token.done:
                             code_parts.append(token.content)
+                        elif token.type == "file":
+                            if start_flag and token.content.startswith("path="):
+                                current_file_path = token.content[len("path=") :]
+                                file_parts[current_file_path] = []
+                            elif current_file_path and not token.done:
+                                file_parts[current_file_path].append(token.content)
+                            elif token.done:
+                                current_file_path = None
 
                     return LLMResponse(
                         title="".join(title_parts).strip(),
                         thinking="".join(thinking_parts),
                         code="".join(code_parts),
+                        files={
+                            path: "".join(parts) for path, parts in file_parts.items()
+                        },
                     )
                 else:
                     return await self.llm.acomplete(system_message, messages_to_send)

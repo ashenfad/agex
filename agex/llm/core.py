@@ -16,7 +16,7 @@ from typing import (
     Union,
 )
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from agex.agent.events import Event
@@ -106,12 +106,12 @@ class TokenChunk:
     Not an Event - tokens are ephemeral and don't go in the state log.
 
     Attributes:
-        type: Either "title", "thinking", or "python"
+        type: Either "title", "thinking", "python", "file", or "terminal"
         content: The text content (incremental)
         done: True when this section is complete
     """
 
-    type: Literal["title", "thinking", "python"]
+    type: Literal["title", "thinking", "python", "file", "terminal"]
     content: str
     done: bool = False
 
@@ -127,11 +127,13 @@ class StreamToken(TokenChunk):
 
 
 class LLMResponse(BaseModel):
-    """Structured LLM response with parsed title, thinking, and code sections."""
+    """Structured LLM response with parsed title, thinking, code, and files sections."""
 
     title: str = ""
     thinking: str
-    code: str
+    code: str = ""
+    files: dict[str, str] = Field(default_factory=dict)
+    terminal: str | None = None
 
 
 class ResponseParseError(Exception):

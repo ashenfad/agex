@@ -46,7 +46,7 @@ def _import_stateful(
         raise AgexError("__import__() requires a non-empty module name string.")
 
     resolver = evaluator.resolver
-    module = resolver.resolve_module(name, None)
+    module = resolver.resolve_module(name, evaluator.state, None)
 
     if not fromlist:
         return module
@@ -56,7 +56,7 @@ def _import_stateful(
     for item in fromlist:
         if not isinstance(item, str):
             raise AgexError("__import__ fromlist items must be strings.")
-        member = resolver.import_from(name, item, None)
+        member = resolver.import_from(name, item, evaluator.state, None)
         setattr(module, item, member)
         fromlist_results.append(member)
 

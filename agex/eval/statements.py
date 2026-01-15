@@ -545,7 +545,9 @@ class StatementEvaluator(BaseEvaluator):
         for alias in node.names:
             module_name_to_find = alias.name
             try:
-                tic_module = self.resolver.resolve_module(module_name_to_find, node)
+                tic_module = self.resolver.resolve_module(
+                    module_name_to_find, self.state, node
+                )
             except EvalError as e:
                 e.node = node  # Add location info to the error
                 raise
@@ -575,7 +577,7 @@ class StatementEvaluator(BaseEvaluator):
             target_name = alias.asname or name_to_import
 
             member = self.resolver.import_from(
-                module_name_to_find, name_to_import, node
+                module_name_to_find, name_to_import, self.state, node
             )
             self.state.set(target_name, member)
 

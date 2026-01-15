@@ -561,6 +561,19 @@ class Versioned(State):
             else 0
         )
 
+    def discard_changes(self) -> None:
+        """
+        Discard uncommitted changes in Live state and reload from current_commit.
+
+        This effectively rolls back state to the last successful snapshot() or merge(),
+        without losing changes from earlier successful commits on the same branch.
+        """
+        self.live = Live()
+        self.removed = set()
+        self.accessed_objects.clear()
+        # Note: self.commit_keys and self.meta are already correct for current_commit
+        # because they are updated in-place during snapshot()
+
     def checkout(self, commit_hash: str) -> "Versioned | None":
         """
         Return a new Versioned state object at a specific commit hash.

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agex.agent.policy.resolve import make_predicate
 
@@ -10,6 +10,11 @@ from .error import EvalError
 from .objects import AgexInstance, AgexModule, AgexObject, BoundInstanceObject
 from .user_errors import AgexAttributeError, AgexNameError
 from .utils import get_allowed_attributes_for_instance
+
+if TYPE_CHECKING:
+    from agex.state import State
+
+    from .objects import AgexVFSModule
 
 
 class Resolver:
@@ -103,8 +108,10 @@ class Resolver:
 
     # --- Attribute Resolution ---
     def resolve_attribute(self, value: Any, attr_name: str, node) -> Any:
-        # Sandboxed AgexObjects and live objects have their own logic
-        if isinstance(value, (AgexObject, AgexInstance)):
+        # Sandboxed AgexObjects, VFS modules and live objects have their own logic
+        from .objects import AgexVFSModule
+
+        if isinstance(value, (AgexObject, AgexInstance, AgexVFSModule)):
             return value.getattr(attr_name)
 
         # Host object proxy
@@ -232,35 +239,135 @@ class Resolver:
         )
 
     # --- Import Resolution ---
-    def resolve_module(self, module_name: str, node) -> AgexModule:
-        # Creating AgexModule is safe as a capability token; members resolve lazily via policy
+    def resolve_module(self, module_name: str, state: State, node) -> Any:
+        # 1. Check Policy (Whitelist)
+        # We need to know if the module itself is available, which usually means
+        # checking if any member is resolvable or if there is a module-level registration.
+        # But `namespaces` keys are strings.
 
-        # First, try exact match
-        if module_name in self.agent._policy.namespaces:  # type: ignore[attr-defined]
+        # If 'math' is registered via `agent.module(math)`, then 'math' key exists in namespaces.
+
+        if module_name in self.agent._policy.namespaces:
             return AgexModule(
                 name=module_name, agent_fingerprint=self.agent.fingerprint
             )
+
+        # Maybe the test environment policy setup is different?
+        # `create_agent` in the test uses default policy?
+        # Yes, `Agent()` creates default policy.
+        # `register_stdlib` is NOT called by default in `Agent()`.
+        # Ah! `Agent()` constructor does NOT call `register_stdlib`.
+        # It relies on the user or a preset to do it.
+        # The test `create_agent` just does `Agent(...)`.
+        # It has NO registered modules except maybe some defaults?
+
+        # Checking `agex/agent/base.py`:
+        # `self._policy = AgentPolicy()`
+        # No default registrations in `__init__`.
+
+        # So `math` is NOT registered in the test agent!
+        # That explains why it fell through to VFS and loaded the fake one.
+        # And why the assertion failed (it expected real math).
 
         # For recursive modules, check if any registered namespace is a parent
         for ns_name, ns in self.agent._policy.namespaces.items():  # type: ignore[attr-defined]
             if getattr(ns, "recursive", False) and module_name.startswith(
                 ns_name + "."
             ):
-                # This is a submodule of a recursively registered module
                 return AgexModule(
                     name=module_name, agent_fingerprint=self.agent.fingerprint
                 )
+
+        # 2. Check VFS - BUT ONLY if not shadowing a known module in the policy
+        # Actually, the check above covers policy-registered modules.
+        # But what if 'math' is registered but we try to load 'math' from VFS?
+        # The check above returns AgexModule('math') and returns EARLY.
+        # So shadowing should be prevented by the early return.
+
+        # Why did the test fail?
+        # assert 'fake' == 2.0
+        # The test failed because it returned 'fake'.
+        # That means it LOADED the VFS module.
+        # That means the policy check above FAILED for 'math'.
+        # Why? 'math' IS registered in stdlib.py.
+        # Is self.agent._policy.namespaces populated?
+
+        try:
+            # Check for module file in VFS
+            filename = f"{module_name}.py"
+            fs = self.agent.fs()
+            if fs.exists(filename):
+                return self._load_vfs_module(module_name, state, node)
+        except Exception:
+            # Filesystem error or not configured - fall through
+            pass
 
         raise EvalError(
             f"Module '{module_name}' is not registered or whitelisted.", node
         )
 
-    def import_from(self, module_name: str, member_name: str, node) -> Any:
+    def _load_vfs_module(self, name: str, state: State, node) -> AgexVFSModule:
+        """Load and execute a module from the VFS into a namespaced state."""
+        from agex.state import Namespaced
+
+        from .core import evaluate_program
+        from .objects import AgexVFSModule
+
+        # Get the underlying base store for namespacing
+        base = state.base_store
+
+        # Create isolated namespaced state: modules/<name>
+        # Nested Namespaced to avoid forbidden slashes in segment names
+        root_ns = Namespaced(base, "modules")
+        module_state = Namespaced(root_ns, name)
+
+        # NOTE: AgexVFSModules act as modules, so they should be recursive
+        # But `Namespaced` doesn't have a `recursive` attribute.
+        # The `AgexModule` wrapper returned by `resolve_module` handles dotted paths IF
+        # the policy namespace has `recursive=True`.
+        # Here we are returning `AgexVFSModule`.
+
+        # CLEAR OLD STATE: ensure clean slate for re-loading/overwriting
+        # descendant_keys() gets all keys including those in deeper sub-namespaces
+        for key in list(module_state.descendant_keys()):
+            module_state.remove(key)
+
+        # Read and parse code
+        filename = f"{name}.py"
+        try:
+            fs = self.agent.fs()
+            code_bytes = fs.read(filename)
+            code = code_bytes.decode("utf-8")
+        except Exception as e:
+            raise EvalError(f"Failed to read module '{name}' from VFS: {e}", node)
+
+        # Execute module code into its namespace
+        try:
+            evaluate_program(
+                code,
+                self.agent,
+                state=module_state,
+                # Ensure it has access to the same main loop/callbacks if needed
+                # (Evaluator might need to pass these through to Resolver)
+            )
+        except Exception as e:
+            from agex.agent.datatypes import _AgentExit
+
+            if isinstance(e, _AgentExit):
+                raise
+            raise EvalError(f"Error initializing module '{name}': {e}", node) from e
+
+        return AgexVFSModule(name=name, state=module_state)
+
+    def import_from(
+        self, module_name: str, member_name: str, state: State, node
+    ) -> Any:
         # Preserve legacy special-case: only allow `from dataclasses import dataclass` as a no-op.
         # For any other import from dataclasses, treat module as unregistered.
         if module_name == "dataclasses":
             raise EvalError(f"No module named '{module_name}' is registered.", node)
 
+        # 1. Check Policy (Whitelist)
         res = self.agent._policy.resolve_module_member(module_name, member_name)
         if res is None:
             # Check if module_name is a dotted path like "os.path" where the submodule
@@ -295,35 +402,49 @@ class Resolver:
                     res = self.agent._policy.resolve_module_member(
                         parent_ns_name, dotted_member
                     )
-        if res is None:
-            raise EvalError(
-                f"Cannot import name '{member_name}' from module '{module_name}'.",
-                node,
+
+        if res is not None:
+            # If the resolved member is itself a module, return it wrapped as an
+            # AgexModule so that subsequent attribute access goes through policy
+            # (enabling constants and dotted resolution with include/exclude gating).
+            val = (
+                getattr(res, "fn", None)
+                or getattr(res, "cls", None)
+                or getattr(res, "value", None)
             )
-        # If the resolved member is itself a module, return it wrapped as an
-        # AgexModule so that subsequent attribute access goes through policy
-        # (enabling constants and dotted resolution with include/exclude gating).
-        val = (
-            getattr(res, "fn", None)
-            or getattr(res, "cls", None)
-            or getattr(res, "value", None)
+            if isinstance(val, ModuleType):
+                # Prefer an existing registered namespace for the resolved module
+                for ns_name, ns in getattr(self.agent._policy, "namespaces").items():  # type: ignore[attr-defined]
+                    if getattr(ns, "kind", None) != "module":
+                        continue
+                    try:
+                        loaded = ns._ensure_module_loaded()
+                    except Exception:
+                        continue
+                    if loaded is val:
+                        return AgexModule(
+                            name=ns_name, agent_fingerprint=self.agent.fingerprint
+                        )
+                # Otherwise compose a dotted child path relative to the parent module name
+                dotted_name = f"{module_name}.{member_name}"
+                return AgexModule(
+                    name=dotted_name, agent_fingerprint=self.agent.fingerprint
+                )
+            return val
+
+        # 2. Check VFS
+        try:
+            # Check if this is a VFS module
+            filename = f"{module_name}.py"
+            fs = self.agent.fs()
+            if fs.exists(filename):
+                # Load module to populate namespaced state
+                vfs_mod = self._load_vfs_module(module_name, state, node)
+                return vfs_mod.getattr(member_name)
+        except Exception:
+            pass
+
+        raise EvalError(
+            f"Cannot import name '{member_name}' from module '{module_name}'.",
+            node,
         )
-        if isinstance(val, ModuleType):
-            # Prefer an existing registered namespace for the resolved module
-            for ns_name, ns in getattr(self.agent._policy, "namespaces").items():  # type: ignore[attr-defined]
-                if getattr(ns, "kind", None) != "module":
-                    continue
-                try:
-                    loaded = ns._ensure_module_loaded()
-                except Exception:
-                    continue
-                if loaded is val:
-                    return AgexModule(
-                        name=ns_name, agent_fingerprint=self.agent.fingerprint
-                    )
-            # Otherwise compose a dotted child path relative to the parent module name
-            dotted_name = f"{module_name}.{member_name}"
-            return AgexModule(
-                name=dotted_name, agent_fingerprint=self.agent.fingerprint
-            )
-        return val
