@@ -16,6 +16,7 @@ from typing import Any
 from agex.agent.base import BaseAgent
 from agex.agent.primer_text import BUILTIN_PRIMER
 from agex.agent.utils import call_sync_or_async
+from agex.eval.analysis import get_workspace_recap
 from agex.eval.functions import UserFunction
 from agex.render.definitions import render_definitions
 
@@ -138,7 +139,19 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                     "**DO NOT** redefine them.\n" + "\n".join(user_fns)
                 )
 
-        # 2. Iteration Warnings (conditional)
+        # 2. Workspace Recap (Inventory)
+        # We assume the session matches what's in exec_state (usually 'default' unless specified)
+        # We use getattr to safely access session if it's stored in state
+        session = getattr(exec_state, "session", "default")
+        recap = get_workspace_recap(self, session=session)
+        if recap:
+            messages.append(
+                "## Workspace Module Inventory\n"
+                "The following modules are available in your virtual filesystem.\n"
+                "**IMPORTANT**: To use them, you must `import` them first.\n" + recap
+            )
+
+        # 3. Iteration Warnings (conditional)
         threshold_idx = int(self.max_iterations * 0.8)
         if self.max_iterations < 10:
             threshold_idx = max(0, self.max_iterations - 3)

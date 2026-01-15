@@ -138,13 +138,13 @@ class AgentAwareFS(FileSystem):
         """Check if path is a directory (no event)."""
         return self._fs.isdir(path)
 
-    def list(self, path: str = "/") -> list[str]:
+    def list(self, path: str = "/", recursive: bool = False) -> list[str]:
         """List directory (no event)."""
-        return self._fs.list(path)
+        return self._fs.list(path, recursive=recursive)
 
-    def list_detailed(self, path: str = "/") -> list[FileInfo]:
+    def list_detailed(self, path: str = "/", recursive: bool = False) -> list[FileInfo]:
         """List directory with metadata (no event)."""
-        return self._fs.list_detailed(path)
+        return self._fs.list_detailed(path, recursive=recursive)
 
     def stat(self, path: str) -> FileMetadata:
         """Get file metadata (no event)."""
