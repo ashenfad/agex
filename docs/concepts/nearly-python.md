@@ -6,15 +6,18 @@ To that effect, all code samples in this document are for the sandboxed Python-e
 
 **State Choice Affects Constraints**: Some limitations depend on whether you use live state (default, no persistence) or persistent state (remembers variables between task calls). Live state is more flexible but doesn't persist memory; persistent state has more constraints but enables complex multi-step workflows.
 
-!!! important "Imports are Explicitly Registered"
+!!! important "Imports: Registered or VFS-Resident"
 
-    Agent-generated code may use `import` statements, but imports only succeed for modules that have been explicitly registered via `agent.module(...)` (or exposed through other registration methods). Within those modules, only whitelisted members are visible to agent code; excluded members behave as if they don’t exist.
+    Agent-generated code may use `import` statements. These only succeed for:
+    1. **Registered Modules**: Libraries explicitly exposed via `agent.module(...)`.
+    2. **Workspace Modules**: Python files the agent has created in the Virtual Filesystem (VFS).
+
+    Within registered modules, only whitelisted members are visible. For workspace modules, all members are available.
 
     **Example:**
     ```python
     import pandas as pd              # OK if `pandas` was registered
-    from pandas import DataFrame     # OK if `DataFrame` is whitelisted
-    from pandas import read_csv      # Fails if excluded by registration
+    import helpers.utils             # OK if agent created `helpers/utils.py`
     import os                        # Fails if `os` was not registered
     ```
 

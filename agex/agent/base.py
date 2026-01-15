@@ -111,7 +111,7 @@ class BaseAgent:
         host: "Host | None" = None,
         # State configuration (optional, defaults to ephemeral)
         state: "StateConfig | None" = None,
-        # FileSystem configuration (optional, defaults to no access)
+        # FileSystem configuration (optional, defaults to VirtualFS)
         fs: "FSConfig | None" = None,
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,

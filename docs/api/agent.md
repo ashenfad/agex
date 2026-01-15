@@ -34,7 +34,7 @@ Agent(
 | `llm_max_retries` | `int` | `2` | Number of times to retry a failed LLM completion |
 | `host` | `Host \| None` | `None` | Execution host from `connect_host()`. If `None`, runs locally. See [Host Configuration](host.md). |
 | `state` | `StateConfig \| None` | `None` | State config from `connect_state()`. If `None`, tasks are stateless. See [State Configuration](state.md). |
-| `fs` | `FSConfig \| None` | `None` | FileSystem config from `connect_fs()`. If `None`, no filesystem access. See [FileSystem Configuration](fs.md). |
+| `fs` | `FSConfig \| None` | `connect_fs(type="virtual")` | FileSystem config from `connect_fs()`. Defaults to an in-memory Virtual Filesystem (VFS). Pass `None` to disable. See [FileSystem Configuration](fs.md). |
 | `log_high_water_tokens` | `int \| None` | `None` | Trigger event log summarization when tokens exceed this threshold |
 | `log_low_water_tokens` | `int \| None` | `None` | Target token count after summarization (defaults to 50% of high water) |
 

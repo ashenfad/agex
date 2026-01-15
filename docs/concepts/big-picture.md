@@ -178,6 +178,17 @@ while not (review := critique(report)).approved:
     report = hone_report(review.feedback, report)
 ```
 
+### 5. Agent-Authored Libraries
+
+Agents aren't limited to using the tools you provide—they can build their own. Using the `<FILE>` tag, agents can create persistent modules in their Virtual Filesystem (VFS) and `import` them in subsequent iterations. 
+
+This enables agents to manage complexity by:
+- **Organizing code** into reusable helper modules
+- **Building domain-specific abstractions** on the fly
+- **Persisting logic** across multiple turns without re-generating it
+
+A "Workspace Recap" automatically provides the agent with an inventory of its self-authored modules, including function signatures and class definitions, ensuring it always knows what tools it has built for itself.
+
 ## The Result
 
 With agex, multi-agent workflows become simple control flow. Complex data handoffs become object passing. Agent capabilities become library registrations.

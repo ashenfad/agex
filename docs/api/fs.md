@@ -1,8 +1,8 @@
 # FileSystem Configuration
 
-The `connect_fs()` factory function configures agent filesystem access. By default, agents with IO capabilities (e.g., via `register_io()`) have unrestricted access to the host filesystem. Use `connect_fs()` to restrict access to:
-- **Virtual filesystem (VFS)**: In-memory filesystem backed by agent state
-- **Isolated filesystem**: Real filesystem access restricted to a specific directory
+The `connect_fs()` factory function configures agent filesystem access. **By default, all agents are configured with a Virtual Filesystem (VFS)**, allowing them to create and manage persistent workspace modules. Use `connect_fs()` to change this configuration to:
+- **Isolated filesystem**: Real filesystem access restricted to a specific directory on the host
+- **Disabled**: Remove all filesystem access by passing `fs=None` to the agent constructor
 
 > [!NOTE]
 > When `fs=connect_fs(...)` is configured, `register_io()` is automatically applied during task execution, giving the agent access to file operations (`open()`, `os.listdir()`, etc.) that are routed through VFS or validated against the isolated root.
@@ -49,11 +49,11 @@ The Virtual FileSystem provides a secure, state-backed filesystem for agents. Fi
 ### Usage
 
 ```python
-from agex import Agent, connect_fs, connect_state
+from agex import Agent, connect_state
 
+# VirtualFS is enabled by default
 agent = Agent(
     state=connect_state(type="versioned", storage="disk", path="/tmp/agent-state"),
-    fs=connect_fs(type="virtual"),
 )
 ```
 
@@ -147,10 +147,10 @@ def run_agent():
 
 | Use Case | Recommended |
 |----------|-------------|
-| Ephemeral workspaces | `virtual` |
-| Testing/development | `virtual` |
-| Processing user uploads (temporary) | `virtual` |
-| State-backed persistence (with versioning) | `virtual` |
+| Ephemeral workspaces | `virtual` (default) |
+| Testing/development | `virtual` (default) |
+| Processing user uploads (temporary) | `virtual` (default) |
+| State-backed persistence (with versioning) | `virtual` (default) |
 | Accessing existing project files | `isolated` |
 | Working with real files/directories | `isolated` |
 | Per-session isolation in multi-tenant apps | `isolated` with `per_session=True` |
