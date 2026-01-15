@@ -440,6 +440,21 @@ def pprint_tokens(
         output_stream.flush()
         return
 
+    # Print content with color
+    content = token.content
+    if token.type == "file" and token.content.startswith("path="):
+        # Parse metadata: "path=foo.py,mode=append"
+        import re
+
+        path_match = re.search(r"path=([^,]+)", token.content)
+        mode_match = re.search(r"mode=([^,]+)", token.content)
+
+        if path_match:
+            path = path_match.group(1)
+            mode = mode_match.group(1) if mode_match else "write"
+            action = "[APPEND]" if mode == "append" else "[CREATE]"
+            content = f"📁 {path} {action}\n"
+
     # Color based on token type and optionally prepend context
     prefix = ""
     if token.type == "title" and token.start:
@@ -458,13 +473,9 @@ def pprint_tokens(
     else:
         color_code = _Colors.cyan if use_color else ""
 
-    # Print content with color
-    content = (
-        prefix + token.content
-        if token.start and token.type == "title"
-        else token.content
-    )
+    # Final content assembly
+    final_text = prefix + content if token.start and token.type == "title" else content
     if use_color and color_code:
-        content = _colorize(use_color, color_code, content)
-    output_stream.write(content)
+        final_text = _colorize(use_color, color_code, final_text)
+    output_stream.write(final_text)
     output_stream.flush()
