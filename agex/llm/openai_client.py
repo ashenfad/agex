@@ -5,10 +5,7 @@ import openai
 from agex.agent.events import Event
 from agex.llm.core import (
     LLM,
-    LLMResponse,
     TokenChunk,
-    with_timeout,
-    with_timeout_async,
 )
 from agex.llm.xml import XML_FORMAT_PRIMER, tokenize_xml_stream
 from agex.tokenizers import get_tokenizer
@@ -84,82 +81,6 @@ class OpenAI(LLM):
             "timeout_seconds": self.timeout_seconds,
             **self._kwargs,  # Include other completion args
         }
-
-    def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
-        """
-        Send events to OpenAI and return a structured response using native structured outputs.
-        """
-        from agex.render.events import render_events_as_markdown
-
-        # Combine kwargs, giving precedence to method-level ones
-        request_kwargs = {**self._kwargs, **kwargs}
-
-        # Use rendering helper to convert events to markdown messages
-        messages_dicts = render_events_as_markdown(events)
-
-        # Add system message at the beginning
-        full_messages = [{"role": "system", "content": system}] + messages_dicts
-
-        try:
-
-            def _make_request():
-                return self.client.beta.chat.completions.parse(
-                    model=self._model,
-                    messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
-                    response_format=LLMResponse,
-                    **request_kwargs,
-                )
-
-            # Execute with timeout
-            response = with_timeout(_make_request, self.timeout_seconds)
-
-            # Extract the parsed response
-            parsed_response = response.choices[0].message.parsed
-            if parsed_response is None:
-                raise RuntimeError("OpenAI returned None for parsed response")
-            return parsed_response
-
-        except Exception as e:
-            raise RuntimeError(f"OpenAI completion failed: {e}") from e
-
-    async def acomplete(
-        self, system: str, events: List[Event], **kwargs
-    ) -> LLMResponse:
-        """
-        Send events to OpenAI and return a structured response using native structured outputs (Async).
-        """
-        from agex.render.events import render_events_as_markdown
-
-        # Combine kwargs, giving precedence to method-level ones
-        request_kwargs = {**self._kwargs, **kwargs}
-
-        # Use rendering helper to convert events to markdown messages
-        messages_dicts = render_events_as_markdown(events)
-
-        # Add system message at the beginning
-        full_messages = [{"role": "system", "content": system}] + messages_dicts
-
-        try:
-
-            async def _make_request():
-                return await self.async_client.beta.chat.completions.parse(
-                    model=self._model,
-                    messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
-                    response_format=LLMResponse,
-                    **request_kwargs,
-                )
-
-            # Execute with timeout
-            response = await with_timeout_async(_make_request, self.timeout_seconds)
-
-            # Extract the parsed response
-            parsed_response = response.choices[0].message.parsed
-            if parsed_response is None:
-                raise RuntimeError("OpenAI returned None for parsed response")
-            return parsed_response
-
-        except Exception as e:
-            raise RuntimeError(f"OpenAI completion failed: {e}") from e
 
     def complete_stream(
         self, system: str, events: List[Event], **kwargs

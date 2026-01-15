@@ -6,10 +6,7 @@ from anthropic.types import TextBlockParam
 from agex.agent.events import Event
 from agex.llm.core import (
     LLM,
-    LLMResponse,
     TokenChunk,
-    with_timeout,
-    with_timeout_async,
 )
 from agex.llm.xml import TAG_TITLE, XML_FORMAT_PRIMER, tokenize_xml_stream
 
@@ -97,187 +94,6 @@ class Anthropic(LLM):
             **self._kwargs,
         }
 
-    def complete(self, system: str, events: List[Event], **kwargs) -> LLMResponse:
-        """
-        Send events to Anthropic and return a structured response using tool calling.
-        """
-        from agex.render.events import render_events_as_markdown
-
-        # Combine kwargs, giving precedence to method-level ones
-        request_kwargs = {**self._kwargs, **kwargs}
-
-        # Use rendering helper to convert events to markdown messages
-        messages_dicts = render_events_as_markdown(events)
-
-        # Convert to Anthropic format
-        conversation_messages = [
-            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
-            for index, msg in enumerate(messages_dicts)
-        ]
-
-        # Define the structured response tool
-        structured_response_tool = {
-            "name": "structured_response",
-            "description": "Respond with thinking and code in a structured format",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "thinking": {
-                        "type": "string",
-                        "description": "Your natural language thinking about the task",
-                    },
-                    "code": {
-                        "type": "string",
-                        "description": "The Python code to execute",
-                    },
-                    "files": {
-                        "type": "object",
-                        "additionalProperties": {"type": "string"},
-                        "description": "Files to create or modify (path -> content)",
-                    },
-                    "terminal": {
-                        "type": "string",
-                        "description": "Terminal command to execute",
-                    },
-                },
-                "required": ["thinking"],
-            },
-        }
-
-        try:
-            # Set default max_tokens if not provided
-            if "max_tokens" not in request_kwargs:
-                request_kwargs["max_tokens"] = MAX_TOKENS
-
-            def _make_request():
-                return self.client.messages.create(
-                    model=self._model,
-                    system=system,
-                    messages=conversation_messages,
-                    tools=[structured_response_tool],
-                    tool_choice={"type": "tool", "name": "structured_response"},
-                    **request_kwargs,
-                )
-
-            # Execute with timeout
-            response = with_timeout(_make_request, self.timeout_seconds)
-
-            # Extract the structured response from tool use
-            if not response.content or len(response.content) == 0:
-                raise RuntimeError("Anthropic returned empty response")
-
-            # Look for tool use in the response
-            tool_use = None
-            for content_block in response.content:
-                if (
-                    content_block.type == "tool_use"
-                    and content_block.name == "structured_response"
-                ):
-                    tool_use = content_block
-                    break
-
-            if tool_use is None:
-                raise RuntimeError("Anthropic did not return expected tool use")
-
-            # Extract thinking, code, files, and terminal from tool input
-            tool_input = tool_use.input
-            thinking = tool_input.get("thinking", "")
-            code = tool_input.get("code", "")
-            files = tool_input.get("files", {})
-            terminal = tool_input.get("terminal")
-
-            return LLMResponse(
-                thinking=thinking, code=code, files=files, terminal=terminal
-            )
-
-        except Exception as e:
-            raise RuntimeError(f"Anthropic completion failed: {e}") from e
-
-    async def acomplete(
-        self, system: str, events: List[Event], **kwargs
-    ) -> LLMResponse:
-        """Async version of complete."""
-        from agex.render.events import render_events_as_markdown
-
-        request_kwargs = {**self._kwargs, **kwargs}
-        messages_dicts = render_events_as_markdown(events)
-        conversation_messages = [
-            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
-            for index, msg in enumerate(messages_dicts)
-        ]
-
-        structured_response_tool = {
-            "name": "structured_response",
-            "description": "Respond with thinking and code in a structured format",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "thinking": {
-                        "type": "string",
-                        "description": "Your natural language thinking about the task",
-                    },
-                    "code": {
-                        "type": "string",
-                        "description": "The Python code to execute",
-                    },
-                    "files": {
-                        "type": "object",
-                        "additionalProperties": {"type": "string"},
-                        "description": "Files to create or modify (path -> content)",
-                    },
-                    "terminal": {
-                        "type": "string",
-                        "description": "Terminal command to execute",
-                    },
-                },
-                "required": ["thinking"],
-            },
-        }
-
-        try:
-            if "max_tokens" not in request_kwargs:
-                request_kwargs["max_tokens"] = MAX_TOKENS
-
-            async def _make_request():
-                return await self.async_client.messages.create(
-                    model=self._model,
-                    system=system,
-                    messages=conversation_messages,
-                    tools=[structured_response_tool],
-                    tool_choice={"type": "tool", "name": "structured_response"},
-                    **request_kwargs,
-                )
-
-            # Execute with timeout
-            response = await with_timeout_async(_make_request, self.timeout_seconds)
-
-            if not response.content or len(response.content) == 0:
-                raise RuntimeError("Anthropic returned empty response")
-
-            tool_use = None
-            for content_block in response.content:
-                if (
-                    content_block.type == "tool_use"
-                    and content_block.name == "structured_response"
-                ):
-                    tool_use = content_block
-                    break
-
-            if tool_use is None:
-                raise RuntimeError("Anthropic did not return expected tool use")
-
-            tool_input = tool_use.input
-            thinking = tool_input.get("thinking", "")
-            code = tool_input.get("code", "")
-            files = tool_input.get("files", {})
-            terminal = tool_input.get("terminal")
-            return LLMResponse(
-                thinking=thinking, code=code, files=files, terminal=terminal
-            )
-
-        except Exception as e:
-            raise RuntimeError(f"Anthropic completion failed: {e}") from e
-
     def complete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> Iterator[TokenChunk]:
@@ -286,12 +102,13 @@ class Anthropic(LLM):
 
         Uses standard streaming API with XML parsing for token-level updates.
         """
+        from agex.render.xml import render_events_as_xml
 
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
 
         # Use XML rendering for streaming (instead of tool calling)
-        messages_dicts = events
+        messages_dicts = render_events_as_xml(events)
 
         # Convert to Anthropic format
         conversation_messages = [
