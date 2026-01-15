@@ -270,6 +270,11 @@ def _format_event_lines(
                 _strip_newlines(event.thinking), 120 if verbosity != "brief" else 80
             )
         body_lines.append(_indent(detail_indent, f"Thinking: {thinking_text}"))
+
+        if event.files:
+            file_names = ", ".join(f"`{f}`" for f in event.files.keys())
+            body_lines.append(_indent(detail_indent, f"Files: {file_names}"))
+
         code_lines_total = event.code.count("\n") + 1 if event.code else 0
         if verbosity == "verbose" and event.code:
             shown_lines = event.code.splitlines()[:truncate_code_lines]
@@ -446,6 +451,8 @@ def pprint_tokens(
         color_code = _Colors.cyan if use_color else ""
     elif token.type == "thinking":
         color_code = _Colors.bright_blue if use_color else ""
+    elif token.type == "file":
+        color_code = _Colors.magenta if use_color else ""
     elif token.type == "python":
         color_code = _Colors.yellow if use_color else ""
     else:
