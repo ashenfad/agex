@@ -157,6 +157,20 @@ class TestParseXMLResponse:
         assert "<PYTHON> tags" in result.thinking
         assert "<THINKING>" in result.code
 
+    def test_parsing_with_mode(self):
+        """Test parsing with mode attribute in FILE tags."""
+        xml = """
+        <THINKING>reasoning</THINKING>
+        <FILE path="test.txt" mode="append">Line 2</FILE>
+        <FILE path="new.txt">New File</FILE>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        assert result.files["test.txt"] == "Line 2"
+        assert result.file_modes["test.txt"] == "append"
+        assert result.files["new.txt"] == "New File"
+        assert result.file_modes["new.txt"] == "write"
+
 
 class TestTokenizeXMLStream:
     """Tests for tokenize_xml_stream()."""
@@ -359,6 +373,22 @@ class TestTokenizeXMLStream:
         # But actual content should be there
         assert "Some content here" in all_content
         assert "code()" in all_content
+
+    def test_streaming_with_mode(self):
+        """Test streaming with mode attribute in FILE tags."""
+        chunks = [
+            "<THINKING>reasoning</THINKING>",
+            '<FILE path="stream.py" mode="append">',
+            "# appended code",
+            "</FILE>",
+            "<PYTHON>pass</PYTHON>",
+        ]
+        tokens = list(tokenize_xml_stream(iter(chunks)))
+
+        file_path_token = next(
+            t for t in tokens if t.type == "file" and t.content.startswith("path=")
+        )
+        assert file_path_token.content == "path=stream.py,mode=append"
 
 
 class TestXMLResponse:

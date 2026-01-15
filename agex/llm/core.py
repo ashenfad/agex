@@ -133,6 +133,7 @@ class LLMResponse(BaseModel):
     thinking: str
     code: str = ""
     files: dict[str, str] = Field(default_factory=dict)
+    file_modes: dict[str, Literal["write", "append"]] = Field(default_factory=dict)
     terminal: str | None = None
 
 
@@ -162,6 +163,7 @@ class ResponseBuilder:
         self.code_parts: list[str] = []
         self.terminal_parts: list[str] = []
         self.file_parts: dict[str, list[str]] = {}
+        self.file_modes: dict[str, str] = {}
         self.current_file_path: str | None = None
         self.seen_sections: dict[str, bool] = {
             "title": False,
@@ -207,8 +209,19 @@ class ResponseBuilder:
             self.terminal_parts.append(token.content)
         elif token.type == "file":
             if token.content.startswith("path="):
-                self.current_file_path = token.content[len("path=") :]
-                self.file_parts[self.current_file_path] = []
+                # Parse path and mode from metadata: "path=foo.py,mode=append"
+                metadata = token.content
+                import re
+
+                path_match = re.search(r"path=([^,]+)", metadata)
+                mode_match = re.search(r"mode=([^,]+)", metadata)
+
+                if path_match:
+                    self.current_file_path = path_match.group(1)
+                    self.file_parts[self.current_file_path] = []
+                    self.file_modes[self.current_file_path] = (
+                        mode_match.group(1) if mode_match else "write"
+                    )
             elif self.current_file_path:
                 self.file_parts[self.current_file_path].append(token.content)
 
@@ -221,6 +234,7 @@ class ResponseBuilder:
             thinking="".join(self.thinking_parts),
             code="".join(self.code_parts),
             files={path: "".join(parts) for path, parts in self.file_parts.items()},
+            file_modes=self.file_modes,  # type: ignore[arg-type]
             terminal="".join(self.terminal_parts) if self.terminal_parts else None,
         )
 

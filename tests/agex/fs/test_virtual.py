@@ -136,6 +136,16 @@ class TestVirtualFSBasics:
         assert vfs.exists("new.txt") is True
         assert vfs.read("new.txt") == b"content"
 
+    def test_write_append_mode(self):
+        """Test writing in append mode."""
+        state = Live()
+        vfs = VirtualFS(state)
+
+        vfs.write("file.txt", b"Line 1\n")
+        vfs.write("file.txt", b"Line 2\n", mode="a")
+
+        assert vfs.read("file.txt") == b"Line 1\nLine 2\n"
+
     def test_mkdir_is_noop(self):
         """Test mkdir is a no-op (directories are implicit)."""
         state = Live()

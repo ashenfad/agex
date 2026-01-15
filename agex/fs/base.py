@@ -69,8 +69,14 @@ class FileSystem(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def write(self, path: str, content: bytes) -> None:
-        """Write bytes to file."""
+    def write(self, path: str, content: bytes, mode: str = "w") -> None:
+        """Write bytes to file.
+
+        Args:
+            path: File path to write.
+            content: Bytes to write.
+            mode: Write mode ('w' for write/overwrite, 'a' for append).
+        """
         pass
 
     @abc.abstractmethod

@@ -1294,3 +1294,52 @@ def test_recursive_module_registration_resolves_dataclass_fields():
     assert hasattr(
         result, "value"
     ), "result should be ResolvedObj for policy-allowed names"
+
+
+def test_vfs_append_integration():
+    """Test that mode='append' in <FILE> tag correctly appends to existing files."""
+    from agex.agent.loop.common import apply_optimistic_file_writes
+    from agex.llm.core import ResponseBuilder, TokenChunk
+    from agex.state import Live
+
+    llm = Dummy(provider="dummy")
+    agent = Agent(llm=llm)
+
+    # Pre-create a file in VFS
+    fs = agent.fs(session="test_session")
+    fs.write("utils.py", b"def first(): return 1\n")
+
+    # Simulate an LLM response with mode="append"
+    builder = ResponseBuilder(agent_name="test_agent")
+
+    # Simulate stream tokens for an append operation
+    tokens = [
+        TokenChunk(type="thinking", content="Appending to utils.py"),
+        TokenChunk(type="thinking", content="", done=True),
+        TokenChunk(type="file", content="path=utils.py,mode=append"),
+        TokenChunk(type="file", content="def second(): return 2\n"),
+        TokenChunk(type="file", content="", done=True),
+        TokenChunk(
+            type="python",
+            content="import utils\ntask_success(utils.first() + utils.second())",
+        ),
+        TokenChunk(type="python", content="", done=True),
+    ]
+
+    for t in tokens:
+        builder.process_token(t)
+
+    response = builder.build()
+
+    assert response.files["utils.py"] == "def second(): return 2\n"
+    assert response.file_modes["utils.py"] == "append"
+
+    # Now verify that applying this response actually appends
+    exec_state = Live()
+    apply_optimistic_file_writes(agent, response, fs, exec_state)
+
+    # Verify content in VFS
+    content = fs.read("utils.py").decode("utf-8")
+    assert "def first()" in content
+    assert "def second()" in content
+    assert content == "def first(): return 1\ndef second(): return 2\n"
