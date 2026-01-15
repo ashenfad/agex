@@ -1,6 +1,6 @@
 import pytest
 
-from agex import Agent, clear_agent_registry, connect_fs, connect_state
+from agex import Agent, FileAction, clear_agent_registry, connect_fs, connect_state
 from agex.llm import Dummy, LLMResponse
 
 
@@ -22,8 +22,10 @@ def test_workspace_recap_in_forefront():
     agent.llm.responses = [
         LLMResponse(
             thinking="Iteration 1: Create utils.py",
-            files={
-                "utils.py": """
+            file_actions=[
+                FileAction(
+                    path="utils.py",
+                    content="""
 def add(a: int, b: int) -> int:
     \"\"\"Add two numbers.\"\"\"
     return a + b
@@ -32,8 +34,9 @@ class Processor:
     \"\"\"Process data.\"\"\"
     def process(self, data: list):
         pass
-"""
-            },
+""",
+                )
+            ],
             code="pass",  # Continue to iteration 2
         ),
         LLMResponse(thinking="Iteration 2: Check context", code="task_success(True)"),

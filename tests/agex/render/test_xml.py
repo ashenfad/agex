@@ -1,5 +1,6 @@
 """Tests for XML rendering utilities."""
 
+from agex.agent.datatypes import FileAction
 from agex.agent.events import (
     ActionEvent,
     FailEvent,
@@ -54,6 +55,26 @@ class TestRenderEventsAsXML:
         assert "</PYTHON>" in content
         assert "I'll use sum() function" in content
         assert "result = sum([1, 2, 3])" in content
+
+    def test_action_event_with_files(self):
+        """Test rendering ActionEvent with files."""
+        events = [
+            ActionEvent(
+                agent_name="test_agent",
+                thinking="I'll create a file",
+                code="import utils",
+                file_actions=[
+                    FileAction(path="utils.py", content="X = 1"),
+                    FileAction(path="config.json", content="{}", mode="append"),
+                ],
+            )
+        ]
+        messages = render_events_as_xml(events)
+
+        assert len(messages) == 1
+        content = messages[0]["content"]
+        assert '<FILE path="utils.py">X = 1</FILE>' in content
+        assert '<FILE path="config.json" mode="append">{}</FILE>' in content
 
     def test_output_event_text_only(self):
         """Test rendering OutputEvent with text only."""

@@ -9,9 +9,12 @@ Note: For rendering events to XML, see agex.render.xml.render_events_as_xml()
 
 import re
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Iterator, Literal
+from typing import TYPE_CHECKING, AsyncIterator, Iterator, Literal
 
 from agex.llm.core import ResponseParseError, TokenChunk
+
+if TYPE_CHECKING:
+    from agex.agent.datatypes import FileAction
 
 # XML tag names as constants
 TAG_THINKING = "THINKING"
@@ -31,8 +34,7 @@ class XMLResponse:
 
     thinking: str
     code: str
-    files: dict[str, str] = field(default_factory=dict)
-    file_modes: dict[str, str] = field(default_factory=dict)
+    file_actions: list["FileAction"] = field(default_factory=list)
     terminal: str | None = None
     title: str = ""  # Optional for now, will be required in Phase 2.5
 
@@ -123,8 +125,9 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
         title = title_match.group(1).strip()
 
     # Extract all <FILE path="..." mode="..."> tags (case-insensitive)
-    files = {}
-    file_modes = {}
+    from agex.agent.datatypes import FileAction
+
+    file_actions = []
     # Regex to capture path and optional mode
     file_matches = re.finditer(
         rf"<{TAG_FILE}\s+([^>]*?)>(.*?)</{TAG_FILE}>",
@@ -140,11 +143,13 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
 
         if path_match:
             path = path_match.group(1).strip()
-            files[path] = content
-            file_modes[path] = mode_match.group(1).strip() if mode_match else "write"
+            mode = mode_match.group(1).strip() if mode_match else "write"
+            file_actions.append(
+                FileAction(path=path, content=content, mode=mode)  # type: ignore[arg-type]
+            )
 
     return XMLResponse(
-        thinking=thinking, code=code, title=title, files=files, file_modes=file_modes
+        thinking=thinking, code=code, title=title, file_actions=file_actions
     )
 
 

@@ -68,6 +68,15 @@ class LLMFail(_AgentExit):
     retries: int = 0
 
 
+@dataclass
+class FileAction:
+    """Represents a file operation (write or append) requested by an agent."""
+
+    path: str
+    content: str
+    mode: Literal["write", "append"] = "write"
+
+
 class UnpicklableVariableError(Exception):
     """Raised when attempting to access a variable that was not persisted due to being unpicklable."""
 

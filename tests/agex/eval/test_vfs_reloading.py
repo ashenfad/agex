@@ -1,6 +1,13 @@
 import pytest
 
-from agex import Agent, clear_agent_registry, connect_fs, connect_state, pprint_events
+from agex import (
+    Agent,
+    FileAction,
+    clear_agent_registry,
+    connect_fs,
+    connect_state,
+    pprint_events,
+)
 from agex.llm import Dummy, LLMResponse
 
 
@@ -22,7 +29,7 @@ def test_vfs_module_reloading():
     agent.llm.responses = [
         LLMResponse(
             thinking="Create utils v1",
-            files={"utils.py": "VAL = 1"},
+            file_actions=[FileAction(path="utils.py", content="VAL = 1")],
             code="import utils\ntask_success(utils.VAL)",
         )
     ]
@@ -38,7 +45,7 @@ def test_vfs_module_reloading():
     agent.llm.responses = [
         LLMResponse(
             thinking="Update utils to v2",
-            files={"utils.py": "VAL = 2"},
+            file_actions=[FileAction(path="utils.py", content="VAL = 2")],
             code="import utils\ntask_success(utils.VAL)",
         )
     ]

@@ -67,8 +67,24 @@ from agex.agent.events import ActionEvent
 
 # Event structure
 event = ActionEvent(
-    thinking="...",           # str
-    code="..."                # str
+    title="...",             # str
+    thinking="...",          # str
+    code="...",              # str
+    file_actions=[...],      # list[FileAction]
+)
+```
+
+#### `FileAction`
+Used within `ActionEvent` to represent a file write or append requested by the agent.
+
+```python
+from agex.agent.datatypes import FileAction
+
+# Structure
+action = FileAction(
+    path="utils.py",         # str
+    content="...",           # str
+    mode="write"             # Literal["write", "append"]
 )
 ```
 
@@ -132,6 +148,21 @@ event = SummaryEvent(
     summarized_event_count=10,      # int - Number of events summarized
     original_tokens=5000,           # int - Token cost of original events
     low_detail_threshold=datetime(...),  # datetime | None - Events older than this render at low detail
+)
+```
+
+#### `FileEvent`
+Generated when files are added, modified, or removed from the workspace.
+
+```python
+from agex.agent.events import FileEvent
+
+# Event structure
+event = FileEvent(
+    file_source="agent",     # Literal["user", "agent"]
+    added=["new.py"],        # list[str]
+    modified=["utils.py"],   # list[str]
+    removed=["temp.txt"],    # list[str]
 )
 ```
 
@@ -222,7 +253,7 @@ result = my_task("important task", on_event=custom_handler)
 ### 3. Token-Level Streaming with `on_token`
 `on_token` is an optional callback that receives LLM output tokens in real time. Tokens arrive as lightweight `TokenChunk` objects with:
 
-- `type`: either `"thinking"` or `"python"`
+- `type`: one of `"title"`, `"thinking"`, `"file"`, `"terminal"`, or `"python"`
 - `content`: the text fragment for that section
 - `done`: a boolean that signals the end of the current section
 
@@ -243,6 +274,10 @@ from agex.llm.core import TokenChunk
 def render_token(chunk: TokenChunk):
     if chunk.type == "thinking":
         ui.update_thinking(chunk.content)
+    elif chunk.type == "file":
+        ui.update_file_creation(chunk.content)
+    elif chunk.type == "terminal":
+        ui.update_terminal(chunk.content)
     elif chunk.type == "python":
         ui.update_code(chunk.content)
     if chunk.done:

@@ -1331,8 +1331,9 @@ def test_vfs_append_integration():
 
     response = builder.build()
 
-    assert response.files["utils.py"] == "def second(): return 2\n"
-    assert response.file_modes["utils.py"] == "append"
+    assert response.file_actions[0].path == "utils.py"
+    assert response.file_actions[0].content == "def second(): return 2\n"
+    assert response.file_actions[0].mode == "append"
 
     # Now verify that applying this response actually appends
     exec_state = Live()

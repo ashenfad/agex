@@ -4,6 +4,7 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from ..agent.datatypes import FileAction
 from ..eval.objects import ImageAction, PrintAction
 from ..render.primitives import (
     HI_DETAIL_BUDGET,
@@ -413,13 +414,12 @@ class ActionEvent(BaseEvent):
     title: str = ""
     thinking: str
     code: str
-    files: dict[str, str] = Field(default_factory=dict)
-    file_modes: dict[str, str] = Field(default_factory=dict)
+    file_actions: list[FileAction] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _compute_tokens(self):
         _, tokens = render_action_markdown(
-            self.thinking, self.code, self.title, self.files, self.file_modes
+            self.thinking, self.code, self.title, self.file_actions
         )
         self.full_detail_tokens = tokens
         self.low_detail_tokens = tokens  # No separate low-detail rendering
@@ -435,9 +435,8 @@ class ActionEvent(BaseEvent):
         code_lines = self.code.count("\n") + 1
 
         files_info = []
-        for path in self.files:
-            mode = self.file_modes.get(path, "write")
-            files_info.append(f"{path} ({mode})")
+        for action in self.file_actions:
+            files_info.append(f"{action.path} ({action.mode})")
 
         files_text = f"\n  Files: {files_info}" if files_info else ""
         return f"{base}{title_text}\n  Thinking: {thinking_preview}\n  Code: {code_lines} lines{files_text}"
@@ -448,12 +447,11 @@ class ActionEvent(BaseEvent):
         title_section = f"**Title:** {self.title}\n\n" if self.title else ""
 
         files_section = ""
-        if self.files:
+        if self.file_actions:
             files_section = "**Files:**\n"
-            for path in self.files:
-                mode = self.file_modes.get(path, "write")
-                mode_suffix = f" ({mode})" if mode != "write" else ""
-                files_section += f" - `{path}`{mode_suffix}\n"
+            for action in self.file_actions:
+                mode_suffix = f" ({action.mode})" if action.mode != "write" else ""
+                files_section += f" - `{action.path}`{mode_suffix}\n"
             files_section += "\n"
 
         return f"""{base}  
@@ -477,12 +475,13 @@ class ActionEvent(BaseEvent):
 
         thinking_section = _event_section("💭 Thinking:", thinking_html, "#0366d6")
 
-        if self.files:
+        if self.file_actions:
             file_links_parts = []
-            for f in self.files:
-                mode = self.file_modes.get(f, "write")
-                mode_suffix = f" <small>({mode})</small>" if mode != "write" else ""
-                file_links_parts.append(f"<code>{f}</code>{mode_suffix}")
+            for action in self.file_actions:
+                mode_suffix = (
+                    f" <small>({action.mode})</small>" if action.mode != "write" else ""
+                )
+                file_links_parts.append(f"<code>{action.path}</code>{mode_suffix}")
 
             file_links = ", ".join(file_links_parts)
             sections.append(_event_section("📁 Files:", file_links, "#28a745"))
