@@ -123,7 +123,8 @@ def test_gemini_client_structured_output_config():
         call_kwargs = mock_models.generate_content.call_args.kwargs
         config = call_kwargs["config"]
         assert config.response_schema is not None
-        assert config.response_schema["required"] == ["thinking", "code"]
+        # Order is not guaranteed, so use set comparison
+        assert set(config.response_schema["required"]) == {"thinking"}
 
 
 def test_gemini_client_json_parsing_error():

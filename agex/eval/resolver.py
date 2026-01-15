@@ -241,33 +241,11 @@ class Resolver:
     # --- Import Resolution ---
     def resolve_module(self, module_name: str, state: State, node) -> Any:
         # 1. Check Policy (Whitelist)
-        # We need to know if the module itself is available, which usually means
-        # checking if any member is resolvable or if there is a module-level registration.
-        # But `namespaces` keys are strings.
-
-        # If 'math' is registered via `agent.module(math)`, then 'math' key exists in namespaces.
-
+        # Use policy.resolve_module to check if the module name itself is registered
         if module_name in self.agent._policy.namespaces:
             return AgexModule(
                 name=module_name, agent_fingerprint=self.agent.fingerprint
             )
-
-        # Maybe the test environment policy setup is different?
-        # `create_agent` in the test uses default policy?
-        # Yes, `Agent()` creates default policy.
-        # `register_stdlib` is NOT called by default in `Agent()`.
-        # Ah! `Agent()` constructor does NOT call `register_stdlib`.
-        # It relies on the user or a preset to do it.
-        # The test `create_agent` just does `Agent(...)`.
-        # It has NO registered modules except maybe some defaults?
-
-        # Checking `agex/agent/base.py`:
-        # `self._policy = AgentPolicy()`
-        # No default registrations in `__init__`.
-
-        # So `math` is NOT registered in the test agent!
-        # That explains why it fell through to VFS and loaded the fake one.
-        # And why the assertion failed (it expected real math).
 
         # For recursive modules, check if any registered namespace is a parent
         for ns_name, ns in self.agent._policy.namespaces.items():  # type: ignore[attr-defined]
@@ -278,19 +256,7 @@ class Resolver:
                     name=module_name, agent_fingerprint=self.agent.fingerprint
                 )
 
-        # 2. Check VFS - BUT ONLY if not shadowing a known module in the policy
-        # Actually, the check above covers policy-registered modules.
-        # But what if 'math' is registered but we try to load 'math' from VFS?
-        # The check above returns AgexModule('math') and returns EARLY.
-        # So shadowing should be prevented by the early return.
-
-        # Why did the test fail?
-        # assert 'fake' == 2.0
-        # The test failed because it returned 'fake'.
-        # That means it LOADED the VFS module.
-        # That means the policy check above FAILED for 'math'.
-        # Why? 'math' IS registered in stdlib.py.
-        # Is self.agent._policy.namespaces populated?
+        # 2. Check VFS
 
         try:
             # Check for module file in VFS

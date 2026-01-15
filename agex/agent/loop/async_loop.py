@@ -186,6 +186,11 @@ class AsyncLoopMixin:
                 yield event
             events_yielded = len(events(exec_state))
 
+        # Snapshot initial state (including inputs and setup changes)
+        # to establish a baseline for iteration-level rollbacks
+        if versioned_state is not None:
+            versioned_state.snapshot()
+
         # Main task loop
         for iteration in range(self.max_iterations):
             # Check for cancellation at the start of each iteration
