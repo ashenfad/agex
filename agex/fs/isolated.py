@@ -234,13 +234,25 @@ class IsolatedFS(FileSystem):
             resolved = self._validate_path(path)
             return resolved.is_dir()
 
-    def listdir(self, path: str = ".") -> list[str]:
-        """List directory contents."""
+    def listdir(self, path: str = ".", recursive: bool = False) -> list[str]:
+        """List directory contents.
+
+        Args:
+            path: Directory path to list.
+            recursive: If True, list all nested files and directories.
+        """
         with suspend_fs_interception():
             resolved = self._validate_path(path)
             if not resolved.is_dir():
                 raise NotADirectoryError(f"Not a directory: {path}")
-            return [p.name for p in resolved.iterdir()]
+
+            if recursive:
+                results = []
+                for p in resolved.rglob("*"):
+                    results.append(str(p.relative_to(resolved)))
+                return sorted(results)
+            else:
+                return sorted([p.name for p in resolved.iterdir()])
 
     def remove(self, path: str) -> None:
         """Remove a file."""
@@ -298,9 +310,9 @@ class IsolatedFS(FileSystem):
 
     # VirtualFS-compatible aliases for AgentAwareFS
 
-    def list(self, path: str = ".") -> list[str]:
+    def list(self, path: str = ".", recursive: bool = False) -> list[str]:
         """List directory contents (alias for listdir)."""
-        return self.listdir(path)
+        return self.listdir(path, recursive=recursive)
 
     def getsize(self, path: str) -> int:
         """Get file size in bytes."""
@@ -320,8 +332,13 @@ class IsolatedFS(FileSystem):
         for path in paths:
             self.remove(path)
 
-    def list_detailed(self, path: str = ".") -> list[FileInfo]:
-        """List directory with detailed file information."""
+    def list_detailed(self, path: str = ".", recursive: bool = False) -> list[FileInfo]:
+        """List directory with detailed file information.
+
+        Args:
+            path: Directory path to list.
+            recursive: If True, list all nested items.
+        """
         with suspend_fs_interception():
             resolved = self._validate_path(path)
 
@@ -329,7 +346,9 @@ class IsolatedFS(FileSystem):
                 raise NotADirectoryError(f"Not a directory: {path}")
 
             result = []
-            for item in resolved.iterdir():
+            items = resolved.rglob("*") if recursive else resolved.iterdir()
+
+            for item in items:
                 rel_path = str(item.relative_to(self.root))
 
                 if item.is_file():
@@ -362,4 +381,4 @@ class IsolatedFS(FileSystem):
                         )
                     )
 
-        return result
+        return sorted(result, key=lambda x: x.path)

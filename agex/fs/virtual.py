@@ -436,14 +436,15 @@ class VirtualFS(FileSystem):
         if hasattr(self._state, "snapshot"):
             self._state.snapshot()
 
-    def list(self, path: str = "/") -> list[str]:
+    def list(self, path: str = "/", recursive: bool = False) -> list[str]:
         """List directory contents.
 
-        Returns immediate children of the directory (files and subdirectories).
+        Returns children of the directory (files and subdirectories).
         Directories are implicit (inferred from file paths).
 
         Args:
             path: Directory path to list.
+            recursive: If True, list all nested files and directories.
 
         Returns:
             List of file/directory names in the directory.
@@ -477,11 +478,17 @@ class VirtualFS(FileSystem):
             if not remainder:
                 continue
 
-            # Get immediate child (first path component)
-            if "/" in remainder:
-                results.add(remainder.split("/")[0])  # Subdirectory
+            if recursive:
+                # Add all intermediate directory parts too
+                parts = remainder.split("/")
+                for i in range(1, len(parts) + 1):
+                    results.add("/".join(parts[:i]))
             else:
-                results.add(remainder)  # File
+                # Get immediate child (first path component)
+                if "/" in remainder:
+                    results.add(remainder.split("/")[0])  # Subdirectory
+                else:
+                    results.add(remainder)  # File
 
         return sorted(results)
 
@@ -710,7 +717,7 @@ class VirtualFS(FileSystem):
         metadata = self._get_metadata()
         return metadata[path]
 
-    def list_detailed(self, path: str = "/") -> list[FileInfo]:
+    def list_detailed(self, path: str = "/", recursive: bool = False) -> list[FileInfo]:
         """List directory contents with full file metadata.
 
         Returns FileInfo objects for each file and subdirectory with complete
@@ -718,6 +725,7 @@ class VirtualFS(FileSystem):
 
         Args:
             path: Directory path to list (default: root).
+            recursive: If True, list all nested files and directories.
 
         Returns:
             List of FileInfo objects sorted by name.
@@ -728,7 +736,7 @@ class VirtualFS(FileSystem):
             ...     print(f"{f.name:20} {f.size:>10} {f.modified_at}")
         """
         # Get file list from existing list() method
-        names = self.list(path)
+        names = self.list(path, recursive=recursive)
 
         # Normalize path similar to list() methods to build correct full paths
         normalized_path = path.strip()
