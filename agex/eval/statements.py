@@ -545,6 +545,7 @@ class StatementEvaluator(BaseEvaluator):
         for alias in node.names:
             module_name_to_find = alias.name
             try:
+                # Always resolve the full module
                 tic_module = self.resolver.resolve_module(
                     module_name_to_find, self.state, node
                 )
@@ -552,9 +553,16 @@ class StatementEvaluator(BaseEvaluator):
                 e.node = node  # Add location info to the error
                 raise
 
-            # The name used in the agent's code, e.g., `m` in `import math as m`
-            import_name = alias.asname or module_name_to_find
-            self.state.set(import_name, tic_module)
+            if alias.asname:
+                # import pkg.mod as pm -> bind pm to pkg.mod
+                self.state.set(alias.asname, tic_module)
+            else:
+                # import pkg.mod -> bind pkg to pkg module
+                top_level_name = module_name_to_find.split(".")[0]
+                top_level_module = self.resolver.resolve_module(
+                    top_level_name, self.state, node
+                )
+                self.state.set(top_level_name, top_level_module)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         """Handles `from <module> import <name>`."""
