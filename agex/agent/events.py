@@ -413,12 +413,25 @@ class ActionEvent(BaseEvent):
     title: str = ""
     thinking: str
     code: str
+    files: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _compute_tokens(self):
+        # Build composite text for token counting
+        # Start with thinking and code
+        content = f"{self.thinking}\n{self.code}"
+        # Add files
+        for path, body in self.files.items():
+            content += f"\nFile: {path}\n{body}"
+
         _, tokens = render_action_markdown(self.thinking, self.code, self.title)
-        self.full_detail_tokens = tokens
-        self.low_detail_tokens = tokens  # No separate low-detail rendering
+        # Add estimate for files (simple count for now, render_action_markdown doesn't support them yet)
+        self.full_detail_tokens = tokens + count_tokens(
+            "".join(f"{k}{v}" for k, v in self.files.items())
+        )
+        self.low_detail_tokens = (
+            self.full_detail_tokens
+        )  # No separate low-detail rendering
         return self
 
     def __str__(self) -> str:
@@ -429,16 +442,25 @@ class ActionEvent(BaseEvent):
             self.thinking[:80] + "..." if len(self.thinking) > 80 else self.thinking
         )
         code_lines = self.code.count("\n") + 1
-        return f"{base}{title_text}\n  Thinking: {thinking_preview}\n  Code: {code_lines} lines"
+        files_text = f"\n  Files: {list(self.files.keys())}" if self.files else ""
+        return f"{base}{title_text}\n  Thinking: {thinking_preview}\n  Code: {code_lines} lines{files_text}"
 
     def _repr_markdown_(self) -> str:
         """Rich markdown with code block."""
         base = super()._repr_markdown_()
         title_section = f"**Title:** {self.title}\n\n" if self.title else ""
+
+        files_section = ""
+        if self.files:
+            files_section = "**Files:**\n"
+            for path, content in self.files.items():
+                files_section += f" - `{path}`\n"
+            files_section += "\n"
+
         return f"""{base}  
 {title_section}**Thinking:** {self.thinking}
 
-**Code:**
+{files_section}**Code:**
 ```python
 {self.code}
 ```"""
@@ -455,6 +477,11 @@ class ActionEvent(BaseEvent):
         thinking_html = _render_markdown_html(self.thinking)
 
         thinking_section = _event_section("💭 Thinking:", thinking_html, "#0366d6")
+
+        if self.files:
+            file_links = ", ".join(f"<code>{f}</code>" for f in self.files.keys())
+            sections.append(_event_section("📁 Created Files:", file_links, "#28a745"))
+
         code_section = _code_section("🐍 Code:", self.code, "#28a745")
 
         sections.extend([thinking_section, code_section])

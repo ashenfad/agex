@@ -288,6 +288,7 @@ def create_action_event(
         title=llm_response.title,
         thinking=llm_response.thinking,
         code=llm_response.code,
+        files=llm_response.files,
         source=source,
     )
 

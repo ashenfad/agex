@@ -26,6 +26,7 @@ from agex.llm.xml import (
     TAG_CANCELLED,
     TAG_CLARIFY,
     TAG_FAIL,
+    TAG_FILE,
     TAG_OBSERVATION,
     TAG_PYTHON,
     TAG_SUCCESS,
@@ -87,8 +88,16 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             title_section = (
                 f"<{TAG_TITLE}>{event.title}</{TAG_TITLE}>" if event.title else ""
             )
+
+            # Render files
+            files_section = ""
+            if event.files:
+                for path, body in event.files.items():
+                    files_section += f'<{TAG_FILE} path="{path}">{body}</{TAG_FILE}>\n'
+
             content = (
                 f"{title_section}<{TAG_THINKING}>{event.thinking}</{TAG_THINKING}>\n"
+                f"{files_section}"
                 f"<{TAG_PYTHON}>{event.code}</{TAG_PYTHON}>"
             )
             messages.append({"role": "assistant", "content": content})
