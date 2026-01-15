@@ -147,8 +147,10 @@ class BaseAgent:
         # State configuration (None = ephemeral)
         self._state_config: "StateConfig | None" = state
 
-        # FileSystem configuration (None = no access)
-        self._fs_config: "FSConfig | None" = fs
+        # FileSystem configuration (default to VirtualFS)
+        from ..fs import connect_fs
+
+        self._fs_config: "FSConfig | None" = fs or connect_fs(type="virtual")
 
         # Validate state config is compatible with the host
         if self._state_config is not None:
