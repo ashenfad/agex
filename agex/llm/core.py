@@ -193,10 +193,9 @@ class LLM(ABC):
 
         return connect_llm(**config)
 
-    @abstractmethod
     def complete(self, system: str, events: list["Event"], **kwargs) -> LLMResponse:
         """
-        Agent execution - convert events to structured response.
+        Agent execution - convert events to structured response by consuming the stream.
 
         Args:
             system: System message content (primer + capabilities)
@@ -204,13 +203,43 @@ class LLM(ABC):
             **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
 
         Returns:
-            LLMResponse with parsed thinking and code sections
-
-        Raises:
-            RuntimeError: If the completion request fails
-            ResponseParseError: If response doesn't match expected format
+            LLMResponse with parsed thinking, code, and files sections
         """
-        ...
+        title_parts = []
+        thinking_parts = []
+        code_parts = []
+        file_parts: dict[str, list[str]] = {}
+        current_file_path: str | None = None
+        terminal_parts = []
+
+        for token in self.complete_stream(system, events, **kwargs):
+            if token.done:
+                if token.type == "file":
+                    current_file_path = None
+                continue
+
+            if token.type == "title":
+                title_parts.append(token.content)
+            elif token.type == "thinking":
+                thinking_parts.append(token.content)
+            elif token.type == "python":
+                code_parts.append(token.content)
+            elif token.type == "terminal":
+                terminal_parts.append(token.content)
+            elif token.type == "file":
+                if token.content.startswith("path="):
+                    current_file_path = token.content[len("path=") :]
+                    file_parts[current_file_path] = []
+                elif current_file_path:
+                    file_parts[current_file_path].append(token.content)
+
+        return LLMResponse(
+            title="".join(title_parts).strip(),
+            thinking="".join(thinking_parts),
+            code="".join(code_parts),
+            files={path: "".join(parts) for path, parts in file_parts.items()},
+            terminal="".join(terminal_parts) if terminal_parts else None,
+        )
 
     def complete_stream(
         self, system: str, events: list["Event"], **kwargs
@@ -259,7 +288,7 @@ class LLM(ABC):
         self, system: str, events: list["Event"], **kwargs
     ) -> LLMResponse:
         """
-        Async agent execution - convert events to structured response.
+        Async agent execution - convert events to structured response by consuming the stream.
 
         Args:
             system: System message content (primer + capabilities)
@@ -267,18 +296,42 @@ class LLM(ABC):
             **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
 
         Returns:
-            LLMResponse with parsed thinking and code sections
-
-        Raises:
-            RuntimeError: If the completion request fails
-            ResponseParseError: If response doesn't match expected format
+            LLMResponse with parsed thinking, code, and files sections
         """
-        # Default fallback: run sync complete() in a thread
-        import asyncio
+        title_parts = []
+        thinking_parts = []
+        code_parts = []
+        file_parts: dict[str, list[str]] = {}
+        current_file_path: str | None = None
+        terminal_parts = []
 
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.complete(system, events, **kwargs)
+        async for token in self.acomplete_stream(system, events, **kwargs):
+            if token.done:
+                if token.type == "file":
+                    current_file_path = None
+                continue
+
+            if token.type == "title":
+                title_parts.append(token.content)
+            elif token.type == "thinking":
+                thinking_parts.append(token.content)
+            elif token.type == "python":
+                code_parts.append(token.content)
+            elif token.type == "terminal":
+                terminal_parts.append(token.content)
+            elif token.type == "file":
+                if token.content.startswith("path="):
+                    current_file_path = token.content[len("path=") :]
+                    file_parts[current_file_path] = []
+                elif current_file_path:
+                    file_parts[current_file_path].append(token.content)
+
+        return LLMResponse(
+            title="".join(title_parts).strip(),
+            thinking="".join(thinking_parts),
+            code="".join(code_parts),
+            files={path: "".join(parts) for path, parts in file_parts.items()},
+            terminal="".join(terminal_parts) if terminal_parts else None,
         )
 
     async def acomplete_stream(

@@ -5,11 +5,11 @@ This module provides a mock LLM that returns predefined LLMResponse objects
 sequentially, useful for testing agent behavior without actual LLM calls.
 """
 
-from typing import List
+from typing import AsyncIterator, Iterator, List
 
 from agex.agent.events import Event
 
-from .core import LLM, LLMResponse
+from .core import LLM, LLMResponse, TokenChunk
 
 
 class Dummy(LLM):
@@ -146,27 +146,42 @@ class Dummy(LLM):
         """Async version of complete."""
         return self.complete(system, events, **kwargs)
 
-    async def acomplete_stream(
+    def complete_stream(
         self, system: str, events: List[Event], **kwargs
-    ) -> float:  # Actually AsyncGenerator, but accurate type hint requires imports
-        """Stream the response as StreamTokens."""
-        from agex.llm.core import StreamToken
-
-        # Get response using normal logic
+    ) -> Iterator[TokenChunk]:
+        """Stream the response as TokenChunks."""
+        # Get response using normal logic (handles call_count and logging)
         response = self.complete(system, events, **kwargs)
 
         # Stream interactions
         if response.title:
-            yield StreamToken(type="title", content=response.title, done=False)
-            yield StreamToken(type="title", content="", done=True)
+            yield TokenChunk(type="title", content=response.title, done=False)
+            yield TokenChunk(type="title", content="", done=True)
 
         if response.thinking:
-            yield StreamToken(type="thinking", content=response.thinking, done=False)
-            yield StreamToken(type="thinking", content="", done=True)
+            yield TokenChunk(type="thinking", content=response.thinking, done=False)
+            yield TokenChunk(type="thinking", content="", done=True)
+
+        if response.files:
+            for path, content in response.files.items():
+                yield TokenChunk(type="file", content=f"path={path}", done=False)
+                yield TokenChunk(type="file", content=content, done=False)
+                yield TokenChunk(type="file", content="", done=True)
+
+        if response.terminal:
+            yield TokenChunk(type="terminal", content=response.terminal, done=False)
+            yield TokenChunk(type="terminal", content="", done=True)
 
         if response.code:
-            yield StreamToken(type="python", content=response.code, done=False)
-            yield StreamToken(type="python", content="", done=True)
+            yield TokenChunk(type="python", content=response.code, done=False)
+            yield TokenChunk(type="python", content="", done=True)
+
+    async def acomplete_stream(
+        self, system: str, events: List[Event], **kwargs
+    ) -> AsyncIterator[TokenChunk]:
+        """Stream the response as Tokens."""
+        for token in self.complete_stream(system, events, **kwargs):
+            yield token
 
     def summarize(self, system: str, content: str | List[Event], **kwargs) -> str:
         """Return a deterministic plain text for testing."""

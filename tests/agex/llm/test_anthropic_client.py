@@ -2,196 +2,91 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agex.agent.events import ActionEvent, TaskStartEvent
+from agex.agent.events import TaskStartEvent
 from agex.llm.anthropic_client import Anthropic
-from agex.llm.core import LLMResponse, TokenChunk
+from agex.llm.core import TokenChunk
 
 
 def test_anthropic_client_initialization():
-    """Test that Anthropic can be initialized with default parameters."""
-    client = Anthropic()
-    assert client.model == "claude-3-sonnet-20240229"
-    assert client.provider_name == "Anthropic"
+    """Test that Anthropic client can be initialized."""
+    with patch("anthropic.Anthropic"):
+        client = Anthropic(api_key="test")
+        assert client.model == "claude-3-sonnet-20240229"
+        assert client.provider_name == "Anthropic"
 
 
-def test_anthropic_client_custom_model():
-    """Test that Anthropic can be initialized with custom model."""
-    client = Anthropic(model="claude-3-haiku-20240307")
-    assert client.model == "claude-3-haiku-20240307"
+def test_anthropic_client_complete_stream():
+    """Test that complete_stream properly converts events and streams tokens."""
+    client = Anthropic(api_key="test")
 
+    # Mock the anthropic stream
+    mock_stream = MagicMock()
+    # Anthropic stream has a __enter__ that returns an object with text_stream
+    # The pre-filled <TITLE> needs to be closed
+    mock_stream.__enter__.return_value.text_stream = [
+        "Test</TITLE><THINKING>Some thinking</THINKING>",
+        "<PYTHON>pass</PYTHON>",
+    ]
 
-def test_anthropic_client_event_handling():
-    """Test that events are properly handled by Anthropic API."""
-    client = Anthropic()
-
-    # Mock the anthropic client
-    mock_response = MagicMock()
-    mock_tool_use = MagicMock()
-    mock_tool_use.type = "tool_use"
-    mock_tool_use.name = "structured_response"
-    mock_tool_use.input = {"thinking": "Test thinking", "code": "print('hello')"}
-    mock_response.content = [mock_tool_use]
-
-    with patch.object(client, "client") as mock_client:
-        mock_client.messages.create.return_value = mock_response
-
+    with patch.object(client.client.messages, "stream", return_value=mock_stream):
         system = "You are a helpful assistant."
         events = [
             TaskStartEvent(
                 agent_name="test", task_name="test", inputs={}, message="Hello"
-            ),
-            ActionEvent(agent_name="test", thinking="Thinking...", code="result = 1"),
-        ]
-
-        response = client.complete(system, events)
-
-        # Verify the call was made correctly
-        mock_client.messages.create.assert_called_once()
-        call_args = mock_client.messages.create.call_args
-
-        # Check that system message was passed separately
-        assert call_args[1]["system"] == system
-
-        # Check that messages were properly formatted (Anthropic expects content blocks)
-        conv_messages = call_args[1]["messages"]
-        assert len(conv_messages) >= 1
-
-        # Check that structured response tool was configured
-        tools = call_args[1]["tools"]
-        assert len(tools) == 1
-        assert tools[0]["name"] == "structured_response"
-
-        # Check response parsing
-        assert isinstance(response, LLMResponse)
-        assert response.thinking == "Test thinking"
-        assert response.code == "print('hello')"
-
-
-def test_anthropic_client_system_message():
-    """Test that system message is properly passed to Anthropic API."""
-    client = Anthropic()
-
-    mock_response = MagicMock()
-    mock_tool_use = MagicMock()
-    mock_tool_use.type = "tool_use"
-    mock_tool_use.name = "structured_response"
-    mock_tool_use.input = {"thinking": "Test thinking", "code": "print('hello')"}
-    mock_response.content = [mock_tool_use]
-
-    with patch.object(client, "client") as mock_client:
-        mock_client.messages.create.return_value = mock_response
-
-        system = "You are a helpful assistant. You are also very knowledgeable."
-        events = [
-            TaskStartEvent(
-                agent_name="test", task_name="test", inputs={}, message="Hello"
             )
         ]
 
-        response = client.complete(system, events)
+        # Consume generator
+        chunks = list(client.complete_stream(system, events))
 
-        # Verify we got a response
-        assert response is not None
-        assert isinstance(response, LLMResponse)
-
-        # Verify system message was passed
-        call_args = mock_client.messages.create.call_args
-        assert call_args[1]["system"] == system
+        assert len(chunks) > 0
+        # Should have thinking and python tokens
+        assert any(c.type == "thinking" for c in chunks)
+        assert any(c.type == "python" for c in chunks)
 
 
-# =============================================================================
-# Async Tests
-# =============================================================================
-
-
-@pytest.mark.asyncio
-async def test_anthropic_acomplete():
-    """Test async acomplete method."""
-    client = Anthropic()
-
-    mock_response = MagicMock()
-    mock_tool_use = MagicMock()
-    mock_tool_use.type = "tool_use"
-    mock_tool_use.name = "structured_response"
-    mock_tool_use.input = {"thinking": "Async thinking", "code": "print('async')"}
-    mock_response.content = [mock_tool_use]
-
-    with patch.object(client, "async_client") as mock_async:
-        mock_async.messages.create = AsyncMock(return_value=mock_response)
-
-        events = [
-            TaskStartEvent(
-                agent_name="test", task_name="test", inputs={}, message="Hello"
-            )
+def test_anthropic_client_complete_wraps_stream():
+    """Test that complete() calls complete_stream and accumulates result."""
+    with patch.object(Anthropic, "complete_stream") as mock_stream:
+        # Mock stream tokens
+        mock_stream.return_value = [
+            TokenChunk(type="title", content="My Title", done=False),
+            TokenChunk(type="title", content="", done=True),
+            TokenChunk(type="thinking", content="Thinking...", done=False),
+            TokenChunk(type="thinking", content="", done=True),
+            TokenChunk(type="python", content="pass", done=False),
+            TokenChunk(type="python", content="", done=True),
         ]
 
-        result = await client.acomplete("system", events)
+        client = Anthropic(api_key="test")
+        response = client.complete("system", [])
 
-        assert isinstance(result, LLMResponse)
-        assert result.thinking == "Async thinking"
-        assert result.code == "print('async')"
-        mock_async.messages.create.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_anthropic_acomplete_empty_response():
-    """Test async acomplete error for empty response."""
-    client = Anthropic()
-
-    mock_response = MagicMock()
-    mock_response.content = []
-
-    with patch.object(client, "async_client") as mock_async:
-        mock_async.messages.create = AsyncMock(return_value=mock_response)
-
-        events = [
-            TaskStartEvent(
-                agent_name="test", task_name="test", inputs={}, message="Hello"
-            )
-        ]
-
-        with pytest.raises(RuntimeError, match="Anthropic returned empty response"):
-            await client.acomplete("system", events)
-
-
-@pytest.mark.asyncio
-async def test_anthropic_acomplete_api_error():
-    """Test async acomplete error handling."""
-    client = Anthropic()
-
-    with patch.object(client, "async_client") as mock_async:
-        mock_async.messages.create = AsyncMock(side_effect=Exception("API Error"))
-
-        events = [
-            TaskStartEvent(
-                agent_name="test", task_name="test", inputs={}, message="Hello"
-            )
-        ]
-
-        with pytest.raises(RuntimeError, match="Anthropic completion failed"):
-            await client.acomplete("system", events)
+        assert response.title == "My Title"
+        assert response.thinking == "Thinking..."
+        assert response.code == "pass"
 
 
 @pytest.mark.asyncio
 async def test_anthropic_acomplete_stream():
     """Test async acomplete_stream method."""
-    client = Anthropic()
 
-    # Mock streaming events
-    async def mock_stream():
-        events = [
+    client = Anthropic(api_key="test")
+
+    async def mock_async_iter():
+        chunks = [
             MagicMock(type="content_block_delta", delta=MagicMock(text="<THINKING>")),
             MagicMock(
-                type="content_block_delta", delta=MagicMock(text="Some thinking")
+                type="content_block_delta", delta=MagicMock(text="Thinking</THINKING>")
             ),
-            MagicMock(type="content_block_delta", delta=MagicMock(text="</THINKING>")),
         ]
-        for event in events:
-            yield event
+        for chunk in chunks:
+            yield chunk
 
-    with patch.object(client, "async_client") as mock_async:
-        mock_async.messages.create = AsyncMock(return_value=mock_stream())
-
+    with patch.object(
+        client.async_client.messages,
+        "create",
+        AsyncMock(return_value=mock_async_iter()),
+    ):
         events = [
             TaskStartEvent(
                 agent_name="test", task_name="test", inputs={}, message="Hello"
@@ -204,3 +99,21 @@ async def test_anthropic_acomplete_stream():
 
         assert len(tokens) > 0
         assert all(isinstance(t, TokenChunk) for t in tokens)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_acomplete_wraps_stream():
+    """Test that acomplete() calls acomplete_stream and accumulates result."""
+
+    async def mock_tokens(*args, **kwargs):
+        yield TokenChunk(type="thinking", content="Thinking...", done=False)
+        yield TokenChunk(type="thinking", content="", done=True)
+        yield TokenChunk(type="python", content="pass", done=False)
+        yield TokenChunk(type="python", content="", done=True)
+
+    with patch.object(Anthropic, "acomplete_stream", side_effect=mock_tokens):
+        client = Anthropic(api_key="test")
+        response = await client.acomplete("system", [])
+
+        assert response.thinking == "Thinking..."
+        assert response.code == "pass"
