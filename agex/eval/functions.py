@@ -5,7 +5,6 @@ from dataclasses import dataclass, make_dataclass
 from typing import Any, Callable
 
 from agex.agent.base import resolve_agent
-from agex.state import Live
 
 from ..state import State
 from ..state.closure import LiveClosureState
@@ -144,6 +143,7 @@ class UserFunction:
                 eval_timeout_seconds=parent_evaluator._eval_timeout_seconds,
                 start_time=parent_evaluator._start_time,
                 sub_agent_time=parent_evaluator._sub_agent_time,
+                session=parent_evaluator.session,
             )
         else:
             # Fresh timeout budget (for direct calls)
@@ -152,6 +152,7 @@ class UserFunction:
                 state=exec_state,
                 source_code=source_code,
                 eval_timeout_seconds=agent.eval_timeout_seconds,
+                session="default",  # Default if called outside evaluator
             )
         bound_args = bind_arguments(
             self.name, self.args, args, kwargs, eval_fn=evaluator.visit
@@ -265,12 +266,11 @@ class TaskUserFunction(UserFunction):
             )
 
         # Delegate through agent.run_task for consistent state management
-        parent_state = None
+        session = "default"
         if parent_evaluator is not None:
-            parent_state = parent_evaluator.state
+            session = parent_evaluator.session
         else:
-            # When executed directly, no parent evaluator means no parent state; pass through provided state
-            parent_state = kwargs.pop("state", Live())
+            session = kwargs.pop("session", "default")
 
         on_event = None
         if parent_evaluator is not None:
@@ -288,7 +288,7 @@ class TaskUserFunction(UserFunction):
             _task_wrapper_adapter,
             args,
             kwargs,
-            parent_state,
+            session,
             on_event=on_event,
             on_token=on_token,
         )
@@ -340,8 +340,8 @@ class TaskProxy:
         For sync tasks: Time is measured and added before returning.
         For async tasks: Result is wrapped to measure time after await completes.
         """
-        # Get session from exec_state for sub-agent to inherit
-        session = self.evaluator.state.get("__session__", "default")
+        # Use session from evaluator for sub-agent to inherit
+        session = self.evaluator.session
 
         sub_agent_start = time.time()
         try:

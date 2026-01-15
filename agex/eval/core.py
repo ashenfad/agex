@@ -43,6 +43,7 @@ class Evaluator(
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
         main_loop: asyncio.AbstractEventLoop | None = None,
+        session: str = "default",
     ):
         actual_timeout = (
             eval_timeout_seconds
@@ -57,10 +58,11 @@ class Evaluator(
             sub_agent_time=sub_agent_time,
         )
         self.source_code = source_code
-        self.resolver = Resolver(agent)
+        self.resolver = Resolver(agent, session=session)
         self.on_event = on_event
         self.on_token = on_token
         self.main_loop = main_loop
+        self.session = session
         self._with_binding_cleanup: list[tuple[str, Any]] = []
 
     def visit_Module(self, node: ast.Module):
@@ -162,6 +164,7 @@ def evaluate_program(
         on_event=on_event,
         on_token=on_token,
         main_loop=main_loop,
+        session=session,
     )
 
     # Set up filesystem context if fs is provided

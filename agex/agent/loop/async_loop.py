@@ -39,6 +39,7 @@ from .common import (
     Versioned,
     _AgentExit,
     add_event_to_log,
+    apply_optimistic_file_writes,
     # Helpers
     check_cancellation,
     check_for_task_call,
@@ -245,21 +246,7 @@ class AsyncLoopMixin:
             events_yielded += 1
 
             try:
-                # OPTIMISTIC WRITE: Create/update files from <file> tags
-                if llm_response.files and fs:
-                    from agex.fs.aware import AgentAwareFS
-                    from agex.fs.virtual import VirtualFS
-
-                    # Use underlying FS directly to avoid 'user' source attribution
-                    # and handle snapshot parameter for VirtualFS
-                    target_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
-                    for path, content in llm_response.files.items():
-                        if isinstance(target_fs, VirtualFS):
-                            target_fs.write(
-                                path, content.encode("utf-8"), snapshot=False
-                            )
-                        else:
-                            target_fs.write(path, content.encode("utf-8"))
+                apply_optimistic_file_writes(llm_response, fs)
 
                 if code_to_evaluate:
                     # Copy context to preserve ContextVars (like agent registry) in thread pool

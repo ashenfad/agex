@@ -684,7 +684,10 @@ class ValueRenderer:
 
 
 def render_action_markdown(
-    thinking: str, code: str, title: str = ""
+    thinking: str,
+    code: str,
+    title: str = "",
+    files: dict[str, str] | None = None,
 ) -> tuple[str, int]:
     """
     Render an action event as markdown.
@@ -692,7 +695,14 @@ def render_action_markdown(
     Returns:
         (markdown_text, token_count)
     """
-    content = f"# Thinking\n{thinking}\n\n# Code\n```python\n{code}\n```"
+    title_section = f"# {title}\n" if title else ""
+    files_section = ""
+    if files:
+        files_section = "## Files\n"
+        for path, content in files.items():
+            files_section += f"### {path}\n{content}\n\n"
+
+    content = f"{title_section}# Thinking\n{thinking}\n\n{files_section}# Code\n```python\n{code}\n```"
     tokens = count_tokens(content)
     return content, tokens
 

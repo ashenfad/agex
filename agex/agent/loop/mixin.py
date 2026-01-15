@@ -11,7 +11,6 @@ import asyncio
 import inspect
 import re
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 from agex.agent.base import BaseAgent
@@ -24,9 +23,8 @@ from .async_loop import AsyncLoopMixin
 from .common import (
     ErrorEvent,
     LLMFail,
-    LLMResponse,
+    ResponseBuilder,
     ResponseParseError,
-    StreamToken,
     add_event_to_log,
     create_transient_event,
 )
@@ -184,71 +182,17 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         while True:
             try:
                 if use_streaming:
-                    title_parts = []
-                    thinking_parts = []
-                    code_parts = []
-                    file_parts: dict[str, list[str]] = {}
-                    current_file_path: str | None = None
-                    seen_sections: dict[str, bool] = {
-                        "title": False,
-                        "thinking": False,
-                        "python": False,
-                        "file": False,
-                        "terminal": False,
-                    }
-
+                    builder = ResponseBuilder(self.name, exec_state)
                     for token in self.llm.complete_stream(
                         system_message, messages_to_send
                     ):
-                        start_flag = (
-                            not token.done
-                            and token.type in seen_sections
-                            and not seen_sections[token.type]
-                        )
-                        # We allow multiple file sections, so only mark 'seen' if it's not a file
-                        if start_flag and token.type in seen_sections:
-                            if token.type != "file":
-                                seen_sections[token.type] = True
-
-                        enriched = StreamToken(
-                            type=token.type,
-                            content=token.content,
-                            done=token.done,
-                            agent_name=self.name,
-                            full_namespace=getattr(exec_state, "namespace", self.name),
-                            timestamp=datetime.now(timezone.utc),
-                            start=start_flag,
-                        )
-
+                        enriched = builder.process_token(token)
                         if on_token is not None:
                             try:
                                 on_token(enriched)
                             except Exception:
                                 pass
-
-                        if token.type == "title" and not token.done:
-                            title_parts.append(token.content)
-                        elif token.type == "thinking" and not token.done:
-                            thinking_parts.append(token.content)
-                        elif token.type == "python" and not token.done:
-                            code_parts.append(token.content)
-                        elif token.type == "file":
-                            if start_flag and token.content.startswith("path="):
-                                current_file_path = token.content[len("path=") :]
-                                file_parts[current_file_path] = []
-                            elif current_file_path and not token.done:
-                                file_parts[current_file_path].append(token.content)
-                            elif token.done:
-                                current_file_path = None
-
-                    return LLMResponse(
-                        title="".join(title_parts).strip(),
-                        thinking="".join(thinking_parts),
-                        code="".join(code_parts),
-                        files={
-                            path: "".join(parts) for path, parts in file_parts.items()
-                        },
-                    )
+                    return builder.build()
                 else:
                     return self.llm.complete(system_message, messages_to_send)
 
@@ -297,42 +241,11 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         while True:
             try:
                 if use_streaming:
-                    title_parts = []
-                    thinking_parts = []
-                    code_parts = []
-                    file_parts: dict[str, list[str]] = {}
-                    current_file_path: str | None = None
-                    seen_sections: dict[str, bool] = {
-                        "title": False,
-                        "thinking": False,
-                        "python": False,
-                        "file": False,
-                        "terminal": False,
-                    }
-
+                    builder = ResponseBuilder(self.name, exec_state)
                     async for token in self.llm.acomplete_stream(
                         system_message, messages_to_send
                     ):
-                        start_flag = (
-                            not token.done
-                            and token.type in seen_sections
-                            and not seen_sections[token.type]
-                        )
-                        # We allow multiple file sections, so only mark 'seen' if it's not a file
-                        if start_flag and token.type in seen_sections:
-                            if token.type != "file":
-                                seen_sections[token.type] = True
-
-                        enriched = StreamToken(
-                            type=token.type,
-                            content=token.content,
-                            done=token.done,
-                            agent_name=self.name,
-                            full_namespace=getattr(exec_state, "namespace", self.name),
-                            timestamp=datetime.now(timezone.utc),
-                            start=start_flag,
-                        )
-
+                        enriched = builder.process_token(token)
                         if on_token is not None:
                             try:
                                 res = call_sync_or_async(on_token, enriched)
@@ -340,30 +253,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                                     await res
                             except Exception:
                                 pass
-
-                        if token.type == "title" and not token.done:
-                            title_parts.append(token.content)
-                        elif token.type == "thinking" and not token.done:
-                            thinking_parts.append(token.content)
-                        elif token.type == "python" and not token.done:
-                            code_parts.append(token.content)
-                        elif token.type == "file":
-                            if start_flag and token.content.startswith("path="):
-                                current_file_path = token.content[len("path=") :]
-                                file_parts[current_file_path] = []
-                            elif current_file_path and not token.done:
-                                file_parts[current_file_path].append(token.content)
-                            elif token.done:
-                                current_file_path = None
-
-                    return LLMResponse(
-                        title="".join(title_parts).strip(),
-                        thinking="".join(thinking_parts),
-                        code="".join(code_parts),
-                        files={
-                            path: "".join(parts) for path, parts in file_parts.items()
-                        },
-                    )
+                    return builder.build()
                 else:
                     return await self.llm.acomplete(system_message, messages_to_send)
 

@@ -173,3 +173,150 @@ class TestAgentState:
         state = agent.state()
         assert state is not None
         assert isinstance(state, Live)
+
+
+def test_hierarchical_session_inheritance():
+    """Verify that sub-agents inherit the session from the parent."""
+    from agex import clear_agent_registry
+
+    clear_agent_registry()
+
+    specialist = Agent(
+        name="specialist",
+        llm=Dummy(),
+        state=connect_state(type="versioned", storage="memory"),
+    )
+    orchestrator = Agent(
+        name="orchestrator",
+        llm=Dummy(),
+        state=connect_state(type="versioned", storage="memory"),
+    )
+
+    @orchestrator.fn
+    @specialist.task
+    def specialist_task():
+        """Specialist task."""
+        pass
+
+    @orchestrator.task
+    def main_task():
+        """Main task."""
+        pass
+
+    # Specialist: Verify its state is isolated by session even when called via orchestrator
+    # Turn 1: Run in session_a
+    orchestrator.llm.responses = [
+        LLMResponse(thinking="call spec", code="specialist_task()\ntask_success()")
+    ]
+    specialist.llm.responses = [
+        LLMResponse(thinking="set spec", code="Y='Session A'\ntask_success()")
+    ]
+    main_task(session="session_a")
+
+    # Turn 2: Run in session_b
+    orchestrator.llm.responses = [
+        LLMResponse(thinking="call spec", code="specialist_task()\ntask_success()")
+    ]
+    specialist.llm.responses = [
+        LLMResponse(thinking="set spec", code="Y='Session B'\ntask_success()")
+    ]
+    main_task(session="session_b")
+
+    # Turn 3: Verify specialist session_a state
+    orchestrator.llm.responses = [
+        LLMResponse(thinking="call spec", code="task_success(specialist_task())")
+    ]
+    specialist.llm.responses = [
+        LLMResponse(thinking="get spec", code="task_success(Y)")
+    ]
+    assert main_task(session="session_a") == "Session A"
+
+    # Turn 4: Verify specialist session_b state
+    orchestrator.llm.responses = [
+        LLMResponse(thinking="call spec", code="task_success(specialist_task())")
+    ]
+    specialist.llm.responses = [
+        LLMResponse(thinking="get spec", code="task_success(Y)")
+    ]
+    assert main_task(session="session_b") == "Session B"
+
+
+def test_session_vfs_isolation():
+    """Verify that VFS modules are isolated by session."""
+    from agex import clear_agent_registry, connect_fs
+
+    clear_agent_registry()
+
+    agent = Agent(
+        llm=Dummy(),
+        fs=connect_fs(type="virtual"),
+        state=connect_state(type="versioned", storage="memory"),
+    )
+
+    @agent.task
+    def get_config_val():
+        """Import config and return VAL."""
+        pass
+
+    # Session A: config.py has VAL=42
+    agent.fs(session="session_a").write("config.py", b"VAL = 42")
+    # Session B: config.py has VAL=99
+    agent.fs(session="session_b").write("config.py", b"VAL = 99")
+
+    # Session A: verify VAL is 42
+    agent.llm.responses = [
+        LLMResponse(thinking="import", code="import config\ntask_success(config.VAL)")
+    ]
+    assert get_config_val(session="session_a") == 42
+
+    # Session B: verify VAL is 99
+    agent.llm.responses = [
+        LLMResponse(thinking="import", code="import config\ntask_success(config.VAL)")
+    ]
+    assert get_config_val(session="session_b") == 99
+
+
+def test_vfs_module_rehydration_with_session():
+    """Verify that AgexVFSModule rehydrates correctly for the specific session."""
+    import pickle
+
+    from agex import clear_agent_registry, connect_fs
+
+    clear_agent_registry()
+
+    agent = Agent(
+        name="rehydrate_agent",
+        llm=Dummy(),
+        fs=connect_fs(type="virtual"),
+        state=connect_state(type="versioned", storage="memory"),
+    )
+
+    @agent.task
+    def get_mod():
+        """Get mod."""
+        pass
+
+    # 1. Setup session_a
+    agent.fs(session="session_a").write("lib.py", b"X = 'Alpha'")
+    agent.llm.responses = [
+        LLMResponse(thinking="get", code="import lib\ntask_success(lib)")
+    ]
+    mod_a = get_mod(session="session_a")
+
+    # 2. Setup session_b
+    agent.fs(session="session_b").write("lib.py", b"X = 'Beta'")
+    agent.llm.responses = [
+        LLMResponse(thinking="get", code="import lib\ntask_success(lib)")
+    ]
+    mod_b = get_mod(session="session_b")
+
+    # 3. Pickle/Unpickle to trigger rehydration
+    pickled_a = pickle.dumps(mod_a)
+    pickled_b = pickle.dumps(mod_b)
+
+    unpickled_a = pickle.loads(pickled_a)
+    unpickled_b = pickle.loads(pickled_b)
+
+    # 4. Verify they still point to correct session-specific state
+    assert unpickled_a.getattr("X") == "Alpha"
+    assert unpickled_b.getattr("X") == "Beta"

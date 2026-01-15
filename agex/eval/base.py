@@ -19,6 +19,7 @@ class BaseEvaluator(ast.NodeVisitor):
         eval_timeout_seconds: float = 5.0,
         start_time: float | None = None,
         sub_agent_time: float = 0.0,
+        session: str = "default",
     ):
         self.agent = agent
         self.state = state
@@ -28,7 +29,9 @@ class BaseEvaluator(ast.NodeVisitor):
         self._start_time = start_time if start_time is not None else time.time()
         self._eval_timeout_seconds = eval_timeout_seconds
         self._sub_agent_time = sub_agent_time  # Total time spent in sub-agent calls
-        self.resolver = Resolver(agent)  # Unified resolver for all lookups
+        self.resolver = Resolver(
+            agent, session=session
+        )  # Unified resolver for all lookups
 
     def _handle_destructuring_assignment(self, target_node: ast.AST, value: Any):
         """
