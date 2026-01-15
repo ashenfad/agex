@@ -146,11 +146,6 @@ class SyncLoopMixin:
                 yield event
             events_yielded = len(events(exec_state))
 
-        # Snapshot initial state (including inputs and setup changes)
-        # to establish a baseline for iteration-level rollbacks
-        if versioned_state is not None:
-            versioned_state.snapshot()
-
         # Main task loop
         for iteration in range(self.max_iterations):
             # Check for cancellation at the start of each iteration
@@ -341,10 +336,6 @@ class SyncLoopMixin:
                 raise
 
             except Exception as e:
-                # ROLLBACK: Discard uncommitted file writes and state changes on error
-                if versioned_state is not None:
-                    versioned_state.discard_changes()
-
                 error_output = create_error_output(self.name, e)
                 add_event_to_log(exec_state, error_output, on_event=on_event)
                 yield error_output
