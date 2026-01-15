@@ -301,12 +301,55 @@ class AgexVFSModule:
     """A module object backed by a Namespaced VFS state."""
 
     name: str
-    state: Any  # Namespaced state
+    state: Any  # Namespaced state (runtime only, None when detached)
+    agent_fingerprint: str | None = (
+        None  # Fingerprint of the agent this module belongs to (for rehydration)
+    )
 
     def __repr__(self):
         return f"<module '{self.name}' (VFS)>"
 
+    def __getstate__(self):
+        """Custom pickling to avoid serializing the live state object."""
+        return {"name": self.name, "agent_fingerprint": self.agent_fingerprint}
+
+    def __setstate__(self, state):
+        """Restore metadata and start in detached state."""
+        self.name = state["name"]
+        self.agent_fingerprint = state.get("agent_fingerprint")
+        self.state = None  # Detached
+
+    def _ensure_attached(self):
+        """Re-attach to the agent's state if detached."""
+        if self.state is not None:
+            return
+
+        if not self.agent_fingerprint:
+            raise RuntimeError(
+                f"Cannot rehydrate VFS module '{self.name}': missing agent fingerprint."
+            )
+
+        from agex.agent.base import resolve_agent
+        from agex.state import Namespaced
+
+        # Resolve the agent
+        try:
+            agent = resolve_agent(self.agent_fingerprint)
+        except RuntimeError as e:
+            raise RuntimeError(f"Cannot rehydrate VFS module '{self.name}': {e}") from e
+
+        # Get the agent's current committed state (default session)
+        # Note: This creates a new Versioned view on the shared store.
+        # This is correct because we want the *latest* version of the module.
+        # TODO: Should we support sessions here? VFS modules are currently global to the agent.
+        base = agent.state().base_store
+
+        # Reconstruct the namespace hierarchy: modules/<name>
+        root_ns = Namespaced(base, "modules")
+        self.state = Namespaced(root_ns, self.name)
+
     def getattr(self, name: str) -> Any:
+        self._ensure_attached()
         # Check for members in the namespaced state
         if name in self.state:
             return self.state.get(name)
@@ -314,6 +357,7 @@ class AgexVFSModule:
         raise AgexAttributeError(f"module '{self.name}' has no attribute '{name}'")
 
     def setattr(self, name: str, value: Any):
+        self._ensure_attached()
         self.state.set(name, value)
 
 

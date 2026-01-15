@@ -323,7 +323,9 @@ class Resolver:
                 raise
             raise EvalError(f"Error initializing module '{name}': {e}", node) from e
 
-        return AgexVFSModule(name=name, state=module_state)
+        return AgexVFSModule(
+            name=name, state=module_state, agent_fingerprint=self.agent.fingerprint
+        )
 
     def import_from(
         self, module_name: str, member_name: str, state: State, node

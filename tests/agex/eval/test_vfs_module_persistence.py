@@ -1,0 +1,84 @@
+import pytest
+
+from agex import Agent, connect_fs, connect_state
+from agex.agent.base import clear_agent_registry
+from agex.agent.console import pprint_events
+from agex.llm.core import LLMResponse
+from agex.llm.dummy_client import Dummy
+
+
+@pytest.fixture(autouse=True)
+def cleanup():
+    clear_agent_registry()
+    yield
+    clear_agent_registry()
+
+
+def create_agent(name="test_agent"):
+    return Agent(
+        name=name,
+        llm=Dummy(),
+        fs=connect_fs(type="virtual"),
+        state=connect_state(type="versioned", storage="memory"),
+    )
+
+
+def test_vfs_module_persistence_across_turns():
+    """
+    Test that a VFS module reference can be persisted in state (via closure)
+    and reused in a subsequent turn.
+
+    This reproduces the 'UnpicklableVariableError' seen in the funcy example.
+    """
+    agent = create_agent("persistence_agent")
+
+    # 1. Create the module
+    agent.fs().write("utils.py", b"CONST = 42\ndef get_val(): return CONST")
+
+    # 2. Define a function that closes over the module and return it
+    # This forces the system to pickle the function -> closure -> module
+    responses = [
+        LLMResponse(
+            thinking="Create closure",
+            code="import utils\ndef my_closure(): return utils.get_val()\ntask_success(my_closure)",
+        ),
+        # 3. In the next turn (simulated by calling the returned function or checking state),
+        # we expect the closure to still work.
+    ]
+    agent.llm.responses = responses
+
+    @agent.task
+    def create_closure_task():
+        """Create a closure over a VFS module."""
+        pass
+
+    # This step triggers snapshot() at the end.
+    # If AgexVFSModule is not picklable, this might fail silently (marker created)
+    # or raise error depending on where it's caught.
+    # In the funcy example, it failed when *using* it next time.
+    closure = create_closure_task(on_event=pprint_events)
+
+    # Verify we got a function back
+    assert callable(closure)
+
+    # Verify the closure works immediately (in-memory)
+    assert closure() == 42
+
+    # 4. Force a reload/unpickle cycle to test persistence
+    # We can do this by inspecting the state directly
+    # To truly test persistence, we need to run another task that USES the persisted object
+    # if it were saved in a global variable.
+    # But here we returned it. The return value 'closure' has traveled out of the agent.
+    # Let's try to pickle the returned closure ourselves.
+    import pickle
+
+    try:
+        pickled = pickle.dumps(closure)
+        unpickled = pickle.loads(pickled)
+        assert unpickled() == 42
+    except Exception as e:
+        pytest.fail(f"Failed to pickle/unpickle closure over VFS module: {e}")
+
+
+if __name__ == "__main__":
+    pytest.main([__file__])
