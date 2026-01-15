@@ -21,12 +21,14 @@ class TestAgentVFSIntegration:
         """Clear agent registry before each test."""
         clear_agent_registry()
 
-    def test_agent_without_fs(self):
-        """Test that agent without fs raises error when accessing fs()."""
+    def test_agent_vfs_default(self):
+        """Test that agent gets a default VirtualFS."""
         agent = Agent(llm=Dummy())
-
-        with pytest.raises(ValueError, match="not configured with filesystem"):
-            agent.fs()
+        fs = agent.fs()
+        assert fs is not None
+        # Should be able to write/read
+        fs.write("test.txt", b"foo")
+        assert fs.read("test.txt") == b"foo"
 
     def test_agent_with_fs_accessor(self):
         """Test agent.fs() accessor returns working VFS."""
