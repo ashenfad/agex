@@ -14,7 +14,7 @@ from agex import Agent, connect_llm, connect_state, pprint_tokens
 
 funcy_agent = Agent(
     name="funcy",
-    primer="You are great at providing custom functions to the user.",
+    primer="You are great at providing custom functions to the user. You also like to write modules.",
     llm=connect_llm(provider="gemini", model="gemini-3-flash-preview"),
     state=connect_state(type="versioned", storage="memory"),
 )
