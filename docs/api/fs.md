@@ -2,7 +2,7 @@
 
 The `connect_fs()` factory function configures agent filesystem access. **By default, all agents are configured with a Virtual Filesystem (VFS)**, allowing them to create and manage persistent workspace modules. Use `connect_fs()` to change this configuration to:
 - **Isolated filesystem**: Real filesystem access restricted to a specific directory on the host
-- **Disabled**: Remove all filesystem access by passing `fs=None` to the agent constructor
+- **Manual/Unrestricted**: Disable automatic sandboxed filesystem configuration by passing `fs=None` to the agent constructor. In this mode, no default IO capabilities are provided, but agents may have unrestricted host access if risky modules (like `os` or `pathlib`) are manually registered.
 
 > [!NOTE]
 > When `fs=connect_fs(...)` is configured, `register_io()` is automatically applied during task execution, giving the agent access to file operations (`open()`, `os.listdir()`, etc.) that are routed through VFS or validated against the isolated root.
