@@ -180,7 +180,7 @@ while not (review := critique(report)).approved:
 
 ### 5. Agent-Authored Libraries
 
-Agents aren't limited to using the tools you provide—they can build their own. Using the `<FILE>` tag, agents can create persistent modules in their Virtual Filesystem (VFS) and `import` them in subsequent iterations. 
+Agents aren't limited to using the tools you provide—they can build their own. They can create persistent modules in their Virtual Filesystem (VFS) and `import` them in subsequent iterations. 
 
 This enables agents to manage complexity by:
 - **Organizing code** into reusable helper modules
