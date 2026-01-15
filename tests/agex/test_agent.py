@@ -807,20 +807,20 @@ def test_shallow_validation_on_agent_output():
     large_invalid_dict = large_valid_dict.copy()
     large_invalid_dict["key_145"] = "not an int"  # type: ignore
 
-    llm = Dummy(
-        responses=[
-            LLMResponse(
-                thinking="I will try to return an invalid dictionary.",
-                code="task_success(invalid_dict)",
-            ),
-            LLMResponse(
-                thinking="That failed. I will return a valid dictionary now.",
-                code="task_success(valid_dict)",
-            ),
-        ]
-    )
+    llm = Dummy()
+    # Using side_effect to ensure responses are consumed sequentially, even if the loop retries multiple times
+    llm.responses = [
+        LLMResponse(
+            thinking="I will try to return an invalid dictionary.",
+            code="task_success(invalid_dict)",
+        ),
+        LLMResponse(
+            thinking="That failed. I will return a valid dictionary now.",
+            code="task_success(valid_dict)",
+        ),
+    ]
     config = connect_state(type="versioned", storage="memory")
-    agent = Agent(name="test_agent", llm=llm, state=config)
+    agent = Agent(name="test_agent", llm=llm, state=config, max_iterations=10)
 
     @agent.task("A task that returns a large dictionary.")
     def produce_large_dict() -> dict[str, int]:  # type: ignore
