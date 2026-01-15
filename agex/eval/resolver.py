@@ -22,8 +22,9 @@ class Resolver:
     Resolve policies to discover whether artifacts are whitelisted.
     """
 
-    def __init__(self, agent):
+    def __init__(self, agent, session: str = "default"):
         self.agent = agent
+        self.session = session
         # Policy-backed resolution only
 
     # --- Name Resolution ---
@@ -261,8 +262,7 @@ class Resolver:
         try:
             # Check for module file in VFS
             filename = f"{module_name}.py"
-            fs = self.agent.fs()
-            if fs.exists(filename):
+            if self.agent._fs_exists(filename, self.session):
                 return self._load_vfs_module(module_name, state, node)
         except Exception:
             # Filesystem error or not configured - fall through
@@ -301,8 +301,7 @@ class Resolver:
         # Read and parse code
         filename = f"{name}.py"
         try:
-            fs = self.agent.fs()
-            code_bytes = fs.read(filename)
+            code_bytes = self.agent._fs_read(filename, self.session)
             code = code_bytes.decode("utf-8")
         except Exception as e:
             raise EvalError(f"Failed to read module '{name}' from VFS: {e}", node)
@@ -313,6 +312,7 @@ class Resolver:
                 code,
                 self.agent,
                 state=module_state,
+                session=self.session,
                 # Ensure it has access to the same main loop/callbacks if needed
                 # (Evaluator might need to pass these through to Resolver)
             )
@@ -324,7 +324,10 @@ class Resolver:
             raise EvalError(f"Error initializing module '{name}': {e}", node) from e
 
         return AgexVFSModule(
-            name=name, state=module_state, agent_fingerprint=self.agent.fingerprint
+            name=name,
+            state=module_state,
+            agent_fingerprint=self.agent.fingerprint,
+            session=self.session,
         )
 
     def import_from(
@@ -404,8 +407,7 @@ class Resolver:
         try:
             # Check if this is a VFS module
             filename = f"{module_name}.py"
-            fs = self.agent.fs()
-            if fs.exists(filename):
+            if self.agent._fs_exists(filename, self.session):
                 # Load module to populate namespaced state
                 vfs_mod = self._load_vfs_module(module_name, state, node)
                 return vfs_mod.getattr(member_name)

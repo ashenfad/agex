@@ -147,6 +147,84 @@ class ResponseParseError(Exception):
         return self.message
 
 
+class ResponseBuilder:
+    """Helper to accumulate tokens from a stream into an LLMResponse."""
+
+    def __init__(
+        self,
+        agent_name: str | None = None,
+        exec_state: Any | None = None,
+    ):
+        self.agent_name = agent_name
+        self.exec_state = exec_state
+        self.title_parts: list[str] = []
+        self.thinking_parts: list[str] = []
+        self.code_parts: list[str] = []
+        self.terminal_parts: list[str] = []
+        self.file_parts: dict[str, list[str]] = {}
+        self.current_file_path: str | None = None
+        self.seen_sections: dict[str, bool] = {
+            "title": False,
+            "thinking": False,
+            "python": False,
+            "file": False,
+            "terminal": False,
+        }
+
+    def process_token(self, token: TokenChunk) -> StreamToken:
+        """Process a raw TokenChunk and return an enriched StreamToken."""
+        start_flag = (
+            not token.done
+            and token.type in self.seen_sections
+            and not self.seen_sections[token.type]
+        )
+        if start_flag and token.type in self.seen_sections:
+            if token.type != "file":
+                self.seen_sections[token.type] = True
+
+        enriched = StreamToken(
+            type=token.type,
+            content=token.content,
+            done=token.done,
+            agent_name=self.agent_name or "",
+            full_namespace=getattr(self.exec_state, "namespace", self.agent_name or ""),
+            timestamp=datetime.now(timezone.utc),
+            start=start_flag,
+        )
+
+        if token.done:
+            if token.type == "file":
+                self.current_file_path = None
+            return enriched
+
+        if token.type == "title":
+            self.title_parts.append(token.content)
+        elif token.type == "thinking":
+            self.thinking_parts.append(token.content)
+        elif token.type == "python":
+            self.code_parts.append(token.content)
+        elif token.type == "terminal":
+            self.terminal_parts.append(token.content)
+        elif token.type == "file":
+            if token.content.startswith("path="):
+                self.current_file_path = token.content[len("path=") :]
+                self.file_parts[self.current_file_path] = []
+            elif self.current_file_path:
+                self.file_parts[self.current_file_path].append(token.content)
+
+        return enriched
+
+    def build(self) -> LLMResponse:
+        """Return the final LLMResponse."""
+        return LLMResponse(
+            title="".join(self.title_parts).strip(),
+            thinking="".join(self.thinking_parts),
+            code="".join(self.code_parts),
+            files={path: "".join(parts) for path, parts in self.file_parts.items()},
+            terminal="".join(self.terminal_parts) if self.terminal_parts else None,
+        )
+
+
 class LLM(ABC):
     """
     Abstract base class for LLM providers.
@@ -205,41 +283,10 @@ class LLM(ABC):
         Returns:
             LLMResponse with parsed thinking, code, and files sections
         """
-        title_parts = []
-        thinking_parts = []
-        code_parts = []
-        file_parts: dict[str, list[str]] = {}
-        current_file_path: str | None = None
-        terminal_parts = []
-
+        builder = ResponseBuilder()
         for token in self.complete_stream(system, events, **kwargs):
-            if token.done:
-                if token.type == "file":
-                    current_file_path = None
-                continue
-
-            if token.type == "title":
-                title_parts.append(token.content)
-            elif token.type == "thinking":
-                thinking_parts.append(token.content)
-            elif token.type == "python":
-                code_parts.append(token.content)
-            elif token.type == "terminal":
-                terminal_parts.append(token.content)
-            elif token.type == "file":
-                if token.content.startswith("path="):
-                    current_file_path = token.content[len("path=") :]
-                    file_parts[current_file_path] = []
-                elif current_file_path:
-                    file_parts[current_file_path].append(token.content)
-
-        return LLMResponse(
-            title="".join(title_parts).strip(),
-            thinking="".join(thinking_parts),
-            code="".join(code_parts),
-            files={path: "".join(parts) for path, parts in file_parts.items()},
-            terminal="".join(terminal_parts) if terminal_parts else None,
-        )
+            builder.process_token(token)
+        return builder.build()
 
     def complete_stream(
         self, system: str, events: list["Event"], **kwargs
@@ -298,41 +345,10 @@ class LLM(ABC):
         Returns:
             LLMResponse with parsed thinking, code, and files sections
         """
-        title_parts = []
-        thinking_parts = []
-        code_parts = []
-        file_parts: dict[str, list[str]] = {}
-        current_file_path: str | None = None
-        terminal_parts = []
-
+        builder = ResponseBuilder()
         async for token in self.acomplete_stream(system, events, **kwargs):
-            if token.done:
-                if token.type == "file":
-                    current_file_path = None
-                continue
-
-            if token.type == "title":
-                title_parts.append(token.content)
-            elif token.type == "thinking":
-                thinking_parts.append(token.content)
-            elif token.type == "python":
-                code_parts.append(token.content)
-            elif token.type == "terminal":
-                terminal_parts.append(token.content)
-            elif token.type == "file":
-                if token.content.startswith("path="):
-                    current_file_path = token.content[len("path=") :]
-                    file_parts[current_file_path] = []
-                elif current_file_path:
-                    file_parts[current_file_path].append(token.content)
-
-        return LLMResponse(
-            title="".join(title_parts).strip(),
-            thinking="".join(thinking_parts),
-            code="".join(code_parts),
-            files={path: "".join(parts) for path, parts in file_parts.items()},
-            terminal="".join(terminal_parts) if terminal_parts else None,
-        )
+            builder.process_token(token)
+        return builder.build()
 
     async def acomplete_stream(
         self, system: str, events: list["Event"], **kwargs

@@ -417,21 +417,11 @@ class ActionEvent(BaseEvent):
 
     @model_validator(mode="after")
     def _compute_tokens(self):
-        # Build composite text for token counting
-        # Start with thinking and code
-        content = f"{self.thinking}\n{self.code}"
-        # Add files
-        for path, body in self.files.items():
-            content += f"\nFile: {path}\n{body}"
-
-        _, tokens = render_action_markdown(self.thinking, self.code, self.title)
-        # Add estimate for files (simple count for now, render_action_markdown doesn't support them yet)
-        self.full_detail_tokens = tokens + count_tokens(
-            "".join(f"{k}{v}" for k, v in self.files.items())
+        _, tokens = render_action_markdown(
+            self.thinking, self.code, self.title, self.files
         )
-        self.low_detail_tokens = (
-            self.full_detail_tokens
-        )  # No separate low-detail rendering
+        self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens  # No separate low-detail rendering
         return self
 
     def __str__(self) -> str:

@@ -419,3 +419,45 @@ class BaseAgent:
 
         else:
             raise ValueError(f"Unsupported filesystem config: {type(self._fs_config)}")
+
+    def _fs_exists(self, filename: str, session: str) -> bool:
+        """Check if a file exists in the session's filesystem without wrapping."""
+        if not self._fs_config:
+            return False
+
+        from agex.fs import IsolatedFS, VirtualFS
+        from agex.fs.config import IsolatedFSConfig, VirtualFSConfig
+
+        state = self.state(session)
+
+        if isinstance(self._fs_config, VirtualFSConfig):
+            return VirtualFS(state).exists(filename)
+        elif isinstance(self._fs_config, IsolatedFSConfig):
+            from agex.eval.core import _get_session_root
+
+            root = _get_session_root(
+                self._fs_config.root, session, self._fs_config.per_session
+            )
+            return IsolatedFS(root).exists(filename)
+        return False
+
+    def _fs_read(self, filename: str, session: str) -> bytes:
+        """Read a file from the session's filesystem without wrapping."""
+        if not self._fs_config:
+            raise ValueError("Filesystem not configured")
+
+        from agex.fs import IsolatedFS, VirtualFS
+        from agex.fs.config import IsolatedFSConfig, VirtualFSConfig
+
+        state = self.state(session)
+
+        if isinstance(self._fs_config, VirtualFSConfig):
+            return VirtualFS(state).read(filename)
+        elif isinstance(self._fs_config, IsolatedFSConfig):
+            from agex.eval.core import _get_session_root
+
+            root = _get_session_root(
+                self._fs_config.root, session, self._fs_config.per_session
+            )
+            return IsolatedFS(root).read(filename)
+        raise ValueError(f"Unsupported filesystem config: {type(self._fs_config)}")

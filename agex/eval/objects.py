@@ -302,21 +302,25 @@ class AgexVFSModule:
 
     name: str
     state: Any  # Namespaced state (runtime only, None when detached)
-    agent_fingerprint: str | None = (
-        None  # Fingerprint of the agent this module belongs to (for rehydration)
-    )
+    agent_fingerprint: str | None = None
+    session: str = "default"
 
     def __repr__(self):
         return f"<module '{self.name}' (VFS)>"
 
     def __getstate__(self):
         """Custom pickling to avoid serializing the live state object."""
-        return {"name": self.name, "agent_fingerprint": self.agent_fingerprint}
+        return {
+            "name": self.name,
+            "agent_fingerprint": self.agent_fingerprint,
+            "session": self.session,
+        }
 
     def __setstate__(self, state):
         """Restore metadata and start in detached state."""
         self.name = state["name"]
         self.agent_fingerprint = state.get("agent_fingerprint")
+        self.session = state.get("session", "default")
         self.state = None  # Detached
 
     def _ensure_attached(self):
@@ -338,11 +342,9 @@ class AgexVFSModule:
         except RuntimeError as e:
             raise RuntimeError(f"Cannot rehydrate VFS module '{self.name}': {e}") from e
 
-        # Get the agent's current committed state (default session)
+        # Get the agent's committed state for the specific session
         # Note: This creates a new Versioned view on the shared store.
-        # This is correct because we want the *latest* version of the module.
-        # TODO: Should we support sessions here? VFS modules are currently global to the agent.
-        base = agent.state().base_store
+        base = agent.state(session=self.session).base_store
 
         # Reconstruct the namespace hierarchy: modules/<name>
         root_ns = Namespaced(base, "modules")

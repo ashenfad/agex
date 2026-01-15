@@ -80,5 +80,56 @@ def test_vfs_module_persistence_across_turns():
         pytest.fail(f"Failed to pickle/unpickle closure over VFS module: {e}")
 
 
+def test_vfs_module_session_persistence():
+    """Test that VFS modules rehydrate into the correct session."""
+    agent = create_agent("session_agent")
+
+    # 1. Create different module content in two sessions
+    # Session A
+    agent.fs(session="session_a").write("config.py", b"VAL = 'A'")
+    # Session B
+    agent.fs(session="session_b").write("config.py", b"VAL = 'B'")
+
+    # 2. Get module references from both sessions
+    @agent.task
+    def get_config():
+        """Get the config module."""
+        pass
+
+    agent.llm.responses = [
+        LLMResponse(
+            thinking="Get module A",
+            code="import config\ntask_success(config)",
+        )
+    ]
+    mod_a = get_config(session="session_a", on_event=pprint_events)
+
+    agent.llm.responses = [
+        LLMResponse(
+            thinking="Get module B",
+            code="import config\ntask_success(config)",
+        )
+    ]
+    mod_b = get_config(session="session_b", on_event=pprint_events)
+
+    # 3. Verify in-memory values
+    assert mod_a.getattr("VAL") == "A"
+    assert mod_b.getattr("VAL") == "B"
+
+    # 4. Pickle and unpickle to trigger rehydration
+    import pickle
+
+    pickled_a = pickle.dumps(mod_a)
+    pickled_b = pickle.dumps(mod_b)
+
+    # Clear memory to force re-attachment
+    unpickled_a = pickle.loads(pickled_a)
+    unpickled_b = pickle.loads(pickled_b)
+
+    # 5. Verify rehydrated modules still point to correct session state
+    assert unpickled_a.getattr("VAL") == "A"
+    assert unpickled_b.getattr("VAL") == "B"
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

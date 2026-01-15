@@ -34,7 +34,7 @@ from agex.agent.events import (
 )
 from agex.eval.error import EvalError
 from agex.eval.objects import PrintAction
-from agex.llm.core import LLMResponse, ResponseParseError, StreamToken
+from agex.llm.core import LLMResponse, ResponseBuilder, ResponseParseError, StreamToken
 from agex.state import (
     ConcurrencyError,
     Live,
@@ -68,6 +68,8 @@ __all__ = [
     "yield_new_events",
     "maybe_file_event",
     "maybe_add_file_event",
+    "apply_optimistic_file_writes",
+    "ResponseBuilder",
     # Re-exports
     "ValidationError",
     "LLMFail",
@@ -204,9 +206,6 @@ def initialize_exec_state(
         exec_state.set("inputs", inputs_instance)
     exec_state.set("__expected_return_type__", return_type)
 
-    # Store session for sub-agent calls to inherit
-    exec_state.set("__session__", session)
-
     # Initialize the event log if it doesn't exist
     if "__event_log__" not in exec_state:
         exec_state.set("__event_log__", [])
@@ -251,6 +250,29 @@ def yield_new_events(
     """
     all_events = events(exec_state)
     return all_events[events_yielded_count:]
+
+
+def apply_optimistic_file_writes(llm_response: LLMResponse, fs: Any) -> None:
+    """
+    Apply file writes from the LLM response to the filesystem.
+
+    This is called 'optimistic' because it happens before code execution.
+    It allows the agent to import modules it just created.
+    """
+    if not llm_response.files or not fs:
+        return
+
+    from agex.fs.aware import AgentAwareFS
+    from agex.fs.virtual import VirtualFS
+
+    # Use underlying FS directly to avoid 'user' source attribution
+    # and handle snapshot parameter for VirtualFS
+    target_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
+    for path, content in llm_response.files.items():
+        if isinstance(target_fs, VirtualFS):
+            target_fs.write(path, content.encode("utf-8"), snapshot=False)
+        else:
+            target_fs.write(path, content.encode("utf-8"))
 
 
 # =============================================================================
