@@ -8,7 +8,7 @@ Note: For rendering events to XML, see agex.render.xml.render_events_as_xml()
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import AsyncIterator, Iterator, Literal
 
 from agex.llm.core import ResponseParseError, TokenChunk
@@ -16,6 +16,7 @@ from agex.llm.core import ResponseParseError, TokenChunk
 # XML tag names as constants
 TAG_THINKING = "THINKING"
 TAG_PYTHON = "PYTHON"
+TAG_FILE = "FILE"
 TAG_TITLE = "TITLE"
 TAG_OBSERVATION = "OBSERVATION"
 TAG_SUCCESS = "TASK_SUCCESS"
@@ -30,25 +31,43 @@ class XMLResponse:
 
     thinking: str
     code: str
+    files: dict[str, str] = field(default_factory=dict)
+    terminal: str | None = None
     title: str = ""  # Optional for now, will be required in Phase 2.5
 
 
 # System prompt instructions for XML format
 XML_FORMAT_PRIMER = f"""
 Format your response using XML tags:
-<{TAG_TITLE}>A brief title here</{TAG_TITLE}><{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}><{TAG_PYTHON}># Your Python code here</{TAG_PYTHON}>
+<{TAG_TITLE}>A brief title here</{TAG_TITLE}>
+<{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}>
+<{TAG_FILE} path="path/to/file.py"># File content here</{TAG_FILE}>
+<{TAG_PYTHON}># Your Python code here</{TAG_PYTHON}>
 
-IMPORTANT: Generate ONLY ONE sequence of Title/Thinking/Python. Do NOT attempt to take multiple turns or simulate observations in a single response.
+IMPORTANT:
+1. Generate EXACTLY ONE sequence of Title and Thinking.
+2. You can generate zero or more <{TAG_FILE}> tags to create/modify files before execution.
+3. You MUST end your response with exactly one <{TAG_PYTHON}> tag (or terminal command).
+4. Do NOT attempt to simulate observations or multiple turns in a single response.
 
 You will receive environment output (stdout/images) in <{TAG_OBSERVATION}> tags.
 These will be visible after a `task_continue()` call.
 Treat this as data from your code execution, not a message from the user.
 
 Example:
-<{TAG_TITLE}>Calculating running total</{TAG_TITLE}><{TAG_THINKING}>I need to calculate the sum of the numbers and return it.</{TAG_THINKING}><{TAG_PYTHON}>total = sum(numbers)
-task_success(total)</{TAG_PYTHON}>
+<{TAG_TITLE}>Creating utility and using it</{TAG_TITLE}>
+<{TAG_THINKING}>I'll create a helper module and then use it in my main script.</{TAG_THINKING}>
+<{TAG_FILE} path="utils.py">
+def add(a, b):
+    return a + b
+</{TAG_FILE}>
+<{TAG_PYTHON}>
+import utils
+result = utils.add(5, 7)
+task_success(result)
+</{TAG_PYTHON}>
 
-Keep titles short but always include them before thinking/code!
+Keep titles short but always include them!
 """
 
 
@@ -56,14 +75,14 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
     """
     Parse complete XML response (non-streaming).
 
-    Extracts <TITLE>, <THINKING>, and <PYTHON> tags from complete text.
+    Extracts <TITLE>, <THINKING>, <FILE>, and <PYTHON> tags from complete text.
     Tags are case-insensitive.
 
     Args:
         xml_text: Complete XML response text
 
     Returns:
-        XMLResponse with thinking and code fields
+        XMLResponse with thinking, code, and files fields
 
     Raises:
         ResponseParseError: If required tags are missing or malformed
@@ -100,12 +119,24 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
     if title_match:
         title = title_match.group(1).strip()
 
-    return XMLResponse(thinking=thinking, code=code, title=title)
+    # Extract all <FILE path="..."> tags (case-insensitive)
+    files = {}
+    file_matches = re.finditer(
+        rf'<{TAG_FILE}\s+path=["\'](.*?)["\']>(.*?)</{TAG_FILE}>',
+        xml_text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    for match in file_matches:
+        path = match.group(1).strip()
+        content = match.group(2)
+        files[path] = content
+
+    return XMLResponse(thinking=thinking, code=code, title=title, files=files)
 
 
 def _process_section_closing(
     buffer: str,
-    section_type: Literal["title", "thinking", "python"],
+    section_type: Literal["title", "thinking", "python", "file"],
     closing_tag: str,
 ) -> tuple[list[TokenChunk], str, bool]:
     """
@@ -190,7 +221,7 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
         ResponseParseError: If XML structure is malformed
     """
     buffer = ""
-    current_section: Literal["title", "thinking", "python"] | None = None
+    current_section: Literal["title", "thinking", "python", "file"] | None = None
 
     for chunk in raw_chunks:
         buffer += chunk
@@ -202,22 +233,50 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
                 title_start = re.search(rf"<{TAG_TITLE}>", buffer, re.IGNORECASE)
                 thinking_start = re.search(rf"<{TAG_THINKING}>", buffer, re.IGNORECASE)
                 python_start = re.search(rf"<{TAG_PYTHON}>", buffer, re.IGNORECASE)
+                file_start = re.search(
+                    rf'<{TAG_FILE}\s+path=["\'](.*?)["\']>', buffer, re.IGNORECASE
+                )
 
+                # Prioritize the one that starts earliest in the buffer
+                starts = []
                 if title_start:
-                    current_section = "title"
-                    buffer = buffer[title_start.end() :]
-                    continue
-                elif thinking_start:
-                    current_section = "thinking"
-                    buffer = buffer[thinking_start.end() :]
-                    continue
-                elif python_start:
-                    current_section = "python"
-                    buffer = buffer[python_start.end() :]
-                    continue
-                else:
-                    # No opening tag found yet
+                    starts.append(
+                        (title_start.start(), "title", title_start.end(), None)
+                    )
+                if thinking_start:
+                    starts.append(
+                        (thinking_start.start(), "thinking", thinking_start.end(), None)
+                    )
+                if python_start:
+                    starts.append(
+                        (python_start.start(), "python", python_start.end(), None)
+                    )
+                if file_start:
+                    starts.append(
+                        (
+                            file_start.start(),
+                            "file",
+                            file_start.end(),
+                            file_start.group(1),
+                        )
+                    )
+
+                if not starts:
                     break
+
+                # Pick the earliest start
+                starts.sort()
+                start_pos, section, end_pos, metadata = starts[0]
+
+                current_section = section
+                buffer = buffer[end_pos:]
+
+                # For file tags, we might want to yield the path immediately
+                if section == "file" and metadata:
+                    yield TokenChunk(
+                        type="file", content=f"path={metadata}", done=False
+                    )
+                continue
 
             # We're in a section - look for closing tag
             if current_section == "title":
@@ -235,6 +294,18 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
             if current_section == "thinking":
                 tokens, buffer, complete = _process_section_closing(
                     buffer, "thinking", TAG_THINKING
+                )
+                for token in tokens:
+                    yield token
+                if complete:
+                    current_section = None
+                    continue
+                else:
+                    break
+
+            elif current_section == "file":
+                tokens, buffer, complete = _process_section_closing(
+                    buffer, "file", TAG_FILE
                 )
                 for token in tokens:
                     yield token
@@ -276,7 +347,7 @@ async def atokenize_xml_stream(
         TokenChunk objects as sections are parsed
     """
     buffer = ""
-    current_section: Literal["title", "thinking", "python"] | None = None
+    current_section: Literal["title", "thinking", "python", "file"] | None = None
 
     async for chunk in raw_chunks:
         buffer += chunk
@@ -288,22 +359,50 @@ async def atokenize_xml_stream(
                 title_start = re.search(rf"<{TAG_TITLE}>", buffer, re.IGNORECASE)
                 thinking_start = re.search(rf"<{TAG_THINKING}>", buffer, re.IGNORECASE)
                 python_start = re.search(rf"<{TAG_PYTHON}>", buffer, re.IGNORECASE)
+                file_start = re.search(
+                    rf'<{TAG_FILE}\s+path=["\'](.*?)["\']>', buffer, re.IGNORECASE
+                )
 
+                # Prioritize the one that starts earliest in the buffer
+                starts = []
                 if title_start:
-                    current_section = "title"
-                    buffer = buffer[title_start.end() :]
-                    continue
-                elif thinking_start:
-                    current_section = "thinking"
-                    buffer = buffer[thinking_start.end() :]
-                    continue
-                elif python_start:
-                    current_section = "python"
-                    buffer = buffer[python_start.end() :]
-                    continue
-                else:
-                    # No opening tag found yet
+                    starts.append(
+                        (title_start.start(), "title", title_start.end(), None)
+                    )
+                if thinking_start:
+                    starts.append(
+                        (thinking_start.start(), "thinking", thinking_start.end(), None)
+                    )
+                if python_start:
+                    starts.append(
+                        (python_start.start(), "python", python_start.end(), None)
+                    )
+                if file_start:
+                    starts.append(
+                        (
+                            file_start.start(),
+                            "file",
+                            file_start.end(),
+                            file_start.group(1),
+                        )
+                    )
+
+                if not starts:
                     break
+
+                # Pick the earliest start
+                starts.sort()
+                start_pos, section, end_pos, metadata = starts[0]
+
+                current_section = section
+                buffer = buffer[end_pos:]
+
+                # For file tags, we might want to yield the path immediately
+                if section == "file" and metadata:
+                    yield TokenChunk(
+                        type="file", content=f"path={metadata}", done=False
+                    )
+                continue
 
             # We're in a section - look for closing tag
             if current_section == "title":
@@ -321,6 +420,18 @@ async def atokenize_xml_stream(
             if current_section == "thinking":
                 tokens, buffer, complete = _process_section_closing(
                     buffer, "thinking", TAG_THINKING
+                )
+                for token in tokens:
+                    yield token
+                if complete:
+                    current_section = None
+                    continue
+                else:
+                    break
+
+            elif current_section == "file":
+                tokens, buffer, complete = _process_section_closing(
+                    buffer, "file", TAG_FILE
                 )
                 for token in tokens:
                     yield token

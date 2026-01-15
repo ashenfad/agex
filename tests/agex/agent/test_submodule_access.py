@@ -14,6 +14,11 @@ class MockAgent:
         self._policy = policy
         self.fingerprint = "test-agent"
 
+    def fs(self):
+        from unittest.mock import MagicMock
+
+        return MagicMock()
+
 
 def test_submodules_auto_injected_on_registration():
     """Test that registering os.path after os auto-injects submodule reference."""
@@ -79,8 +84,10 @@ def test_from_import_still_works():
     agent = MockAgent(policy)
     resolver = Resolver(agent)
 
+    from agex.state import Live
+
     # This is how 'from os.path import exists' resolves
-    result = resolver.import_from("os.path", "exists", node=None)
+    result = resolver.import_from("os.path", "exists", state=Live(), node=None)
 
     # Should return the exists function
     assert callable(result)

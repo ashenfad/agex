@@ -130,8 +130,17 @@ class Anthropic(LLM):
                         "type": "string",
                         "description": "The Python code to execute",
                     },
+                    "files": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                        "description": "Files to create or modify (path -> content)",
+                    },
+                    "terminal": {
+                        "type": "string",
+                        "description": "Terminal command to execute",
+                    },
                 },
-                "required": ["thinking", "code"],
+                "required": ["thinking"],
             },
         }
 
@@ -170,12 +179,16 @@ class Anthropic(LLM):
             if tool_use is None:
                 raise RuntimeError("Anthropic did not return expected tool use")
 
-            # Extract thinking and code from tool input
+            # Extract thinking, code, files, and terminal from tool input
             tool_input = tool_use.input
             thinking = tool_input.get("thinking", "")
             code = tool_input.get("code", "")
+            files = tool_input.get("files", {})
+            terminal = tool_input.get("terminal")
 
-            return LLMResponse(thinking=thinking, code=code)
+            return LLMResponse(
+                thinking=thinking, code=code, files=files, terminal=terminal
+            )
 
         except Exception as e:
             raise RuntimeError(f"Anthropic completion failed: {e}") from e
@@ -207,8 +220,17 @@ class Anthropic(LLM):
                         "type": "string",
                         "description": "The Python code to execute",
                     },
+                    "files": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                        "description": "Files to create or modify (path -> content)",
+                    },
+                    "terminal": {
+                        "type": "string",
+                        "description": "Terminal command to execute",
+                    },
                 },
-                "required": ["thinking", "code"],
+                "required": ["thinking"],
             },
         }
 
@@ -247,7 +269,11 @@ class Anthropic(LLM):
             tool_input = tool_use.input
             thinking = tool_input.get("thinking", "")
             code = tool_input.get("code", "")
-            return LLMResponse(thinking=thinking, code=code)
+            files = tool_input.get("files", {})
+            terminal = tool_input.get("terminal")
+            return LLMResponse(
+                thinking=thinking, code=code, files=files, terminal=terminal
+            )
 
         except Exception as e:
             raise RuntimeError(f"Anthropic completion failed: {e}") from e

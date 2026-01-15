@@ -198,6 +198,22 @@ class SyncLoopMixin:
 
             # Evaluate the code
             try:
+                # OPTIMISTIC WRITE: Create/update files from <file> tags
+                if llm_response.files and fs:
+                    from agex.fs.aware import AgentAwareFS
+                    from agex.fs.virtual import VirtualFS
+
+                    # Use underlying FS directly to avoid 'user' source attribution
+                    # and handle snapshot parameter for VirtualFS
+                    target_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
+                    for path, content in llm_response.files.items():
+                        if isinstance(target_fs, VirtualFS):
+                            target_fs.write(
+                                path, content.encode("utf-8"), snapshot=False
+                            )
+                        else:
+                            target_fs.write(path, content.encode("utf-8"))
+
                 if code_to_evaluate:
                     evaluate_program(
                         code_to_evaluate,
@@ -241,6 +257,11 @@ class SyncLoopMixin:
                 for event in yield_new_events(exec_state, events_yielded):
                     yield event
                 events_yielded = len(events(exec_state))
+
+                # Persist changes from this iteration (including <file> writes)
+                if versioned_state is not None:
+                    versioned_state.snapshot()
+
                 continue
 
             except TaskClarify as task_clarify:
@@ -315,6 +336,10 @@ class SyncLoopMixin:
                 raise
 
             except Exception as e:
+                # ROLLBACK: Discard uncommitted file writes and state changes on error
+                if versioned_state is not None:
+                    versioned_state.discard_changes()
+
                 error_output = create_error_output(self.name, e)
                 add_event_to_log(exec_state, error_output, on_event=on_event)
                 yield error_output

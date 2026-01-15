@@ -296,6 +296,27 @@ class AgexModule:
         return f"<agexmodule '{self.name}'>"
 
 
+@dataclass
+class AgexVFSModule:
+    """A module object backed by a Namespaced VFS state."""
+
+    name: str
+    state: Any  # Namespaced state
+
+    def __repr__(self):
+        return f"<module '{self.name}' (VFS)>"
+
+    def getattr(self, name: str) -> Any:
+        # Check for members in the namespaced state
+        if name in self.state:
+            return self.state.get(name)
+
+        raise AgexAttributeError(f"module '{self.name}' has no attribute '{name}'")
+
+    def setattr(self, name: str, value: Any):
+        self.state.set(name, value)
+
+
 class PrintAction(tuple):
     """Represents the un-rendered content of a print() call."""
 

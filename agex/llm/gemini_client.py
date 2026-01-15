@@ -113,8 +113,17 @@ class Gemini(LLM):
                     "description": "Your natural language thinking about the task",
                 },
                 "code": {"type": "string", "description": "The Python code to execute"},
+                "files": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                    "description": "Files to create or modify (path -> content)",
+                },
+                "terminal": {
+                    "type": "string",
+                    "description": "Terminal command to execute",
+                },
             },
-            "required": ["thinking", "code"],
+            "required": ["thinking"],
         }
 
         # Create config
@@ -161,10 +170,14 @@ class Gemini(LLM):
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Failed to parse Gemini JSON response: {e}")
 
-            # Extract thinking and code
+            # Extract thinking, code, files, and terminal
             thinking = parsed_response.get("thinking", "")
             code = parsed_response.get("code", "")
-            return LLMResponse(thinking=thinking, code=code)
+            files = parsed_response.get("files", {})
+            terminal = parsed_response.get("terminal")
+            return LLMResponse(
+                thinking=thinking, code=code, files=files, terminal=terminal
+            )
 
         except TimeoutError as e:
             raise RuntimeError(f"Gemini completion timed out: {e}") from e
@@ -192,8 +205,17 @@ class Gemini(LLM):
                     "description": "Your natural language thinking about the task",
                 },
                 "code": {"type": "string", "description": "The Python code to execute"},
+                "files": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                    "description": "Files to create or modify (path -> content)",
+                },
+                "terminal": {
+                    "type": "string",
+                    "description": "Terminal command to execute",
+                },
             },
-            "required": ["thinking", "code"],
+            "required": ["thinking"],
         }
 
         tools = []
@@ -237,7 +259,11 @@ class Gemini(LLM):
 
             thinking = parsed_response.get("thinking", "")
             code = parsed_response.get("code", "")
-            return LLMResponse(thinking=thinking, code=code)
+            files = parsed_response.get("files", {})
+            terminal = parsed_response.get("terminal")
+            return LLMResponse(
+                thinking=thinking, code=code, files=files, terminal=terminal
+            )
 
         except TimeoutError as e:
             raise RuntimeError(f"Gemini completion timed out: {e}") from e
