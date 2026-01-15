@@ -558,11 +558,16 @@ class StatementEvaluator(BaseEvaluator):
                 self.state.set(alias.asname, tic_module)
             else:
                 # import pkg.mod -> bind pkg to pkg module
-                top_level_name = module_name_to_find.split(".")[0]
-                top_level_module = self.resolver.resolve_module(
-                    top_level_name, self.state, node
-                )
-                self.state.set(top_level_name, top_level_module)
+                parts = module_name_to_find.split(".")
+                if len(parts) == 1:
+                    self.state.set(module_name_to_find, tic_module)
+                else:
+                    # pkg.mod -> must resolve and bind pkg
+                    top_level_name = parts[0]
+                    top_level_module = self.resolver.resolve_module(
+                        top_level_name, self.state, node
+                    )
+                    self.state.set(top_level_name, top_level_module)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         """Handles `from <module> import <name>`."""

@@ -360,7 +360,6 @@ class AgexVFSModule:
         # Reconstruct the namespace hierarchy: modules/<name>
         root_ns = Namespaced(base, "modules")
         self.state = Namespaced(root_ns, self.name)
-        self.state = Namespaced(root_ns, self.name)
 
     def getattr(self, name: str) -> Any:
         self._ensure_attached()
