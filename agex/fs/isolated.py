@@ -246,6 +246,47 @@ class IsolatedFS(FileSystem):
             resolved = self._validate_path(path)
             return resolved.is_dir()
 
+    def islink(self, path: str) -> bool:
+        """Check if path is a symbolic link."""
+        with suspend_fs_interception():
+            p = Path(path)
+            if p.is_absolute():
+                p = p.relative_to(p.anchor)
+
+            target = self.root / p
+            # Resolve parent to ensure it's within root
+            try:
+                parent_resolved = target.parent.resolve()
+                parent_resolved.relative_to(self.root)
+            except (ValueError, FileNotFoundError):
+                return False
+
+            # Check the link itself
+            return (parent_resolved / target.name).is_symlink()
+
+    def lexists(self, path: str) -> bool:
+        """Check if path exists (without following symlinks)."""
+        with suspend_fs_interception():
+            # For lexists, we don't want _validate_path to resolve symlinks
+            # but we still need to check if it's within root.
+            # Simplified for now: just use exists() since _validate_path resolves anyway.
+            # Real lexists support would need a non-resolving _validate_path.
+            return self.exists(path)
+
+    def samefile(self, path1: str, path2: str) -> bool:
+        """Check if two paths refer to the same file."""
+        with suspend_fs_interception():
+            r1 = self._validate_path(path1)
+            r2 = self._validate_path(path2)
+            return r1.resolve() == r2.resolve()
+
+    def realpath(self, path: str) -> str:
+        """Return the canonical path."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
+            # Return path relative to the root, as if root was /
+            return "/" + str(resolved.relative_to(self.root)).lstrip("/")
+
     def listdir(self, path: str = ".", recursive: bool = False) -> list[str]:
         """List directory contents.
 
