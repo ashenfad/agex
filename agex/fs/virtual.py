@@ -197,6 +197,51 @@ class VirtualFS(FileSystem):
             raise FileNotFoundError(f"No such directory: '{path}'")
         self._state.set(self.CWD_KEY, absolute)
 
+    def glob(self, pattern: str) -> list[str]:
+        """Return list of paths matching a glob pattern."""
+        import fnmatch
+
+        results = []
+        cwd = self.getcwd()
+
+        # If pattern is absolute, we match against full paths
+        if pattern.startswith("/"):
+            match_pattern = pattern.lstrip("/")
+        else:
+            if cwd == "/":
+                match_pattern = pattern
+            else:
+                match_pattern = f"{cwd.lstrip('/')}/{pattern}"
+
+        for key in self._state.keys():
+            if (
+                not self._is_vfs_key(key)
+                or key == self.METADATA_KEY
+                or key == self.CWD_KEY
+            ):
+                continue
+
+            path = self._decode_path(
+                key
+            )  # normalized path e.g. "src/main.py" (no leading slash)
+
+            # fnmatch against the full relative-to-root path
+            if fnmatch.fnmatch(path, match_pattern):
+                if pattern.startswith("/"):
+                    # Return as absolute path (virtual)
+                    results.append("/" + path)
+                else:
+                    # Return relative to CWD
+                    if cwd == "/":
+                        results.append(path)
+                    elif path.startswith(cwd.lstrip("/") + "/"):
+                        # cwd="/src" -> path="src/main.py"
+                        # cwd.lstrip("/") + "/" -> "src/"
+                        prefix_len = len(cwd.lstrip("/")) + 1
+                        results.append(path[prefix_len:])
+
+        return sorted(results)
+
     def resolve_path(self, path: str) -> str:
         """Resolve path (relative or absolute) against current working directory.
 
