@@ -158,6 +158,7 @@ class VirtualFS(FileSystem):
 
     PREFIX = "__vfs_"
     METADATA_KEY = "__vfs_metadata__"
+    CWD_KEY = "__vfs_cwd__"
 
     def __init__(self, state: "State"):
         """Initialize virtual filesystem backed by state.
@@ -167,6 +168,48 @@ class VirtualFS(FileSystem):
         """
         self._state = state
         self._dir_cache: set[str] | None = None
+
+    # -------------------------------------------------------------------------
+    # Working Directory
+    # -------------------------------------------------------------------------
+
+    def getcwd(self) -> str:
+        """Get current working directory.
+
+        Returns:
+            Current working directory path (defaults to "/").
+        """
+        return self._state.get(self.CWD_KEY) or "/"
+
+    def chdir(self, path: str) -> None:
+        """Change current working directory.
+
+        Args:
+            path: Directory path to change to.
+
+        Raises:
+            FileNotFoundError: If directory doesn't exist.
+        """
+        resolved = self.resolve_path(path)
+        # Use absolute path for isdir check to avoid double resolution
+        absolute = "/" + resolved.lstrip("/")
+        if not self.isdir(absolute):
+            raise FileNotFoundError(f"No such directory: '{path}'")
+        self._state.set(self.CWD_KEY, absolute)
+
+    def resolve_path(self, path: str) -> str:
+        """Resolve path (relative or absolute) against current working directory.
+
+        Args:
+            path: File or directory path (relative or absolute).
+
+        Returns:
+            Normalized absolute path.
+        """
+        if path.startswith("/"):
+            return self._normalize_path(path)
+        cwd = self.getcwd()
+        return self._normalize_path(f"{cwd}/{path}")
 
     def _ensure_dir_cache(self) -> set[str]:
         """Lazy initialization of directory cache from state keys."""
@@ -280,13 +323,16 @@ class VirtualFS(FileSystem):
         """Convert file path to state key.
 
         Uses base32 encoding for safe, reversible path encoding.
+        Paths are first resolved against the current working directory.
 
         Args:
-            path: File path (e.g., "shared/data.csv").
+            path: File path (e.g., "shared/data.csv" or relative like "file.txt").
 
         Returns:
             State key (e.g., "__vfs_ONQWIZI...").
         """
+        # Resolve relative paths against CWD first
+        path = self.resolve_path(path)
         path = self._normalize_path(path)
         encoded = base64.b32encode(path.encode()).decode().rstrip("=")
         return f"{self.PREFIX}{encoded}"
@@ -382,6 +428,14 @@ class VirtualFS(FileSystem):
         """
         if not isinstance(content, bytes):
             raise TypeError(f"Expected bytes, got {type(content).__name__}")
+
+        # Auto-create parent directories
+        resolved = self.resolve_path(path)
+        normalized = self._normalize_path(resolved)
+        parent = "/".join(normalized.split("/")[:-1])
+        if parent and not self.isdir("/" + parent):
+            self.makedirs("/" + parent)
+
         key = self._encode_path(path)
 
         # Handle append mode
@@ -463,8 +517,8 @@ class VirtualFS(FileSystem):
         Returns:
             List of file/directory names in the directory.
         """
-        # Normalize path
-        path = self._normalize_path(path)
+        # Resolve path against CWD first, then normalize
+        path = self.resolve_path(path)
 
         # Adjust logic to match original list expectation (empty string for root)
         if path == "." or path == "/":
@@ -474,8 +528,8 @@ class VirtualFS(FileSystem):
 
         results: set[str] = set()
         for key in self._state.keys():
-            # Skip metadata key
-            if key == self.METADATA_KEY:
+            # Skip metadata and CWD keys
+            if key == self.METADATA_KEY or key == self.CWD_KEY:
                 continue
 
             if not self._is_vfs_key(key):
@@ -510,7 +564,7 @@ class VirtualFS(FileSystem):
         """Check if a file or directory exists.
 
         For files, checks if the exact path exists.
-        For directories, checks if any file has that path as prefix.
+        For directories, checks explicit entries or implicit presence.
 
         Args:
             path: Path to check.
@@ -523,13 +577,18 @@ class VirtualFS(FileSystem):
         if key in self._state:
             return True
 
-        # Check for directory match in cache
-        path = self._normalize_path(path)
-        if path == "/":
-            path = ""
+        # Check for explicit directory entry in metadata
+        resolved = self.resolve_path(path)
+        normalized = self._normalize_path(resolved)
+        metadata = self._get_metadata()
+        if normalized in metadata and metadata[normalized].is_dir:
+            return True
 
+        # Check for implicit directory match (backward compat)
+        if normalized == "/":
+            normalized = ""
         cache = self._ensure_dir_cache()
-        return path in cache or (path + "/") in cache
+        return normalized in cache or (normalized + "/") in cache
 
     def isfile(self, path: str) -> bool:
         """Check if path is a file.
@@ -546,7 +605,8 @@ class VirtualFS(FileSystem):
     def isdir(self, path: str) -> bool:
         """Check if path is a directory.
 
-        Directories are implicit (any path with files underneath).
+        Checks for explicit directory entries in metadata first,
+        then falls back to implicit directory detection (any path with files underneath).
 
         Args:
             path: Path to check.
@@ -554,12 +614,22 @@ class VirtualFS(FileSystem):
         Returns:
             True if path is a directory, False otherwise.
         """
-        path = self._normalize_path(path)
-        if path == "/":
-            path = ""
+        # Resolve path against CWD first
+        path = self.resolve_path(path)
+        normalized = self._normalize_path(path)
 
+        # Root is always a directory
+        if normalized in ("", "/"):
+            return True
+
+        # Check for explicit directory entry in metadata
+        metadata = self._get_metadata()
+        if normalized in metadata and metadata[normalized].is_dir:
+            return True
+
+        # Fall back to implicit detection (for backward compatibility)
         cache = self._ensure_dir_cache()
-        return path in cache or (path + "/") in cache
+        return normalized in cache or (normalized + "/") in cache
 
     def islink(self, path: str) -> bool:
         """Check if path is a symbolic link.
@@ -697,26 +767,94 @@ class VirtualFS(FileSystem):
             self._state.snapshot()
 
     def mkdir(self, path: str, exist_ok: bool = True) -> None:
-        """Create a directory (no-op for virtual FS).
-
-        Directories are implicit, so this does nothing.
+        """Create a directory.
 
         Args:
             path: Directory path.
-            exist_ok: Ignored (always succeeds).
+            exist_ok: If True, don't raise if directory exists.
+
+        Raises:
+            FileExistsError: If path exists (as file or dir when exist_ok=False).
         """
-        pass
+        path = self.resolve_path(path)
+        normalized = self._normalize_path(path)
+
+        # Check if already exists
+        if self.isfile(path):
+            raise FileExistsError(f"File exists: {path}")
+        if self.isdir(path):
+            if exist_ok:
+                return
+            raise FileExistsError(f"Directory exists: {path}")
+
+        # Create directory metadata entry
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        metadata = self._get_metadata()
+        metadata[normalized] = FileMetadata(
+            size=0,
+            created_at=now,
+            modified_at=now,
+            is_dir=True,
+        )
+        self._set_metadata(metadata)
+        self._dir_cache = None  # Invalidate cache
 
     def makedirs(self, path: str, exist_ok: bool = True) -> None:
-        """Create directory tree (no-op for virtual FS).
+        """Create directory tree.
 
-        Directories are implicit, so this does nothing.
+        Creates all parent directories as needed.
 
         Args:
             path: Directory path.
-            exist_ok: Ignored (always succeeds).
+            exist_ok: If True, don't raise if directory exists.
+
+        Raises:
+            FileExistsError: If path exists as a file.
         """
-        pass
+        path = self.resolve_path(path)
+        parts = path.strip("/").split("/")
+
+        # Create each parent directory
+        for i in range(len(parts)):
+            dir_path = "/" + "/".join(parts[: i + 1])
+            if self.isfile(dir_path):
+                raise FileExistsError(f"File exists: {dir_path}")
+            if not self.isdir(dir_path):
+                self.mkdir(dir_path, exist_ok=True)
+
+    def rmdir(self, path: str) -> None:
+        """Remove an empty directory.
+
+        Args:
+            path: Directory path to remove.
+
+        Raises:
+            FileNotFoundError: If directory doesn't exist.
+            NotADirectoryError: If path is a file.
+            OSError: If directory is not empty.
+        """
+        path = self.resolve_path(path)
+        normalized = self._normalize_path(path)
+
+        if not self.exists(path):
+            raise FileNotFoundError(f"No such directory: {path}")
+        if self.isfile(path):
+            raise NotADirectoryError(f"Not a directory: {path}")
+        if not self.isdir(path):
+            raise FileNotFoundError(f"No such directory: {path}")
+
+        # Check if directory is empty
+        children = self.list(path)
+        if children:
+            raise OSError(f"Directory not empty: {path}")
+
+        # Remove directory metadata
+        metadata = self._get_metadata()
+        metadata.pop(normalized, None)
+        self._set_metadata(metadata)
+        self._dir_cache = None
 
     def rename(self, src: str, dst: str, snapshot: bool = True) -> None:
         """Rename/move a file.

@@ -146,27 +146,31 @@ class TestVirtualFSBasics:
 
         assert vfs.read("file.txt") == b"Line 1\nLine 2\n"
 
-    def test_mkdir_is_noop(self):
-        """Test mkdir is a no-op (directories are implicit)."""
+    def test_mkdir_creates_directory(self):
+        """Test mkdir creates explicit directory entry."""
         state = Live()
         vfs = VirtualFS(state)
 
-        # Should not raise
-        vfs.mkdir("some/deep/path")
+        # Should create directory
+        vfs.mkdir("some_dir")
 
-        # Should not create any state entries
-        assert len(list(state.keys())) == 0
+        # Should be accessible as a directory
+        assert vfs.isdir("some_dir") is True
+        assert vfs.exists("some_dir") is True
+        assert vfs.isfile("some_dir") is False
 
-    def test_makedirs_is_noop(self):
-        """Test makedirs is a no-op."""
+    def test_makedirs_creates_tree(self):
+        """Test makedirs creates parent directories."""
         state = Live()
         vfs = VirtualFS(state)
 
-        # Should not raise
+        # Creates entire tree
         vfs.makedirs("some/deep/path", exist_ok=True)
 
-        # Should not create any state entries
-        assert len(list(state.keys())) == 0
+        # All levels should be directories
+        assert vfs.isdir("some") is True
+        assert vfs.isdir("some/deep") is True
+        assert vfs.isdir("some/deep/path") is True
 
 
 class TestVirtualFSPaths:

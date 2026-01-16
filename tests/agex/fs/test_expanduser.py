@@ -6,12 +6,11 @@ correctly sanitize home directory references when VFS or IsolatedFS is active.
 
 import os
 import tempfile
-from pathlib import Path
 
 from agex.fs.isolated import IsolatedFS
 from agex.fs.patching import with_isolated_fs, with_virtual_fs
 from agex.fs.virtual import VirtualFS
-from agex.state import Versioned
+from agex.state import Live, Versioned
 
 
 def test_expanduser_vfs():
@@ -37,7 +36,7 @@ def test_expanduser_vfs():
 def test_expanduser_isolated():
     """Test that expanduser returns / when IsolatedFS is active."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        isolated = IsolatedFS(Path(tmpdir))
+        isolated = IsolatedFS(str(tmpdir), state=Live())
 
         # Without IsolatedFS, should return real home
         real_home = os.path.expanduser("~")
@@ -71,7 +70,7 @@ def test_getenv_home_vfs():
 def test_getenv_home_isolated():
     """Test that getenv('HOME') returns / when IsolatedFS is active."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        isolated = IsolatedFS(Path(tmpdir))
+        isolated = IsolatedFS(str(tmpdir), state=Live())
 
         # Without IsolatedFS, should return real home
         real_home = os.getenv("HOME")
@@ -106,7 +105,7 @@ def test_expandvars_vfs():
 def test_expandvars_isolated():
     """Test that expandvars replaces $HOME with / when IsolatedFS is active."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        isolated = IsolatedFS(Path(tmpdir))
+        isolated = IsolatedFS(str(tmpdir), state=Live())
 
         # Without IsolatedFS, $HOME should expand to real home
         real_result = os.path.expandvars("$HOME/.profile")
@@ -164,7 +163,7 @@ def test_no_leak_in_error_messages():
 
         # If we try to open a non-existent file, the error message should use /
         try:
-            with open(expanded, "r") as f:
+            with open(expanded, "r"):
                 pass
         except FileNotFoundError as e:
             error_msg = str(e)

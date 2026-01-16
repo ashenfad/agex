@@ -60,7 +60,7 @@ def test_isolated_realpath(tmp_path):
     root.mkdir()
     (root / "test.txt").write_text("content")
 
-    isolated = IsolatedFS(str(root))
+    isolated = IsolatedFS(str(root), state=Live())
 
     with with_isolated_fs(isolated):
         assert os.path.realpath("test.txt") == "/test.txt"
@@ -80,7 +80,7 @@ def test_isolated_islink(tmp_path):
     link = root / "link.txt"
     link.symlink_to(file)
 
-    isolated = IsolatedFS(str(root))
+    isolated = IsolatedFS(str(root), state=Live())
 
     with with_isolated_fs(isolated):
         assert os.path.islink("link.txt") is True
@@ -99,7 +99,7 @@ def test_isolated_samefile(tmp_path):
     link = root / "link.txt"
     link.symlink_to(file)
 
-    isolated = IsolatedFS(str(root))
+    isolated = IsolatedFS(str(root), state=Live())
 
     with with_isolated_fs(isolated):
         assert os.path.samefile("test.txt", "link.txt") is True

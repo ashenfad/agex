@@ -30,13 +30,14 @@ class IsolatedFS(FileSystem):
     """
 
     METADATA_KEY = "__isolated_fs_metadata__"
+    CWD_KEY = "__isolated_cwd__"
 
-    def __init__(self, root: str, state: State | None = None):
+    def __init__(self, root: str, state: State):
         """Initialize isolated filesystem.
 
         Args:
             root: Absolute path to root directory (must exist).
-            state: Optional state for metadata tracking.
+            state: State for metadata and CWD tracking.
 
         Raises:
             ValueError: If root is not an absolute path or doesn't exist.
@@ -55,11 +56,58 @@ class IsolatedFS(FileSystem):
 
         self._state = state
 
+    # -------------------------------------------------------------------------
+    # Working Directory
+    # -------------------------------------------------------------------------
+
+    def getcwd(self) -> str:
+        """Get current working directory.
+
+        Returns:
+            Current working directory path (defaults to "/").
+        """
+        return self._state.get(self.CWD_KEY) or "/"
+
+    def chdir(self, path: str) -> None:
+        """Change current working directory.
+
+        Args:
+            path: Directory path to change to.
+
+        Raises:
+            FileNotFoundError: If directory doesn't exist.
+        """
+        resolved_virtual = self.resolve_path(path)
+        real_path = self._validate_path(resolved_virtual)
+        with suspend_fs_interception():
+            if not real_path.is_dir():
+                raise FileNotFoundError(f"No such directory: '{path}'")
+        self._state.set(
+            self.CWD_KEY,
+            "/" + resolved_virtual.lstrip("/") if resolved_virtual else "/",
+        )
+
+    def resolve_path(self, path: str) -> str:
+        """Resolve path (relative or absolute) against current working directory.
+
+        Args:
+            path: File or directory path (relative or absolute).
+
+        Returns:
+            Normalized absolute path (virtual, not host).
+        """
+        import os.path
+
+        if path.startswith("/"):
+            return os.path.normpath(path)
+        cwd = self.getcwd()
+        return os.path.normpath(f"{cwd}/{path}")
+
     def _validate_path(self, path: str | Path) -> Path:
         """Validate and resolve path to ensure it's within root.
 
         Args:
-            path: File path to validate (absolute or relative to root).
+            path: File path to validate (absolute or relative to CWD).
 
         Returns:
             Resolved absolute path within root.
@@ -68,17 +116,25 @@ class IsolatedFS(FileSystem):
             PermissionError: If path escapes root directory.
         """
         with suspend_fs_interception():
-            p = Path(path)
+            path_str = str(path)
 
-            # Treat absolute paths as relative to the isolated root (chroot-like)
-            # e.g. /foo -> foo, / -> .
+            # For relative paths, prepend the CWD (but don't normalize yet)
+            # This preserves path traversal attempts for security validation
+            if not path_str.startswith("/"):
+                cwd = self.getcwd()
+                path_str = f"{cwd}/{path_str}"
+
+            p = Path(path_str)
+
+            # Treat virtual absolute paths as relative to the isolated root (chroot-like)
+            # e.g. /foo -> root/foo, / -> root
             if p.is_absolute():
                 # If path is already inside root (e.g. from resolve()), use it as is
                 try:
                     p.relative_to(self.root)
                     resolved = p.resolve()
                 except ValueError:
-                    # If absolute but outside root (e.g. /etc/passwd), treat as relative to root
+                    # Virtual absolute path - treat as relative to root
                     p = p.relative_to(p.anchor)
                     resolved = (self.root / p).resolve()
             else:
@@ -321,6 +377,12 @@ class IsolatedFS(FileSystem):
         with suspend_fs_interception():
             resolved = self._validate_path(path)
             resolved.mkdir(parents=parents, exist_ok=exist_ok)
+
+    def rmdir(self, path: str) -> None:
+        """Remove an empty directory."""
+        with suspend_fs_interception():
+            resolved = self._validate_path(path)
+            resolved.rmdir()
 
     def rename(self, src: str, dst: str) -> None:
         """Rename/move a file or directory."""

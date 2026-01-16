@@ -161,6 +161,16 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                 f"System Note: You are on iteration {iteration + 1} of {self.max_iterations}. Please wrap up."
             )
 
+        # 4. Current Working Directory (show if not at root)
+        try:
+            fs = self.fs()
+            if fs is not None:
+                cwd = fs.getcwd()
+                if cwd and cwd != "/":
+                    messages.append(f"**Current Directory**: `{cwd}`")
+        except Exception:
+            pass  # FS not configured or error - skip
+
         if not messages:
             return None
 

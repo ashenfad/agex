@@ -12,17 +12,19 @@ from typing import Any
 
 @dataclass
 class FileMetadata:
-    """Metadata for a single file.
+    """Metadata for a single file or directory.
 
     Attributes:
-        size: File size in bytes.
+        size: File size in bytes (0 for directories).
         created_at: ISO 8601 timestamp when file was created (UTC).
         modified_at: ISO 8601 timestamp when file was last modified (UTC).
+        is_dir: True if this is a directory, False for files.
     """
 
     size: int
     created_at: str
     modified_at: str
+    is_dir: bool = False
 
 
 @dataclass
