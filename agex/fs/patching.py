@@ -47,6 +47,10 @@ _originals: dict[str, Any] = {
     "exists": os.path.exists,
     "isfile": os.path.isfile,
     "isdir": os.path.isdir,
+    "islink": os.path.islink,
+    "lexists": os.path.lexists,
+    "samefile": os.path.samefile,
+    "realpath": os.path.realpath,
     "getsize": os.path.getsize,
     "scandir": os.scandir,
     "getcwd": os.getcwd,
@@ -597,6 +601,96 @@ def _vfs_isdir(path: str, **kwargs: Any) -> bool:
     return _originals["isdir"](path, **kwargs)
 
 
+def _vfs_islink(path: str, **kwargs: Any) -> bool:
+    """FileSystem-aware os.path.islink() replacement."""
+    isolated = current_isolated_fs.get()
+    if isolated is not None:
+        try:
+            return isolated.islink(path)
+        except PermissionError:
+            if _is_safe_system_path(path):
+                return _originals["islink"](path, **kwargs)
+            return False
+
+    vfs = current_vfs.get()
+    if vfs is not None:
+        # VFS does not currently support symlinks
+        if vfs.exists(str(path)):
+            return False
+        if _is_safe_system_path(path):
+            return _originals["islink"](path, **kwargs)
+        return False
+
+    return _originals["islink"](path, **kwargs)
+
+
+def _vfs_lexists(path: str, **kwargs: Any) -> bool:
+    """FileSystem-aware os.path.lexists() replacement."""
+    # VFS has no symlinks, so lexists is same as exists
+    return _vfs_exists(path, **kwargs)
+
+
+def _vfs_samefile(path1: str, path2: str, **kwargs: Any) -> bool:
+    """FileSystem-aware os.path.samefile() replacement."""
+    isolated = current_isolated_fs.get()
+    if isolated is not None:
+        try:
+            r1 = isolated._validate_path(path1)
+            r2 = isolated._validate_path(path2)
+            return _originals["samefile"](str(r1), str(r2), **kwargs)
+        except (PermissionError, FileNotFoundError):
+            if _is_safe_system_path(path1) and _is_safe_system_path(path2):
+                return _originals["samefile"](path1, path2, **kwargs)
+            raise
+
+    vfs = current_vfs.get()
+    if vfs is not None:
+        # For VFS, they are the same if normalized paths match
+        if vfs.exists(str(path1)) and vfs.exists(str(path2)):
+            return vfs._normalize_path(str(path1)) == vfs._normalize_path(str(path2))
+
+        if _is_safe_system_path(path1) and _is_safe_system_path(path2):
+            return _originals["samefile"](path1, path2, **kwargs)
+        raise FileNotFoundError(path1)
+
+    return _originals["samefile"](path1, path2, **kwargs)
+
+
+def _vfs_realpath(path: str | os.PathLike[Any], **kwargs: Any) -> str:
+    """FileSystem-aware os.path.realpath() replacement."""
+    # Break recursion from _is_safe_system_path -> realpath -> _vfs_realpath
+    if _in_safe_path_check.get():
+        return _originals["realpath"](path, **kwargs)
+
+    isolated = current_isolated_fs.get()
+    if isolated is not None:
+        try:
+            # Resolve relative to isolated root
+            resolved = isolated._validate_path(path)
+            # Return path relative to the isolated root (as if it was /)
+            return "/" + str(resolved.relative_to(isolated.root)).lstrip("/")
+        except PermissionError:
+            if _is_safe_system_path(path):
+                return _originals["realpath"](path, **kwargs)
+            # Fallback to normalized absolute path within root if escape attempted
+            return "/"
+
+    vfs = current_vfs.get()
+    if vfs is not None:
+        # VFS has no symlinks, so realpath is just normalized absolute path
+        path_str = str(path)
+        if vfs.exists(path_str) or vfs.isdir(path_str):
+            normalized = vfs._normalize_path(path_str)
+            return "/" + normalized.lstrip("/")
+
+        if _is_safe_system_path(path):
+            return _originals["realpath"](path, **kwargs)
+
+        return "/" + vfs._normalize_path(path_str).lstrip("/")
+
+    return _originals["realpath"](path, **kwargs)
+
+
 def _vfs_getsize(path: str, **kwargs: Any) -> int:
     """FileSystem-aware os.path.getsize() replacement."""
     isolated = current_isolated_fs.get()
@@ -784,6 +878,10 @@ def apply_patches() -> None:
     os.path.exists = _vfs_exists  # type: ignore[assignment]
     os.path.isfile = _vfs_isfile  # type: ignore[assignment]
     os.path.isdir = _vfs_isdir  # type: ignore[assignment]
+    os.path.islink = _vfs_islink  # type: ignore[assignment]
+    os.path.lexists = _vfs_lexists  # type: ignore[assignment]
+    os.path.samefile = _vfs_samefile  # type: ignore[assignment]
+    os.path.realpath = _vfs_realpath  # type: ignore[assignment]
     os.path.getsize = _vfs_getsize  # type: ignore[assignment]
     os.path.expanduser = _vfs_expanduser  # type: ignore[assignment]
     os.path.expandvars = _vfs_expandvars  # type: ignore[assignment]
@@ -807,8 +905,10 @@ def apply_patches() -> None:
     _vfs_exists.__name__ = "exists"
     _vfs_isfile.__name__ = "isfile"
     _vfs_isdir.__name__ = "isdir"
-    _vfs_isfile.__name__ = "isfile"
-    _vfs_isdir.__name__ = "isdir"
+    _vfs_islink.__name__ = "islink"
+    _vfs_lexists.__name__ = "lexists"
+    _vfs_samefile.__name__ = "samefile"
+    _vfs_realpath.__name__ = "realpath"
     _vfs_getsize.__name__ = "getsize"
     _vfs_expanduser.__name__ = "expanduser"
     _vfs_getenv.__name__ = "getenv"
@@ -1036,6 +1136,10 @@ _vfs_wrappers.update(
         _originals["exists"]: _vfs_exists,
         _originals["isfile"]: _vfs_isfile,
         _originals["isdir"]: _vfs_isdir,
+        _originals["islink"]: _vfs_islink,
+        _originals["lexists"]: _vfs_lexists,
+        _originals["samefile"]: _vfs_samefile,
+        _originals["realpath"]: _vfs_realpath,
         _originals["getsize"]: _vfs_getsize,
     }
 )

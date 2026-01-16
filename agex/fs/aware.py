@@ -138,6 +138,34 @@ class AgentAwareFS(FileSystem):
         """Check if path is a directory (no event)."""
         return self._fs.isdir(path)
 
+    def islink(self, path: str) -> bool:
+        """Check if path is a symbolic link (no event)."""
+        # Note: Underlying FS may not support islink (like VirtualFS)
+        # but we provide the method for interface consistency.
+        if hasattr(self._fs, "islink"):
+            return self._fs.islink(path)
+        return False
+
+    def lexists(self, path: str) -> bool:
+        """Check if path exists (no event)."""
+        if hasattr(self._fs, "lexists"):
+            return self._fs.lexists(path)
+        return self._fs.exists(path)
+
+    def samefile(self, path1: str, path2: str) -> bool:
+        """Check if two paths refer to the same file (no event)."""
+        if hasattr(self._fs, "samefile"):
+            return self._fs.samefile(path1, path2)
+        # Fallback for FS that don't implement samefile
+        return self._fs.exists(path1) and self._fs.exists(path2) and path1 == path2
+
+    def realpath(self, path: str) -> str:
+        """Return the canonical path (no event)."""
+        if hasattr(self._fs, "realpath"):
+            return self._fs.realpath(path)
+        # Fallback for FS that don't implement realpath
+        return path
+
     def list(self, path: str = "/", recursive: bool = False) -> list[str]:
         """List directory (no event)."""
         return self._fs.list(path, recursive=recursive)

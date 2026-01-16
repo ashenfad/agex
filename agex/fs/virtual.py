@@ -561,6 +561,59 @@ class VirtualFS(FileSystem):
         cache = self._ensure_dir_cache()
         return path in cache or (path + "/") in cache
 
+    def islink(self, path: str) -> bool:
+        """Check if path is a symbolic link.
+
+        VFS does not currently support symbolic links.
+
+        Args:
+            path: Path to check.
+
+        Returns:
+            Always False.
+        """
+        return False
+
+    def lexists(self, path: str) -> bool:
+        """Check if path exists (without following symlinks).
+
+        Since VFS has no symlinks, this is same as exists().
+
+        Args:
+            path: Path to check.
+
+        Returns:
+            True if path exists, False otherwise.
+        """
+        return self.exists(path)
+
+    def samefile(self, path1: str, path2: str) -> bool:
+        """Check if two paths refer to the same file.
+
+        Args:
+            path1: First path.
+            path2: Second path.
+
+        Returns:
+            True if paths normalize to the same VFS key and exist.
+        """
+        if not (self.exists(path1) and self.exists(path2)):
+            return False
+        return self._normalize_path(path1) == self._normalize_path(path2)
+
+    def realpath(self, path: str) -> str:
+        """Return the canonical path.
+
+        For VFS, this is the normalized absolute path.
+
+        Args:
+            path: Path to resolve.
+
+        Returns:
+            Canonical path string.
+        """
+        return "/" + self._normalize_path(path).lstrip("/")
+
     def getsize(self, path: str) -> int:
         """Get file size in bytes.
 

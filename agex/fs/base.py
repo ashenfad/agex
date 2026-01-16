@@ -95,6 +95,26 @@ class FileSystem(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def islink(self, path: str) -> bool:
+        """Check if path is a symbolic link."""
+        pass
+
+    @abc.abstractmethod
+    def lexists(self, path: str) -> bool:
+        """Check if path exists (without following symlinks)."""
+        pass
+
+    @abc.abstractmethod
+    def samefile(self, path1: str, path2: str) -> bool:
+        """Check if two paths refer to the same file."""
+        pass
+
+    @abc.abstractmethod
+    def realpath(self, path: str) -> str:
+        """Return the canonical path."""
+        pass
+
+    @abc.abstractmethod
     def list(self, path: str = ".") -> list[str]:
         """List directory contents (filenames only)."""
         pass
