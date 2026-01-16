@@ -87,6 +87,53 @@ class IsolatedFS(FileSystem):
             "/" + resolved_virtual.lstrip("/") if resolved_virtual else "/",
         )
 
+    def glob(self, pattern: str) -> list[str]:
+        """Return list of paths matching a glob pattern."""
+        with suspend_fs_interception():
+            # Handle absolute/relative patterns
+            if pattern.startswith("/"):
+                # Absolute pattern: treat as relative to root
+                # e.g. /src/*.py -> root/src/*.py
+                search_path = self.root
+                search_pattern = pattern.lstrip("/")
+            else:
+                # Relative pattern: relative to CWD
+                cwd = self.getcwd()  # e.g. /src
+                # e.g. root/src
+                search_path = self._validate_path(cwd.lstrip("/"))
+                search_pattern = pattern
+
+            try:
+                # Use list to consume generator
+                matches = list(search_path.glob(search_pattern))
+
+                # Convert matches back to virtual paths
+                results = []
+                for m in matches:
+                    # m is absolute real path e.g. /tmp/root/src/foo.py
+                    # relative to root: src/foo.py
+                    rel = m.relative_to(self.root)
+                    virtual = "/" + str(rel)
+
+                    if not pattern.startswith("/"):
+                        # Convert absolute virtual to relative to CWD
+                        # e.g. /src/foo.py, cwd=/src -> foo.py
+                        cwd = self.getcwd()
+                        if virtual.startswith(cwd):
+                            if cwd == "/":
+                                results.append(virtual.lstrip("/"))
+                            else:
+                                results.append(virtual[len(cwd) + 1 :])
+                        else:
+                            # Fallback
+                            results.append(virtual)
+                    else:
+                        results.append(virtual)
+
+                return sorted(results)
+            except Exception:
+                return []
+
     def resolve_path(self, path: str) -> str:
         """Resolve path (relative or absolute) against current working directory.
 

@@ -182,6 +182,18 @@ class AgentAwareFS(FileSystem):
         """Get file size (no event)."""
         return self._fs.getsize(path)
 
+    def getcwd(self) -> str:
+        """Get current working directory."""
+        return self._fs.getcwd()
+
+    def chdir(self, path: str) -> None:
+        """Change current working directory."""
+        self._fs.chdir(path)
+
+    def glob(self, pattern: str) -> list[str]:
+        """Return list of paths matching a glob pattern."""
+        return self._fs.glob(pattern)
+
     def open(self, path: str, mode: str = "r"):
         """Open file (no event - writes happen at close)."""
         return self._fs.open(path, mode)

@@ -52,6 +52,21 @@ class FileSystem(abc.ABC):
     """Abstract base class for filesystem implementations."""
 
     @abc.abstractmethod
+    def getcwd(self) -> str:
+        """Get current working directory."""
+        pass
+
+    @abc.abstractmethod
+    def chdir(self, path: str) -> None:
+        """Change current working directory."""
+        pass
+
+    @abc.abstractmethod
+    def glob(self, pattern: str) -> list[str]:
+        """Return list of paths matching a glob pattern."""
+        pass
+
+    @abc.abstractmethod
     def open(self, path: str, mode: str = "r", **kwargs: Any) -> Any:
         """Open a file.
 
