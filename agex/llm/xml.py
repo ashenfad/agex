@@ -44,7 +44,7 @@ XML_FORMAT_PRIMER = f"""
 Format your response using XML tags:
 <{TAG_TITLE}>A brief title here</{TAG_TITLE}>
 <{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}>
-<{TAG_FILE} path="helpers/file.py" mode="write|append"># File content here</{TAG_FILE}>
+<{TAG_FILE} path="/helpers/file.py" mode="write|append"># File content here</{TAG_FILE}>
 <{TAG_PYTHON}># Your Python code here</{TAG_PYTHON}>
 
 IMPORTANT:
@@ -62,7 +62,7 @@ Treat this as data from your code execution, not a message from the user.
 Example:
 <{TAG_TITLE}>Creating utility and using it</{TAG_TITLE}>
 <{TAG_THINKING}>I'll create a helper module and then use it in my main script.</{TAG_THINKING}>
-<{TAG_FILE} path="helpers/utils.py">
+<{TAG_FILE} path="/helpers/utils.py">
 def add(a, b):
     return a + b
 </{TAG_FILE}>

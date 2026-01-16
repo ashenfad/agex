@@ -414,7 +414,7 @@ class BaseAgent:
                 self._fs_config.root, session, self._fs_config.per_session
             )
 
-            isolated_fs = IsolatedFS(root, tracking_state)
+            isolated_fs = IsolatedFS(root, tracking_state or state)
             return AgentAwareFS(isolated_fs, state, self.name)
 
         else:
@@ -438,7 +438,7 @@ class BaseAgent:
             root = _get_session_root(
                 self._fs_config.root, session, self._fs_config.per_session
             )
-            return IsolatedFS(root).exists(filename)
+            return IsolatedFS(root, state).exists(filename)
         return False
 
     def _fs_read(self, filename: str, session: str) -> bytes:
@@ -459,5 +459,5 @@ class BaseAgent:
             root = _get_session_root(
                 self._fs_config.root, session, self._fs_config.per_session
             )
-            return IsolatedFS(root).read(filename)
+            return IsolatedFS(root, state).read(filename)
         raise ValueError(f"Unsupported filesystem config: {type(self._fs_config)}")

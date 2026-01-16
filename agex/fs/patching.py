@@ -41,6 +41,7 @@ _originals: dict[str, Any] = {
     "unlink": os.unlink,
     "mkdir": os.mkdir,
     "makedirs": os.makedirs,
+    "rmdir": os.rmdir,
     "rename": os.rename,
     "stat": os.stat,
     "lstat": os.lstat,
@@ -51,9 +52,11 @@ _originals: dict[str, Any] = {
     "lexists": os.path.lexists,
     "samefile": os.path.samefile,
     "realpath": os.path.realpath,
+    "abspath": os.path.abspath,
     "getsize": os.path.getsize,
     "scandir": os.scandir,
     "getcwd": os.getcwd,
+    "chdir": os.chdir,
     "utime": os.utime,
     "touch": Path.touch,
     "expanduser": os.path.expanduser,
@@ -393,6 +396,23 @@ def _vfs_makedirs(path: str, mode: int = 0o777, exist_ok: bool = False) -> None:
     return _originals["makedirs"](path, mode, exist_ok=exist_ok)
 
 
+def _vfs_rmdir(path: str, *, dir_fd: int | None = None) -> None:
+    """FileSystem-aware os.rmdir() replacement."""
+    # If dir_fd is specified, delegate to original (relative to fd)
+    if dir_fd is not None:
+        return _originals["rmdir"](path, dir_fd=dir_fd)
+
+    isolated = current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.rmdir(path)
+
+    vfs = current_vfs.get()
+    if vfs is not None:
+        return vfs.rmdir(str(path))
+
+    return _originals["rmdir"](path)
+
+
 def _vfs_rename(src: str, dst: str, **kwargs: Any) -> None:
     """FileSystem-aware os.rename() replacement."""
     isolated = current_isolated_fs.get()
@@ -717,16 +737,56 @@ def _vfs_getsize(path: str, **kwargs: Any) -> int:
 def _vfs_getcwd() -> str:
     """FileSystem-aware os.getcwd() replacement.
 
-    Returns '/' if a virtual or isolated filesystem is active, otherwise
-    returns the real current working directory.
+    Returns the virtual CWD if a virtual or isolated filesystem is active,
+    otherwise returns the real current working directory.
     """
-    if current_isolated_fs.get() is not None:
-        return "/"
+    isolated = current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.getcwd()
 
-    if current_vfs.get() is not None:
-        return "/"
+    vfs = current_vfs.get()
+    if vfs is not None:
+        return vfs.getcwd()
 
     return _originals["getcwd"]()
+
+
+def _vfs_chdir(path: str) -> None:
+    """FileSystem-aware os.chdir() replacement.
+
+    Changes the virtual CWD if a virtual or isolated filesystem is active,
+    otherwise changes the real current working directory.
+    """
+    isolated = current_isolated_fs.get()
+    if isolated is not None:
+        return isolated.chdir(path)
+
+    vfs = current_vfs.get()
+    if vfs is not None:
+        return vfs.chdir(str(path))
+
+    return _originals["chdir"](path)
+
+
+def _vfs_abspath(path: str | os.PathLike[Any]) -> str:
+    """FileSystem-aware os.path.abspath() replacement.
+
+    Returns the absolute path resolved against the virtual CWD when
+    a virtual or isolated filesystem is active.
+    """
+    path_str = str(path)
+
+    isolated = current_isolated_fs.get()
+    if isolated is not None:
+        resolved = isolated.resolve_path(path_str)
+        return "/" + resolved.lstrip("/") if resolved else "/"
+
+    vfs = current_vfs.get()
+    if vfs is not None:
+        resolved = vfs.resolve_path(path_str)
+        return "/" + resolved.lstrip("/") if resolved else "/"
+
+    return _originals["abspath"](path)
 
 
 def _vfs_expanduser(path: str | os.PathLike[Any]) -> str:
@@ -864,11 +924,13 @@ def apply_patches() -> None:
     os.unlink = _vfs_unlink  # type: ignore[assignment]
     os.mkdir = _vfs_mkdir  # type: ignore[assignment]
     os.makedirs = _vfs_makedirs  # type: ignore[assignment]
+    os.rmdir = _vfs_rmdir  # type: ignore[assignment]
     os.rename = _vfs_rename  # type: ignore[assignment]
     os.stat = _vfs_stat  # type: ignore[assignment]
     os.lstat = _vfs_lstat  # type: ignore[assignment]
     os.scandir = _vfs_scandir  # type: ignore[assignment]
     os.getcwd = _vfs_getcwd  # type: ignore[assignment]
+    os.chdir = _vfs_chdir  # type: ignore[assignment]
     os.utime = _vfs_utime  # type: ignore[assignment]
 
     # Patch pathlib.Path.touch
@@ -882,6 +944,7 @@ def apply_patches() -> None:
     os.path.lexists = _vfs_lexists  # type: ignore[assignment]
     os.path.samefile = _vfs_samefile  # type: ignore[assignment]
     os.path.realpath = _vfs_realpath  # type: ignore[assignment]
+    os.path.abspath = _vfs_abspath  # type: ignore[assignment]
     os.path.getsize = _vfs_getsize  # type: ignore[assignment]
     os.path.expanduser = _vfs_expanduser  # type: ignore[assignment]
     os.path.expandvars = _vfs_expandvars  # type: ignore[assignment]
@@ -901,6 +964,7 @@ def apply_patches() -> None:
     _vfs_stat.__name__ = "stat"
     _vfs_scandir.__name__ = "scandir"
     _vfs_getcwd.__name__ = "getcwd"
+    _vfs_chdir.__name__ = "chdir"
     _vfs_utime.__name__ = "utime"
     _vfs_exists.__name__ = "exists"
     _vfs_isfile.__name__ = "isfile"
@@ -909,6 +973,7 @@ def apply_patches() -> None:
     _vfs_lexists.__name__ = "lexists"
     _vfs_samefile.__name__ = "samefile"
     _vfs_realpath.__name__ = "realpath"
+    _vfs_abspath.__name__ = "abspath"
     _vfs_getsize.__name__ = "getsize"
     _vfs_expanduser.__name__ = "expanduser"
     _vfs_getenv.__name__ = "getenv"
