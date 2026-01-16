@@ -57,6 +57,7 @@ from .common import (
     get_events_from_log,
     initialize_exec_state,
     maybe_add_file_event,
+    safe_snapshot,
     yield_new_events,
 )
 
@@ -211,7 +212,7 @@ class AsyncLoopMixin:
 
                 # Snapshot AFTER adding the event so it's included
                 if versioned_state is not None:
-                    versioned_state.snapshot(commit_hash=next_commit)
+                    safe_snapshot(versioned_state, commit_hash=next_commit)
 
                 raise TaskCancelled(
                     message=f"Task '{task_name}' was cancelled",
@@ -298,7 +299,7 @@ class AsyncLoopMixin:
 
                 # Snapshot with the pre-generated hash so event.commit_hash matches
                 if versioned_state is not None:
-                    versioned_state.snapshot(commit_hash=next_commit)
+                    safe_snapshot(versioned_state, commit_hash=next_commit)
 
                 return
 
@@ -309,7 +310,7 @@ class AsyncLoopMixin:
 
                 # Persist changes from this iteration (including <file> writes)
                 if versioned_state is not None:
-                    versioned_state.snapshot()
+                    safe_snapshot(versioned_state)
 
                 continue
 
@@ -340,7 +341,7 @@ class AsyncLoopMixin:
 
                 # Snapshot with the pre-generated hash so event.commit_hash matches
                 if versioned_state is not None:
-                    versioned_state.snapshot(commit_hash=next_commit)
+                    safe_snapshot(versioned_state, commit_hash=next_commit)
 
                 if isinstance(state, Namespaced):
                     raise EvalError(
@@ -376,7 +377,7 @@ class AsyncLoopMixin:
 
                 # Snapshot with the pre-generated hash so event.commit_hash matches
                 if versioned_state is not None:
-                    versioned_state.snapshot(commit_hash=next_commit)
+                    safe_snapshot(versioned_state, commit_hash=next_commit)
 
                 if isinstance(state, Namespaced):
                     raise EvalError(f"Sub-agent failed: {task_fail.message}", None)

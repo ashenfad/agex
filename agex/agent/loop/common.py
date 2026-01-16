@@ -35,6 +35,7 @@ from agex.agent.events import (
 )
 from agex.eval.error import EvalError
 from agex.eval.objects import PrintAction
+from agex.fs.context import suspend_fs_interception
 from agex.llm.core import LLMResponse, ResponseBuilder, ResponseParseError, StreamToken
 from agex.state import (
     ConcurrencyError,
@@ -46,6 +47,29 @@ from agex.state import (
     is_live_root,
 )
 from agex.state.log import add_event_to_log, get_events_from_log
+from agex.state.versioned import SnapshotResult
+
+
+def safe_snapshot(
+    versioned_state: Versioned, commit_hash: str | None = None
+) -> SnapshotResult:
+    """Snapshot state with filesystem interception suspended.
+
+    This ensures that any I/O performed by KV backends during snapshot
+    (e.g., disk writes) doesn't get intercepted by VFS/IsolatedFS patching.
+    Critical for hierarchical agents where sub-agent snapshots occur while
+    parent's filesystem interception is still active.
+
+    Args:
+        versioned_state: The versioned state to snapshot.
+        commit_hash: Optional pre-generated commit hash.
+
+    Returns:
+        SnapshotResult from the underlying snapshot call.
+    """
+    with suspend_fs_interception():
+        return versioned_state.snapshot(commit_hash=commit_hash)
+
 
 # Re-export commonly used items for convenience
 __all__ = [
@@ -70,6 +94,7 @@ __all__ = [
     "maybe_file_event",
     "maybe_add_file_event",
     "apply_optimistic_file_writes",
+    "safe_snapshot",
     "ResponseBuilder",
     # Re-exports
     "ValidationError",
