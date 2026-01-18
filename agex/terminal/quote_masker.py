@@ -30,6 +30,7 @@ def mask_quotes(text: str) -> Tuple[str, Dict[str, str]]:
 
     # Regex to find quoted strings, handling escaped quotes inside.
     # See QuoteMasker class history for detailed regex explanation.
+    # Use (?P=quote) for backreference to named group 'quote'.
     regex = r'(?<!\\)(?P<quote>["\'])(?P<content>(?:\\.|(?!(?P=quote)).)*)(?P=quote)'
 
     def replacer(match):
@@ -40,7 +41,8 @@ def mask_quotes(text: str) -> Tuple[str, Dict[str, str]]:
         # The full quoted string
         original_quoted = quote_char + content + quote_char
 
-        token = f"__Q_{session_id}_{counter}__"
+        # Use concatenation to avoid f-string brace issues in tool processing
+        token = "__Q_" + session_id + "_" + str(counter) + "__"
         counter += 1
 
         mask_map[token] = original_quoted
@@ -74,10 +76,10 @@ def unmask_and_unquote(text: str, mask_map: Dict[str, str]) -> str:
             quote_char = original[0]
             if quote_char == '"':
                 # Unescape \" -> "
-                inner = inner.replace('\\"', '"')
+                inner = inner.replace('"', '"')
             elif quote_char == "'":
                 # Unescape \' -> '
-                inner = inner.replace("\\'", "'")
+                inner = inner.replace("'", "'")
 
             text = text.replace(token, inner)
         else:

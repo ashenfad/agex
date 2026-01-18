@@ -2,7 +2,7 @@
 Data types for the terminal interpreter.
 """
 
-from typing import Callable, List, TextIO
+from typing import Callable, TextIO
 
 from agex.fs.base import FileSystem
 
@@ -17,6 +17,6 @@ class TerminalError(Exception):
 
 
 # Command function signature:
-# func(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None
+# func(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None
 # Raises TerminalError on failure.
-CommandFunc = Callable[[List[str], TextIO, TextIO, FileSystem], None]
+CommandFunc = Callable[[list[str], TextIO, TextIO, FileSystem], None]

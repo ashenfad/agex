@@ -3,6 +3,7 @@ import pytest
 from agex.fs.virtual import VirtualFS
 from agex.state import Live
 from agex.terminal.interpreter import execute_script
+from agex.terminal.interpreter.datatypes import TerminalError
 from agex.terminal.parser import to_script
 
 
@@ -86,8 +87,23 @@ def test_quoted_wildcard(fs):
     output = execute_script(to_script("echo '*' | grep -F '*'"), fs)
     assert "*" in output
 
-    # Method 2: File (Commented out due to mysterious test failure on file read matching *,
-    # despite cat and simple grep working. Logic verified by Method 1.)
-    # execute_script(to_script("echo '*' > star.txt"), fs)
-    # output = execute_script(to_script("grep -F '*' star.txt"), fs)
-    # assert "*" in output
+    # Method 2: File
+    execute_script(to_script("echo '*' > star.txt"), fs)
+    output = execute_script(to_script("grep -F '*' star.txt"), fs)
+    assert "*" in output
+
+
+def test_script_error_stops_execution(fs):
+    # set -e behavior
+    script_text = """
+    cd /nonexistent
+    echo 'Should not run'
+    """
+
+    # Now that we raise TerminalError, execution stops and we can catch it
+    with pytest.raises(TerminalError) as excinfo:
+        execute_script(to_script(script_text), fs)
+
+    assert "cd: no such file" in str(excinfo.value)
+    # The partial output should NOT contain "Should not run"
+    assert "Should not run" not in excinfo.value.partial_output

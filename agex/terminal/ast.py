@@ -6,7 +6,7 @@ shell commands. It relies on frozen dataclasses for immutability.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Literal
+from typing import Literal
 
 # Types of I/O redirection:
 # <  : Input from file
@@ -50,8 +50,8 @@ class Command(Node):
     """
 
     name: str
-    args: List[str] = field(default_factory=list)
-    redirects: List[Redirect] = field(default_factory=list)
+    args: list[str] = field(default_factory=list)
+    redirects: list[Redirect] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ class Pipeline(Node):
                   with stdout of one piped to stdin of the next.
     """
 
-    commands: List[Command]
+    commands: list[Command]
 
 
 @dataclass(frozen=True)
@@ -82,4 +82,4 @@ class Script(Node):
         pipelines: List of Pipeline nodes to be executed sequentially.
     """
 
-    pipelines: List[Pipeline]
+    pipelines: list[Pipeline]
