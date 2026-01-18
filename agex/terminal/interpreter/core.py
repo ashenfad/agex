@@ -4,7 +4,7 @@ Functional implementation.
 """
 
 import io
-from typing import Dict, List, Optional, TextIO
+from typing import TextIO
 
 from agex.fs.base import FileSystem
 from agex.terminal.ast import Pipeline, Script
@@ -15,7 +15,7 @@ from .commands import filesystem, search
 from .commands import io as io_cmds
 
 # Static mapping of built-in commands
-BUILTINS: Dict[str, CommandFunc] = {
+BUILTINS: dict[str, CommandFunc] = {
     "pwd": filesystem.pwd,
     "cd": filesystem.cd,
     "mkdir": filesystem.mkdir,
@@ -71,7 +71,7 @@ def _execute_pipeline(pipeline: Pipeline, fs: FileSystem, stdout: TextIO):
     if not pipeline.commands:
         return
 
-    current_input: Optional[str] = None
+    current_input: str | None = None
 
     for cmd_node in pipeline.commands:
         cmd_stdin = io.StringIO(current_input) if current_input else io.StringIO()
@@ -123,9 +123,9 @@ def _execute_pipeline(pipeline: Pipeline, fs: FileSystem, stdout: TextIO):
         stdout.write(current_input)
 
 
-def _expand_args(args: List[str], fs: FileSystem) -> List[str]:
+def _expand_args(args: list[str], fs: FileSystem) -> list[str]:
     """Perform globbing on arguments."""
-    expanded: List[str] = []
+    expanded: list[str] = []
     for arg in args:
         masked, mask_map = mask_quotes(arg)
 

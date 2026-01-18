@@ -3,7 +3,7 @@ I/O commands for the terminal interpreter.
 """
 
 import argparse
-from typing import List, TextIO
+from typing import TextIO
 
 from agex.fs.base import FileSystem
 from agex.terminal.interpreter.datatypes import TerminalError
@@ -20,12 +20,12 @@ class CommandArgParser(argparse.ArgumentParser):
             raise TerminalError(message or "Argument parsing failed")
 
 
-def echo(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def echo(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Echo arguments to stdout."""
     stdout.write(" ".join(args) + "\n")
 
 
-def cat(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def cat(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Concatenate files and print on the standard output."""
     if not args:
         stdout.write(stdin.read())
@@ -48,7 +48,7 @@ def cat(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
             raise TerminalError(f"cat: {path}: {e}")
 
 
-def head(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def head(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Output the first part of files."""
     parser = CommandArgParser(prog="head", add_help=False)
     parser.add_argument("-n", "--lines", type=int, default=10)
@@ -84,7 +84,7 @@ def head(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None
             stdout.write("\n")
 
 
-def tail(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def tail(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Output the last part of files."""
     parser = CommandArgParser(prog="tail", add_help=False)
     parser.add_argument("-n", "--lines", type=int, default=10)

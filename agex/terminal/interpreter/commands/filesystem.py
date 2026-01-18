@@ -3,7 +3,7 @@ Filesystem commands for the terminal interpreter.
 """
 
 import argparse
-from typing import List, TextIO
+from typing import TextIO
 
 from agex.fs.base import FileSystem
 from agex.terminal.interpreter.datatypes import TerminalError
@@ -20,12 +20,12 @@ class CommandArgParser(argparse.ArgumentParser):
             raise TerminalError(message or "Argument parsing failed")
 
 
-def pwd(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def pwd(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Print working directory."""
     stdout.write(fs.getcwd() + "\n")
 
 
-def cd(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def cd(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Change directory."""
     if not args:
         path = "/"
@@ -42,7 +42,7 @@ def cd(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
         raise TerminalError(f"cd: {e}")
 
 
-def mkdir(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def mkdir(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Make directories."""
     parser = CommandArgParser(prog="mkdir", add_help=False)
     parser.add_argument("-p", "--parents", action="store_true")
@@ -65,7 +65,7 @@ def mkdir(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> Non
             raise TerminalError(f"mkdir: cannot create directory '{path}': {e}")
 
 
-def ls(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def ls(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """List directory contents."""
     parser = CommandArgParser(prog="ls", add_help=False)
     parser.add_argument("-l", action="store_true")
@@ -135,7 +135,7 @@ def ls(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
             stdout.write("\n")
 
 
-def touch(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def touch(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Update timestamps or create empty files."""
     if not args:
         raise TerminalError("touch: missing file operand")
@@ -151,7 +151,7 @@ def touch(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> Non
             raise TerminalError(f"touch: {e}")
 
 
-def cp(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def cp(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Copy files."""
     parser = CommandArgParser(prog="cp", add_help=False)
     parser.add_argument("-r", "-R", action="store_true")
@@ -198,7 +198,7 @@ def cp(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
             raise TerminalError(f"cp: {e}")
 
 
-def mv(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def mv(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Move files."""
     if len(args) != 2:
         raise TerminalError("mv: missing destination file operand")
@@ -212,7 +212,7 @@ def mv(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
         raise TerminalError(f"mv: {e}")
 
 
-def rm(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def rm(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Remove files."""
     parser = CommandArgParser(prog="rm", add_help=False)
     parser.add_argument("-r", "-R", action="store_true")

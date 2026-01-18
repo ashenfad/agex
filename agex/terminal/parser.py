@@ -1,14 +1,7 @@
-"""
-Parser for the terminal command language.
-
-Converts shell-like command strings into the AST defined in agex.terminal.ast.
-Uses shlex for lexical analysis (tokenization).
-"""
-
 import shlex
-from typing import List, Optional
 
 from .ast import Command, Pipeline, Redirect, Script
+from .quote_masker import mask_quotes, unmask_quotes
 
 
 class ParseError(Exception):
@@ -33,9 +26,13 @@ def to_script(text: str) -> Script:
     if not text or not text.strip():
         return Script(pipelines=[])
 
+    # 1. Mask quoted strings to prevent shlex from stripping quotes
+    # This preserves "'*'" as "'*'" in the token stream instead of "*"
+    masked_text, mask_map = mask_quotes(text)
+
     # Configure shlex to handle shell punctuation as separate tokens
     # punctuation_chars=True ensures "ls|grep" becomes ["ls", "|", "grep"]
-    lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+    lexer = shlex.shlex(masked_text, posix=True, punctuation_chars=True)
 
     # Treat newlines as tokens, not whitespace, so we can use them as separators
     lexer.whitespace = " \t\r"
@@ -45,10 +42,10 @@ def to_script(text: str) -> Script:
     except ValueError as e:
         raise ParseError(f"Tokenization error: {e}") from e
 
-    return _parse_tokens(tokens)
+    return _parse_tokens(tokens, mask_map)
 
 
-def _parse_tokens(tokens: List[str]) -> Script:
+def _parse_tokens(tokens: list[str], mask_map: dict[str, str]) -> Script:
     """
     Convert a list of tokens into a Script.
 
@@ -57,16 +54,16 @@ def _parse_tokens(tokens: List[str]) -> Script:
     Pipeline = Command { "|" Command }*
     Command = Word { Arg | Redirect }*
     """
-    pipelines: List[Pipeline] = []
-    current_pipeline_cmds: List[Command] = []
+    pipelines: list[Pipeline] = []
+    current_pipeline_cmds: list[Command] = []
 
     # Iterator for consumption
     it = iter(tokens)
 
     # Current command build state
-    cmd_name: Optional[str] = None
-    cmd_args: List[str] = []
-    cmd_redirects: List[Redirect] = []
+    cmd_name: str | None = None
+    cmd_args: list[str] = []
+    cmd_redirects: list[Redirect] = []
 
     def flush_command():
         nonlocal cmd_name, cmd_args, cmd_redirects
@@ -84,6 +81,9 @@ def _parse_tokens(tokens: List[str]) -> Script:
         if current_pipeline_cmds:
             pipelines.append(Pipeline(commands=current_pipeline_cmds))
         current_pipeline_cmds = []
+
+    def unmask(token: str) -> str:
+        return unmask_quotes(token, mask_map)
 
     try:
         while True:
@@ -104,7 +104,6 @@ def _parse_tokens(tokens: List[str]) -> Script:
                 try:
                     target = next(it)
                     # Check if target is another operator
-                    # Note: we check for \n here too
                     if target in (";", "|", ">", ">>", "<", "\n"):
                         raise ParseError(
                             f"Expected filename after '{token}', got '{target}'"
@@ -112,11 +111,14 @@ def _parse_tokens(tokens: List[str]) -> Script:
                 except StopIteration:
                     raise ParseError(f"Expected filename after '{token}'")
 
+                # Unmask target filename
+                target = unmask(target)
                 cmd_redirects.append(Redirect(type=token, target=target))  # type: ignore[arg-type]
                 continue
 
             else:
                 # Regular word (Command Name or Argument)
+                token = unmask(token)
                 if cmd_name is None:
                     cmd_name = token
                 else:

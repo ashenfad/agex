@@ -2,14 +2,14 @@
 
 import fnmatch
 import re
-from typing import List, TextIO
+from typing import TextIO
 
 from agex.fs.base import FileSystem
 from agex.terminal.interpreter.commands.io import CommandArgParser
 from agex.terminal.interpreter.datatypes import TerminalError
 
 
-def grep(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def grep(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Print lines that match patterns."""
     parser = CommandArgParser(prog="grep", add_help=False)
     parser.add_argument("-i", "--ignore-case", action="store_true")
@@ -115,7 +115,7 @@ def grep(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None
             raise TerminalError(f"grep: {filepath}: {e}")
 
 
-def find(args: List[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+def find(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Search for files in a directory hierarchy."""
     parser = CommandArgParser(prog="find", add_help=False)
     parser.add_argument("path", nargs="?", default=".")

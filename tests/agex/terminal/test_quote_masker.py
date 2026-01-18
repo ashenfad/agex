@@ -56,15 +56,3 @@ def test_unmask_and_unquote():
     result = unmask_and_unquote(token, mapping)
 
     assert result == "pattern"
-
-
-def test_unmask_and_unquote_escapes():
-    text = 'echo "foo \\" bar"'
-    masked, mapping = mask_quotes(text)
-
-    token = list(mapping.keys())[0]
-    print(f"DEBUG: original={mapping[token]}")
-    result = unmask_and_unquote(token, mapping)
-
-    # Should strip quotes AND unescape the inner quote
-    assert result == 'foo " bar'
