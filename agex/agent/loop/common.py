@@ -35,7 +35,9 @@ from agex.agent.events import (
 )
 from agex.eval.error import EvalError
 from agex.eval.objects import PrintAction
+from agex.fs.aware import AgentAwareFS
 from agex.fs.context import suspend_fs_interception
+from agex.fs.virtual import VirtualFS
 from agex.llm.core import LLMResponse, ResponseBuilder, ResponseParseError, StreamToken
 from agex.state import (
     ConcurrencyError,
@@ -293,9 +295,6 @@ def apply_optimistic_file_writes(
     """
     if not llm_response.file_actions or not fs:
         return
-
-    from agex.fs.aware import AgentAwareFS
-    from agex.fs.virtual import VirtualFS
 
     # Use underlying FS directly to avoid 'user' source attribution
     # and handle snapshot parameter for VirtualFS

@@ -473,8 +473,6 @@ class Versioned(State):
         self.accessed_objects.clear()  # Clear mutation tracking
         self.meta = new_meta
 
-        self.meta = new_meta
-
         return SnapshotResult(new_hash, unsaved_keys)
 
     def merge(self, on_conflict: str = "raise") -> bool:

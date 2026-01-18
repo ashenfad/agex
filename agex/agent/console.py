@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import sys
 from collections.abc import Iterable
@@ -444,7 +445,6 @@ def pprint_tokens(
     content = token.content
     if token.type == "file" and token.content.startswith("path="):
         # Parse metadata: "path=foo.py,mode=append"
-        import re
 
         path_match = re.search(r"path=([^,]+)", token.content)
         mode_match = re.search(r"mode=([^,]+)", token.content)

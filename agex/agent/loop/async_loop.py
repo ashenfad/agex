@@ -65,6 +65,43 @@ from .common import (
 class AsyncLoopMixin:
     """Mixin providing asynchronous task loop methods."""
 
+    async def _ahandle_terminal_condition(
+        self,
+        exec_state,
+        versioned_state,
+        fs,
+        fs_metadata_before,
+        events_yielded,
+        terminal_event,
+        on_event,
+    ):
+        """Helper to handle common terminal condition logic (success, fail, clarify)."""
+        for event in yield_new_events(exec_state, events_yielded):
+            yield event
+
+        # Pre-generate commit hash so the terminal event can reference
+        # the commit that will include it
+        next_commit = get_commit_hash() if versioned_state else None
+
+        # Check for file changes and add to log before snapshot
+        file_event = maybe_add_file_event(
+            fs, fs_metadata_before, exec_state, self.name, next_commit
+        )
+        if file_event:
+            yield file_event
+
+        terminal_event.commit_hash = next_commit
+        add_event_to_log(exec_state, terminal_event, on_event=None)
+        if on_event:
+            res = call_sync_or_async(on_event, terminal_event)
+            if inspect.isawaitable(res):
+                await res
+        yield terminal_event
+
+        # Snapshot with the pre-generated hash so event.commit_hash matches
+        if versioned_state is not None:
+            safe_snapshot(versioned_state, commit_hash=next_commit)
+
     async def _atask_loop_generator(
         self,
         task_name: str,
@@ -273,34 +310,17 @@ class AsyncLoopMixin:
                     )
 
             except TaskSuccess as task_signal:
-                for event in yield_new_events(exec_state, events_yielded):
-                    yield event
-                events_yielded = len(events(exec_state))
-
-                # Pre-generate commit hash so the terminal event can reference
-                # the commit that will include it
-                next_commit = get_commit_hash() if versioned_state else None
-
-                # Check for file changes and add to log before snapshot
-                file_event = maybe_add_file_event(
-                    fs, fs_metadata_before, exec_state, self.name, next_commit
-                )
-                if file_event:
-                    yield file_event
-
                 success_event = create_success_event(self.name, task_signal.result)
-                success_event.commit_hash = next_commit
-                add_event_to_log(exec_state, success_event, on_event=None)
-                if on_event:
-                    res = call_sync_or_async(on_event, success_event)
-                    if inspect.isawaitable(res):
-                        await res
-                yield success_event
-
-                # Snapshot with the pre-generated hash so event.commit_hash matches
-                if versioned_state is not None:
-                    safe_snapshot(versioned_state, commit_hash=next_commit)
-
+                async for event in self._ahandle_terminal_condition(
+                    exec_state,
+                    versioned_state,
+                    fs,
+                    fs_metadata_before,
+                    events_yielded,
+                    success_event,
+                    on_event,
+                ):
+                    yield event
                 return
 
             except TaskContinue:
@@ -315,33 +335,17 @@ class AsyncLoopMixin:
                 continue
 
             except TaskClarify as task_clarify:
-                for event in yield_new_events(exec_state, events_yielded):
-                    yield event
-                events_yielded = len(events(exec_state))
-
-                # Pre-generate commit hash so the terminal event can reference
-                # the commit that will include it
-                next_commit = get_commit_hash() if versioned_state else None
-
-                # Check for file changes and add to log before snapshot
-                file_event = maybe_add_file_event(
-                    fs, fs_metadata_before, exec_state, self.name, next_commit
-                )
-                if file_event:
-                    yield file_event
-
                 clarify_event = create_clarify_event(self.name, task_clarify.message)
-                clarify_event.commit_hash = next_commit
-                add_event_to_log(exec_state, clarify_event, on_event=None)
-                if on_event:
-                    res = call_sync_or_async(on_event, clarify_event)
-                    if inspect.isawaitable(res):
-                        await res
-                yield clarify_event
-
-                # Snapshot with the pre-generated hash so event.commit_hash matches
-                if versioned_state is not None:
-                    safe_snapshot(versioned_state, commit_hash=next_commit)
+                async for event in self._ahandle_terminal_condition(
+                    exec_state,
+                    versioned_state,
+                    fs,
+                    fs_metadata_before,
+                    events_yielded,
+                    clarify_event,
+                    on_event,
+                ):
+                    yield event
 
                 if isinstance(state, Namespaced):
                     raise EvalError(
@@ -351,33 +355,17 @@ class AsyncLoopMixin:
                     raise
 
             except TaskFail as task_fail:
-                for event in yield_new_events(exec_state, events_yielded):
-                    yield event
-                events_yielded = len(events(exec_state))
-
-                # Pre-generate commit hash so the terminal event can reference
-                # the commit that will include it
-                next_commit = get_commit_hash() if versioned_state else None
-
-                # Check for file changes and add to log before snapshot
-                file_event = maybe_add_file_event(
-                    fs, fs_metadata_before, exec_state, self.name, next_commit
-                )
-                if file_event:
-                    yield file_event
-
                 fail_event = create_fail_event(self.name, task_fail.message)
-                fail_event.commit_hash = next_commit
-                add_event_to_log(exec_state, fail_event, on_event=None)
-                if on_event:
-                    res = call_sync_or_async(on_event, fail_event)
-                    if inspect.isawaitable(res):
-                        await res
-                yield fail_event
-
-                # Snapshot with the pre-generated hash so event.commit_hash matches
-                if versioned_state is not None:
-                    safe_snapshot(versioned_state, commit_hash=next_commit)
+                async for event in self._ahandle_terminal_condition(
+                    exec_state,
+                    versioned_state,
+                    fs,
+                    fs_metadata_before,
+                    events_yielded,
+                    fail_event,
+                    on_event,
+                ):
+                    yield event
 
                 if isinstance(state, Namespaced):
                     raise EvalError(f"Sub-agent failed: {task_fail.message}", None)
