@@ -25,6 +25,8 @@ _AGENT_REGISTRY_BY_NAME: ContextVar[Dict[str, "BaseAgent"]] = ContextVar(
     "agent_registry_by_name", default={}
 )
 
+_UNSET = object()
+
 
 def register_agent(agent: "BaseAgent") -> str:
     """
@@ -112,7 +114,7 @@ class BaseAgent:
         # State configuration (optional, defaults to ephemeral)
         state: "StateConfig | None" = None,
         # FileSystem configuration (optional, defaults to VirtualFS)
-        fs: "FSConfig | None" = None,
+        fs: "FSConfig | None" = _UNSET,  # type: ignore
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
@@ -147,10 +149,13 @@ class BaseAgent:
         # State configuration (None = ephemeral)
         self._state_config: "StateConfig | None" = state
 
-        # FileSystem configuration (default to VirtualFS)
+        # FileSystem configuration (defaults to VirtualFS)
         from ..fs import connect_fs
 
-        self._fs_config: "FSConfig | None" = fs or connect_fs(type="virtual")
+        if fs is _UNSET:
+            self._fs_config: "FSConfig | None" = connect_fs(type="virtual")
+        else:
+            self._fs_config = fs
 
         # Validate state config is compatible with the host
         if self._state_config is not None:
@@ -385,79 +390,49 @@ class BaseAgent:
 
         Returns:
             AgentAwareFS interface with read(), write(), list(), exists(), remove() methods
-
-        Raises:
-            ValueError: If agent was not configured with fs=connect_fs(...)
         """
-        if not self._fs_config:
-            raise ValueError(
-                "Agent not configured with filesystem. Use fs=connect_fs(...)"
-            )
+        from agex.fs import AgentAwareFS
 
-        from agex.fs import AgentAwareFS, IsolatedFS, VirtualFS
+        backend, state = self._get_fs_backend(session)
+        if backend is None or state is None:
+            raise ValueError("Filesystem is disabled for this agent")
+
+        return AgentAwareFS(backend, state, self.name)
+
+    def _get_fs_backend(self, session: str) -> tuple[Any, Any]:
+        """Resolve the underlying filesystem backend and state for a session."""
+        if not self._fs_config:
+            return None, None
+
+        from agex.fs import IsolatedFS, VirtualFS
         from agex.fs.config import IsolatedFSConfig, VirtualFSConfig
 
         state = self.state(session)
 
         if isinstance(self._fs_config, VirtualFSConfig):
-            vfs = VirtualFS(state)
-            return AgentAwareFS(vfs, state, self.name)
+            return VirtualFS(state), state
 
         elif isinstance(self._fs_config, IsolatedFSConfig):
             from agex.eval.core import _get_session_root
-
-            # For isolated fs, only use state if tracking is enabled
-            tracking_state = state if self._fs_config.tracking else None
 
             # Get session-specific root if per_session is enabled
             root = _get_session_root(
                 self._fs_config.root, session, self._fs_config.per_session
             )
 
-            isolated_fs = IsolatedFS(root, tracking_state or state)
-            return AgentAwareFS(isolated_fs, state, self.name)
+            return IsolatedFS(root, state), state
 
         else:
             raise ValueError(f"Unsupported filesystem config: {type(self._fs_config)}")
 
     def _fs_exists(self, filename: str, session: str) -> bool:
         """Check if a file exists in the session's filesystem without wrapping."""
-        if not self._fs_config:
-            return False
-
-        from agex.fs import IsolatedFS, VirtualFS
-        from agex.fs.config import IsolatedFSConfig, VirtualFSConfig
-
-        state = self.state(session)
-
-        if isinstance(self._fs_config, VirtualFSConfig):
-            return VirtualFS(state).exists(filename)
-        elif isinstance(self._fs_config, IsolatedFSConfig):
-            from agex.eval.core import _get_session_root
-
-            root = _get_session_root(
-                self._fs_config.root, session, self._fs_config.per_session
-            )
-            return IsolatedFS(root, state).exists(filename)
-        return False
+        backend, _ = self._get_fs_backend(session)
+        return backend.exists(filename) if backend else False
 
     def _fs_read(self, filename: str, session: str) -> bytes:
         """Read a file from the session's filesystem without wrapping."""
-        if not self._fs_config:
-            raise ValueError("Filesystem not configured")
-
-        from agex.fs import IsolatedFS, VirtualFS
-        from agex.fs.config import IsolatedFSConfig, VirtualFSConfig
-
-        state = self.state(session)
-
-        if isinstance(self._fs_config, VirtualFSConfig):
-            return VirtualFS(state).read(filename)
-        elif isinstance(self._fs_config, IsolatedFSConfig):
-            from agex.eval.core import _get_session_root
-
-            root = _get_session_root(
-                self._fs_config.root, session, self._fs_config.per_session
-            )
-            return IsolatedFS(root, state).read(filename)
-        raise ValueError(f"Unsupported filesystem config: {type(self._fs_config)}")
+        backend, _ = self._get_fs_backend(session)
+        if not backend:
+            raise ValueError("Filesystem is disabled for this agent")
+        return backend.read(filename)

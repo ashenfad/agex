@@ -110,7 +110,7 @@ class TestEventsSimple:
         event_list = [e for e in events(state) if e.full_namespace == "print_agent"]
 
         # Look for any OutputEvents
-        output_events = [e for e in event_list if isinstance(e, OutputEvent)]
+        assert any(isinstance(e, OutputEvent) for e in event_list)
 
         assert result == "done"
         success_events = [e for e in event_list if isinstance(e, SuccessEvent)]

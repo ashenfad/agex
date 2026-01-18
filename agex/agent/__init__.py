@@ -3,7 +3,13 @@ from typing import TYPE_CHECKING
 
 from ..host import Host
 from ..llm import LLM
-from .base import BaseAgent, clear_agent_registry, register_agent, resolve_agent
+from .base import (
+    _UNSET,
+    BaseAgent,
+    clear_agent_registry,
+    register_agent,
+    resolve_agent,
+)
 
 if TYPE_CHECKING:
     from ..fs.config import FSConfig
@@ -76,8 +82,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         host: Host | None = None,
         # State configuration (optional, defaults to ephemeral)
         state: "StateConfig | None" = None,
-        # FileSystem configuration (optional, defaults to no access)
-        fs: "FSConfig | None" = None,
+        # FileSystem configuration (optional, defaults to VirtualFS)
+        fs: "FSConfig | None" = _UNSET,  # type: ignore
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,

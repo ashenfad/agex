@@ -59,6 +59,39 @@ from .common import (
 class SyncLoopMixin:
     """Mixin providing synchronous task loop methods."""
 
+    def _handle_terminal_condition(
+        self,
+        exec_state,
+        versioned_state,
+        fs,
+        fs_metadata_before,
+        events_yielded,
+        terminal_event,
+        on_event,
+    ):
+        """Helper to handle common terminal condition logic (success, fail, clarify)."""
+        for event in yield_new_events(exec_state, events_yielded):
+            yield event
+
+        # Pre-generate commit hash so the terminal event can reference
+        # the commit that will include it
+        next_commit = get_commit_hash() if versioned_state else None
+
+        # Check for file changes and add to log before snapshot
+        file_event = maybe_add_file_event(
+            fs, fs_metadata_before, exec_state, self.name, next_commit
+        )
+        if file_event:
+            yield file_event
+
+        terminal_event.commit_hash = next_commit
+        add_event_to_log(exec_state, terminal_event, on_event=on_event)
+        yield terminal_event
+
+        # Snapshot with the pre-generated hash so event.commit_hash matches
+        if versioned_state is not None:
+            safe_snapshot(versioned_state, commit_hash=next_commit)
+
     def _task_loop_generator(
         self,
         task_name: str,
@@ -217,30 +250,16 @@ class SyncLoopMixin:
                     )
 
             except TaskSuccess as task_signal:
-                for event in yield_new_events(exec_state, events_yielded):
-                    yield event
-                events_yielded = len(events(exec_state))
-
-                # Pre-generate commit hash so the terminal event can reference
-                # the commit that will include it
-                next_commit = get_commit_hash() if versioned_state else None
-
-                # Check for file changes and add to log before snapshot
-                file_event = maybe_add_file_event(
-                    fs, fs_metadata_before, exec_state, self.name, next_commit
-                )
-                if file_event:
-                    yield file_event
-
                 success_event = create_success_event(self.name, task_signal.result)
-                success_event.commit_hash = next_commit
-                add_event_to_log(exec_state, success_event, on_event=on_event)
-                yield success_event
-
-                # Snapshot with the pre-generated hash so event.commit_hash matches
-                if versioned_state is not None:
-                    safe_snapshot(versioned_state, commit_hash=next_commit)
-
+                yield from self._handle_terminal_condition(
+                    exec_state,
+                    versioned_state,
+                    fs,
+                    fs_metadata_before,
+                    events_yielded,
+                    success_event,
+                    on_event,
+                )
                 return task_signal.result
 
             except TaskContinue:
@@ -255,29 +274,16 @@ class SyncLoopMixin:
                 continue
 
             except TaskClarify as task_clarify:
-                for event in yield_new_events(exec_state, events_yielded):
-                    yield event
-                events_yielded = len(events(exec_state))
-
-                # Pre-generate commit hash so the terminal event can reference
-                # the commit that will include it
-                next_commit = get_commit_hash() if versioned_state else None
-
-                # Check for file changes and add to log before snapshot
-                file_event = maybe_add_file_event(
-                    fs, fs_metadata_before, exec_state, self.name, next_commit
-                )
-                if file_event:
-                    yield file_event
-
                 clarify_event = create_clarify_event(self.name, task_clarify.message)
-                clarify_event.commit_hash = next_commit
-                add_event_to_log(exec_state, clarify_event, on_event=on_event)
-                yield clarify_event
-
-                # Snapshot with the pre-generated hash so event.commit_hash matches
-                if versioned_state is not None:
-                    safe_snapshot(versioned_state, commit_hash=next_commit)
+                yield from self._handle_terminal_condition(
+                    exec_state,
+                    versioned_state,
+                    fs,
+                    fs_metadata_before,
+                    events_yielded,
+                    clarify_event,
+                    on_event,
+                )
 
                 if isinstance(state, Namespaced):
                     raise EvalError(
@@ -287,29 +293,16 @@ class SyncLoopMixin:
                     raise
 
             except TaskFail as task_fail:
-                for event in yield_new_events(exec_state, events_yielded):
-                    yield event
-                events_yielded = len(events(exec_state))
-
-                # Pre-generate commit hash so the terminal event can reference
-                # the commit that will include it
-                next_commit = get_commit_hash() if versioned_state else None
-
-                # Check for file changes and add to log before snapshot
-                file_event = maybe_add_file_event(
-                    fs, fs_metadata_before, exec_state, self.name, next_commit
-                )
-                if file_event:
-                    yield file_event
-
                 fail_event = create_fail_event(self.name, task_fail.message)
-                fail_event.commit_hash = next_commit
-                add_event_to_log(exec_state, fail_event, on_event=on_event)
-                yield fail_event
-
-                # Snapshot with the pre-generated hash so event.commit_hash matches
-                if versioned_state is not None:
-                    safe_snapshot(versioned_state, commit_hash=next_commit)
+                yield from self._handle_terminal_condition(
+                    exec_state,
+                    versioned_state,
+                    fs,
+                    fs_metadata_before,
+                    events_yielded,
+                    fail_event,
+                    on_event,
+                )
 
                 if isinstance(state, Namespaced):
                     raise EvalError(f"Sub-agent failed: {task_fail.message}", None)
