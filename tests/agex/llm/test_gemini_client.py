@@ -65,7 +65,10 @@ def test_gemini_client_complete_stream():
 
 def test_gemini_client_complete_wraps_stream():
     """Test that complete() calls complete_stream and accumulates result."""
-    with patch.object(Gemini, "complete_stream") as mock_stream:
+    with (
+        patch("google.genai.Client"),
+        patch.object(Gemini, "complete_stream") as mock_stream,
+    ):
         # Mock stream tokens
         mock_stream.return_value = [
             TokenChunk(type="title", content="My Title", done=False),
@@ -160,7 +163,10 @@ async def test_gemini_acomplete_wraps_stream():
         yield TokenChunk(type="python", content="pass", done=False)
         yield TokenChunk(type="python", content="", done=True)
 
-    with patch.object(Gemini, "acomplete_stream", side_effect=mock_tokens):
+    with (
+        patch("google.genai.Client"),
+        patch.object(Gemini, "acomplete_stream", side_effect=mock_tokens),
+    ):
         client = Gemini()
         response = await client.acomplete("system", [])
 
