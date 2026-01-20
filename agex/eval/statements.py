@@ -118,7 +118,7 @@ class NameTarget(AssignmentTarget):
 class AttributeTarget(AssignmentTarget):
     """Represents assignment to an object attribute."""
 
-    def __init__(self, obj: Any, attr_name: str, node: ast.AST):
+    def __init__(self, evaluator, obj: Any, attr_name: str, node: ast.AST):
         # Allow attribute assignment on any object that supports it
         # Check if the object supports attribute assignment
         supports_assignment = (
@@ -133,6 +133,7 @@ class AttributeTarget(AssignmentTarget):
                 node,
             )
 
+        self._evaluator = evaluator
         self._obj = obj
         self._attr_name = attr_name
         self._node = node
@@ -140,7 +141,9 @@ class AttributeTarget(AssignmentTarget):
     def get_value(self) -> Any:
         def do_access():
             # Handle AgexObject, AgexInstance, and BoundInstanceObject with their special methods
-            if isinstance(self._obj, (AgexObject, AgexInstance, BoundInstanceObject)):
+            if isinstance(self._obj, AgexInstance):
+                return self._obj.getattr(self._attr_name, agent=self._evaluator.agent)
+            elif isinstance(self._obj, (AgexObject, BoundInstanceObject)):
                 return self._obj.getattr(self._attr_name)
             else:
                 # Handle regular Python objects
@@ -160,7 +163,9 @@ class AttributeTarget(AssignmentTarget):
     def _do_set_value(self, value: Any):
         def do_assignment():
             # Handle AgexObject, AgexInstance, and BoundInstanceObject with their special methods
-            if isinstance(self._obj, (AgexObject, AgexInstance, BoundInstanceObject)):
+            if isinstance(self._obj, AgexInstance):
+                self._obj.setattr(self._attr_name, value, agent=self._evaluator.agent)
+            elif isinstance(self._obj, (AgexObject, BoundInstanceObject)):
                 self._obj.setattr(self._attr_name, value)
             else:
                 # Handle regular Python objects
@@ -292,7 +297,7 @@ class StatementEvaluator(BaseEvaluator):
             return NameTarget(self, node.id)
         if isinstance(node, ast.Attribute):
             obj = self.visit(node.value)
-            return AttributeTarget(obj, node.attr, node)
+            return AttributeTarget(self, obj, node.attr, node)
         if isinstance(node, ast.Subscript):
             return SubscriptTarget(self, node)
         raise EvalError("This type of assignment target is not supported.", node)

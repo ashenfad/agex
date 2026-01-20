@@ -50,7 +50,9 @@ class Resolver:
         from agex.eval.objects import AgexVFSModule, BoundInstanceObject
         from agex.eval.utils import get_allowed_attributes_for_instance
 
-        if isinstance(value, (AgexObject, AgexInstance, AgexVFSModule)):
+        if isinstance(value, AgexInstance):
+            return value.getattr(attr_name, agent=self.agent)
+        elif isinstance(value, (AgexObject, AgexVFSModule)):
             return value.getattr(attr_name)
 
         # Host object proxy
