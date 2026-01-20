@@ -28,6 +28,7 @@ Most Python features work exactly as you'd expect when agents generate code:
 - **Basic operations**: arithmetic, string manipulation, list/dict operations
 - **Control flow**: `if/else`, `for/while` loops, function calls
 - **Built-in functions**: `print()`, `len()`, `range()`, `enumerate()`, etc.
+- **Decorators**: full support for standard library (e.g., `@functools.lru_cache`) and custom decorators
 - **Registered capabilities**: anything you've exposed via `agent.module()` or `agent.fn()`
 - **Function definitions**: agents can define helper functions within their code
 - **Variable assignment**: storing values in variables works normally
@@ -68,40 +69,6 @@ class MyList:
 **Impact**: Agents cannot implement abstract classes or create new subclasses. Design APIs to provide concrete implementations rather than requiring agents to subclass.
 
 **Future**: Unlikely to change - would require significant architectural changes.
-
-### Decorators  
-**Cannot use @ syntax**: Agents cannot generate code that uses the `@decorator` syntax.
-
-```python
-# ❌ Agents cannot use @ syntax
-def my_decorator(func):
-    def wrapper():
-        print("Before")
-        func()
-        print("After")
-    return wrapper
-
-@my_decorator
-def my_function():
-    pass
-
-# ✅ Agents can call decorators as functions
-def my_decorator(func):
-    def wrapper():
-        print("Before")
-        func()
-        print("After")
-    return wrapper
-
-def my_function():
-    pass
-
-my_function = my_decorator(my_function)  # Works fine
-```
-
-**Impact**: Decorator-heavy libraries work fine if they can be called as functions. The `@` syntax is just syntactic sugar.
-
-**Future**: Likely to be added - the syntax is straightforward to implement.
 
 ### `with` Statements
 **Normal context manager behavior**: The `with` statement works as a standard Python context manager.

@@ -110,6 +110,11 @@ class UserFunction:
 
         return inspect.Signature(parameters)
 
+    def __post_init__(self):
+        """Set standard function attributes."""
+        self.__name__ = self.name
+        self.__qualname__ = self.name
+
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         if not self.agent_fingerprint:
             raise RuntimeError(
@@ -440,7 +445,31 @@ class FunctionEvaluator(BaseEvaluator):
         )
         # Set the docstring as a Python-compatible attribute
         func.__doc__ = docstring
-        self.state.set(node.name, func)
+
+        # Apply decorators in reverse order (inner -> outer)
+        # We start with the UserFunction 'func' and wrap it layer by layer
+        decorated_func = func
+        for decorator_node in reversed(node.decorator_list):
+            decorator = self.visit(decorator_node)
+            if not callable(decorator):
+                from agex.eval.error import EvalError
+
+                raise EvalError(
+                    f"Decorator '{ast.unparse(decorator_node)}' is not callable",
+                    decorator_node,
+                )
+
+            try:
+                decorated_func = decorator(decorated_func)
+            except Exception as e:
+                from agex.eval.error import EvalError
+
+                raise EvalError(
+                    f"Error applying decorator '{ast.unparse(decorator_node)}': {e}",
+                    decorator_node,
+                )
+
+        self.state.set(node.name, decorated_func)
 
         # Track user function names for system prompts (shadow set)
         # We use a shadow set to avoid iterating the entire state to find functions.
