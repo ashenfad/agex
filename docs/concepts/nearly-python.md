@@ -44,32 +44,6 @@ for i, num in enumerate(numbers):
 
 ## What's Different (Agent Code Limitations)
 
-### Class Inheritance
-**Cannot create subclasses**: Agents cannot generate code that defines new classes with inheritance.
-
-```python
-# ❌ Agents cannot create new subclasses
-class MyList(list):
-    def special_method(self):
-        return "custom"
-
-# ✅ Agents can use existing classes with inheritance
-existing_list = MySpecialList()  # If MySpecialList inherits from list
-existing_list.append(1)          # Works fine
-
-# ✅ Agents can create composition-based classes
-class MyList:
-    def __init__(self):
-        self.items = []
-    
-    def special_method(self):
-        return "custom"
-```
-
-**Impact**: Agents cannot implement abstract classes or create new subclasses. Design APIs to provide concrete implementations rather than requiring agents to subclass.
-
-**Future**: Unlikely to change - would require significant architectural changes.
-
 ### Class Decorators
 **Not supported**: Agents cannot use decorators on class definitions (except the special `@dataclass` placeholder).
 
@@ -100,19 +74,6 @@ def expensive_function(n):
 **Impact**: Libraries that require class decorators (like some ORMs or validation frameworks) won't work. Use alternative patterns or provide pre-decorated classes.
 
 **Future**: Would require major refactor to create real Python types instead of `AgexClass` objects.
-
-### `with` Statements
-**Normal context manager behavior**: The `with` statement works as a standard Python context manager.
-
-```python
-# ✅ Works normally
-with open("file.txt") as f:
-    content = f.read()
-```
-
-**Impact**: Standard Python `with` semantics apply.
-
-**Future**: No changes planned.
 
 ### Async/Await
 **Not supported**: Agents cannot generate async code; the sandbox is synchronous-only.
