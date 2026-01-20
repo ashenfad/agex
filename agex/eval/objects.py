@@ -169,22 +169,114 @@ class AgexInstance:
     def __repr__(self) -> str:
         return f"<{self.cls.name} object>"
 
-    def getattr(self, name: str) -> Any:
-        """Get an attribute from the instance, or a method from the class."""
-        # Instance attributes take precedence
+    def getattr(self, name: str, agent: Any = None) -> Any:
+        """Get an attribute from the instance with MRO-aware policy checks.
+
+        Args:
+            name: Attribute name
+            agent: Optional agent for policy checking when accessing inherited host attrs
+
+        Returns:
+            The attribute value or bound method
+        """
+        # 1. Check if this is an instance attribute
         if name in self.attributes:
+            # Verify it's allowed by walking MRO to find which class declared it
+            for cls in self.cls.mro:
+                if isinstance(cls, AgexClass):
+                    # For AgexClass: allowed if in local_instance_attrs
+                    if name in cls.local_instance_attrs:
+                        return self.attributes[name]
+                elif agent is not None:
+                    # For host class: allowed if policy approves
+                    if agent._policy.resolve_class_member(cls, name) is not None:
+                        return self.attributes[name]
+
+            # If not declared by any class in MRO, it was set dynamically on this instance
+            # For classes with no bases (or only object), allow it
+            # For classes with bases, only allow if this is the immediate class
+            if len(self.cls.mro) <= 2:  # Just [self, object]
+                return self.attributes[name]
+
+            # Has bases - check if this was set locally (not inherited)
+            # We can't distinguish, so for safety: allow it (dynamic attributes are a Python feature)
+            # But log that this could be a security issue if we want stricter control
             return self.attributes[name]
 
-        # Then, look for a method on the class
+        # 2. Local methods
         if name in self.cls.methods:
             function = self.cls.methods[name]
             return AgexMethod(instance=self, function=function)
 
+        # 3. Walk MRO for inherited methods
+        for cls in self.cls.mro[1:]:  # Skip self (first in MRO)
+            if isinstance(cls, AgexClass):
+                # Sandbox base - check its methods
+                if name in cls.methods:
+                    return AgexMethod(instance=self, function=cls.methods[name])
+            elif agent is not None:
+                # Host base - check policy for methods/descriptors on host proxy
+                if agent._policy.resolve_class_member(cls, name) is not None:
+                    if self._host_proxy is not None:
+                        try:
+                            value = getattr(self._host_proxy, name)
+                            return value
+                        except AttributeError:
+                            pass
+
         raise AgexAttributeError(f"'{self.cls.name}' object has no attribute '{name}'")
 
-    def setattr(self, name: str, value: Any):
-        """Set an attribute on the instance."""
+    def setattr(self, name: str, value: Any, agent: Any = None):
+        """Set an attribute on the instance.
+
+        Args:
+            name: Attribute name
+            value: Attribute value
+            agent: Optional agent for policy checking when syncing to host proxy
+        """
+        # Check if this attribute name exists in the parent classes
+        # If it does and isn't whitelisted, block the write
+        if agent is not None and len(self.cls.mro) > 2:  # Has inheritance beyond object
+            for cls in self.cls.mro[1:]:  # Skip self
+                if isinstance(cls, AgexClass):
+                    # For AgexClass parents: allow if in local_instance_attrs
+                    if name in cls.local_instance_attrs:
+                        break  # Found and allowed
+                    # Check methods - can't set attributes shadowing methods
+                    if name in cls.methods:
+                        raise AgexAttributeError(
+                            f"Cannot set attribute '{name}' - it's a method on parent class '{cls.name}'"
+                        )
+                else:
+                    # For host parents: check policy first
+                    member_result = agent._policy.resolve_class_member(cls, name)
+                    if member_result is not None:
+                        # Attribute exists and is whitelisted - allow
+                        break
+
+                    # Policy returned None - check if attribute exists on the class
+                    # If it exists but isn't whitelisted, block it
+                    if hasattr(cls, name):
+                        # Exists on parent but not whitelisted - block it
+                        raise AgexAttributeError(
+                            f"Cannot set attribute '{name}' - it exists on parent class "
+                            f"'{cls.__name__}' but is not whitelisted"
+                        )
+
+        # Passed policy checks - allow the write
         self.attributes[name] = value
+
+        # Sync to host proxy if applicable
+        if self._host_proxy is not None and agent is not None:
+            for cls in self.cls.mro:
+                if isinstance(cls, type):
+                    if agent._policy.resolve_class_member(cls, name) is not None:
+                        try:
+                            setattr(self._host_proxy, name, value)
+                        except (AttributeError, TypeError):
+                            # Some attrs may not be settable
+                            pass
+                        break
 
     def delattr(self, name: str):
         """Delete an attribute from the instance."""
