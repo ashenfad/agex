@@ -47,11 +47,13 @@ class Resolver:
 
     # --- Attribute Resolution ---
     def resolve_attribute(self, value: Any, attr_name: str, node) -> Any:
-        from agex.eval.objects import AgexVFSModule, BoundInstanceObject
+        from agex.eval.objects import AgexVFSModule, BoundInstanceObject, SuperProxy
         from agex.eval.utils import get_allowed_attributes_for_instance
 
         if isinstance(value, AgexInstance):
             return value.getattr(attr_name, agent=self.agent)
+        elif isinstance(value, SuperProxy):
+            return value.getattr(attr_name)
         elif isinstance(value, (AgexObject, AgexVFSModule)):
             return value.getattr(attr_name)
 

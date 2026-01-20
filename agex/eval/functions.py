@@ -159,6 +159,15 @@ class UserFunction:
                 eval_timeout_seconds=agent.eval_timeout_seconds,
                 session="default",  # Default if called outside evaluator
             )
+
+        # Check if this is a method call with context for super()
+        if args and hasattr(args[0], "_method_context"):
+            method_context = getattr(args[0], "_method_context", None)
+            if method_context:
+                defining_class, instance = method_context
+                evaluator.current_method_class = defining_class
+                evaluator.current_self = instance
+
         bound_args = bind_arguments(
             self.name, self.args, args, kwargs, eval_fn=evaluator.visit
         )

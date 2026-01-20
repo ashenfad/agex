@@ -33,6 +33,14 @@ class BaseEvaluator(ast.NodeVisitor):
             agent, session=session
         )  # Unified resolver for all lookups
 
+        # Context for super() support
+        self.current_method_class: Any = (
+            None  # The AgexClass defining the currently executing method
+        )
+        self.current_self: Any = (
+            None  # The instance (AgexInstance) for the currently executing method
+        )
+
     def _handle_destructuring_assignment(self, target_node: ast.AST, value: Any):
         """
         Recursively handles assignment to a name or a tuple.
