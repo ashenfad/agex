@@ -101,6 +101,10 @@ class FreeVariableAnalyzer(ast.NodeVisitor):
             self.bound.add(node.id)
 
     def visit_FunctionDef(self, node: ast.FunctionDef):
+        # Visit decorators first - they are evaluated in the current scope
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+
         # First, bind the function's own name in the current scope.
         self.bound.add(node.name)
         # Then, analyze the nested function to see what free variables it has.

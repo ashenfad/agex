@@ -100,6 +100,15 @@ class Resolver:
 
         # Check for registered host classes and whitelisted methods on Python objects
         allowed_attrs = get_allowed_attributes_for_instance(self.agent, value)
+
+        # Allow introspection attributes on UserFunctions
+        from agex.eval.functions import UserFunction
+
+        if isinstance(value, UserFunction):
+            allowed_attrs.update(
+                {"__name__", "__qualname__", "__doc__", "__module__", "name"}
+            )
+
         if attr_name in allowed_attrs:
             try:
                 return getattr(value, attr_name)
