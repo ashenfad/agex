@@ -190,11 +190,16 @@ def _agex_isinstance(obj: Any, class_or_tuple: Any) -> bool:
             return obj.cls is class_or_tuple
         return False
     if isinstance(class_or_tuple, AgexClass):
-        # Handle user-defined classes
+        # Handle user-defined classes - check MRO for inheritance
         if isinstance(obj, AgexInstance):
-            return obj.cls is class_or_tuple
+            # Check if class_or_tuple is in the MRO
+            return class_or_tuple in obj.cls.mro
         return False
     if isinstance(class_or_tuple, type):
+        # For host types, check if the instance is an AgexInstance with a host base
+        if isinstance(obj, AgexInstance):
+            # Check if the host type is in the MRO
+            return class_or_tuple in obj.cls.mro
         return isinstance(obj, class_or_tuple)
 
     # Handle tuple of types
@@ -532,6 +537,33 @@ def _task_continue_with_observations(
     raise TaskContinue()
 
 
+def _super(evaluator) -> Any:
+    """Implementation of the super() builtin for navigating the MRO."""
+    from agex.eval.objects import SuperProxy
+
+    if evaluator.current_method_class is None or evaluator.current_self is None:
+        raise AgexError(
+            "super() can only be called from within a method. "
+            "Make sure you're calling super() inside an instance method."
+        )
+
+    # Find the position of current_method_class in the MRO
+    mro = evaluator.current_self.cls.mro
+    try:
+        current_idx = mro.index(evaluator.current_method_class)
+    except ValueError:
+        raise AgexError("super(): current class not found in MRO")
+
+    # Remaining MRO is everything after the current class
+    remaining_mro = mro[current_idx + 1 :]
+
+    return SuperProxy(
+        instance=evaluator.current_self,
+        remaining_mro=remaining_mro,
+        agent=evaluator.agent,
+    )
+
+
 STATEFUL_BUILTINS: dict[str, StatefulFn] = {
     "print": StatefulFn(_print_stateful),
     "view_image": StatefulFn(_view_image_stateful),
@@ -541,6 +573,7 @@ STATEFUL_BUILTINS: dict[str, StatefulFn] = {
     "getattr": StatefulFn(_getattr, needs_evaluator=True),
     "task_continue": StatefulFn(_task_continue_with_observations),
     "__import__": StatefulFn(_import_stateful, needs_evaluator=True),
+    "super": StatefulFn(_super, needs_evaluator=True),
 }
 
 

@@ -394,6 +394,15 @@ class RegistrationMixin(BaseAgent):
                 for k, v in (final_configure or {}).items()
             }
 
+            # If constructable, explicitly add __init__ to configure with dotted key
+            # so it bypasses exclude patterns in policy resolution
+            if constructable and "__init__" in final_methods:
+                dotted_key = f"{c.__name__}.__init__"
+                sec_final_configure[dotted_key] = MemberSpec(
+                    visibility=final_methods["__init__"].visibility,
+                    docstring=final_methods["__init__"].docstring,
+                )
+
             # Track module for lazy dependency resolution
             self._track_module(c.__module__)
 

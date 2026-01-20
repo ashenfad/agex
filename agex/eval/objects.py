@@ -288,16 +288,75 @@ class AgexInstance:
 
 
 @dataclass
+class SuperProxy:
+    """Proxy returned by super() for navigating the MRO."""
+
+    instance: AgexInstance
+    remaining_mro: list[Union[AgexClass, type]]
+    agent: Any
+
+    def getattr(self, name: str) -> Any:
+        """Get an attribute from the remaining MRO."""
+        for cls in self.remaining_mro:
+            if isinstance(cls, AgexClass):
+                # Sandbox class - check methods
+                if name in cls.methods:
+                    return AgexMethod(
+                        instance=self.instance, function=cls.methods[name]
+                    )
+            else:
+                # Host class - check policy
+                member_result = self.agent._policy.resolve_class_member(cls, name)
+                if member_result is not None:
+                    # Policy allows this member - now get it
+                    if hasattr(cls, name):
+                        member = getattr(cls, name)
+                        # If it's a method/function, we need to bind it to host_proxy
+                        if callable(member) and self.instance._host_proxy is not None:
+                            # Manually bind: create a bound method
+                            import types
+
+                            if isinstance(
+                                member, (types.FunctionType, types.MethodType)
+                            ):
+                                # It's an unbound method or descriptor, bind it
+                                bound = member.__get__(
+                                    self.instance._host_proxy,
+                                    type(self.instance._host_proxy),
+                                )
+                                return bound
+                        return member
+
+        raise AgexAttributeError(f"'super' object has no attribute '{name}'")
+
+
+@dataclass
 class AgexMethod:
     """A method bound to a AgexInstance. It's a callable wrapper."""
 
     instance: AgexInstance
     function: Any  # This will be a tic.eval.functions.UserFunction
+    defining_class: Union[AgexClass, None] = field(default=None, init=False)
+
+    def __post_init__(self):
+        """Find which class in the MRO defines this method."""
+        for cls in self.instance.cls.mro:
+            if isinstance(cls, AgexClass) and self.function in cls.methods.values():
+                self.defining_class = cls
+                break
+        if self.defining_class is None:
+            self.defining_class = self.instance.cls
 
     def __call__(self, *args, **kwargs):
         """Call the underlying function with the instance as the first argument."""
-        # This allows AgexMethod to wrap any callable, not just UserFunction.
-        return self.function(self.instance, *args, **kwargs)
+        # Store method context for super() support
+        # UserFunction.execute will pick this up and set it on the evaluator
+        self.instance._method_context = (self.defining_class, self.instance)
+        try:
+            result = self.function(self.instance, *args, **kwargs)
+        finally:
+            self.instance._method_context = None
+        return result
 
 
 @dataclass
