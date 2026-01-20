@@ -194,3 +194,66 @@ res = obj.method(10)
     # But let's see.
     state = eval_and_get_state(program)
     assert state.get("res") == 20
+
+
+def test_unsupported_class_decorator_raises_error():
+    """Test that non-@dataclass class decorators raise an error."""
+    import pytest
+
+    from agex.eval.error import EvalError
+
+    def my_class_decorator(cls):
+        # This would normally modify the class
+        return cls
+
+    agent = Agent()
+    agent.fn(my_class_decorator)
+
+    program = """
+@my_class_decorator
+class MyClass:
+    pass
+"""
+
+    with pytest.raises(EvalError) as e:
+        eval_and_get_state(program, agent)
+    assert "Class decorators are not supported" in str(e.value)
+    assert "Function decorators ARE supported" in str(e.value)
+
+
+def test_dataclass_decorator_is_allowed():
+    """Test that the special @dataclass decorator still works."""
+    agent = Agent()
+
+    program = """
+@dataclass
+class Point:
+    x: int
+    y: int
+
+p = Point(1, 2)
+result = p.x
+"""
+
+    state = eval_and_get_state(program, agent)
+    assert state.get("result") == 1
+
+
+def test_multiple_class_decorators_raises_error():
+    """Test that multiple decorators on a class raise an error."""
+    import pytest
+
+    from agex.eval.error import EvalError
+
+    agent = Agent()
+
+    program = """
+@dataclass
+@dataclass
+class MyClass:
+    x: int
+"""
+
+    with pytest.raises(EvalError) as e:
+        eval_and_get_state(program, agent)
+    assert "single @dataclass decorator" in str(e.value)
