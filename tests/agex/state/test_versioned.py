@@ -366,8 +366,8 @@ def test_reset_reloads_from_head():
     assert state2.base_commit == state1.current_commit
 
 
-def test_revert_to_moves_head_to_earlier_commit():
-    """Test that revert_to moves HEAD to an earlier commit."""
+def test_reset_to_moves_head_to_earlier_commit():
+    """Test that reset_to moves HEAD to an earlier commit."""
     import pickle
 
     from agex.state.versioned import HEAD_COMMIT
@@ -395,7 +395,7 @@ def test_revert_to_moves_head_to_earlier_commit():
     assert state.current_commit == commit3
 
     # Revert to commit1
-    result = state.revert_to(commit1)
+    result = state.reset_to(commit1)
     assert result is True
 
     # Verify state is now at commit1
@@ -408,8 +408,8 @@ def test_revert_to_moves_head_to_earlier_commit():
     assert head == commit1
 
 
-def test_revert_to_orphans_later_commits():
-    """Test that revert_to leaves later commits as orphans."""
+def test_reset_to_orphans_later_commits():
+    """Test that reset_to leaves later commits as orphans."""
     store = kv.Memory()
     state = Versioned(store)
 
@@ -425,7 +425,7 @@ def test_revert_to_orphans_later_commits():
     commit2 = state.current_commit
 
     # Revert to commit1
-    state.revert_to(commit1)
+    state.reset_to(commit1)
 
     # History should only go back to commit1, not to commit2
     history = list(state.history())
@@ -433,8 +433,8 @@ def test_revert_to_orphans_later_commits():
     assert commit2 not in history  # commit2 is now orphaned
 
 
-def test_revert_to_returns_false_for_invalid_commit():
-    """Test that revert_to returns False for commits not in history."""
+def test_reset_to_returns_false_for_invalid_commit():
+    """Test that reset_to returns False for commits not in history."""
     store = kv.Memory()
     state = Versioned(store)
 
@@ -443,15 +443,15 @@ def test_revert_to_returns_false_for_invalid_commit():
     state.merge()
 
     # Try to revert to a non-existent commit
-    result = state.revert_to("nonexistent_hash")
+    result = state.reset_to("nonexistent_hash")
     assert result is False
 
     # State should be unchanged
     assert state.get("a") == 1
 
 
-def test_revert_to_clears_local_changes():
-    """Test that revert_to clears any uncommitted local changes."""
+def test_reset_to_clears_local_changes():
+    """Test that reset_to clears any uncommitted local changes."""
     store = kv.Memory()
     state = Versioned(store)
 
@@ -464,7 +464,7 @@ def test_revert_to_clears_local_changes():
     state.set("b", 2)
 
     # Revert to commit1
-    state.revert_to(commit1)
+    state.reset_to(commit1)
 
     # Local changes should be gone
     assert state.get("a") == 1
@@ -497,7 +497,7 @@ def test_versioned_initial_commit():
     assert state.initial_commit != commit2
 
     # Revert to initial works
-    state.revert_to(state.initial_commit)
+    state.reset_to(state.initial_commit)
     assert state.current_commit == root
     assert state.get("a") is None
     assert state.get("b") is None
