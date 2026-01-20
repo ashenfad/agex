@@ -28,7 +28,7 @@ Most Python features work exactly as you'd expect when agents generate code:
 - **Basic operations**: arithmetic, string manipulation, list/dict operations
 - **Control flow**: `if/else`, `for/while` loops, function calls
 - **Built-in functions**: `print()`, `len()`, `range()`, `enumerate()`, etc.
-- **Decorators**: full support for standard library (e.g., `@functools.lru_cache`) and custom decorators
+- **Function decorators**: full support for standard library (e.g., `@functools.lru_cache`) and custom decorators
 - **Registered capabilities**: anything you've exposed via `agent.module()` or `agent.fn()`
 - **Function definitions**: agents can define helper functions within their code
 - **Variable assignment**: storing values in variables works normally
@@ -69,6 +69,37 @@ class MyList:
 **Impact**: Agents cannot implement abstract classes or create new subclasses. Design APIs to provide concrete implementations rather than requiring agents to subclass.
 
 **Future**: Unlikely to change - would require significant architectural changes.
+
+### Class Decorators
+**Not supported**: Agents cannot use decorators on class definitions (except the special `@dataclass` placeholder).
+
+```python
+# ❌ Agents cannot use class decorators
+def my_decorator(cls):
+    cls.added_method = lambda: "hi"
+    return cls
+
+@my_decorator
+class MyClass:
+    pass
+
+# ✅ Exception: @dataclass works (special sandbox implementation)
+@dataclass
+class Point:
+    x: int
+    y: int
+
+# ✅ Function decorators work perfectly
+@functools.lru_cache
+def expensive_function(n):
+    return n * 2
+```
+
+**Why?**: Standard Python class decorators expect real `type` objects, but the sandbox creates `AgexClass` objects (custom data structures). Function decorators work because they operate on callable objects, which the sandbox can provide.
+
+**Impact**: Libraries that require class decorators (like some ORMs or validation frameworks) won't work. Use alternative patterns or provide pre-decorated classes.
+
+**Future**: Would require major refactor to create real Python types instead of `AgexClass` objects.
 
 ### `with` Statements
 **Normal context manager behavior**: The `with` statement works as a standard Python context manager.

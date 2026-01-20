@@ -616,14 +616,23 @@ class StatementEvaluator(BaseEvaluator):
         # 1. Check for the @dataclass decorator.
         is_dataclass = False
         if node.decorator_list:
-            # For simplicity, we only support a single decorator, @dataclass.
+            # Currently only the special @dataclass placeholder is supported
             if len(node.decorator_list) > 1:
                 raise EvalError(
-                    "Only a single @dataclass decorator is supported.", node
+                    "Only a single @dataclass decorator is supported on classes.", node
                 )
             decorator = self.visit(node.decorator_list[0])
             if decorator is dataclass:
                 is_dataclass = True
+            else:
+                # Class decorators are not yet supported (except @dataclass placeholder)
+                # This is because standard Python decorators expect real 'type' objects,
+                # but the sandbox creates AgexClass objects.
+                raise EvalError(
+                    "Class decorators are not supported (except @dataclass). "
+                    "Note: Function decorators ARE supported.",
+                    node,
+                )
 
         # 2. Check for inheritance on dataclasses (still not supported)
         if is_dataclass and (node.bases or node.keywords):
