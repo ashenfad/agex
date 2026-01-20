@@ -700,6 +700,20 @@ class StatementEvaluator(BaseEvaluator):
                         f"Cannot inherit from unregistered class '{base.__name__}'",
                         node,
                     )
+
+                # Check if base class is constructable
+                # If constructable=False, inheritance is blocked because super().__init__() won't work
+                class_ns = self.agent._policy._class_namespaces.get(base)
+                if class_ns is not None:
+                    # Check if there's a configure entry for this class
+                    class_config = class_ns.configure.get(base.__name__)
+                    if class_config is not None and class_config.constructable is False:
+                        raise EvalError(
+                            f"Cannot inherit from '{base.__name__}' because it is not constructable. "
+                            f"Classes with constructable=False cannot be used as base classes.",
+                            node,
+                        )
+
                 resolved_bases.append(base)
             elif isinstance(base, AgexClass):
                 resolved_bases.append(base)
