@@ -1,6 +1,5 @@
 import pytest
 
-from agex.eval.error import EvalError
 from agex.eval.user_errors import AgexAttributeError, AgexTypeError
 
 from .helpers import eval_and_get_state
@@ -96,21 +95,6 @@ val2 = b2.value
     state = eval_and_get_state(program)
     assert state.get("val1") == 3
     assert state.get("val2") == 2
-
-
-def test_inheritance_is_not_supported():
-    """Tests that defining a class with a base class raises an error."""
-    program = """
-class Parent:
-    pass
-class Child(Parent):
-    pass
-"""
-    with pytest.raises(EvalError) as excinfo:
-        eval_and_get_state(program)
-    assert "Inheritance and other advanced class features are not supported" in str(
-        excinfo.value
-    )
 
 
 def test_accessing_nonexistent_attribute_fails():

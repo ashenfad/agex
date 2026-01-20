@@ -22,7 +22,7 @@ from agex.state.scoped import Scoped
 from .base import BaseEvaluator
 from .binop import OPERATOR_MAP
 from .error import EvalError
-from .objects import AgexClass, AgexDataClass, AgexInstance, AgexObject
+from .objects import AgexDataClass, AgexInstance, AgexObject
 
 
 def _handle_assignment_exceptions(
@@ -620,12 +620,11 @@ class StatementEvaluator(BaseEvaluator):
             if decorator is dataclass:
                 is_dataclass = True
 
-        if node.bases or node.keywords:
-            raise EvalError(
-                "Inheritance and other advanced class features are not supported.", node
-            )
+        # 2. Check for inheritance on dataclasses (still not supported)
+        if is_dataclass and (node.bases or node.keywords):
+            raise EvalError("Inheritance is not supported for dataclasses.", node)
 
-        # 2. Dispatch to the correct handler based on decorator.
+        # 3. Dispatch to the correct handler based on decorator.
         if is_dataclass:
             self._create_dataclass(node)
         else:
@@ -653,33 +652,88 @@ class StatementEvaluator(BaseEvaluator):
         cls_obj = AgexDataClass(name=node.name, fields={f: None for f in fields})
         self.state.set(node.name, cls_obj)
 
+    def _extract_local_instance_attrs(self, init_fn: UserFunction) -> set[str]:
+        """Extract attribute names assigned via self.X = ... in __init__."""
+        attrs: set[str] = set()
+
+        # Walk through all statements in the function body
+        for stmt in init_fn.body:
+            for node in ast.walk(stmt):
+                if isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if (
+                            isinstance(target, ast.Attribute)
+                            and isinstance(target.value, ast.Name)
+                            and target.value.id == "self"
+                        ):
+                            attrs.add(target.attr)
+                elif isinstance(node, ast.AnnAssign):
+                    if (
+                        isinstance(node.target, ast.Attribute)
+                        and isinstance(node.target.value, ast.Name)
+                        and node.target.value.id == "self"
+                    ):
+                        attrs.add(node.target.attr)
+
+        return attrs
+
     def _create_regular_class(self, node: ast.ClassDef):
         """Creates a AgexClass for a regular class definition."""
-        from agex.eval.core import Evaluator
+        from typing import Union
 
-        # To execute the class body in isolation, we create a new evaluator
-        # with its own temporary, scoped state.
+        from agex.eval.core import Evaluator
+        from agex.eval.objects import AgexClass, compute_agex_mro
+
+        # 1. Resolve base classes
+        resolved_bases: list[Union[type, AgexClass]] = []
+        for base_node in node.bases:
+            base = self.visit(base_node)
+            if isinstance(base, type):
+                # Validate it's a registered/allowed class
+                if not self.agent._policy.resolve_class_spec(base):
+                    raise EvalError(
+                        f"Cannot inherit from unregistered class '{base.__name__}'",
+                        node,
+                    )
+                resolved_bases.append(base)
+            elif isinstance(base, AgexClass):
+                resolved_bases.append(base)
+            else:
+                raise EvalError(f"Invalid base class: {type(base)}", node)
+
+        # 2. Execute the class body in isolation
         class_exec_state = Scoped(self.state)
         class_evaluator = Evaluator(
             agent=self.agent,
             state=class_exec_state,
             source_code=self.source_code,
-            # Class definitions inherit the agent's timeout
         )
 
-        # Execute the body of the class using the new evaluator.
         for stmt in node.body:
             class_evaluator.visit(stmt)
 
-        # Extract methods (UserFunctions) from the temporary state's local scope.
+        # 3. Extract methods (UserFunctions) from the temporary state's local scope
         methods = {
             name: value
             for name, value in class_exec_state._local_store.items()
             if isinstance(value, UserFunction)
         }
 
-        # Create the AgexClass object.
-        cls = AgexClass(name=node.name, methods=methods)
+        # 4. Extract local_instance_attrs if __init__ exists
+        local_attrs = set()
+        if "__init__" in methods:
+            local_attrs = self._extract_local_instance_attrs(methods["__init__"])
 
-        # Assign the new class to its name in the *main* state.
+        # 5. Create the AgexClass object with inheritance support
+        cls = AgexClass(
+            name=node.name,
+            methods=methods,
+            bases=resolved_bases,
+            local_instance_attrs=local_attrs,
+        )
+
+        # 6. Compute MRO
+        cls.mro = compute_agex_mro(cls)
+
+        # 7. Assign the new class to its name in the *main* state
         self.state.set(node.name, cls)
