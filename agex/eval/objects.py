@@ -80,12 +80,51 @@ class AgexObject:
         del self.attributes[name]
 
 
+def compute_agex_mro(agex_cls: "AgexClass") -> list[Union["AgexClass", type]]:
+    """Compute MRO using Python's C3 linearization via stub classes.
+
+    For mixed hierarchies (AgexClass inheriting from host classes and other AgexClasses),
+    we create temporary Python class stubs that mirror the hierarchy, let Python compute
+    the MRO, then map back to our AgexClass objects.
+    """
+    stub_cache: dict["AgexClass", type] = {}
+
+    def get_stub(cls: Union["AgexClass", type]) -> type:
+        if isinstance(cls, type):
+            # Already a real Python class
+            return cls
+        if cls in stub_cache:
+            return stub_cache[cls]
+        # Create stub with correct bases
+        stub_bases = tuple(get_stub(b) for b in cls.bases) or (object,)
+        stub = type(cls.name, stub_bases, {})
+        stub_cache[cls] = stub
+        return stub
+
+    # Get MRO from the stub
+    root_stub = get_stub(agex_cls)
+    python_mro = root_stub.__mro__
+
+    # Map back to AgexClass where applicable
+    reverse_map = {v: k for k, v in stub_cache.items()}
+    return [reverse_map.get(c, c) for c in python_mro]
+
+
 class AgexClass:
     """Represents a user-defined class created with the 'class' keyword."""
 
-    def __init__(self, name: str, methods: dict[str, Any]):
+    def __init__(
+        self,
+        name: str,
+        methods: dict[str, Any],
+        bases: Union[list[Union[type, "AgexClass"]], None] = None,
+        local_instance_attrs: Union[set[str], None] = None,
+    ):
         self.name = name
         self.methods = methods
+        self.bases = bases or []
+        self.local_instance_attrs = local_instance_attrs or set()
+        self.mro: list[Union[type, "AgexClass"]] = []  # Computed after init
 
     def __repr__(self):
         return f"<class '{self.name}'>"
@@ -98,6 +137,11 @@ class AgexClass:
         """Create an instance of the class."""
         instance = AgexInstance(cls=self)
 
+        # Create host proxy if we have a host base
+        host_base = self._first_host_base()
+        if host_base is not None:
+            instance._host_proxy = object.__new__(host_base)
+
         # Look for an __init__ method and call it if it exists.
         if "__init__" in self.methods:
             init_method = self.methods["__init__"]
@@ -106,6 +150,13 @@ class AgexClass:
 
         return instance
 
+    def _first_host_base(self) -> type | None:
+        """Find the first host (non-AgexClass) base in the MRO."""
+        for cls in self.mro:
+            if isinstance(cls, type) and cls is not object:
+                return cls
+        return None
+
 
 @dataclass
 class AgexInstance:
@@ -113,6 +164,7 @@ class AgexInstance:
 
     cls: AgexClass
     attributes: dict[str, Any] = field(default_factory=dict)
+    _host_proxy: Any | None = field(default=None, repr=False)
 
     def __repr__(self) -> str:
         return f"<{self.cls.name} object>"

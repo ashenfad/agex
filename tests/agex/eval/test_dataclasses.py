@@ -76,9 +76,7 @@ class Child(Parent):
 """
     with pytest.raises(EvalError) as e:
         eval_and_get_state(program)
-    assert "Inheritance and other advanced class features are not supported" in str(
-        e.value
-    )
+    assert "Inheritance is not supported for dataclasses" in str(e.value)
 
 
 def test_error_on_methods():
