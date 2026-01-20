@@ -572,19 +572,18 @@ class Versioned(State):
 
         return Versioned(self.long_term, commit_hash=commit_hash)
 
-    def revert_to(self, commit_hash: str) -> bool:
+    def reset_to(self, commit_hash: str) -> bool:
         """
-        Reset HEAD to a previous commit, discarding later history.
+        Reset HEAD to a specific commit, discarding uncommitted changes.
 
-        This moves HEAD backward to the specified commit, making all
-        commits after it orphaned. Orphaned commits can be cleaned up
-        by GCVersioned.
+        This moves HEAD to the specified commit, which can be any valid
+        commit in the store (not necessarily in current history).
 
         Args:
-            commit_hash: The commit to revert to (must be in history)
+            commit_hash: The commit to reset to (must exist in store)
 
         Returns:
-            True if revert succeeded, False if commit not in history
+            True if reset succeeded, False if commit doesn't exist
         """
         # Validate that the commit exists
         if self.long_term.get(COMMIT_KEYSET % commit_hash) is None:

@@ -197,12 +197,11 @@ print(view(historical, focus="full"))
 ```
 
 **Reverting State (Destructive)**
-Use `revert_to()` to move the agent's HEAD back to a previous commit. This orphans all subsequent commits (which can be cleaned up by GC).
+Use `reset_to()` to move the agent's HEAD to a specific commit. This can orphan commits that become unreachable from the new HEAD (which can be cleaned up by GC).
 
 ```python
-# Revert to the state after a specific successful task
-success_event = all_events[-1]
-resolved_state.revert_to(success_event.commit_hash)
+# Reset to a previous successful outcome
+resolved_state.reset_to(success_event.commit_hash)
 
 # The agent continues from this point as if later actions never happened
 ```
