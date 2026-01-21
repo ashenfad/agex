@@ -34,7 +34,21 @@ class PolicyFinder(BaseFinder):
         # B. Check for recursive policy parents (e.g. 'os.path' if 'os' is recursive)
         for ns_name, ns in self.agent._policy.namespaces.items():  # type: ignore[attr-defined]
             if getattr(ns, "recursive", False) and fullname.startswith(ns_name + "."):
-                return ModuleSpec(name=fullname, origin="policy", loader=self.loader)
+                # Verify the submodule actually exists on the host module
+                # to prevent creating placeholders for non-existent imports
+                try:
+                    parent_mod = ns._ensure_module_loaded()
+                    suffix = fullname[len(ns_name) + 1 :]
+                    obj = parent_mod
+                    for part in suffix.split("."):
+                        obj = getattr(obj, part)
+                    # Submodule exists - return the spec
+                    return ModuleSpec(
+                        name=fullname, origin="policy", loader=self.loader
+                    )
+                except (AttributeError, Exception):
+                    # Submodule doesn't exist - don't return a spec
+                    pass
 
         # C. Check for child policy matches (Implicit Parents)
         # If 'numpy.random' is registered but 'numpy' isn't, 'import numpy' must work.
