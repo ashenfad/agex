@@ -164,3 +164,50 @@ def test_dunder_import_relative_level_error():
     agent = Agent(name="dunder_import_relative")
     with pytest.raises(AgexError):
         eval_and_get_state("__import__('anything', level=1)", agent=agent)
+
+
+def test_import_nonexistent_member_from_module():
+    """Test that importing a non-existent name from a module raises an error."""
+    clear_agent_registry()
+
+    # Create a simple module with one attribute
+    testmod = types.ModuleType("testmod")
+    testmod.ExistingClass = lambda: "exists"
+
+    agent = Agent(name="test_import_validation")
+    agent.module(testmod, name="testmod")
+
+    # Test 1: Import existing class - should work
+    state = eval_and_get_state("from testmod import ExistingClass", agent=agent)
+    assert "ExistingClass" in state
+
+    # Test 2: Import non-existent class - should raise error
+    with pytest.raises(EvalError) as exc_info:
+        eval_and_get_state("from testmod import NonExistentClass", agent=agent)
+
+    assert "NonExistentClass" in str(exc_info.value)
+    assert "testmod" in str(exc_info.value)
+
+
+def test_import_nonexistent_member_from_recursive_module():
+    """Test that importing a non-existent name from a RECURSIVE module raises an error."""
+    clear_agent_registry()
+
+    # Create a simple module with one attribute
+    testmod = types.ModuleType("testmod")
+    testmod.ExistingClass = lambda: "exists"
+
+    agent = Agent(name="test_recursive_import_validation")
+    # Register with recursive=True - this is the key difference
+    agent.module(testmod, name="testmod", recursive=True)
+
+    # Test 1: Import existing class - should work
+    state = eval_and_get_state("from testmod import ExistingClass", agent=agent)
+    assert "ExistingClass" in state
+
+    # Test 2: Import non-existent class from recursive module - should raise error
+    with pytest.raises(EvalError) as exc_info:
+        eval_and_get_state("from testmod import NonExistentClass", agent=agent)
+
+    assert "NonExistentClass" in str(exc_info.value)
+    assert "testmod" in str(exc_info.value)
