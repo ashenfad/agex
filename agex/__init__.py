@@ -13,6 +13,7 @@ from .agent.events import (
     SummaryEvent,
     TaskStartEvent,
 )
+from .eval.core import run_file_in_sandbox
 from .fs import connect_fs
 from .host import Host, connect_host
 from .llm import LLM, connect_llm
@@ -37,6 +38,8 @@ __all__ = [
     "events",
     # FileSystem
     "connect_fs",
+    # Sandbox Execution
+    "run_file_in_sandbox",
     # Task Control Exceptions & Functions
     "TaskFail",
     "TaskClarify",

@@ -162,7 +162,52 @@ Maximum time for a single block of agent-generated code to execute (*not* LLM ca
 
 Maximum think-act cycles per task. Raises `TaskTimeout` if exceeded.
 
-## Methods
+## Class Methods
+
+### `Agent.clone(source, *, name=None)`
+
+Creates a new agent with copied policy but shared state/fs/host.
+
+```python
+sandbox = Agent.clone(main_agent, name="sandbox")
+sandbox.module(ui)  # Doesn't affect main_agent
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `source` | `Agent` | Required | The agent to clone from |
+| `name` | `str \| None` | `None` | Name for the new agent (defaults to `{source.name}_clone`) |
+
+**Returns:** A new `Agent` with independent registrations but shared state/fs/host.
+
+---
+
+## Standalone Functions
+
+### `run_file_in_sandbox(agent, file_path, session, **kwargs)`
+
+Runs a file from VFS in the agent's sandbox.
+
+```python
+from agex import run_file_in_sandbox
+
+state = run_file_in_sandbox(sandbox, "app/main.py", session_id)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `agent` | `Agent` | Required | The agent providing the execution context |
+| `file_path` | `str` | Required | Path to the file in VFS |
+| `session` | `str` | `"default"` | Session identifier for state/fs access |
+| `eval_timeout_seconds` | `float \| None` | `None` | Optional timeout override |
+
+**Returns:** The `State` after execution.
+
+**Raises:** `FileNotFoundError` if the file doesn't exist, `EvalError` if execution fails.
+
+---
+
+## Instance Methods
 
 ### `.state(session: str = "default")`
 

@@ -196,3 +196,73 @@ def evaluate_program(
         # Exit filesystem context if we entered it
         if fs_context is not None:
             fs_context.__exit__(None, None, None)
+
+
+def run_file_in_sandbox(
+    agent: BaseAgent,
+    file_path: str,
+    session: str = "default",
+    *,
+    eval_timeout_seconds: float | None = None,
+    on_event: Callable[[Any], None] | None = None,
+    on_token: Callable[[Any], None] | None = None,
+    main_loop: asyncio.AbstractEventLoop | None = None,
+) -> State:
+    """
+    Run a file from VFS in the agent's sandbox.
+
+    This is a convenience function for executing code from the virtual filesystem
+    using the agent's registered modules, functions, and classes. Useful for
+    running user-generated code (e.g., apps) in a sandboxed environment.
+
+    Args:
+        agent: The agent providing the execution context and VFS access
+        file_path: Path to the file in VFS (e.g., "app/main.py")
+        session: Session identifier for state/fs access
+        eval_timeout_seconds: Optional timeout override
+        on_event: Optional handler to call for each event
+        on_token: Optional handler to call for each token
+        main_loop: Optional asyncio loop for bridging async calls
+
+    Returns:
+        The state after execution
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist in VFS
+        EvalError: If the code fails to execute
+
+    Example:
+        # Create a sandbox from an existing agent
+        sandbox = Agent.clone(main_agent, name="sandbox")
+        sandbox.module(ui)  # Add UI module to sandbox
+
+        # Run user-generated app code
+        run_file_in_sandbox(sandbox, "app/main.py", session_id)
+    """
+    # Get filesystem and state for this session
+    fs = agent.fs(session)
+    state = agent.state(session)
+
+    # Read the file from VFS
+    if not fs.exists(file_path):
+        raise FileNotFoundError(f"File not found in VFS: {file_path}")
+
+    code = fs.read(file_path).decode("utf-8")
+
+    # Get the underlying filesystem backend for evaluate_program
+    backend, _ = agent._get_fs_backend(session)
+
+    # Execute in sandbox
+    evaluate_program(
+        code,
+        agent,
+        state,
+        eval_timeout_seconds=eval_timeout_seconds,
+        fs=backend,
+        session=session,
+        on_event=on_event,
+        on_token=on_token,
+        main_loop=main_loop,
+    )
+
+    return state
