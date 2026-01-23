@@ -57,3 +57,18 @@ def register_plotly(agent: Agent, io_friendly: bool = True) -> None:
             "plotly not installed - skipping plotly registration", UserWarning
         )
         raise
+
+    try:
+        import plotly.express
+
+        agent.module(
+            plotly.express,
+            recursive=True,
+            visibility="low",
+        )
+    except ImportError:
+        warnings.warn(
+            "plotly.express not installed - skipping plotly express registration",
+            UserWarning,
+        )
+        raise
