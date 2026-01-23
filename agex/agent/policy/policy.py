@@ -34,6 +34,72 @@ class AgentPolicy:
         # with their own include/exclude/configure rules during rendering.
         self._class_namespaces: dict[type, Namespace] = {}
 
+    def copy(self) -> "AgentPolicy":
+        """
+        Create a copy of this policy.
+
+        The copy has independent namespace dictionaries but shares references to
+        live objects (modules, functions, classes, instances). This allows the
+        copy to be modified (e.g., adding new registrations) without affecting
+        the original policy.
+
+        Returns:
+            A new AgentPolicy with copied structure but shared live objects.
+        """
+        from dataclasses import fields
+
+        new_policy = AgentPolicy()
+
+        # Copy each namespace
+        for name, ns in self.namespaces.items():
+            # Create a new Namespace with the same init fields
+            init_kwargs = {
+                f.name: getattr(ns, f.name) for f in fields(Namespace) if f.init
+            }
+            # Copy mutable init fields (dicts) to avoid sharing
+            if "configure" in init_kwargs and init_kwargs["configure"]:
+                init_kwargs["configure"] = init_kwargs["configure"].copy()
+            if (
+                "exception_mappings" in init_kwargs
+                and init_kwargs["exception_mappings"]
+            ):
+                init_kwargs["exception_mappings"] = init_kwargs[
+                    "exception_mappings"
+                ].copy()
+            if "submodules" in init_kwargs and init_kwargs["submodules"]:
+                init_kwargs["submodules"] = init_kwargs["submodules"].copy()
+
+            new_ns = Namespace(**init_kwargs)
+
+            # Copy non-init fields (these are set after construction)
+            new_ns.fns = ns.fns.copy()
+            new_ns.fn_objects = ns.fn_objects.copy()
+            new_ns.consts = ns.consts.copy()
+            new_ns.classes = ns.classes.copy()
+
+            new_policy.namespaces[name] = new_ns
+
+        # Copy class namespaces (maps type -> Namespace)
+        # The Namespace objects here should reference the ones we just copied
+        for cls, ns in self._class_namespaces.items():
+            if ns.name in new_policy.namespaces:
+                new_policy._class_namespaces[cls] = new_policy.namespaces[ns.name]
+            else:
+                # This namespace isn't in the main dict, copy it separately
+                init_kwargs = {
+                    f.name: getattr(ns, f.name) for f in fields(Namespace) if f.init
+                }
+                if "configure" in init_kwargs and init_kwargs["configure"]:
+                    init_kwargs["configure"] = init_kwargs["configure"].copy()
+                new_ns = Namespace(**init_kwargs)
+                new_ns.fns = ns.fns.copy()
+                new_ns.fn_objects = ns.fn_objects.copy()
+                new_ns.consts = ns.consts.copy()
+                new_ns.classes = ns.classes.copy()
+                new_policy._class_namespaces[cls] = new_ns
+
+        return new_policy
+
     # ----- Registration (spec only, no enumeration) -----
     def register_module(
         self,
