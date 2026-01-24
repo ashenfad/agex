@@ -116,6 +116,11 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             fs=source._fs_config,
             # Share host to ensure same session cache (important for VFS sharing)
             host=source._host,
+            llm=source.llm,
+            llm_max_retries=source.llm_max_retries,
+            log_high_water_tokens=source.log_high_water_tokens,
+            log_low_water_tokens=source.log_low_water_tokens,
+            agex_primer_override=source.agex_primer_override,
         )
 
         # Copy the policy so modifications don't affect source
