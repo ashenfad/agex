@@ -65,6 +65,23 @@ class TestPatchingBasics:
             assert os.path.exists("exists.txt") is True
             assert os.path.exists("nonexistent.txt") is False
 
+    def test_nested_directory_open(self):
+        """Test that files in nested directories can be opened with standard operations."""
+        state = Live()
+        vfs = VirtualFS(state)
+
+        # Write file to nested directory (like debug/dom.html)
+        vfs.write("debug/dom.html", b"<html>test</html>")
+
+        with with_virtual_fs(vfs):
+            # Test os.path.exists
+            assert os.path.exists("debug/dom.html") is True
+
+            # Test open()
+            with open("debug/dom.html", "r") as f:
+                content = f.read()
+            assert content == "<html>test</html>"
+
     def test_isfile_patched(self):
         """Test that os.path.isfile() is patched."""
         state = Live()
