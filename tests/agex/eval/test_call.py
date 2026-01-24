@@ -452,3 +452,163 @@ task_success(helper())
 
     assert isinstance(excinfo.value.result, Response)
     assert excinfo.value.result.parts == ["ok"]
+
+
+# --- Async bridging tests ---
+
+
+class MockAwaitableResponse:
+    """Mock NiceGUI-style awaitable that dispatches action immediately.
+
+    Unlike coroutines, the action happens when the function is called,
+    not when awaited. Awaiting just retrieves the result.
+    """
+
+    def __init__(self, value):
+        self.value = value
+        self.action_executed = True  # Action already happened
+
+    def __await__(self):
+        yield
+        return self.value
+
+
+def test_non_coroutine_awaitable_same_thread():
+    """Non-coroutine awaitables (like NiceGUI's AwaitableResponse) should be
+    handled gracefully in same-thread context, returning None."""
+    import asyncio
+
+    agent = Agent()
+
+    def mock_async_action():
+        """Returns an awaitable but action already dispatched."""
+        return MockAwaitableResponse("result")
+
+    agent.fn(mock_async_action)
+
+    async def run_test():
+        from agex.eval.core import Evaluator
+
+        state = Live()
+        loop = asyncio.get_running_loop()
+
+        evaluator = Evaluator(
+            agent=agent,
+            state=state,
+            source_code=None,
+            eval_timeout_seconds=30,
+            main_loop=loop,
+        )
+
+        program = "result = mock_async_action()"
+        import ast
+
+        tree = ast.parse(program)
+        evaluator.visit(tree)
+
+        # Result should be None since we can't await in sync context
+        assert state.get("result") is None
+
+    asyncio.run(run_test())
+
+
+def test_true_coroutine_same_thread_raises_error():
+    """True coroutines should raise an error in same-thread sync context
+    because the function body won't execute without await."""
+    import asyncio
+
+    from agex.eval.error import EvalError
+
+    agent = Agent()
+
+    async def async_function():
+        """A true async function - body doesn't execute until awaited."""
+        return "executed"
+
+    agent.fn(async_function)
+
+    async def run_test():
+        from agex.eval.core import Evaluator
+
+        state = Live()
+        loop = asyncio.get_running_loop()
+
+        evaluator = Evaluator(
+            agent=agent,
+            state=state,
+            source_code=None,
+            eval_timeout_seconds=30,
+            main_loop=loop,
+        )
+
+        program = "result = async_function()"
+        import ast
+
+        tree = ast.parse(program)
+
+        with pytest.raises(EvalError) as excinfo:
+            evaluator.visit(tree)
+
+        assert "async function" in str(excinfo.value)
+        assert "sync callback" in str(excinfo.value)
+
+    asyncio.run(run_test())
+
+
+def test_async_bridging_different_thread():
+    """Async functions should work when called from a different thread
+    with a main_loop to bridge to."""
+    import asyncio
+    import threading
+
+    agent = Agent()
+
+    async def async_add(a, b):
+        await asyncio.sleep(0.01)  # Small delay to prove it's async
+        return a + b
+
+    agent.fn(async_add)
+
+    result_holder = {"value": None, "error": None}
+
+    def run_in_thread(loop):
+        from agex.eval.core import Evaluator
+
+        state = Live()
+
+        evaluator = Evaluator(
+            agent=agent,
+            state=state,
+            source_code=None,
+            eval_timeout_seconds=30,
+            main_loop=loop,
+        )
+
+        try:
+            program = "result = async_add(2, 3)"
+            import ast
+
+            tree = ast.parse(program)
+            evaluator.visit(tree)
+            result_holder["value"] = state.get("result")
+        except Exception as e:
+            result_holder["error"] = e
+
+    async def run_test():
+        loop = asyncio.get_running_loop()
+
+        thread = threading.Thread(target=run_in_thread, args=(loop,))
+        thread.start()
+
+        # Allow time for the thread to execute and bridge back
+        while thread.is_alive():
+            await asyncio.sleep(0.01)
+
+        thread.join()
+
+        if result_holder["error"]:
+            raise result_holder["error"]
+
+        assert result_holder["value"] == 5
+
+    asyncio.run(run_test())

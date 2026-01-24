@@ -127,6 +127,8 @@ class UserFunction:
         self, args: list, kwargs: dict, source_code: str | None, parent_evaluator=None
     ):
         """Execute the function with a new evaluator."""
+        import asyncio
+
         from agex.eval.arguments import bind_arguments
         from agex.eval.core import Evaluator
 
@@ -152,12 +154,19 @@ class UserFunction:
             )
         else:
             # Fresh timeout budget (for direct calls)
+            # Try to get the running event loop for async bridging (e.g., NiceGUI callbacks)
+            try:
+                main_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                main_loop = None
+
             evaluator = Evaluator(
                 agent=agent,
                 state=exec_state,
                 source_code=source_code,
                 eval_timeout_seconds=agent.eval_timeout_seconds,
                 session="default",  # Default if called outside evaluator
+                main_loop=main_loop,
             )
 
         # Check if this is a method call with context for super()

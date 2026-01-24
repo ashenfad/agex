@@ -1,5 +1,5 @@
+import threading
 import uuid
-from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Callable, Dict, Literal
 
 from ..llm import LLM, connect_llm
@@ -16,14 +16,11 @@ if TYPE_CHECKING:
     from ..state.config import StateConfig
 
 # Global registry mapping fingerprints to agents
-# Using ContextVar for thread/async-task safety in server environments
-_AGENT_REGISTRY: ContextVar[Dict[str, "BaseAgent"]] = ContextVar(
-    "agent_registry", default={}
-)
-# Global registry mapping agent names to agents
-_AGENT_REGISTRY_BY_NAME: ContextVar[Dict[str, "BaseAgent"]] = ContextVar(
-    "agent_registry_by_name", default={}
-)
+# Using process-global dicts with lock for thread safety
+# (ContextVar doesn't work for callbacks invoked in different async contexts)
+_AGENT_REGISTRY: Dict[str, "BaseAgent"] = {}
+_AGENT_REGISTRY_BY_NAME: Dict[str, "BaseAgent"] = {}
+_AGENT_REGISTRY_LOCK = threading.Lock()
 
 _UNSET = object()
 
@@ -38,30 +35,30 @@ def register_agent(agent: "BaseAgent") -> str:
     which is necessary for handling deserialized agents (e.g., in remote
     execution where the same agent may be sent multiple times).
     """
-    registry_by_name = _AGENT_REGISTRY_BY_NAME.get().copy()
-    registry = _AGENT_REGISTRY.get().copy()
-
     # Compute fingerprint first - needed for collision detection
     fingerprint = compute_agent_fingerprint_from_policy(agent)
 
-    # Enforce unique agent names if provided
-    if hasattr(agent, "name") and agent.name is not None:
-        if agent.name in registry_by_name:
-            existing_agent = registry_by_name[agent.name]
-            # Allow re-registration if:
-            # 1. Same object instance (identity), OR
-            # 2. Same fingerprint (deserialized copy of same agent)
-            # 3. Existing agent has no fingerprint (shouldn't happen but defensive)
-            existing_fingerprint = getattr(existing_agent, "fingerprint", None)
+    with _AGENT_REGISTRY_LOCK:
+        # Enforce unique agent names if provided
+        if hasattr(agent, "name") and agent.name is not None:
+            if agent.name in _AGENT_REGISTRY_BY_NAME:
+                existing_agent = _AGENT_REGISTRY_BY_NAME[agent.name]
+                # Allow re-registration if:
+                # 1. Same object instance (identity), OR
+                # 2. Same fingerprint (deserialized copy of same agent)
+                # 3. Existing agent has no fingerprint (shouldn't happen but defensive)
+                existing_fingerprint = getattr(existing_agent, "fingerprint", None)
 
-            if existing_agent is not agent:
-                if existing_fingerprint is None or existing_fingerprint != fingerprint:
-                    raise ValueError(f"Agent name '{agent.name}' already exists")
-        registry_by_name[agent.name] = agent
-        _AGENT_REGISTRY_BY_NAME.set(registry_by_name)
+                if existing_agent is not agent:
+                    if (
+                        existing_fingerprint is None
+                        or existing_fingerprint != fingerprint
+                    ):
+                        raise ValueError(f"Agent name '{agent.name}' already exists")
+            _AGENT_REGISTRY_BY_NAME[agent.name] = agent
 
-    registry[fingerprint] = agent
-    _AGENT_REGISTRY.set(registry)
+        _AGENT_REGISTRY[fingerprint] = agent
+
     return fingerprint
 
 
@@ -71,23 +68,24 @@ def resolve_agent(fingerprint: str) -> "BaseAgent":
 
     Raises RuntimeError if no matching agent is found.
     """
-    registry = _AGENT_REGISTRY.get()
-    agent = registry.get(fingerprint)
-    if not agent:
-        available = list(registry.keys())
-        raise RuntimeError(
-            f"No agent found with fingerprint '{fingerprint[:8]}...'. "
-            f"Available fingerprints: {[fp[:8] + '...' for fp in available]}"
-        )
-    return agent
+    with _AGENT_REGISTRY_LOCK:
+        agent = _AGENT_REGISTRY.get(fingerprint)
+        if not agent:
+            available = list(_AGENT_REGISTRY.keys())
+            raise RuntimeError(
+                f"No agent found with fingerprint '{fingerprint[:8]}...'. "
+                f"Available fingerprints: {[fp[:8] + '...' for fp in available]}"
+            )
+        return agent
 
 
 def clear_agent_registry() -> None:
     """Clear the global registry. Primarily for testing."""
     from .task import clear_dynamic_dataclass_registry
 
-    _AGENT_REGISTRY.set({})
-    _AGENT_REGISTRY_BY_NAME.set({})
+    with _AGENT_REGISTRY_LOCK:
+        _AGENT_REGISTRY.clear()
+        _AGENT_REGISTRY_BY_NAME.clear()
     clear_dynamic_dataclass_registry()
 
 
