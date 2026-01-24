@@ -30,6 +30,14 @@ class CallEvaluator(BaseEvaluator):
             return node.id
         return "object"
 
+    async def _ensure_coro(self, awaitable):
+        """Wrap an awaitable in a coroutine for use with asyncio functions.
+
+        Some awaitables (like NiceGUI's AwaitableResponse) aren't true coroutines,
+        but asyncio.run_coroutine_threadsafe() requires a coroutine object.
+        """
+        return await awaitable
+
     def _evaluate_starred_argument(
         self, value_node: ast.expr, call_name: str
     ) -> list[Any]:
@@ -344,21 +352,46 @@ class CallEvaluator(BaseEvaluator):
                 )
                 raise AgexError(f"'{fn_name_for_error}' is not callable.", node)
 
-            # Bridge async results if we have a main loop (threaded context)
+            # Bridge async results if we have a main loop
             if inspect.isawaitable(result):
                 main_loop = getattr(self, "main_loop", None)
                 if main_loop:
                     import asyncio
 
-                    # Block thread until async logic completes on the main loop
-                    result = asyncio.run_coroutine_threadsafe(
-                        result, main_loop
-                    ).result()
+                    # Check if we're on the same thread as the event loop
+                    try:
+                        running_loop = asyncio.get_running_loop()
+                        same_thread = running_loop is main_loop
+                    except RuntimeError:
+                        same_thread = False
+
+                    if same_thread:
+                        # We're on the event loop thread in a sync context
+                        if inspect.iscoroutine(result):
+                            # True coroutines don't execute until awaited - can't do that here
+                            fn_name = self._callable_name(node.func)
+                            result.close()
+                            raise EvalError(
+                                f"'{fn_name}' is an async function that cannot be called "
+                                f"from a sync callback. The function body won't execute without await.",
+                                node,
+                            )
+                        else:
+                            # Non-coroutine awaitables (e.g., NiceGUI's AwaitableResponse)
+                            # The action is already dispatched - we just can't get the result
+                            result = None
+                    else:
+                        # Different thread - block until async logic completes
+                        result = asyncio.run_coroutine_threadsafe(
+                            self._ensure_coro(result), main_loop
+                        ).result()
                 else:
                     # No event loop to bridge to - async fn called from sync task
                     fn_name = self._callable_name(node.func)
                     # Close the coroutine to avoid "never awaited" warning
-                    result.close()
+                    # (only if it has a close method - some awaitables like NiceGUI's AwaitableResponse don't)
+                    if hasattr(result, "close"):
+                        result.close()
                     raise EvalError(
                         f"'{fn_name}' is an async function and cannot be called from a sync task. "
                         f"Either use 'async def' for your @agent.task, or use a synchronous alternative.",
