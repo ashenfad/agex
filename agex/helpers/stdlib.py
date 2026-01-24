@@ -145,4 +145,5 @@ def register_stdlib(agent: Agent, io_friendly: bool = True) -> None:
         agent.module(
             io, visibility="low", include=["BytesIO", "StringIO", "TextIOWrapper"]
         )
-    agent.module(typing, visibility="low")
+    # Exclude deprecated typing.io and typing.re (removed in Python 3.13)
+    agent.module(typing, visibility="low", exclude=["io", "re"])
