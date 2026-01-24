@@ -94,6 +94,9 @@ _SAFE_SYSTEM_PATHS = _get_safe_paths()
 # Recursion guard for safe path checks
 _in_safe_path_check: ContextVar[bool] = ContextVar("in_safe_path_check", default=False)
 
+# Recursion guard for VFS operations - prevents diskcache internal file ops from being intercepted
+_in_vfs_operation: ContextVar[bool] = ContextVar("in_vfs_operation", default=False)
+
 
 def _is_safe_system_path(path: str | Path) -> bool:
     """Check if path is within a safe system directory."""
@@ -122,6 +125,11 @@ def _vfs_open(path: Any, *args: Any, **kwargs: Any) -> Any:
     # Extract mode if provided, default to "r"
     mode = args[0] if args else kwargs.get("mode", "r")
 
+    # Recursion guard: if we're already in a VFS operation, use original open
+    # This prevents diskcache and other internal file operations from being intercepted
+    if _in_vfs_operation.get():
+        return _originals["open"](path, *args, **kwargs)
+
     # Check isolated FS first
     isolated = current_isolated_fs.get()
     if isolated is not None and isinstance(path, (str, Path)):
@@ -142,6 +150,8 @@ def _vfs_open(path: Any, *args: Any, **kwargs: Any) -> Any:
     # Then check virtual FS
     vfs = current_vfs.get()
     if vfs is not None and isinstance(path, (str, Path)):
+        # Set recursion guard before calling VFS (which may trigger diskcache file ops)
+        token = _in_vfs_operation.set(True)
         try:
             return vfs.open(str(path), mode, **kwargs)
         except FileNotFoundError:
@@ -155,6 +165,8 @@ def _vfs_open(path: Any, *args: Any, **kwargs: Any) -> Any:
             ):
                 return _originals["open"](path, *args, **kwargs)
             raise
+        finally:
+            _in_vfs_operation.reset(token)
 
     return _originals["open"](path, *args, **kwargs)
 
