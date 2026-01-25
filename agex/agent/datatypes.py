@@ -77,6 +77,16 @@ class FileAction:
     mode: Literal["write", "append"] = "write"
 
 
+@dataclass
+class EditAction:
+    """Represents a search/replace edit operation requested by an agent."""
+
+    path: str
+    search: str
+    replace: str
+    replace_all: bool = False
+
+
 class UnpicklableVariableError(Exception):
     """Raised when attempting to access a variable that was not persisted due to being unpicklable."""
 

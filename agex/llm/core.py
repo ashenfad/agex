@@ -18,7 +18,7 @@ from typing import (
 
 from pydantic import BaseModel, Field
 
-from agex.agent.datatypes import FileAction
+from agex.agent.datatypes import EditAction, FileAction
 
 if TYPE_CHECKING:
     from agex.agent.events import Event
@@ -108,12 +108,12 @@ class TokenChunk:
     Not an Event - tokens are ephemeral and don't go in the state log.
 
     Attributes:
-        type: Either "title", "thinking", "python", "file", or "terminal"
+        type: Either "title", "thinking", "python", "file", "edit", or "terminal"
         content: The text content (incremental)
         done: True when this section is complete
     """
 
-    type: Literal["title", "thinking", "python", "file", "terminal"]
+    type: Literal["title", "thinking", "python", "file", "edit", "terminal"]
     content: str
     done: bool = False
 
@@ -134,7 +134,7 @@ class LLMResponse(BaseModel):
     title: str = ""
     thinking: str
     code: str = ""
-    file_actions: list[FileAction] = Field(default_factory=list)
+    file_actions: list[FileAction | EditAction] = Field(default_factory=list)
     terminal: str | None = None
 
 
@@ -166,11 +166,18 @@ class ResponseBuilder:
         self.file_parts: dict[str, list[str]] = {}
         self.file_modes: dict[str, str] = {}
         self.current_file_path: str | None = None
+        # Edit tracking
+        self.edit_parts: dict[str, list[str]] = {}
+        self.edit_metadata: dict[str, dict] = {}  # path -> {replace_all: bool}
+        self.current_edit_path: str | None = None
+        # Track ordering of file and edit actions
+        self.action_order: list[tuple[str, str]] = []  # [(type, path), ...]
         self.seen_sections: dict[str, bool] = {
             "title": False,
             "thinking": False,
             "python": False,
             "file": False,
+            "edit": False,
             "terminal": False,
         }
 
@@ -182,7 +189,7 @@ class ResponseBuilder:
             and not self.seen_sections[token.type]
         )
         if start_flag and token.type in self.seen_sections:
-            if token.type != "file":
+            if token.type not in ("file", "edit"):
                 self.seen_sections[token.type] = True
 
         enriched = StreamToken(
@@ -198,6 +205,8 @@ class ResponseBuilder:
         if token.done:
             if token.type == "file":
                 self.current_file_path = None
+            elif token.type == "edit":
+                self.current_edit_path = None
             return enriched
 
         if token.type == "title":
@@ -226,22 +235,85 @@ class ResponseBuilder:
                     self.current_file_path = path
                     self.file_parts[self.current_file_path] = []
                     self.file_modes[self.current_file_path] = mode
+                    # Track ordering
+                    self.action_order.append(("file", path))
             elif self.current_file_path:
                 self.file_parts[self.current_file_path].append(token.content)
+        elif token.type == "edit":
+            if token.content.startswith("path="):
+                # Parse path and replace_all from metadata: "path=foo.py,replace_all=False"
+                metadata = token.content
+                import re
+
+                from agex.llm.xml import validate_file_path
+
+                path_match = re.search(r"path=([^,]+)", metadata)
+                replace_all_match = re.search(r"replace_all=([^,]+)", metadata)
+
+                if path_match:
+                    path = validate_file_path(path_match.group(1))
+                    replace_all = (
+                        replace_all_match is not None
+                        and replace_all_match.group(1).lower() == "true"
+                    )
+                    self.current_edit_path = path
+                    self.edit_parts[path] = []
+                    self.edit_metadata[path] = {"replace_all": replace_all}
+                    # Track ordering
+                    self.action_order.append(("edit", path))
+            elif self.current_edit_path:
+                self.edit_parts[self.current_edit_path].append(token.content)
 
         return enriched
 
     def build(self) -> LLMResponse:
         """Return the final LLMResponse."""
-        from agex.agent.datatypes import FileAction
+        import re
 
-        file_actions = []
-        for path, parts in self.file_parts.items():
-            content = "".join(parts)
-            mode = self.file_modes.get(path, "write")
-            file_actions.append(
-                FileAction(path=path, content=content, mode=mode)  # type: ignore[arg-type]
-            )
+        from agex.agent.datatypes import EditAction, FileAction
+        from agex.llm.xml import TAG_REPLACE, TAG_SEARCH, validate_edit_search
+
+        file_actions: list[FileAction | EditAction] = []
+
+        # Build actions in the order they appeared
+        for action_type, path in self.action_order:
+            if action_type == "file":
+                parts = self.file_parts.get(path, [])
+                content = "".join(parts)
+                mode = self.file_modes.get(path, "write")
+                file_actions.append(
+                    FileAction(path=path, content=content, mode=mode)  # type: ignore[arg-type]
+                )
+            elif action_type == "edit":
+                parts = self.edit_parts.get(path, [])
+                inner_content = "".join(parts)
+                metadata = self.edit_metadata.get(path, {})
+                replace_all = metadata.get("replace_all", False)
+
+                # Parse SEARCH and REPLACE from the accumulated content
+                search_match = re.search(
+                    rf"<{TAG_SEARCH}>(.*?)</{TAG_SEARCH}>",
+                    inner_content,
+                    re.DOTALL | re.IGNORECASE,
+                )
+                replace_match = re.search(
+                    rf"<{TAG_REPLACE}>(.*?)</{TAG_REPLACE}>",
+                    inner_content,
+                    re.DOTALL | re.IGNORECASE,
+                )
+
+                if search_match and replace_match:
+                    search = search_match.group(1)
+                    replace = replace_match.group(1)
+                    validate_edit_search(path, search)
+                    file_actions.append(
+                        EditAction(
+                            path=path,
+                            search=search,
+                            replace=replace,
+                            replace_all=replace_all,
+                        )
+                    )
 
         return LLMResponse(
             title="".join(self.title_parts).strip(),

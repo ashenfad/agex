@@ -7,6 +7,7 @@ Converts agex events into XML-formatted messages for LLM consumption.
 from datetime import datetime
 from typing import Any, List
 
+from agex.agent.datatypes import EditAction, FileAction
 from agex.agent.events import (
     ActionEvent,
     CancelledEvent,
@@ -25,10 +26,13 @@ from agex.llm.core import ContentPart, ImagePart, TextPart
 from agex.llm.xml import (
     TAG_CANCELLED,
     TAG_CLARIFY,
+    TAG_EDIT,
     TAG_FAIL,
     TAG_FILE,
     TAG_OBSERVATION,
     TAG_PYTHON,
+    TAG_REPLACE,
+    TAG_SEARCH,
     TAG_SUCCESS,
     TAG_THINKING,
     TAG_TITLE,
@@ -89,17 +93,28 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                 f"<{TAG_TITLE}>{event.title}</{TAG_TITLE}>" if event.title else ""
             )
 
-            # Render files
+            # Render file actions (both FILE and EDIT)
             files_section = ""
             if event.file_actions:
                 for action in event.file_actions:
-                    mode_attr = (
-                        f' mode="{action.mode}"' if action.mode != "write" else ""
-                    )
-                    files_section += (
-                        f'<{TAG_FILE} path="{action.path}"{mode_attr}>'
-                        f"{action.content}</{TAG_FILE}>\n"
-                    )
+                    if isinstance(action, EditAction):
+                        replace_all_attr = (
+                            ' replace_all="true"' if action.replace_all else ""
+                        )
+                        files_section += (
+                            f'<{TAG_EDIT} path="{action.path}"{replace_all_attr}>\n'
+                            f"<{TAG_SEARCH}>{action.search}</{TAG_SEARCH}>\n"
+                            f"<{TAG_REPLACE}>{action.replace}</{TAG_REPLACE}>\n"
+                            f"</{TAG_EDIT}>\n"
+                        )
+                    elif isinstance(action, FileAction):
+                        mode_attr = (
+                            f' mode="{action.mode}"' if action.mode != "write" else ""
+                        )
+                        files_section += (
+                            f'<{TAG_FILE} path="{action.path}"{mode_attr}>'
+                            f"{action.content}</{TAG_FILE}>\n"
+                        )
 
             content = (
                 f"{title_section}<{TAG_THINKING}>{event.thinking}</{TAG_THINKING}>\n"

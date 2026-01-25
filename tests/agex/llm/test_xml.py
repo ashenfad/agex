@@ -2,6 +2,7 @@
 
 import pytest
 
+from agex.agent.datatypes import EditAction, FileAction
 from agex.llm.core import ResponseParseError
 from agex.llm.xml import (
     TokenChunk,
@@ -577,4 +578,180 @@ class TestFileModeValidation:
             "<PYTHON>pass</PYTHON>",
         ]
         with pytest.raises(ResponseParseError, match="Invalid mode"):
+            list(tokenize_xml_stream(iter(chunks)))
+
+
+class TestEditParsing:
+    """Tests for EDIT tag parsing."""
+
+    def test_basic_edit(self):
+        """Test basic EDIT tag parsing."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py">
+        <SEARCH>old_code</SEARCH>
+        <REPLACE>new_code</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        assert len(result.file_actions) == 1
+        assert isinstance(result.file_actions[0], EditAction)
+        assert result.file_actions[0].path == "app.py"
+        assert result.file_actions[0].search == "old_code"
+        assert result.file_actions[0].replace == "new_code"
+        assert result.file_actions[0].replace_all is False
+
+    def test_edit_replace_all(self):
+        """Test EDIT tag with replace_all attribute."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py" replace_all="true">
+        <SEARCH>var</SEARCH>
+        <REPLACE>variable</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        assert result.file_actions[0].replace_all is True
+
+    def test_edit_replace_all_false(self):
+        """Test EDIT tag with explicit replace_all=false."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py" replace_all="false">
+        <SEARCH>var</SEARCH>
+        <REPLACE>variable</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        assert result.file_actions[0].replace_all is False
+
+    def test_mixed_file_and_edit_ordering(self):
+        """FILE and EDIT actions should preserve order in unified list."""
+        xml = """
+        <THINKING>x</THINKING>
+        <FILE path="a.py">content a</FILE>
+        <EDIT path="b.py"><SEARCH>x</SEARCH><REPLACE>y</REPLACE></EDIT>
+        <FILE path="c.py">content c</FILE>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        assert len(result.file_actions) == 3
+        assert isinstance(result.file_actions[0], FileAction)
+        assert result.file_actions[0].path == "a.py"
+        assert isinstance(result.file_actions[1], EditAction)
+        assert result.file_actions[1].path == "b.py"
+        assert isinstance(result.file_actions[2], FileAction)
+        assert result.file_actions[2].path == "c.py"
+
+    def test_edit_empty_search_rejected(self):
+        """Empty SEARCH content should raise ResponseParseError."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py">
+        <SEARCH></SEARCH>
+        <REPLACE>new</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        with pytest.raises(ResponseParseError, match="Empty"):
+            parse_xml_response(xml)
+
+    def test_edit_path_validation(self):
+        """EDIT path should be validated like FILE path."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="../escape.py">
+        <SEARCH>x</SEARCH>
+        <REPLACE>y</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        with pytest.raises(ResponseParseError, match="Path traversal"):
+            parse_xml_response(xml)
+
+    def test_multiline_search_replace(self):
+        """Test EDIT with multiline search and replace content."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py">
+        <SEARCH>def old():
+    pass</SEARCH>
+        <REPLACE>def new():
+    return 42</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        edit = result.file_actions[0]
+        assert isinstance(edit, EditAction)
+        assert "def old():" in edit.search
+        assert "def new():" in edit.replace
+
+    def test_edit_case_insensitive(self):
+        """Test that EDIT tags are case-insensitive."""
+        xml = """
+        <thinking>x</thinking>
+        <edit path="app.py">
+        <search>old</search>
+        <replace>new</replace>
+        </edit>
+        <python>pass</python>
+        """
+        result = parse_xml_response(xml)
+        assert len(result.file_actions) == 1
+        assert isinstance(result.file_actions[0], EditAction)
+
+    def test_streaming_edit_basic(self):
+        """Test streaming tokenizer with EDIT tag."""
+        chunks = [
+            "<THINKING>reasoning</THINKING>",
+            '<EDIT path="app.py">',
+            "<SEARCH>old_code</SEARCH>",
+            "<REPLACE>new_code</REPLACE>",
+            "</EDIT>",
+            "<PYTHON>pass</PYTHON>",
+        ]
+        tokens = list(tokenize_xml_stream(iter(chunks)))
+
+        edit_tokens = [t for t in tokens if t.type == "edit"]
+        assert len(edit_tokens) > 0
+
+        # First token should be the metadata
+        metadata_token = next(
+            t for t in tokens if t.type == "edit" and t.content.startswith("path=")
+        )
+        assert "path=app.py" in metadata_token.content
+        assert "replace_all=False" in metadata_token.content
+
+    def test_streaming_edit_replace_all(self):
+        """Test streaming tokenizer with replace_all attribute."""
+        chunks = [
+            "<THINKING>reasoning</THINKING>",
+            '<EDIT path="app.py" replace_all="true">',
+            "<SEARCH>old</SEARCH>",
+            "<REPLACE>new</REPLACE>",
+            "</EDIT>",
+            "<PYTHON>pass</PYTHON>",
+        ]
+        tokens = list(tokenize_xml_stream(iter(chunks)))
+
+        metadata_token = next(
+            t for t in tokens if t.type == "edit" and t.content.startswith("path=")
+        )
+        assert "replace_all=True" in metadata_token.content
+
+    def test_streaming_edit_path_validation(self):
+        """Streaming tokenizer should also reject invalid EDIT paths."""
+        chunks = [
+            "<THINKING>x</THINKING>",
+            '<EDIT path="../evil.py">',
+            "<SEARCH>x</SEARCH>",
+            "<REPLACE>y</REPLACE>",
+            "</EDIT>",
+            "<PYTHON>pass</PYTHON>",
+        ]
+        with pytest.raises(ResponseParseError, match="Path traversal not allowed"):
             list(tokenize_xml_stream(iter(chunks)))

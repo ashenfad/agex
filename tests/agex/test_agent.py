@@ -1298,7 +1298,7 @@ def test_recursive_module_registration_resolves_dataclass_fields():
 
 def test_vfs_append_integration():
     """Test that mode='append' in <FILE> tag correctly appends to existing files."""
-    from agex.agent.loop.common import apply_optimistic_file_writes
+    from agex.agent.loop.common import apply_optimistic_file_actions
     from agex.llm.core import ResponseBuilder, TokenChunk
     from agex.state import Live
 
@@ -1337,7 +1337,7 @@ def test_vfs_append_integration():
 
     # Now verify that applying this response actually appends
     exec_state = Live()
-    apply_optimistic_file_writes(agent, response, fs, exec_state)
+    apply_optimistic_file_actions(agent, response, fs, exec_state)
 
     # Verify content in VFS
     content = fs.read("utils.py").decode("utf-8")
