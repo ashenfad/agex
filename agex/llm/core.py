@@ -214,15 +214,18 @@ class ResponseBuilder:
                 metadata = token.content
                 import re
 
+                from agex.llm.xml import validate_file_mode, validate_file_path
+
                 path_match = re.search(r"path=([^,]+)", metadata)
                 mode_match = re.search(r"mode=([^,]+)", metadata)
 
                 if path_match:
-                    self.current_file_path = path_match.group(1)
+                    path = validate_file_path(path_match.group(1))
+                    mode_str = mode_match.group(1) if mode_match else "write"
+                    mode = validate_file_mode(mode_str, path)
+                    self.current_file_path = path
                     self.file_parts[self.current_file_path] = []
-                    self.file_modes[self.current_file_path] = (
-                        mode_match.group(1) if mode_match else "write"
-                    )
+                    self.file_modes[self.current_file_path] = mode
             elif self.current_file_path:
                 self.file_parts[self.current_file_path].append(token.content)
 

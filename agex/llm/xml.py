@@ -7,6 +7,7 @@ All utilities are optional - clients can use these or implement custom logic.
 Note: For rendering events to XML, see agex.render.xml.render_events_as_xml()
 """
 
+import os
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, AsyncIterator, Iterator, Literal
@@ -26,6 +27,61 @@ TAG_SUCCESS = "TASK_SUCCESS"
 TAG_FAIL = "TASK_FAIL"
 TAG_CLARIFY = "TASK_CLARIFY"
 TAG_CANCELLED = "TASK_CANCELLED"
+
+# Valid modes for FILE tag
+VALID_FILE_MODES = frozenset({"write", "append"})
+
+
+def validate_file_path(path: str) -> str:
+    """Validate a file path from <FILE> tag.
+
+    Args:
+        path: The path string from the FILE tag's path attribute.
+
+    Returns:
+        The validated and stripped path.
+
+    Raises:
+        ResponseParseError: If path is empty, contains null bytes, or has traversal.
+    """
+    if not path or not path.strip():
+        raise ResponseParseError("Empty path in <FILE> tag")
+
+    path = path.strip()
+
+    # Reject null bytes (can cause issues in some contexts)
+    if "\x00" in path:
+        raise ResponseParseError(f"Invalid characters in <FILE> path: {path!r}")
+
+    # Reject path traversal attempts for clearer error messages
+    # (VFS would handle this, but failing early is clearer)
+    normalized = os.path.normpath(path)
+    if normalized.startswith("..") or "/.." in normalized:
+        raise ResponseParseError(f"Path traversal not allowed in <FILE> tag: {path}")
+
+    return path
+
+
+def validate_file_mode(mode: str, path: str) -> Literal["write", "append"]:
+    """Validate mode attribute from <FILE> tag.
+
+    Args:
+        mode: The mode string from the FILE tag's mode attribute.
+        path: The file path (for error messages).
+
+    Returns:
+        The validated mode as a Literal type.
+
+    Raises:
+        ResponseParseError: If mode is not 'write' or 'append'.
+    """
+    mode = mode.lower().strip()
+    if mode not in VALID_FILE_MODES:
+        raise ResponseParseError(
+            f"Invalid mode '{mode}' for <FILE path=\"{path}\">. "
+            f"Must be 'write' or 'append'."
+        )
+    return mode  # type: ignore[return-value]
 
 
 @dataclass
@@ -142,55 +198,193 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
         mode_match = re.search(r'mode=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
 
         if path_match:
-            path = path_match.group(1).strip()
-            mode = mode_match.group(1).strip() if mode_match else "write"
-            file_actions.append(
-                FileAction(path=path, content=content, mode=mode)  # type: ignore[arg-type]
-            )
+            path = validate_file_path(path_match.group(1))
+            mode_str = mode_match.group(1).strip() if mode_match else "write"
+            mode = validate_file_mode(mode_str, path)
+            file_actions.append(FileAction(path=path, content=content, mode=mode))
 
     return XMLResponse(
         thinking=thinking, code=code, title=title, file_actions=file_actions
     )
 
 
-def _process_section_closing(
-    buffer: str,
-    section_type: Literal["title", "thinking", "python", "file"],
-    closing_tag: str,
-) -> tuple[list[TokenChunk], str, bool]:
+class _XMLTokenizerState:
+    """Shared state machine for XML tokenization.
+
+    Encapsulates the buffer and section tracking logic used by both
+    sync and async tokenizers. This eliminates duplication between
+    tokenize_xml_stream() and atokenize_xml_stream().
     """
-    Helper to process closing tag for a section.
 
-    Args:
-        buffer: Current buffer content
-        section_type: Type of section ("thinking" or "python")
-        closing_tag: Closing tag to search for (e.g., TAG_THINKING)
+    # Map section types to their closing tags
+    _CLOSING_TAGS = {
+        "title": TAG_TITLE,
+        "thinking": TAG_THINKING,
+        "python": TAG_PYTHON,
+        "file": TAG_FILE,
+    }
 
-    Returns:
-        Tuple of (tokens_to_yield, updated_buffer, section_complete)
-        - tokens_to_yield: List of TokenChunk objects to yield
-        - updated_buffer: Buffer with processed content removed
-        - section_complete: True if closing tag was found, False otherwise
-    """
-    closing = re.search(rf"</{closing_tag}>", buffer, re.IGNORECASE)
-    if closing:
-        # Found closing tag - yield all content before it
-        tokens = []
-        before_tag = buffer[: closing.start()]
-        if before_tag:
-            tokens.append(TokenChunk(type=section_type, content=before_tag, done=False))
-        tokens.append(TokenChunk(type=section_type, content="", done=True))
+    def __init__(self) -> None:
+        self.buffer = ""
+        self.current_section: Literal["title", "thinking", "python", "file"] | None = (
+            None
+        )
 
-        # Keep content after closing tag
-        updated_buffer = buffer[closing.end() :]
-        return tokens, updated_buffer, True
-    else:
+    def add_chunk(self, chunk: str) -> None:
+        """Add a chunk to the buffer."""
+        self.buffer += chunk
+
+    def process_buffer(self) -> tuple[list[TokenChunk], bool]:
+        """Process buffer and return tokens plus stop flag.
+
+        Returns:
+            Tuple of (tokens_to_yield, should_stop).
+            should_stop is True after </PYTHON> is found.
+        """
+        tokens: list[TokenChunk] = []
+        should_stop = False
+
+        while True:
+            if self.current_section is None:
+                # Look for opening tags
+                section_tokens, found = self._try_start_section()
+                tokens.extend(section_tokens)
+                if not found:
+                    break
+            else:
+                # Process current section
+                section_tokens, complete, stop = self._process_current_section()
+                tokens.extend(section_tokens)
+                if stop:
+                    should_stop = True
+                    break
+                if not complete:
+                    break
+
+        return tokens, should_stop
+
+    def finalize(self) -> list[TokenChunk]:
+        """Handle remaining buffer at end of stream."""
+        if self.buffer and self.current_section:
+            return [
+                TokenChunk(type=self.current_section, content=self.buffer, done=False)
+            ]
+        return []
+
+    def _try_start_section(self) -> tuple[list[TokenChunk], bool]:
+        """Try to find and start a new section.
+
+        Returns:
+            Tuple of (tokens, found_section).
+        """
+        # Look for opening tags (case-insensitive)
+        title_start = re.search(rf"<{TAG_TITLE}>", self.buffer, re.IGNORECASE)
+        thinking_start = re.search(rf"<{TAG_THINKING}>", self.buffer, re.IGNORECASE)
+        python_start = re.search(rf"<{TAG_PYTHON}>", self.buffer, re.IGNORECASE)
+        file_start = re.search(rf"<{TAG_FILE}\s+([^>]*?)>", self.buffer, re.IGNORECASE)
+
+        # Collect all found starts with their positions
+        starts: list[tuple[int, str, int, str | None]] = []
+        if title_start:
+            starts.append((title_start.start(), "title", title_start.end(), None))
+        if thinking_start:
+            starts.append(
+                (thinking_start.start(), "thinking", thinking_start.end(), None)
+            )
+        if python_start:
+            starts.append((python_start.start(), "python", python_start.end(), None))
+        if file_start:
+            attrs_text = file_start.group(1)
+            path_match = re.search(r'path=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
+            mode_match = re.search(r'mode=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
+
+            if path_match:
+                # Validate path and mode
+                path = validate_file_path(path_match.group(1))
+                mode_str = mode_match.group(1).strip() if mode_match else "write"
+                mode = validate_file_mode(mode_str, path)
+                starts.append(
+                    (
+                        file_start.start(),
+                        "file",
+                        file_start.end(),
+                        f"path={path},mode={mode}",
+                    )
+                )
+
+        if not starts:
+            return [], False
+
+        # Pick the earliest start
+        starts.sort()
+        _, section, end_pos, metadata = starts[0]
+
+        self.current_section = section  # type: ignore[assignment]
+        self.buffer = self.buffer[end_pos:]
+
+        # For file tags, emit the path/mode metadata immediately
+        tokens: list[TokenChunk] = []
+        if section == "file" and metadata:
+            tokens.append(TokenChunk(type="file", content=metadata, done=False))
+
+        return tokens, True
+
+    def _process_current_section(self) -> tuple[list[TokenChunk], bool, bool]:
+        """Process content within current section.
+
+        Returns:
+            Tuple of (tokens, section_complete, should_stop).
+        """
+        assert self.current_section is not None
+
+        closing_tag = self._CLOSING_TAGS[self.current_section]
+        tokens, new_buffer, complete = self._process_section_closing(
+            self.buffer, self.current_section, closing_tag
+        )
+        self.buffer = new_buffer
+
+        should_stop = False
+        if complete:
+            if self.current_section == "python":
+                # Enforce single turn: stop after first Python section
+                should_stop = True
+            self.current_section = None
+
+        return tokens, complete, should_stop
+
+    @staticmethod
+    def _process_section_closing(
+        buffer: str,
+        section_type: Literal["title", "thinking", "python", "file"],
+        closing_tag: str,
+    ) -> tuple[list[TokenChunk], str, bool]:
+        """Process closing tag for a section.
+
+        Args:
+            buffer: Current buffer content
+            section_type: Type of section
+            closing_tag: Closing tag to search for
+
+        Returns:
+            Tuple of (tokens_to_yield, updated_buffer, section_complete)
+        """
+        closing = re.search(rf"</{closing_tag}>", buffer, re.IGNORECASE)
+        if closing:
+            # Found closing tag - yield all content before it
+            tokens = []
+            before_tag = buffer[: closing.start()]
+            if before_tag:
+                tokens.append(
+                    TokenChunk(type=section_type, content=before_tag, done=False)
+                )
+            tokens.append(TokenChunk(type=section_type, content="", done=True))
+
+            # Keep content after closing tag
+            updated_buffer = buffer[closing.end() :]
+            return tokens, updated_buffer, True
+
         # No closing tag yet - yield content but hold back potential tag starts
-        # We need to keep any trailing "<" or "</" in the buffer in case it's
-        # the start of a closing tag that will arrive in the next chunk
         tokens = []
-
-        # Find the last "<" that could be the start of a closing tag
         last_bracket = buffer.rfind("<")
 
         if last_bracket == -1:
@@ -205,7 +399,6 @@ def _process_section_closing(
             content_to_yield = buffer[:last_bracket]
             holdback = buffer[last_bracket:]
 
-            # Only yield if we have substantial content before the "<"
             if content_to_yield and (
                 len(content_to_yield) > 10 or any(c.isspace() for c in content_to_yield)
             ):
@@ -214,15 +407,13 @@ def _process_section_closing(
                 )
                 updated_buffer = holdback
             else:
-                # Keep everything in buffer
                 updated_buffer = buffer
 
         return tokens, updated_buffer, False
 
 
 def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
-    """
-    Convert raw text stream to TokenChunks via XML parsing.
+    """Convert raw text stream to TokenChunks via XML parsing.
 
     This is a shared utility that handles buffering and tag detection.
     Clients can use this or implement their own tokenization logic.
@@ -237,260 +428,39 @@ def tokenize_xml_stream(raw_chunks: Iterator[str]) -> Iterator[TokenChunk]:
         TokenChunk objects as sections are parsed
 
     Raises:
-        ResponseParseError: If XML structure is malformed
+        ResponseParseError: If XML structure is malformed or FILE tag attributes invalid
     """
-    buffer = ""
-    current_section: Literal["title", "thinking", "python", "file"] | None = None
-
+    state = _XMLTokenizerState()
     for chunk in raw_chunks:
-        buffer += chunk
-
-        # Process all complete tags in the buffer
-        while True:
-            if current_section is None:
-                # Look for opening tags (case-insensitive)
-                title_start = re.search(rf"<{TAG_TITLE}>", buffer, re.IGNORECASE)
-                thinking_start = re.search(rf"<{TAG_THINKING}>", buffer, re.IGNORECASE)
-                python_start = re.search(rf"<{TAG_PYTHON}>", buffer, re.IGNORECASE)
-                file_start = re.search(
-                    rf"<{TAG_FILE}\s+([^>]*?)>", buffer, re.IGNORECASE
-                )
-
-                # Prioritize the one that starts earliest in the buffer
-                starts = []
-                if title_start:
-                    starts.append(
-                        (title_start.start(), "title", title_start.end(), None)
-                    )
-                if thinking_start:
-                    starts.append(
-                        (thinking_start.start(), "thinking", thinking_start.end(), None)
-                    )
-                if python_start:
-                    starts.append(
-                        (python_start.start(), "python", python_start.end(), None)
-                    )
-                if file_start:
-                    attrs_text = file_start.group(1)
-                    path_match = re.search(
-                        r'path=["\'](.*?)["\']', attrs_text, re.IGNORECASE
-                    )
-                    mode_match = re.search(
-                        r'mode=["\'](.*?)["\']', attrs_text, re.IGNORECASE
-                    )
-
-                    if path_match:
-                        path = path_match.group(1).strip()
-                        mode = mode_match.group(1).strip() if mode_match else "write"
-                        starts.append(
-                            (
-                                file_start.start(),
-                                "file",
-                                file_start.end(),
-                                f"path={path},mode={mode}",
-                            )
-                        )
-
-                if not starts:
-                    break
-
-                # Pick the earliest start
-                starts.sort()
-                start_pos, section, end_pos, metadata = starts[0]
-
-                current_section = section
-                buffer = buffer[end_pos:]
-
-                # For file tags, we might want to yield the path immediately
-                if section == "file" and metadata:
-                    yield TokenChunk(type="file", content=metadata, done=False)
-                continue
-
-            # We're in a section - look for closing tag
-            if current_section == "title":
-                tokens, buffer, complete = _process_section_closing(
-                    buffer, "title", TAG_TITLE
-                )
-                for token in tokens:
-                    yield token
-                if complete:
-                    current_section = None
-                    continue
-                else:
-                    break
-
-            if current_section == "thinking":
-                tokens, buffer, complete = _process_section_closing(
-                    buffer, "thinking", TAG_THINKING
-                )
-                for token in tokens:
-                    yield token
-                if complete:
-                    current_section = None
-                    continue
-                else:
-                    break
-
-            elif current_section == "file":
-                tokens, buffer, complete = _process_section_closing(
-                    buffer, "file", TAG_FILE
-                )
-                for token in tokens:
-                    yield token
-                if complete:
-                    current_section = None
-                    continue
-                else:
-                    break
-
-            elif current_section == "python":
-                tokens, buffer, complete = _process_section_closing(
-                    buffer, "python", TAG_PYTHON
-                )
-                for token in tokens:
-                    yield token
-                if complete:
-                    # Enforce single turn: stop after first Python section is closed
-                    return
-                else:
-                    break
-
-    # Handle any remaining buffer at end of stream
-    if buffer and current_section:
-        # Still in a section but stream ended - yield remaining content
-        yield TokenChunk(type=current_section, content=buffer, done=False)
-    # Section is not properly closed but we choose to be forgiving
+        state.add_chunk(chunk)
+        tokens, should_stop = state.process_buffer()
+        yield from tokens
+        if should_stop:
+            return
+    yield from state.finalize()
 
 
 async def atokenize_xml_stream(
     raw_chunks: AsyncIterator[str],
 ) -> AsyncIterator[TokenChunk]:
-    """
-    Convert raw text stream to TokenChunks via XML parsing (Async).
+    """Convert raw text stream to TokenChunks via XML parsing (Async).
 
     Args:
         raw_chunks: AsyncIterator of raw text chunks from provider
 
     Yields:
         TokenChunk objects as sections are parsed
+
+    Raises:
+        ResponseParseError: If XML structure is malformed or FILE tag attributes invalid
     """
-    buffer = ""
-    current_section: Literal["title", "thinking", "python", "file"] | None = None
-
+    state = _XMLTokenizerState()
     async for chunk in raw_chunks:
-        buffer += chunk
-
-        # Process all complete tags in the buffer
-        while True:
-            if current_section is None:
-                # Look for opening tags (case-insensitive)
-                title_start = re.search(rf"<{TAG_TITLE}>", buffer, re.IGNORECASE)
-                thinking_start = re.search(rf"<{TAG_THINKING}>", buffer, re.IGNORECASE)
-                python_start = re.search(rf"<{TAG_PYTHON}>", buffer, re.IGNORECASE)
-                file_start = re.search(
-                    rf"<{TAG_FILE}\s+([^>]*?)>", buffer, re.IGNORECASE
-                )
-
-                # Prioritize the one that starts earliest in the buffer
-                starts = []
-                if title_start:
-                    starts.append(
-                        (title_start.start(), "title", title_start.end(), None)
-                    )
-                if thinking_start:
-                    starts.append(
-                        (thinking_start.start(), "thinking", thinking_start.end(), None)
-                    )
-                if python_start:
-                    starts.append(
-                        (python_start.start(), "python", python_start.end(), None)
-                    )
-                if file_start:
-                    attrs_text = file_start.group(1)
-                    path_match = re.search(
-                        r'path=["\'](.*?)["\']', attrs_text, re.IGNORECASE
-                    )
-                    mode_match = re.search(
-                        r'mode=["\'](.*?)["\']', attrs_text, re.IGNORECASE
-                    )
-
-                    if path_match:
-                        path = path_match.group(1).strip()
-                        mode = mode_match.group(1).strip() if mode_match else "write"
-                        starts.append(
-                            (
-                                file_start.start(),
-                                "file",
-                                file_start.end(),
-                                f"path={path},mode={mode}",
-                            )
-                        )
-
-                if not starts:
-                    break
-
-                # Pick the earliest start
-                starts.sort()
-                start_pos, section, end_pos, metadata = starts[0]
-
-                current_section = section
-                buffer = buffer[end_pos:]
-
-                # For file tags, we might want to yield the path immediately
-                if section == "file" and metadata:
-                    yield TokenChunk(type="file", content=metadata, done=False)
-                continue
-
-            # We're in a section - look for closing tag
-            if current_section == "title":
-                tokens, buffer, complete = _process_section_closing(
-                    buffer, "title", TAG_TITLE
-                )
-                for token in tokens:
-                    yield token
-                if complete:
-                    current_section = None
-                    continue
-                else:
-                    break
-
-            if current_section == "thinking":
-                tokens, buffer, complete = _process_section_closing(
-                    buffer, "thinking", TAG_THINKING
-                )
-                for token in tokens:
-                    yield token
-                if complete:
-                    current_section = None
-                    continue
-                else:
-                    break
-
-            elif current_section == "file":
-                tokens, buffer, complete = _process_section_closing(
-                    buffer, "file", TAG_FILE
-                )
-                for token in tokens:
-                    yield token
-                if complete:
-                    current_section = None
-                    continue
-                else:
-                    break
-
-            elif current_section == "python":
-                tokens, buffer, complete = _process_section_closing(
-                    buffer, "python", TAG_PYTHON
-                )
-                for token in tokens:
-                    yield token
-                if complete:
-                    # Enforce single turn: stop after first Python section is closed
-                    return
-                else:
-                    break
-
-    # Handle any remaining buffer at end of stream
-    if buffer and current_section:
-        # Still in a section but stream ended - yield remaining content
-        yield TokenChunk(type=current_section, content=buffer, done=False)
+        state.add_chunk(chunk)
+        tokens, should_stop = state.process_buffer()
+        for token in tokens:
+            yield token
+        if should_stop:
+            return
+    for token in state.finalize():
+        yield token

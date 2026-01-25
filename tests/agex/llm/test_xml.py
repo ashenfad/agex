@@ -460,3 +460,121 @@ class TestTokenChunk:
         assert "Second Title" not in str(tokens)
         assert "Second Reasoning" not in str(tokens)
         assert "second_code()" not in str(tokens)
+
+
+class TestFilePathValidation:
+    """Tests for file path validation in <FILE> tags."""
+
+    def test_empty_path_rejected(self):
+        """Empty path should raise ResponseParseError."""
+        xml = '<THINKING>x</THINKING><FILE path="">content</FILE><PYTHON>pass</PYTHON>'
+        with pytest.raises(ResponseParseError, match="Empty path"):
+            parse_xml_response(xml)
+
+    def test_whitespace_only_path_rejected(self):
+        """Whitespace-only path should raise ResponseParseError."""
+        xml = (
+            '<THINKING>x</THINKING><FILE path="   ">content</FILE><PYTHON>pass</PYTHON>'
+        )
+        with pytest.raises(ResponseParseError, match="Empty path"):
+            parse_xml_response(xml)
+
+    def test_path_traversal_rejected(self):
+        """Path with .. components should raise ResponseParseError."""
+        xml = '<THINKING>x</THINKING><FILE path="../secret.txt">x</FILE><PYTHON>pass</PYTHON>'
+        with pytest.raises(ResponseParseError, match="Path traversal not allowed"):
+            parse_xml_response(xml)
+
+    def test_nested_path_traversal_rejected(self):
+        """Nested path traversal should be rejected."""
+        xml = '<THINKING>x</THINKING><FILE path="foo/../../bar.txt">x</FILE><PYTHON>pass</PYTHON>'
+        with pytest.raises(ResponseParseError, match="Path traversal not allowed"):
+            parse_xml_response(xml)
+
+    def test_null_byte_rejected(self):
+        """Path with null byte should raise ResponseParseError."""
+        xml = '<THINKING>x</THINKING><FILE path="foo\x00bar.py">x</FILE><PYTHON>pass</PYTHON>'
+        with pytest.raises(ResponseParseError, match="Invalid characters"):
+            parse_xml_response(xml)
+
+    def test_relative_path_accepted(self):
+        """Simple relative path should be accepted."""
+        xml = '<THINKING>x</THINKING><FILE path="utils.py">code</FILE><PYTHON>pass</PYTHON>'
+        result = parse_xml_response(xml)
+        assert result.file_actions[0].path == "utils.py"
+
+    def test_nested_relative_path_accepted(self):
+        """Nested relative path should be accepted."""
+        xml = '<THINKING>x</THINKING><FILE path="helpers/utils.py">code</FILE><PYTHON>pass</PYTHON>'
+        result = parse_xml_response(xml)
+        assert result.file_actions[0].path == "helpers/utils.py"
+
+    def test_absolute_path_accepted(self):
+        """Absolute path should be accepted (VFS interprets relative to root)."""
+        xml = '<THINKING>x</THINKING><FILE path="/helpers/utils.py">code</FILE><PYTHON>pass</PYTHON>'
+        result = parse_xml_response(xml)
+        assert result.file_actions[0].path == "/helpers/utils.py"
+
+    def test_streaming_path_traversal_rejected(self):
+        """Streaming tokenizer should also reject path traversal."""
+        chunks = [
+            "<THINKING>x</THINKING>",
+            '<FILE path="../evil.py">',
+            "code",
+            "</FILE>",
+            "<PYTHON>pass</PYTHON>",
+        ]
+        with pytest.raises(ResponseParseError, match="Path traversal not allowed"):
+            list(tokenize_xml_stream(iter(chunks)))
+
+
+class TestFileModeValidation:
+    """Tests for file mode validation in <FILE> tags."""
+
+    def test_invalid_mode_rejected(self):
+        """Invalid mode should raise ResponseParseError."""
+        xml = '<THINKING>x</THINKING><FILE path="x.py" mode="delete">x</FILE><PYTHON>pass</PYTHON>'
+        with pytest.raises(ResponseParseError, match="Invalid mode"):
+            parse_xml_response(xml)
+
+    def test_unknown_mode_rejected(self):
+        """Unknown mode should raise ResponseParseError."""
+        xml = '<THINKING>x</THINKING><FILE path="x.py" mode="read">x</FILE><PYTHON>pass</PYTHON>'
+        with pytest.raises(ResponseParseError, match="Invalid mode"):
+            parse_xml_response(xml)
+
+    def test_write_mode_accepted(self):
+        """Write mode should be accepted."""
+        xml = '<THINKING>x</THINKING><FILE path="x.py" mode="write">x</FILE><PYTHON>pass</PYTHON>'
+        result = parse_xml_response(xml)
+        assert result.file_actions[0].mode == "write"
+
+    def test_append_mode_accepted(self):
+        """Append mode should be accepted."""
+        xml = '<THINKING>x</THINKING><FILE path="x.py" mode="append">x</FILE><PYTHON>pass</PYTHON>'
+        result = parse_xml_response(xml)
+        assert result.file_actions[0].mode == "append"
+
+    def test_mode_case_insensitive(self):
+        """Mode should be case-insensitive."""
+        xml = '<THINKING>x</THINKING><FILE path="x.py" mode="APPEND">x</FILE><PYTHON>pass</PYTHON>'
+        result = parse_xml_response(xml)
+        assert result.file_actions[0].mode == "append"
+
+    def test_default_mode_is_write(self):
+        """Default mode when not specified should be write."""
+        xml = '<THINKING>x</THINKING><FILE path="x.py">x</FILE><PYTHON>pass</PYTHON>'
+        result = parse_xml_response(xml)
+        assert result.file_actions[0].mode == "write"
+
+    def test_streaming_invalid_mode_rejected(self):
+        """Streaming tokenizer should also reject invalid mode."""
+        chunks = [
+            "<THINKING>x</THINKING>",
+            '<FILE path="x.py" mode="truncate">',
+            "code",
+            "</FILE>",
+            "<PYTHON>pass</PYTHON>",
+        ]
+        with pytest.raises(ResponseParseError, match="Invalid mode"):
+            list(tokenize_xml_stream(iter(chunks)))
