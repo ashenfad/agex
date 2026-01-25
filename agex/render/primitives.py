@@ -26,7 +26,7 @@ try:
 except ImportError:
     plotly = None  # type: ignore
 
-from ..agent.datatypes import FileAction
+from ..agent.datatypes import EditAction, FileAction
 from ..eval.objects import AgexClass, AgexInstance, AgexObject, ImageAction, PrintAction
 from ..llm.core import ContentPart, ImagePart, TextPart
 from ..tokenizers import get_tokenizer
@@ -688,7 +688,7 @@ def render_action_markdown(
     thinking: str,
     code: str,
     title: str = "",
-    file_actions: list[FileAction] | None = None,
+    file_actions: list[FileAction | EditAction] | None = None,
 ) -> tuple[str, int]:
     """
     Render an action event as markdown.
@@ -702,9 +702,15 @@ def render_action_markdown(
     if file_actions:
         files_section = "## Files\n"
         for action in file_actions:
-            path, content, mode = action.path, action.content, action.mode
-            mode_suffix = f" (mode: {mode})" if mode != "write" else ""
-            files_section += f"### {path}{mode_suffix}\n{content}\n\n"
+            if isinstance(action, EditAction):
+                replace_all_str = " (replace_all)" if action.replace_all else ""
+                files_section += f"### EDIT {action.path}{replace_all_str}\n"
+                files_section += f"Search:\n```\n{action.search}\n```\n"
+                files_section += f"Replace:\n```\n{action.replace}\n```\n\n"
+            else:
+                path, content, mode = action.path, action.content, action.mode
+                mode_suffix = f" (mode: {mode})" if mode != "write" else ""
+                files_section += f"### {path}{mode_suffix}\n{content}\n\n"
 
     content = f"{title_section}# Thinking\n{thinking}\n\n{files_section}# Code\n```python\n{code}\n```"
     tokens = count_tokens(content)

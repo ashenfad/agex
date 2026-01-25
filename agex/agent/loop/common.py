@@ -13,6 +13,8 @@ from typing import Any, Callable
 from pydantic import ValidationError
 
 from agex.agent.datatypes import (
+    EditAction,
+    FileAction,
     LLMFail,
     TaskCancelled,
     TaskClarify,
@@ -95,7 +97,7 @@ __all__ = [
     "yield_new_events",
     "maybe_file_event",
     "maybe_add_file_event",
-    "apply_optimistic_file_writes",
+    "apply_optimistic_file_actions",
     "safe_snapshot",
     "ResponseBuilder",
     # Re-exports
@@ -280,7 +282,7 @@ def yield_new_events(
     return all_events[events_yielded_count:]
 
 
-def apply_optimistic_file_writes(
+def apply_optimistic_file_actions(
     agent: Any,
     llm_response: LLMResponse,
     fs: Any,
@@ -288,7 +290,7 @@ def apply_optimistic_file_writes(
     on_event: Callable[[BaseEvent], None] | None = None,
 ) -> None:
     """
-    Apply file writes from the LLM response to the filesystem.
+    Apply file operations (writes and edits) from the LLM response to the filesystem.
 
     This is called 'optimistic' because it happens before code execution.
     It allows the agent to import modules it just created.
@@ -299,28 +301,74 @@ def apply_optimistic_file_writes(
     # Use underlying FS directly to avoid 'user' source attribution
     # and handle snapshot parameter for VirtualFS
     target_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
+
     for action in llm_response.file_actions:
-        path, content, mode = action.path, action.content, action.mode
-        fs_mode = "a" if mode == "append" else "w"
+        if isinstance(action, FileAction):
+            path, content, mode = action.path, action.content, action.mode
+            fs_mode = "a" if mode == "append" else "w"
 
-        # Check for shadowing
-        if path.endswith(".py"):
-            module_name = path[:-3].replace("/", ".")
-            if module_name in agent._policy.namespaces:
-                warning = SystemNoteEvent(
-                    agent_name="System",
-                    message=(
-                        f"⚠️ Warning: Created file '{path}' shadows registered system "
-                        f"module '{module_name}'. The system module will take precedence "
-                        f"during imports."
-                    ),
+            # Check for shadowing
+            if path.endswith(".py"):
+                module_name = path[:-3].replace("/", ".")
+                if module_name in agent._policy.namespaces:
+                    warning = SystemNoteEvent(
+                        agent_name="System",
+                        message=(
+                            f"⚠️ Warning: Created file '{path}' shadows registered system "
+                            f"module '{module_name}'. The system module will take precedence "
+                            f"during imports."
+                        ),
+                    )
+                    add_event_to_log(exec_state, warning, on_event=on_event)
+
+            if isinstance(target_fs, VirtualFS):
+                target_fs.write(
+                    path, content.encode("utf-8"), snapshot=False, mode=fs_mode
                 )
-                add_event_to_log(exec_state, warning, on_event=on_event)
+            else:
+                target_fs.write(path, content.encode("utf-8"), mode=fs_mode)
 
-        if isinstance(target_fs, VirtualFS):
-            target_fs.write(path, content.encode("utf-8"), snapshot=False, mode=fs_mode)
-        else:
-            target_fs.write(path, content.encode("utf-8"), mode=fs_mode)
+        elif isinstance(action, EditAction):
+            path = action.path
+
+            # Read existing file
+            try:
+                existing_content = target_fs.read(path).decode("utf-8")
+            except FileNotFoundError:
+                raise ResponseParseError(f"File not found for EDIT: {path}")
+
+            # Count occurrences
+            count = existing_content.count(action.search)
+
+            if count == 0:
+                search_preview = (
+                    action.search[:100] + "..."
+                    if len(action.search) > 100
+                    else action.search
+                )
+                raise ResponseParseError(
+                    f"Search string not found in {path}:\n{search_preview}"
+                )
+
+            if count > 1 and not action.replace_all:
+                raise ResponseParseError(
+                    f"Search string found {count} times in {path}. "
+                    f'Use replace_all="true" or provide more context.'
+                )
+
+            # Apply replacement
+            if action.replace_all:
+                new_content = existing_content.replace(action.search, action.replace)
+            else:
+                new_content = existing_content.replace(action.search, action.replace, 1)
+
+            # Write back
+            if isinstance(target_fs, VirtualFS):
+                target_fs.write(
+                    path, new_content.encode("utf-8"), snapshot=False, mode="w"
+                )
+            else:
+                target_fs.write(path, new_content.encode("utf-8"), mode="w")
 
 
 # =============================================================================

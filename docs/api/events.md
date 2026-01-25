@@ -70,7 +70,7 @@ event = ActionEvent(
     title="...",             # str
     thinking="...",          # str
     code="...",              # str
-    file_actions=[...],      # list[FileAction]
+    file_actions=[...],      # list[FileAction | EditAction]
 )
 ```
 
@@ -85,6 +85,21 @@ action = FileAction(
     path="utils.py",         # str
     content="...",           # str
     mode="write"             # Literal["write", "append"]
+)
+```
+
+#### `EditAction`
+Used within `ActionEvent` to represent a search/replace edit requested by the agent.
+
+```python
+from agex.agent.datatypes import EditAction
+
+# Structure
+action = EditAction(
+    path="utils.py",         # str
+    search="old_code",       # str - text to find
+    replace="new_code",      # str - replacement text
+    replace_all=False        # bool - replace all occurrences
 )
 ```
 
@@ -253,7 +268,7 @@ result = my_task("important task", on_event=custom_handler)
 ### 3. Token-Level Streaming with `on_token`
 `on_token` is an optional callback that receives LLM output tokens in real time. Tokens arrive as lightweight `TokenChunk` objects with:
 
-- `type`: one of `"title"`, `"thinking"`, `"file"`, `"terminal"`, or `"python"`
+- `type`: one of `"title"`, `"thinking"`, `"file"`, `"edit"`, `"terminal"`, or `"python"`
 - `content`: the text fragment for that section
 - `done`: a boolean that signals the end of the current section
 
@@ -276,6 +291,8 @@ def render_token(chunk: TokenChunk):
         ui.update_thinking(chunk.content)
     elif chunk.type == "file":
         ui.update_file_creation(chunk.content)
+    elif chunk.type == "edit":
+        ui.update_file_edit(chunk.content)
     elif chunk.type == "terminal":
         ui.update_terminal(chunk.content)
     elif chunk.type == "python":

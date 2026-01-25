@@ -455,6 +455,20 @@ def pprint_tokens(
             action = "[APPEND]" if mode == "append" else "[CREATE]"
             content = f"📁 {path} {action}\n"
 
+    elif token.type == "edit" and token.content.startswith("path="):
+        # Parse metadata: "path=foo.py,replace_all=False"
+
+        path_match = re.search(r"path=([^,]+)", token.content)
+        replace_all_match = re.search(r"replace_all=([^,]+)", token.content)
+
+        if path_match:
+            path = path_match.group(1)
+            replace_all = (
+                replace_all_match and replace_all_match.group(1).lower() == "true"
+            )
+            action = "[EDIT ALL]" if replace_all else "[EDIT]"
+            content = f"✏️ {path} {action}\n"
+
     # Color based on token type and optionally prepend context
     prefix = ""
     if token.type == "title" and token.start:
@@ -467,6 +481,8 @@ def pprint_tokens(
     elif token.type == "thinking":
         color_code = _Colors.bright_blue if use_color else ""
     elif token.type == "file":
+        color_code = _Colors.magenta if use_color else ""
+    elif token.type == "edit":
         color_code = _Colors.magenta if use_color else ""
     elif token.type == "python":
         color_code = _Colors.yellow if use_color else ""

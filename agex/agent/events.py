@@ -4,7 +4,7 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from ..agent.datatypes import FileAction
+from ..agent.datatypes import EditAction, FileAction
 from ..eval.objects import ImageAction, PrintAction
 from ..render.primitives import (
     HI_DETAIL_BUDGET,
@@ -414,7 +414,7 @@ class ActionEvent(BaseEvent):
     title: str = ""
     thinking: str
     code: str
-    file_actions: list[FileAction] = Field(default_factory=list)
+    file_actions: list[FileAction | EditAction] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _compute_tokens(self):
@@ -436,7 +436,11 @@ class ActionEvent(BaseEvent):
 
         files_info = []
         for action in self.file_actions:
-            files_info.append(f"{action.path} ({action.mode})")
+            if isinstance(action, EditAction):
+                replace_all_str = " (replace_all)" if action.replace_all else ""
+                files_info.append(f"{action.path} (edit{replace_all_str})")
+            else:
+                files_info.append(f"{action.path} ({action.mode})")
 
         files_text = f"\n  Files: {files_info}" if files_info else ""
         return f"{base}{title_text}\n  Thinking: {thinking_preview}\n  Code: {code_lines} lines{files_text}"
@@ -450,11 +454,15 @@ class ActionEvent(BaseEvent):
         if self.file_actions:
             files_section = "**Files:**\n"
             for action in self.file_actions:
-                mode_suffix = f" ({action.mode})" if action.mode != "write" else ""
-                files_section += f" - `{action.path}`{mode_suffix}\n"
+                if isinstance(action, EditAction):
+                    replace_all_str = " (replace_all)" if action.replace_all else ""
+                    files_section += f" - `{action.path}` (edit{replace_all_str})\n"
+                else:
+                    mode_suffix = f" ({action.mode})" if action.mode != "write" else ""
+                    files_section += f" - `{action.path}`{mode_suffix}\n"
             files_section += "\n"
 
-        return f"""{base}  
+        return f"""{base}
 {title_section}**Thinking:** {self.thinking}
 
 {files_section}**Code:**
@@ -478,10 +486,20 @@ class ActionEvent(BaseEvent):
         if self.file_actions:
             file_links_parts = []
             for action in self.file_actions:
-                mode_suffix = (
-                    f" <small>({action.mode})</small>" if action.mode != "write" else ""
-                )
-                file_links_parts.append(f"<code>{action.path}</code>{mode_suffix}")
+                if isinstance(action, EditAction):
+                    replace_all_str = (
+                        " <small>(replace_all)</small>" if action.replace_all else ""
+                    )
+                    file_links_parts.append(
+                        f"<code>{action.path}</code> <small>(edit)</small>{replace_all_str}"
+                    )
+                else:
+                    mode_suffix = (
+                        f" <small>({action.mode})</small>"
+                        if action.mode != "write"
+                        else ""
+                    )
+                    file_links_parts.append(f"<code>{action.path}</code>{mode_suffix}")
 
             file_links = ", ".join(file_links_parts)
             sections.append(_event_section("📁 Files:", file_links, "#28a745"))

@@ -15,12 +15,15 @@ from typing import TYPE_CHECKING, AsyncIterator, Iterator, Literal
 from agex.llm.core import ResponseParseError, TokenChunk
 
 if TYPE_CHECKING:
-    from agex.agent.datatypes import FileAction
+    from agex.agent.datatypes import EditAction, FileAction
 
 # XML tag names as constants
 TAG_THINKING = "THINKING"
 TAG_PYTHON = "PYTHON"
 TAG_FILE = "FILE"
+TAG_EDIT = "EDIT"
+TAG_SEARCH = "SEARCH"
+TAG_REPLACE = "REPLACE"
 TAG_TITLE = "TITLE"
 TAG_OBSERVATION = "OBSERVATION"
 TAG_SUCCESS = "TASK_SUCCESS"
@@ -84,13 +87,32 @@ def validate_file_mode(mode: str, path: str) -> Literal["write", "append"]:
     return mode  # type: ignore[return-value]
 
 
+def validate_edit_search(path: str, search: str) -> str:
+    """Validate search string from <EDIT> tag.
+
+    Args:
+        path: The file path (for error messages).
+        search: The search string from the SEARCH tag.
+
+    Returns:
+        The search string (stripped of leading/trailing whitespace from the tag).
+
+    Raises:
+        ResponseParseError: If search string is empty.
+    """
+    # Note: We don't strip the search content itself as whitespace may be significant
+    if not search:
+        raise ResponseParseError(f'Empty <SEARCH> in <EDIT path="{path}">')
+    return search
+
+
 @dataclass
 class XMLResponse:
     """Parsed XML response from LLM."""
 
     thinking: str
     code: str
-    file_actions: list["FileAction"] = field(default_factory=list)
+    file_actions: list["FileAction | EditAction"] = field(default_factory=list)
     terminal: str | None = None
     title: str = ""  # Optional for now, will be required in Phase 2.5
 
@@ -101,15 +123,20 @@ Format your response using XML tags:
 <{TAG_TITLE}>A brief title here</{TAG_TITLE}>
 <{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}>
 <{TAG_FILE} path="/helpers/file.py" mode="write|append"># File content here</{TAG_FILE}>
+<{TAG_EDIT} path="/helpers/file.py" replace_all="false">
+<{TAG_SEARCH}>text to find</{TAG_SEARCH}>
+<{TAG_REPLACE}>replacement text</{TAG_REPLACE}>
+</{TAG_EDIT}>
 <{TAG_PYTHON}># Your Python code here</{TAG_PYTHON}>
 
 IMPORTANT:
 1. Generate EXACTLY ONE sequence of Title and Thinking.
-2. You can generate zero or more <{TAG_FILE}> tags to create/modify files before execution.
-3. Use `mode="append"` to add code to an existing file without rewriting it. Defaults to `mode="write"`.
-4. When making python modules, use the `helpers` directory as the root.
-5. You MUST end your response with exactly one <{TAG_PYTHON}> tag.
-6. Do NOT attempt to simulate observations or multiple turns in a single response.
+2. You can generate zero or more <{TAG_FILE}> or <{TAG_EDIT}> tags to create/modify files before execution.
+3. Use <{TAG_FILE}> with `mode="append"` to add code to an existing file. Defaults to `mode="write"`.
+4. Use <{TAG_EDIT}> for surgical search/replace edits. The <{TAG_SEARCH}> must match exactly (including whitespace/indentation) and occur once unless `replace_all="true"`.
+5. When making python modules, use the `helpers` directory as the root.
+6. You MUST end your response with exactly one <{TAG_PYTHON}> tag.
+7. Do NOT attempt to simulate observations or multiple turns in a single response.
 
 You will receive environment output (stdout/images) in <{TAG_OBSERVATION}> tags.
 These will be visible after a `task_continue()` call.
@@ -180,11 +207,13 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
     if title_match:
         title = title_match.group(1).strip()
 
-    # Extract all <FILE path="..." mode="..."> tags (case-insensitive)
-    from agex.agent.datatypes import FileAction
+    # Extract all <FILE> and <EDIT> tags, preserving order
+    from agex.agent.datatypes import EditAction, FileAction
 
-    file_actions = []
-    # Regex to capture path and optional mode
+    # Collect all matches with positions for ordering
+    all_matches: list[tuple[int, FileAction | EditAction]] = []
+
+    # Find all <FILE path="..." mode="..."> tags
     file_matches = re.finditer(
         rf"<{TAG_FILE}\s+([^>]*?)>(.*?)</{TAG_FILE}>",
         xml_text,
@@ -201,7 +230,63 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
             path = validate_file_path(path_match.group(1))
             mode_str = mode_match.group(1).strip() if mode_match else "write"
             mode = validate_file_mode(mode_str, path)
-            file_actions.append(FileAction(path=path, content=content, mode=mode))
+            all_matches.append(
+                (match.start(), FileAction(path=path, content=content, mode=mode))
+            )
+
+    # Find all <EDIT path="..." replace_all="...">...</EDIT> tags
+    edit_matches = re.finditer(
+        rf"<{TAG_EDIT}\s+([^>]*?)>(.*?)</{TAG_EDIT}>",
+        xml_text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    for match in edit_matches:
+        attrs_text = match.group(1)
+        inner_content = match.group(2)
+
+        path_match = re.search(r'path=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
+        replace_all_match = re.search(
+            r'replace_all=["\'](.*?)["\']', attrs_text, re.IGNORECASE
+        )
+
+        if path_match:
+            path = validate_file_path(path_match.group(1))
+            replace_all = (
+                replace_all_match is not None
+                and replace_all_match.group(1).lower() == "true"
+            )
+
+            # Parse nested SEARCH and REPLACE tags
+            search_match = re.search(
+                rf"<{TAG_SEARCH}>(.*?)</{TAG_SEARCH}>",
+                inner_content,
+                re.DOTALL | re.IGNORECASE,
+            )
+            replace_match = re.search(
+                rf"<{TAG_REPLACE}>(.*?)</{TAG_REPLACE}>",
+                inner_content,
+                re.DOTALL | re.IGNORECASE,
+            )
+
+            if search_match and replace_match:
+                search = search_match.group(1)
+                replace = replace_match.group(1)
+                validate_edit_search(path, search)
+                all_matches.append(
+                    (
+                        match.start(),
+                        EditAction(
+                            path=path,
+                            search=search,
+                            replace=replace,
+                            replace_all=replace_all,
+                        ),
+                    )
+                )
+
+    # Sort by position to preserve order
+    all_matches.sort(key=lambda x: x[0])
+    file_actions = [action for _, action in all_matches]
 
     return XMLResponse(
         thinking=thinking, code=code, title=title, file_actions=file_actions
@@ -222,13 +307,14 @@ class _XMLTokenizerState:
         "thinking": TAG_THINKING,
         "python": TAG_PYTHON,
         "file": TAG_FILE,
+        "edit": TAG_EDIT,
     }
 
     def __init__(self) -> None:
         self.buffer = ""
-        self.current_section: Literal["title", "thinking", "python", "file"] | None = (
-            None
-        )
+        self.current_section: (
+            Literal["title", "thinking", "python", "file", "edit"] | None
+        ) = None
 
     def add_chunk(self, chunk: str) -> None:
         """Add a chunk to the buffer."""
@@ -282,6 +368,7 @@ class _XMLTokenizerState:
         thinking_start = re.search(rf"<{TAG_THINKING}>", self.buffer, re.IGNORECASE)
         python_start = re.search(rf"<{TAG_PYTHON}>", self.buffer, re.IGNORECASE)
         file_start = re.search(rf"<{TAG_FILE}\s+([^>]*?)>", self.buffer, re.IGNORECASE)
+        edit_start = re.search(rf"<{TAG_EDIT}\s+([^>]*?)>", self.buffer, re.IGNORECASE)
 
         # Collect all found starts with their positions
         starts: list[tuple[int, str, int, str | None]] = []
@@ -311,6 +398,28 @@ class _XMLTokenizerState:
                         f"path={path},mode={mode}",
                     )
                 )
+        if edit_start:
+            attrs_text = edit_start.group(1)
+            path_match = re.search(r'path=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
+            replace_all_match = re.search(
+                r'replace_all=["\'](.*?)["\']', attrs_text, re.IGNORECASE
+            )
+
+            if path_match:
+                # Validate path
+                path = validate_file_path(path_match.group(1))
+                replace_all = (
+                    replace_all_match is not None
+                    and replace_all_match.group(1).lower() == "true"
+                )
+                starts.append(
+                    (
+                        edit_start.start(),
+                        "edit",
+                        edit_start.end(),
+                        f"path={path},replace_all={replace_all}",
+                    )
+                )
 
         if not starts:
             return [], False
@@ -322,10 +431,12 @@ class _XMLTokenizerState:
         self.current_section = section  # type: ignore[assignment]
         self.buffer = self.buffer[end_pos:]
 
-        # For file tags, emit the path/mode metadata immediately
+        # For file/edit tags, emit the metadata immediately
         tokens: list[TokenChunk] = []
         if section == "file" and metadata:
             tokens.append(TokenChunk(type="file", content=metadata, done=False))
+        elif section == "edit" and metadata:
+            tokens.append(TokenChunk(type="edit", content=metadata, done=False))
 
         return tokens, True
 
@@ -355,7 +466,7 @@ class _XMLTokenizerState:
     @staticmethod
     def _process_section_closing(
         buffer: str,
-        section_type: Literal["title", "thinking", "python", "file"],
+        section_type: Literal["title", "thinking", "python", "file", "edit"],
         closing_tag: str,
     ) -> tuple[list[TokenChunk], str, bool]:
         """Process closing tag for a section.

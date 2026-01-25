@@ -39,7 +39,7 @@ from .common import (
     Versioned,
     _AgentExit,
     add_event_to_log,
-    apply_optimistic_file_writes,
+    apply_optimistic_file_actions,
     # Helpers
     check_cancellation,
     check_for_task_call,
@@ -285,7 +285,7 @@ class AsyncLoopMixin:
 
             # Evaluate the code
             try:
-                apply_optimistic_file_writes(
+                apply_optimistic_file_actions(
                     self, llm_response, fs, exec_state, on_event=on_event
                 )
 
