@@ -375,6 +375,47 @@ def _getattr(evaluator, *args, **kwargs) -> Any:
     raise AgexAttributeError(f"'{type(obj).__name__}' object has no attribute '{name}'")
 
 
+def _setattr(evaluator, *args, **kwargs) -> None:
+    """
+    Implementation of the setattr() builtin.
+    """
+    if kwargs:
+        raise AgexError("setattr() does not take keyword arguments.")
+    if len(args) != 3:
+        raise AgexError(f"setattr() takes exactly 3 arguments ({len(args)} given)")
+
+    obj, name, value = args
+
+    if not isinstance(name, str):
+        raise AgexTypeError("setattr(): attribute name must be a string")
+
+    # For AgexModule, don't allow setting - modules are read-only in sandbox
+    if isinstance(obj, AgexModule):
+        raise AgexAttributeError(
+            f"cannot set attribute '{name}' on module '{obj.name}'"
+        )
+
+    # For AgexInstance, use setattr with agent for policy checking
+    if isinstance(obj, AgexInstance):
+        obj.setattr(name, value, agent=evaluator.agent)
+        return
+
+    # For AgexObject and BoundInstanceObject, use their setattr method
+    if isinstance(obj, (AgexObject, BoundInstanceObject)):
+        obj.setattr(name, value)
+        return
+
+    # For all other objects, validate attribute access first via policy
+    allowed_attrs = get_allowed_attributes_for_instance(evaluator.agent, obj)
+    if name not in allowed_attrs:
+        raise AgexAttributeError(
+            f"cannot set attribute '{name}' on '{type(obj).__name__}' object"
+        )
+
+    # Attribute is allowed - set it
+    setattr(obj, name, value)
+
+
 def _get_general_help_text(agent: "BaseAgent") -> str:
     """Returns a string with a summary of all registered items."""
     parts = ["Available items:"]
@@ -571,6 +612,7 @@ STATEFUL_BUILTINS: dict[str, StatefulFn] = {
     "dir": StatefulFn(_dir, needs_evaluator=True),
     "hasattr": StatefulFn(_hasattr, needs_evaluator=True),
     "getattr": StatefulFn(_getattr, needs_evaluator=True),
+    "setattr": StatefulFn(_setattr, needs_evaluator=True),
     "task_continue": StatefulFn(_task_continue_with_observations),
     "__import__": StatefulFn(_import_stateful, needs_evaluator=True),
     "super": StatefulFn(_super, needs_evaluator=True),

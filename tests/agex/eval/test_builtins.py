@@ -103,6 +103,83 @@ getattr([], "non_existent")
         eval_and_get_state(program_fail, agent)
 
 
+def test_setattr():
+    """Tests the setattr() builtin on various object types."""
+    agent = Agent()
+
+    # Test 1: setattr on a user-defined class instance
+    program = """
+class MyClass:
+    def __init__(self):
+        self.value = 1
+
+obj = MyClass()
+setattr(obj, "value", 42)
+result1 = obj.value
+
+# Also test setting a new attribute
+setattr(obj, "new_attr", "hello")
+result2 = obj.new_attr
+"""
+    state = eval_and_get_state(program, agent)
+    assert state.get("result1") == 42
+    assert state.get("result2") == "hello"
+
+
+def test_setattr_on_allowed_host_object():
+    """Tests setattr on host objects with allowed attributes."""
+
+    class HostClass:
+        def __init__(self):
+            self.writable = 1
+
+    agent = Agent()
+    agent.cls(HostClass, include=["writable"])
+
+    program = """
+obj = HostClass()
+setattr(obj, "writable", 99)
+result = obj.writable
+"""
+    state = eval_and_get_state(program, agent)
+    assert state.get("result") == 99
+
+
+def test_setattr_blocked_on_module():
+    """Tests that setattr on modules is blocked."""
+    mod = ModuleType("my_mod")
+    mod.value = 1  # type: ignore
+
+    agent = Agent()
+    agent.module(mod, name="my_mod")
+
+    program = """
+import my_mod
+setattr(my_mod, "value", 2)
+"""
+    with pytest.raises(AgexAttributeError, match="cannot set attribute"):
+        eval_and_get_state(program, agent)
+
+
+def test_setattr_blocked_on_disallowed_attr():
+    """Tests that setattr is blocked for non-whitelisted attributes."""
+
+    class HostClass:
+        def __init__(self):
+            self.allowed = 1
+            self.blocked = 2
+
+    agent = Agent()
+    agent.cls(HostClass, include=["allowed"])  # Only 'allowed' is whitelisted
+
+    program = """
+obj = HostClass()
+setattr(obj, "blocked", 99)
+"""
+    with pytest.raises(AgexAttributeError, match="cannot set attribute"):
+        eval_and_get_state(program, agent)
+
+
 def test_dir_and_hasattr_sandboxing():
     """
     Tests that dir() and hasattr() respect the agent's registration rules,
