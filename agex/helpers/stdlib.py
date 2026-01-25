@@ -26,6 +26,7 @@ import string
 import tempfile
 import textwrap
 import time
+import traceback
 import typing
 import uuid
 import zoneinfo
@@ -64,7 +65,17 @@ def register_io(agent: Agent) -> None:
     agent.module(
         os,
         visibility="low",
-        include=["listdir", "remove", "unlink", "mkdir", "makedirs", "rename", "stat"],
+        include=[
+            "listdir",
+            "remove",
+            "unlink",
+            "mkdir",
+            "makedirs",
+            "rename",
+            "stat",
+            "getcwd",
+            "chdir",
+        ],
     )
     agent.module(
         os.path,
@@ -128,6 +139,13 @@ def register_stdlib(agent: Agent, io_friendly: bool = True) -> None:
     agent.module(re, visibility="low")
     agent.module(string, visibility="low")
     agent.module(textwrap, visibility="low")
+
+    # Debugging (safe formatting functions only)
+    agent.module(
+        traceback,
+        visibility="low",
+        include=["format_exc", "format_exception", "print_exc"],
+    )
 
     # Data encoding/processing
     agent.module(json, visibility="low")

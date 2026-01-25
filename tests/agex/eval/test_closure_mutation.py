@@ -179,3 +179,95 @@ result = data["value"]
 
         print(f"result: {result}")
         assert result == 42, f"Got: {result}"
+
+    def test_late_binding_single_lambda(self):
+        """Lambda referencing a variable defined after the lambda."""
+        agent = Agent(
+            name="test_late",
+            state=connect_state(type="live", storage="memory"),
+            fs=connect_fs(type="virtual"),
+        )
+
+        code = """
+# Lambda references 'menu' which doesn't exist yet
+open_menu = lambda: menu.get_value()
+
+# Now define it
+menu = {"value": 42}
+
+# Define a helper to get value from dict
+class DictWrapper:
+    def __init__(self, d):
+        self.d = d
+    def get_value(self):
+        return self.d["value"]
+
+menu = DictWrapper({"value": 42})
+
+# Call the lambda - should find 'menu' via late binding
+result = open_menu()
+"""
+        fs = agent.fs("test")
+        fs.write("test.py", code.encode())
+
+        run_file_in_sandbox(agent, "test.py", "test")
+
+        state = agent.state("test")
+        result = state.get("result")
+
+        print(f"result: {result}")
+        assert result == 42, f"Expected 42, got: {result}"
+
+    def test_late_binding_multiple_lambdas(self):
+        """Multiple lambdas each referencing different variables defined later.
+
+        This mimics the NiceGUI pattern:
+            open_start = lambda: start_menu.open()
+            start_menu = Menu("start")
+            open_end = lambda: end_menu.open()
+            end_menu = Menu("end")
+        """
+        agent = Agent(
+            name="test_multi_late",
+            state=connect_state(type="live", storage="memory"),
+            fs=connect_fs(type="virtual"),
+        )
+
+        code = """
+results = []
+
+class Menu:
+    def __init__(self, name):
+        self.name = name
+    def open(self):
+        results.append(f"opened:{self.name}")
+
+# Lambda references start_menu which doesn't exist yet
+open_start = lambda: start_menu.open()
+
+# Define start_menu
+start_menu = Menu("start")
+
+# Lambda references end_menu which doesn't exist yet
+open_end = lambda: end_menu.open()
+
+# Define end_menu
+end_menu = Menu("end")
+
+# Call both lambdas - each should find its correct menu
+open_start()
+open_end()
+open_start()
+open_end()
+"""
+        fs = agent.fs("test")
+        fs.write("test.py", code.encode())
+
+        run_file_in_sandbox(agent, "test.py", "test")
+
+        state = agent.state("test")
+        results = state.get("results")
+
+        print(f"results: {results}")
+        expected = ["opened:start", "opened:end", "opened:start", "opened:end"]
+        assert results == expected, f"Expected {expected}, got: {results}"
