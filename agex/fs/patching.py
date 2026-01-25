@@ -1088,7 +1088,10 @@ def with_isolated_fs(isolated_fs: "IsolatedFS") -> Iterator[None]:
 
 
 @contextmanager
-def with_fs_context(fs: "FileSystem") -> Iterator[None]:
+def with_fs_context(
+    fs: "FileSystem",
+    defer_snapshots: bool = True,
+) -> Iterator[None]:
     """Set FS for current async context based on filesystem type.
 
     Dispatches to the appropriate context manager based on filesystem type.
@@ -1096,6 +1099,8 @@ def with_fs_context(fs: "FileSystem") -> Iterator[None]:
 
     Args:
         fs: FileSystem instance (VirtualFS, IsolatedFS, or AgentAwareFS) to use.
+        defer_snapshots: If True (default), VFS writes won't trigger snapshots.
+            Set to False to snapshot on each write (useful for interactive apps).
 
     Yields:
         None. File operations within the block will use the filesystem.
@@ -1113,9 +1118,9 @@ def with_fs_context(fs: "FileSystem") -> Iterator[None]:
     # Unwrap AgentAwareFS to get the underlying filesystem
     actual_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
 
-    # Set defer snapshots flag for agent execution to prevent recursion
-    # with disk-backed state (e.g., DiskCache writing to VFS-intercepted paths)
-    token_defer = vfs_defer_snapshots.set(True)
+    # Set defer snapshots flag - when True, VFS writes won't trigger snapshots
+    # (prevents recursion with disk-backed state like DiskCache)
+    token_defer = vfs_defer_snapshots.set(defer_snapshots)
     try:
         if isinstance(actual_fs, VirtualFS):
             with with_virtual_fs(actual_fs):

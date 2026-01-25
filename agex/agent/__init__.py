@@ -66,61 +66,67 @@ __all__ = [
 
 class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
     @classmethod
-    def clone(cls, source: "Agent", *, name: str | None = None) -> "Agent":
+    def clone_registrations(
+        cls,
+        source: "Agent",
+        *,
+        name: str | None = None,
+        primer: str | None = None,
+        eval_timeout_seconds: float = 5.0,
+        max_iterations: int = 10,
+        llm: LLM | None = None,
+        host: Host | None = None,
+        state: "StateConfig | None" = None,
+        fs: "FSConfig | None" = _UNSET,  # type: ignore
+    ) -> "Agent":
         """
-        Create a new agent with copied policy but shared state/fs/host.
+        Create a new agent with copied registrations but independent state/fs/host.
 
-        The cloned agent inherits all registrations (modules, functions, classes)
-        from the source agent but can have additional registrations added without
-        affecting the source.
-
-        State, filesystem, and host are shared, so both agents access the same
-        underlying state and files for a given session. This enables use cases
-        like running user-generated code in a sandbox with access to files
-        written by the main agent.
+        The new agent inherits all registrations (modules, functions, classes)
+        from the source agent but has its own state, filesystem, and host.
+        Additional registrations can be added without affecting the source.
 
         This is useful for creating "sandbox" agents that need the same capabilities
-        as a main agent plus additional modules (e.g., for executing user-generated
-        code with access to registered libraries plus UI frameworks).
+        as a main agent (e.g., for executing user-generated code with access to
+        registered libraries) but with isolated state.
 
         Args:
-            source: The agent to clone from
-            name: Optional name for the new agent (defaults to "{source.name}_clone")
+            source: The agent to copy registrations from
+            name: Optional name for the new agent
+            primer: Optional primer string (defaults to None)
+            eval_timeout_seconds: Code execution timeout (defaults to 5.0)
+            max_iterations: Max think-act cycles (defaults to 10)
+            llm: LLM configuration (defaults to None)
+            host: Execution host (defaults to Local())
+            state: State configuration (defaults to ephemeral)
+            fs: FileSystem configuration (defaults to VirtualFS)
 
         Returns:
-            A new Agent with copied policy and shared state/fs/host
+            A new Agent with copied registrations and independent state/fs/host
 
         Example:
             # Main agent with domain capabilities
             main_agent = Agent(...)
-            main_agent.module(calgebra)
             main_agent.module(pandas)
+            main_agent.module(plotly)
 
-            # Sandbox with same capabilities plus UI
-            sandbox = Agent.clone(main_agent, name="sandbox")
+            # Sandbox with same capabilities plus UI, isolated state
+            sandbox = Agent.clone_registrations(
+                main_agent,
+                name="sandbox",
+                state=connect_state(type="versioned", storage="memory"),
+            )
             sandbox.module(ui)  # Doesn't affect main_agent
-
-            # Files written by main_agent are visible to sandbox
-            main_agent.fs("session").write("app/main.py", code)
-            run_file_in_sandbox(sandbox, "app/main.py", "session")
         """
-        # Create new agent with shared state/fs
-        # We pass the source's host to share the session cache (needed for shared VFS)
         new_agent = cls(
-            name=name or f"{source.name}_clone",
-            primer=source.primer,
-            eval_timeout_seconds=source.eval_timeout_seconds,
-            max_iterations=source.max_iterations,
-            # Share state and fs configurations
-            state=source._state_config,
-            fs=source._fs_config,
-            # Share host to ensure same session cache (important for VFS sharing)
-            host=source._host,
-            llm=source.llm,
-            llm_max_retries=source.llm_max_retries,
-            log_high_water_tokens=source.log_high_water_tokens,
-            log_low_water_tokens=source.log_low_water_tokens,
-            agex_primer_override=source.agex_primer_override,
+            name=name,
+            primer=primer,
+            eval_timeout_seconds=eval_timeout_seconds,
+            max_iterations=max_iterations,
+            llm=llm,
+            host=host,
+            state=state,
+            fs=fs,
         )
 
         # Copy the policy so modifications don't affect source

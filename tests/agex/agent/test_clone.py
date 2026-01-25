@@ -1,4 +1,4 @@
-"""Tests for Agent.clone() and AgentPolicy.copy()."""
+"""Tests for Agent.clone_registrations() and AgentPolicy.copy()."""
 
 import math
 
@@ -21,74 +21,88 @@ def clear_registry():
     clear_agent_registry()
 
 
-class TestAgentClone:
-    """Tests for Agent.clone() class method."""
+class TestAgentCloneRegistrations:
+    """Tests for Agent.clone_registrations() class method."""
 
-    def test_clone_creates_new_agent(self):
-        """Clone creates a distinct agent instance."""
+    def test_clone_registrations_creates_new_agent(self):
+        """clone_registrations creates a distinct agent instance."""
         source = Agent(name="source")
-        clone = Agent.clone(source, name="clone")
+        clone = Agent.clone_registrations(source, name="clone")
 
         assert clone is not source
         assert clone.name == "clone"
 
-    def test_clone_default_name(self):
-        """Clone uses source name with _clone suffix by default."""
+    def test_clone_registrations_uses_default_params(self):
+        """clone_registrations uses default Agent params, not source values."""
+        source = Agent(
+            name="source",
+            primer="Source primer",
+            eval_timeout_seconds=99.0,
+            max_iterations=50,
+        )
+        clone = Agent.clone_registrations(source, name="clone")
+
+        # Should use defaults, not source values
+        assert clone.primer is None
+        assert clone.eval_timeout_seconds == 5.0
+        assert clone.max_iterations == 10
+
+    def test_clone_registrations_accepts_custom_params(self):
+        """clone_registrations accepts custom params for the new agent."""
         source = Agent(name="source")
-        clone = Agent.clone(source)
+        clone = Agent.clone_registrations(
+            source,
+            name="clone",
+            primer="Custom primer",
+            eval_timeout_seconds=15.0,
+            max_iterations=25,
+        )
 
-        assert clone.name == "source_clone"
+        assert clone.primer == "Custom primer"
+        assert clone.eval_timeout_seconds == 15.0
+        assert clone.max_iterations == 25
 
-    def test_clone_copies_primer(self):
-        """Clone preserves the source agent's primer."""
-        source = Agent(primer="You are a helpful assistant.")
-        clone = Agent.clone(source, name="clone")
-
-        assert clone.primer == source.primer
-
-    def test_clone_copies_eval_timeout(self):
-        """Clone preserves eval_timeout_seconds."""
-        source = Agent(eval_timeout_seconds=10.0)
-        clone = Agent.clone(source, name="clone")
-
-        assert clone.eval_timeout_seconds == 10.0
-
-    def test_clone_copies_max_iterations(self):
-        """Clone preserves max_iterations."""
-        source = Agent(max_iterations=20)
-        clone = Agent.clone(source, name="clone")
-
-        assert clone.max_iterations == 20
-
-    def test_clone_shares_state_config(self):
-        """Clone shares the same state configuration."""
+    def test_clone_registrations_has_independent_state(self):
+        """clone_registrations creates agent with independent state config."""
         state_config = connect_state(type="versioned", storage="memory")
         source = Agent(state=state_config)
-        clone = Agent.clone(source, name="clone")
+        clone = Agent.clone_registrations(source, name="clone")
 
-        assert clone._state_config is source._state_config
+        # Clone should have default (None/ephemeral), not source's state
+        assert clone._state_config is None
+        assert clone._state_config is not source._state_config
 
-    def test_clone_shares_fs_config(self):
-        """Clone shares the same filesystem configuration."""
+    def test_clone_registrations_accepts_custom_state(self):
+        """clone_registrations can specify its own state config."""
+        source = Agent()
+        clone_state = connect_state(type="versioned", storage="memory")
+        clone = Agent.clone_registrations(source, name="clone", state=clone_state)
+
+        assert clone._state_config is clone_state
+
+    def test_clone_registrations_has_independent_fs(self):
+        """clone_registrations creates agent with independent fs config."""
         fs_config = connect_fs(type="virtual")
         source = Agent(fs=fs_config)
-        clone = Agent.clone(source, name="clone")
+        clone = Agent.clone_registrations(source, name="clone")
 
-        assert clone._fs_config is source._fs_config
+        # Clone should have default VFS, not source's fs reference
+        assert clone._fs_config is not source._fs_config
 
-    def test_clone_shares_host(self):
-        """Clone shares the same host (needed for session cache sharing)."""
+    def test_clone_registrations_has_independent_host(self):
+        """clone_registrations creates agent with independent host."""
         source = Agent()
-        clone = Agent.clone(source, name="clone")
+        clone = Agent.clone_registrations(source, name="clone")
 
-        assert clone._host is source._host
+        # Each should have their own host instance
+        assert clone._host is not source._host
 
-    def test_clone_policy_is_independent(self):
+    def test_clone_registrations_policy_is_independent(self):
         """Modifications to clone's policy don't affect source."""
         source = Agent(name="source")
         source.module(math)
 
-        clone = Agent.clone(source, name="clone")
+        clone = Agent.clone_registrations(source, name="clone")
 
         # Verify both have math
         assert "math" in source._policy.namespaces
@@ -103,12 +117,12 @@ class TestAgentClone:
         assert "json" not in source._policy.namespaces
         assert "json" in clone._policy.namespaces
 
-    def test_clone_policy_shares_live_objects(self):
+    def test_clone_registrations_policy_shares_live_objects(self):
         """Clone's policy shares references to modules/functions."""
         source = Agent(name="source")
         source.module(math)
 
-        clone = Agent.clone(source, name="clone")
+        clone = Agent.clone_registrations(source, name="clone")
 
         # The actual module object should be the same reference
         source_ns = source._policy.namespaces["math"]
@@ -117,7 +131,7 @@ class TestAgentClone:
         assert source_ns.module is clone_ns.module
         assert source_ns.module is math
 
-    def test_clone_inherits_registered_functions(self):
+    def test_clone_registrations_inherits_registered_functions(self):
         """Clone inherits functions registered on source."""
 
         def my_func(x: int) -> int:
@@ -126,14 +140,14 @@ class TestAgentClone:
         source = Agent(name="source")
         source.fn(my_func)
 
-        clone = Agent.clone(source, name="clone")
+        clone = Agent.clone_registrations(source, name="clone")
 
         # Check function is in clone's __main__ namespace
         main_ns = clone._policy.namespaces.get("__main__")
         assert main_ns is not None
         assert "my_func" in main_ns.fn_objects
 
-    def test_clone_inherits_registered_classes(self):
+    def test_clone_registrations_inherits_registered_classes(self):
         """Clone inherits classes registered on source."""
 
         class MyClass:
@@ -143,19 +157,19 @@ class TestAgentClone:
         source = Agent(name="source")
         source.cls(MyClass)
 
-        clone = Agent.clone(source, name="clone")
+        clone = Agent.clone_registrations(source, name="clone")
 
         # Check class is in clone's __main__ namespace
         main_ns = clone._policy.namespaces.get("__main__")
         assert main_ns is not None
         assert "MyClass" in main_ns.classes
 
-    def test_clone_tracked_modules_independent(self):
+    def test_clone_registrations_tracked_modules_independent(self):
         """Clone has independent tracked modules set."""
         source = Agent(name="source")
         source.module(math)
 
-        clone = Agent.clone(source, name="clone")
+        clone = Agent.clone_registrations(source, name="clone")
 
         # Both should have math tracked
         assert "math" in source._tracked_modules
@@ -169,14 +183,14 @@ class TestAgentClone:
         assert "json" not in source._tracked_modules
         assert "json" in clone._tracked_modules
 
-    def test_clone_host_object_registry_copied(self):
+    def test_clone_registrations_host_object_registry_copied(self):
         """Clone gets a copy of host object registry."""
         source = Agent(name="source")
 
         # Manually add something to registry
         source._host_object_registry["test"] = "value"
 
-        clone = Agent.clone(source, name="clone")
+        clone = Agent.clone_registrations(source, name="clone")
 
         # Clone should have it
         assert "test" in clone._host_object_registry
@@ -323,18 +337,25 @@ class TestRunFileInSandbox:
         )
         assert state.get("x") == 1
 
-    def test_run_with_clone_for_sandbox(self):
-        """Typical use case: clone agent, add modules, run file."""
-        # Main agent without UI
-        main_agent = Agent(
-            name="main",
+    def test_clone_registrations_for_sandbox(self):
+        """Typical use case: clone registrations to create isolated sandbox."""
+        # Main agent
+        main_agent = Agent(name="main")
+        main_agent.module(math)
+
+        # Clone registrations to create sandbox with its own state/fs
+        import json
+
+        sandbox = Agent.clone_registrations(
+            main_agent,
+            name="sandbox",
             state=connect_state(type="versioned", storage="memory"),
             fs=connect_fs(type="virtual"),
         )
-        main_agent.module(math)
+        sandbox.module(json)
 
-        # Write app code
-        fs = main_agent.fs("session")
+        # Write app code to sandbox's VFS
+        fs = sandbox.fs("session")
         fs.write(
             "app/main.py",
             b"""import math
@@ -344,12 +365,6 @@ data = {"sqrt_2": math.sqrt(2)}
 result = json.dumps(data)
 """,
         )
-
-        # Clone and add json module
-        import json
-
-        sandbox = Agent.clone(main_agent, name="sandbox")
-        sandbox.module(json)
 
         # Run in sandbox
         state = run_file_in_sandbox(sandbox, "app/main.py", "session")

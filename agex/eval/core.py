@@ -232,8 +232,12 @@ def run_file_in_sandbox(
         EvalError: If the code fails to execute
 
     Example:
-        # Create a sandbox from an existing agent
-        sandbox = Agent.clone(main_agent, name="sandbox")
+        # Create a sandbox with copied registrations
+        sandbox = Agent.clone_registrations(
+            main_agent,
+            name="sandbox",
+            state=connect_state(type="versioned", storage="memory"),
+        )
         sandbox.module(ui)  # Add UI module to sandbox
 
         # Run user-generated app code

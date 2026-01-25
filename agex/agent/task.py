@@ -214,6 +214,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     closure_state=func.closure_state,
                     source_text=func.source_text,
                     agent_fingerprint=func.agent_fingerprint,
+                    session=func.session,
                     # Add task-specific metadata
                     task_agent_fingerprint=self.fingerprint,
                     task_docstring=effective_primer,

@@ -68,6 +68,7 @@ class UserFunction:
     agent_fingerprint: str | None = (
         None  # Fingerprint of the agent this function was defined in
     )
+    session: str = "default"  # Session where the function was defined
 
     # Ensure hashability for use in libraries that cache by callable (e.g., pandas.apply)
     def __hash__(self) -> int:  # type: ignore[override]
@@ -165,7 +166,7 @@ class UserFunction:
                 state=exec_state,
                 source_code=source_code,
                 eval_timeout_seconds=agent.eval_timeout_seconds,
-                session="default",  # Default if called outside evaluator
+                session=self.session,  # Use session from when function was defined
                 main_loop=main_loop,
             )
 
@@ -183,12 +184,28 @@ class UserFunction:
         for name, value in bound_args.items():
             exec_state.set(name, value)
 
+        # Set up VFS context if agent has filesystem configured
+        # This ensures file operations in callbacks (e.g., NiceGUI button clicks)
+        # route to VFS instead of real filesystem
+        fs_context = None
+        if agent._fs_config:
+            from agex.fs import with_fs_context
+
+            fs_backend, _ = agent._get_fs_backend(evaluator.session)
+            fs_context = with_fs_context(fs_backend, defer_snapshots=False)
+
         try:
+            if fs_context is not None:
+                fs_context.__enter__()
+
             for node in self.body:
                 evaluator.visit(node)
             return None
         except _ReturnException as e:
             return e.value
+        finally:
+            if fs_context is not None:
+                fs_context.__exit__(None, None, None)
 
 
 def create_inputs_dataclass_from_ast_args(
@@ -460,6 +477,7 @@ class FunctionEvaluator(BaseEvaluator):
             closure_state=closure,
             source_text=source_text,
             agent_fingerprint=self.agent.fingerprint,
+            session=self.session,
         )
         # Set the docstring as a Python-compatible attribute
         func.__doc__ = docstring
@@ -533,6 +551,7 @@ class FunctionEvaluator(BaseEvaluator):
             closure_state=closure,
             source_text=source_text,
             agent_fingerprint=self.agent.fingerprint,
+            session=self.session,
         )
 
     def visit_Return(self, node: ast.Return) -> None:

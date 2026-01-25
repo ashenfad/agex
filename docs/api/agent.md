@@ -164,21 +164,34 @@ Maximum think-act cycles per task. Raises `TaskTimeout` if exceeded.
 
 ## Class Methods
 
-### `Agent.clone(source, *, name=None)`
+### `Agent.clone_registrations(source, *, name=None, **kwargs)`
 
-Creates a new agent with copied policy but shared state/fs/host.
+Creates a new agent with copied registrations (modules, functions, classes) but independent state/fs/host.
 
 ```python
-sandbox = Agent.clone(main_agent, name="sandbox")
+from agex import Agent, connect_state
+
+sandbox = Agent.clone_registrations(
+    main_agent,
+    name="sandbox",
+    state=connect_state(type="versioned", storage="memory"),
+)
 sandbox.module(ui)  # Doesn't affect main_agent
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `source` | `Agent` | Required | The agent to clone from |
-| `name` | `str \| None` | `None` | Name for the new agent (defaults to `{source.name}_clone`) |
+| `source` | `Agent` | Required | The agent to copy registrations from |
+| `name` | `str \| None` | `None` | Name for the new agent |
+| `primer` | `str \| None` | `None` | Primer string |
+| `eval_timeout_seconds` | `float` | `5.0` | Code execution timeout |
+| `max_iterations` | `int` | `10` | Max think-act cycles |
+| `llm` | `LLM \| None` | `None` | LLM configuration |
+| `host` | `Host \| None` | `None` | Execution host (defaults to Local()) |
+| `state` | `StateConfig \| None` | `None` | State configuration (defaults to ephemeral) |
+| `fs` | `FSConfig \| None` | Default | FileSystem configuration (defaults to VirtualFS) |
 
-**Returns:** A new `Agent` with independent registrations but shared state/fs/host.
+**Returns:** A new `Agent` with copied registrations and independent state/fs/host.
 
 ---
 
