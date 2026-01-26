@@ -1,3 +1,4 @@
+import re
 import shlex
 
 from .ast import Command, Pipeline, Redirect, Script
@@ -8,6 +9,21 @@ class ParseError(Exception):
     """Raised when the parser encounters invalid syntax."""
 
     pass
+
+
+def _handle_line_continuation(text: str) -> str:
+    """Remove backslash-newline sequences (line continuation).
+
+    In shell, a backslash followed by a newline joins lines together.
+    We also strip leading whitespace from the continuation line to match
+    common usage patterns like:
+
+        git add \\
+          file1.txt \\
+          file2.txt
+    """
+    # Replace \<newline><optional whitespace> with a single space
+    return re.sub(r"\\\n[ \t]*", " ", text)
 
 
 def to_script(text: str) -> Script:
@@ -25,6 +41,9 @@ def to_script(text: str) -> Script:
     """
     if not text or not text.strip():
         return Script(pipelines=[])
+
+    # 0. Handle line continuation (backslash-newline)
+    text = _handle_line_continuation(text)
 
     # 1. Mask quoted strings to prevent shlex from stripping quotes
     # This preserves "'*'" as "'*'" in the token stream instead of "*"

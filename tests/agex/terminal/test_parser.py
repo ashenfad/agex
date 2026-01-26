@@ -277,3 +277,29 @@ def test_implicit_concatenation_and_redirects():
 
     types = {r.type for r in cmd.redirects}
     assert types == {"<", ">"}
+
+
+def test_line_continuation():
+    """Test backslash-newline line continuation."""
+    # Simple continuation
+    script = to_script("echo hello \\\nworld")
+    cmd = script.pipelines[0].commands[0]
+    assert cmd.name == "echo"
+    assert cmd.args == ["hello", "world"]
+
+    # Multiple continuations with indentation
+    script = to_script("git add \\\n  file1.txt \\\n  file2.txt")
+    cmd = script.pipelines[0].commands[0]
+    assert cmd.name == "git"
+    assert cmd.args == ["add", "file1.txt", "file2.txt"]
+
+    # Continuation in pipeline
+    script = to_script("cat file.txt | \\\n  grep pattern | \\\n  wc -l")
+    assert len(script.pipelines) == 1
+    assert len(script.pipelines[0].commands) == 3
+
+    # Quoted backslash-n should NOT be treated as continuation
+    script = to_script(r"echo 'hello\nworld'")
+    cmd = script.pipelines[0].commands[0]
+    assert cmd.args == [r"'hello\nworld'"]
+    assert "\n" not in cmd.args[0]  # No actual newline
