@@ -44,6 +44,7 @@ class Evaluator(
         on_token: Callable[[Any], None] | None = None,
         main_loop: asyncio.AbstractEventLoop | None = None,
         session: str = "default",
+        package: str = "",
     ):
         actual_timeout = (
             eval_timeout_seconds
@@ -63,6 +64,7 @@ class Evaluator(
         self.on_token = on_token
         self.main_loop = main_loop
         self.session = session
+        self.package = package
         self._with_binding_cleanup: list[tuple[str, Any]] = []
 
     def visit_Module(self, node: ast.Module):
@@ -131,6 +133,7 @@ def evaluate_program(
     *,
     fs: FileSystem | None = None,
     session: str = "default",
+    package: str = "",
     on_event: Callable[[Any], None] | None = None,
     on_token: Callable[[Any], None] | None = None,
     main_loop: asyncio.AbstractEventLoop | None = None,
@@ -145,7 +148,8 @@ def evaluate_program(
         state: The state to execute in
         eval_timeout_seconds: Optional timeout override. If None, uses agent.eval_timeout_seconds
         fs: Optional filesystem instance to use for file operations (keyword-only)
-        session: Session identifier (unused, kept for API compatibility, keyword-only)
+        session: Session identifier for VFS access (keyword-only)
+        package: Package context for relative imports (e.g., "app" for app/main.py)
         on_event: Optional handler to call for each event
         on_token: Optional handler to call for each token
         main_loop: Optional asyncio loop for bridging async calls from the thread
@@ -165,6 +169,7 @@ def evaluate_program(
         on_token=on_token,
         main_loop=main_loop,
         session=session,
+        package=package,
     )
 
     # Set up filesystem context if fs is provided
@@ -253,6 +258,15 @@ def run_file_in_sandbox(
 
     code = fs.read(file_path).decode("utf-8")
 
+    # Derive package from file path for relative import support
+    # "app/main.py" -> "app"
+    # "app/sub/module.py" -> "app.sub"
+    # "main.py" -> ""
+    package = ""
+    if "/" in file_path:
+        dir_path = file_path.rsplit("/", 1)[0]
+        package = dir_path.replace("/", ".")
+
     # Get the underlying filesystem backend for evaluate_program
     backend, _ = agent._get_fs_backend(session)
 
@@ -264,6 +278,7 @@ def run_file_in_sandbox(
         eval_timeout_seconds=eval_timeout_seconds,
         fs=backend,
         session=session,
+        package=package,
         on_event=on_event,
         on_token=on_token,
         main_loop=main_loop,
