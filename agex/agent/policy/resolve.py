@@ -230,7 +230,14 @@ def _resolve_module_member(
         try:
             submod = importlib.import_module(submod_path)
         except Exception:
-            return None
+            # Fall back to getattr chain for aliased modules (e.g., plotly.express.colors
+            # where .qualitative is actually _plotly_utils.colors.qualitative)
+            try:
+                submod = mod
+                for part in parts[:-1]:
+                    submod = getattr(submod, part)
+            except AttributeError:
+                return None
         leaf = parts[-1]
         member = getattr(submod, leaf, None)
         if member is None:
