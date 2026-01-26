@@ -491,16 +491,15 @@ class ActionEvent(BaseEvent):
             file_links_parts = []
             for action in self.file_actions:
                 if isinstance(action, EditAction):
-                    replace_all_str = (
-                        " <small>(replace_all)</small>" if action.replace_all else ""
-                    )
-                    insert_str = (
-                        f" <small>(insert {action.insert})</small>"
-                        if action.insert
-                        else ""
-                    )
+                    # Build combined label: (edit, insert after, replace_all)
+                    label_parts = ["edit"]
+                    if action.insert:
+                        label_parts.append(f"insert {action.insert}")
+                    if action.replace_all:
+                        label_parts.append("replace_all")
+                    label = ", ".join(label_parts)
                     file_links_parts.append(
-                        f"<code>{action.path}</code> <small>(edit)</small>{insert_str}{replace_all_str}"
+                        f"<code>{action.path}</code> <small>({label})</small>"
                     )
                 else:
                     mode_suffix = (
