@@ -756,11 +756,11 @@ class TestEditParsing:
         with pytest.raises(ResponseParseError, match="Path traversal not allowed"):
             list(tokenize_xml_stream(iter(chunks)))
 
-    def test_edit_mode_append(self):
-        """Test EDIT with mode=append on EDIT tag."""
+    def test_edit_insert_after(self):
+        """Test EDIT with insert=after on EDIT tag."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" mode="append">
+        <EDIT path="app.py" insert="after">
         <SEARCH>def foo():
     pass</SEARCH>
         <REPLACE>
@@ -772,15 +772,15 @@ class TestEditParsing:
         assert len(result.file_actions) == 1
         edit = result.file_actions[0]
         assert isinstance(edit, EditAction)
-        assert edit.mode == "append"
+        assert edit.insert == "after"
         assert "def foo():" in edit.search
         assert "# new code after" in edit.replace
 
-    def test_edit_mode_prepend(self):
-        """Test EDIT with mode=prepend on EDIT tag."""
+    def test_edit_insert_before(self):
+        """Test EDIT with insert=before on EDIT tag."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" mode="prepend">
+        <EDIT path="app.py" insert="before">
         <SEARCH>def foo():
     pass</SEARCH>
         <REPLACE># comment before
@@ -791,10 +791,10 @@ class TestEditParsing:
         result = parse_xml_response(xml)
         edit = result.file_actions[0]
         assert isinstance(edit, EditAction)
-        assert edit.mode == "prepend"
+        assert edit.insert == "before"
 
-    def test_edit_mode_default_is_replace(self):
-        """Test that default mode is 'replace' when not specified."""
+    def test_edit_default_insert_is_none(self):
+        """Test that default insert is None when not specified."""
         xml = """
         <THINKING>x</THINKING>
         <EDIT path="app.py">
@@ -806,41 +806,26 @@ class TestEditParsing:
         result = parse_xml_response(xml)
         edit = result.file_actions[0]
         assert isinstance(edit, EditAction)
-        assert edit.mode == "replace"
+        assert edit.insert is None
 
-    def test_edit_mode_explicit_replace(self):
-        """Test EDIT with explicit mode=replace."""
+    def test_edit_insert_invalid_rejected(self):
+        """Test that invalid insert values are rejected."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" mode="replace">
+        <EDIT path="app.py" insert="invalid">
         <SEARCH>old</SEARCH>
         <REPLACE>new</REPLACE>
         </EDIT>
         <PYTHON>pass</PYTHON>
         """
-        result = parse_xml_response(xml)
-        edit = result.file_actions[0]
-        assert isinstance(edit, EditAction)
-        assert edit.mode == "replace"
-
-    def test_edit_mode_invalid_rejected(self):
-        """Test that invalid mode values are rejected."""
-        xml = """
-        <THINKING>x</THINKING>
-        <EDIT path="app.py" mode="invalid">
-        <SEARCH>old</SEARCH>
-        <REPLACE>new</REPLACE>
-        </EDIT>
-        <PYTHON>pass</PYTHON>
-        """
-        with pytest.raises(ResponseParseError, match="Invalid mode"):
+        with pytest.raises(ResponseParseError, match="Invalid insert"):
             parse_xml_response(xml)
 
-    def test_edit_mode_case_insensitive(self):
-        """Test that mode values are case-insensitive."""
+    def test_edit_insert_case_insensitive(self):
+        """Test that insert values are case-insensitive."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" mode="APPEND">
+        <EDIT path="app.py" insert="AFTER">
         <SEARCH>old</SEARCH>
         <REPLACE>new</REPLACE>
         </EDIT>
@@ -849,10 +834,10 @@ class TestEditParsing:
         result = parse_xml_response(xml)
         edit = result.file_actions[0]
         assert isinstance(edit, EditAction)
-        assert edit.mode == "append"
+        assert edit.insert == "after"
 
-    def test_streaming_edit_mode_append(self):
-        """Test streaming tokenizer parses mode attribute from EDIT tag."""
+    def test_streaming_edit_insert_after(self):
+        """Test streaming tokenizer parses insert attribute from EDIT tag."""
         from agex.llm.core import ResponseBuilder
 
         builder = ResponseBuilder()
@@ -861,7 +846,7 @@ class TestEditParsing:
             TokenChunk(type="thinking", content="", done=True),
             TokenChunk(
                 type="edit",
-                content="path=app.py,mode=append,replace_all=False",
+                content="path=app.py,insert=after,replace_all=False",
                 done=False,
             ),
             TokenChunk(
@@ -880,4 +865,56 @@ class TestEditParsing:
         assert len(response.file_actions) == 1
         edit = response.file_actions[0]
         assert isinstance(edit, EditAction)
-        assert edit.mode == "append"
+        assert edit.insert == "after"
+
+    def test_edit_missing_search_tag_rejected(self):
+        """Test EDIT without SEARCH tag raises an error with helpful message."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py" insert="after">
+        # This content has no SEARCH tag
+        <REPLACE>new code</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        with pytest.raises(ResponseParseError, match="missing <SEARCH>"):
+            parse_xml_response(xml)
+
+    def test_edit_missing_replace_tag_rejected(self):
+        """Test EDIT without REPLACE tag raises an error."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py">
+        <SEARCH>old code</SEARCH>
+        # No REPLACE tag here
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        with pytest.raises(ResponseParseError, match="missing <REPLACE>"):
+            parse_xml_response(xml)
+
+    def test_edit_missing_both_tags_rejected(self):
+        """Test EDIT without both SEARCH and REPLACE tags raises error for SEARCH."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py" insert="after">
+        # Just plain content, no tags
+        This is wrong usage
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        # Should fail on missing SEARCH first
+        with pytest.raises(ResponseParseError, match="missing <SEARCH>"):
+            parse_xml_response(xml)
+
+    def test_edit_without_tags_suggests_file_append(self):
+        """Test that error message suggests FILE mode=append for simple appends."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py" insert="after">
+        new content to add
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        with pytest.raises(ResponseParseError, match='use <FILE mode="append">'):
+            parse_xml_response(xml)

@@ -241,19 +241,21 @@ class ResponseBuilder:
                 self.file_parts[self.current_file_path].append(token.content)
         elif token.type == "edit":
             if token.content.startswith("path="):
-                # Parse path and replace_all from metadata: "path=foo.py,replace_all=False"
+                # Parse path and metadata: "path=foo.py,insert=after|None,replace_all=False"
                 metadata = token.content
                 import re
 
                 from agex.llm.xml import validate_file_path
 
                 path_match = re.search(r"path=([^,]+)", metadata)
-                mode_match = re.search(r"mode=([^,]+)", metadata)
+                insert_match = re.search(r"insert=([^,]+)", metadata)
                 replace_all_match = re.search(r"replace_all=([^,]+)", metadata)
 
                 if path_match:
                     path = validate_file_path(path_match.group(1))
-                    mode = mode_match.group(1) if mode_match else "replace"
+                    # insert can be "after", "before", or "None" (string)
+                    insert_str = insert_match.group(1) if insert_match else "None"
+                    insert = insert_str if insert_str in ("after", "before") else None
                     replace_all = (
                         replace_all_match is not None
                         and replace_all_match.group(1).lower() == "true"
@@ -261,7 +263,7 @@ class ResponseBuilder:
                     self.current_edit_path = path
                     self.edit_parts[path] = []
                     self.edit_metadata[path] = {
-                        "mode": mode,
+                        "insert": insert,
                         "replace_all": replace_all,
                     }
                     # Track ordering
@@ -297,7 +299,7 @@ class ResponseBuilder:
                 parts = self.edit_parts.get(path, [])
                 inner_content = "".join(parts)
                 metadata = self.edit_metadata.get(path, {})
-                mode = metadata.get("mode", "replace")
+                insert = metadata.get("insert")  # None, "after", or "before"
                 replace_all = metadata.get("replace_all", False)
 
                 # Parse SEARCH and REPLACE from the accumulated content
@@ -323,7 +325,7 @@ class ResponseBuilder:
                             search=search,
                             replace=replace,
                             replace_all=replace_all,
-                            mode=mode,  # type: ignore[arg-type]
+                            insert=insert,
                         )
                     )
 

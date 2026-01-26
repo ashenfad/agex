@@ -79,13 +79,19 @@ class FileAction:
 
 @dataclass
 class EditAction:
-    """Represents a search/replace edit operation requested by an agent."""
+    """Represents a search/replace edit operation requested by an agent.
+
+    The `insert` attribute controls how the replacement is applied:
+    - None (default): Replace the search text entirely with the replace text
+    - "after": Keep the search text and insert replace text after it
+    - "before": Insert replace text before the search text, keeping the original
+    """
 
     path: str
     search: str
     replace: str
     replace_all: bool = False
-    mode: Literal["replace", "append", "prepend"] = "replace"
+    insert: Literal["after", "before"] | None = None
 
 
 class UnpicklableVariableError(Exception):

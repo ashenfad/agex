@@ -356,14 +356,14 @@ def apply_optimistic_file_actions(
                     f'Use replace_all="true" or provide more context.'
                 )
 
-            # Compute replacement based on mode
-            if action.mode == "append":
+            # Compute replacement based on insert attribute
+            if action.insert == "after":
                 # Keep search text, add replace text after
                 replacement = action.search + action.replace
-            elif action.mode == "prepend":
+            elif action.insert == "before":
                 # Add replace text before, keep search text
                 replacement = action.replace + action.search
-            else:  # "replace" (default)
+            else:  # None (default) = replace entirely
                 replacement = action.replace
 
             # Apply replacement
