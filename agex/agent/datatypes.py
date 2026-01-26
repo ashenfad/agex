@@ -85,6 +85,7 @@ class EditAction:
     search: str
     replace: str
     replace_all: bool = False
+    mode: Literal["replace", "append", "prepend"] = "replace"
 
 
 class UnpicklableVariableError(Exception):

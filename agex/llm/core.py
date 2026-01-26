@@ -248,17 +248,22 @@ class ResponseBuilder:
                 from agex.llm.xml import validate_file_path
 
                 path_match = re.search(r"path=([^,]+)", metadata)
+                mode_match = re.search(r"mode=([^,]+)", metadata)
                 replace_all_match = re.search(r"replace_all=([^,]+)", metadata)
 
                 if path_match:
                     path = validate_file_path(path_match.group(1))
+                    mode = mode_match.group(1) if mode_match else "replace"
                     replace_all = (
                         replace_all_match is not None
                         and replace_all_match.group(1).lower() == "true"
                     )
                     self.current_edit_path = path
                     self.edit_parts[path] = []
-                    self.edit_metadata[path] = {"replace_all": replace_all}
+                    self.edit_metadata[path] = {
+                        "mode": mode,
+                        "replace_all": replace_all,
+                    }
                     # Track ordering
                     self.action_order.append(("edit", path))
             elif self.current_edit_path:
@@ -271,7 +276,11 @@ class ResponseBuilder:
         import re
 
         from agex.agent.datatypes import EditAction, FileAction
-        from agex.llm.xml import TAG_REPLACE, TAG_SEARCH, validate_edit_search
+        from agex.llm.xml import (
+            TAG_REPLACE,
+            TAG_SEARCH,
+            validate_edit_search,
+        )
 
         file_actions: list[FileAction | EditAction] = []
 
@@ -288,6 +297,7 @@ class ResponseBuilder:
                 parts = self.edit_parts.get(path, [])
                 inner_content = "".join(parts)
                 metadata = self.edit_metadata.get(path, {})
+                mode = metadata.get("mode", "replace")
                 replace_all = metadata.get("replace_all", False)
 
                 # Parse SEARCH and REPLACE from the accumulated content
@@ -305,6 +315,7 @@ class ResponseBuilder:
                 if search_match and replace_match:
                     search = search_match.group(1)
                     replace = replace_match.group(1)
+
                     validate_edit_search(path, search)
                     file_actions.append(
                         EditAction(
@@ -312,6 +323,7 @@ class ResponseBuilder:
                             search=search,
                             replace=replace,
                             replace_all=replace_all,
+                            mode=mode,  # type: ignore[arg-type]
                         )
                     )
 

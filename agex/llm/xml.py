@@ -106,6 +106,34 @@ def validate_edit_search(path: str, search: str) -> str:
     return search
 
 
+# Valid modes for REPLACE tag
+VALID_REPLACE_MODES = frozenset({"replace", "append", "prepend"})
+
+
+def validate_replace_mode(
+    mode: str, path: str
+) -> Literal["replace", "append", "prepend"]:
+    """Validate mode attribute from <REPLACE> tag.
+
+    Args:
+        mode: The mode string from the REPLACE tag's mode attribute.
+        path: The file path (for error messages).
+
+    Returns:
+        The validated mode as a Literal type.
+
+    Raises:
+        ResponseParseError: If mode is not 'replace', 'append', or 'prepend'.
+    """
+    mode = mode.lower().strip()
+    if mode not in VALID_REPLACE_MODES:
+        raise ResponseParseError(
+            f"Invalid mode '{mode}' in <REPLACE> for {path}. "
+            f"Must be 'replace', 'append', or 'prepend'."
+        )
+    return mode  # type: ignore[return-value]
+
+
 @dataclass
 class XMLResponse:
     """Parsed XML response from LLM."""
@@ -123,7 +151,7 @@ Format your response using XML tags:
 <{TAG_TITLE}>A brief title here</{TAG_TITLE}>
 <{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}>
 <{TAG_FILE} path="/helpers/file.py" mode="write|append"># File content here</{TAG_FILE}>
-<{TAG_EDIT} path="/helpers/file.py" replace_all="false">
+<{TAG_EDIT} path="/helpers/file.py" mode="replace|append|prepend" replace_all="false">
 <{TAG_SEARCH}>text to find</{TAG_SEARCH}>
 <{TAG_REPLACE}>replacement text</{TAG_REPLACE}>
 </{TAG_EDIT}>
@@ -134,9 +162,11 @@ IMPORTANT:
 2. You can generate zero or more <{TAG_FILE}> or <{TAG_EDIT}> tags to create/modify files before execution.
 3. Use <{TAG_FILE}> with `mode="append"` to add code to an existing file. Defaults to `mode="write"`.
 4. Use <{TAG_EDIT}> for surgical search/replace edits. The <{TAG_SEARCH}> must match exactly (including whitespace/indentation) and occur once unless `replace_all="true"`.
-5. When making python modules, use the `helpers` directory as the root.
-6. You MUST end your response with exactly one <{TAG_PYTHON}> tag.
-7. Do NOT attempt to simulate observations or multiple turns in a single response.
+5. Use `mode="append"` on <{TAG_EDIT}> to add text after the match (keeps original), or `mode="prepend"` to add before. Default `mode="replace"` replaces the match entirely.
+6. If you just need to append to a file, prefer using <{TAG_FILE} mode="append"> over <{TAG_EDIT}>.
+7. When making python modules, use the `helpers` directory as the root.
+8. You MUST end your response with exactly one <{TAG_PYTHON}> tag.
+9. Do NOT attempt to simulate observations or multiple turns in a single response.
 
 You will receive environment output (stdout/images) in <{TAG_OBSERVATION}> tags.
 These will be visible after a `task_continue()` call.
@@ -248,12 +278,18 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
         replace_all_match = re.search(
             r'replace_all=["\'](.*?)["\']', attrs_text, re.IGNORECASE
         )
+        mode_match = re.search(r'mode=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
 
         if path_match:
             path = validate_file_path(path_match.group(1))
             replace_all = (
                 replace_all_match is not None
                 and replace_all_match.group(1).lower() == "true"
+            )
+            mode = (
+                validate_replace_mode(mode_match.group(1), path)
+                if mode_match
+                else "replace"
             )
 
             # Parse nested SEARCH and REPLACE tags
@@ -271,6 +307,7 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
             if search_match and replace_match:
                 search = search_match.group(1)
                 replace = replace_match.group(1)
+
                 validate_edit_search(path, search)
                 all_matches.append(
                     (
@@ -280,6 +317,7 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
                             search=search,
                             replace=replace,
                             replace_all=replace_all,
+                            mode=mode,
                         ),
                     )
                 )
@@ -404,20 +442,26 @@ class _XMLTokenizerState:
             replace_all_match = re.search(
                 r'replace_all=["\'](.*?)["\']', attrs_text, re.IGNORECASE
             )
+            mode_match = re.search(r'mode=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
 
             if path_match:
-                # Validate path
+                # Validate path and mode
                 path = validate_file_path(path_match.group(1))
                 replace_all = (
                     replace_all_match is not None
                     and replace_all_match.group(1).lower() == "true"
+                )
+                mode = (
+                    validate_replace_mode(mode_match.group(1), path)
+                    if mode_match
+                    else "replace"
                 )
                 starts.append(
                     (
                         edit_start.start(),
                         "edit",
                         edit_start.end(),
-                        f"path={path},replace_all={replace_all}",
+                        f"path={path},mode={mode},replace_all={replace_all}",
                     )
                 )
 

@@ -755,3 +755,129 @@ class TestEditParsing:
         ]
         with pytest.raises(ResponseParseError, match="Path traversal not allowed"):
             list(tokenize_xml_stream(iter(chunks)))
+
+    def test_edit_mode_append(self):
+        """Test EDIT with mode=append on EDIT tag."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py" mode="append">
+        <SEARCH>def foo():
+    pass</SEARCH>
+        <REPLACE>
+    # new code after</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        assert len(result.file_actions) == 1
+        edit = result.file_actions[0]
+        assert isinstance(edit, EditAction)
+        assert edit.mode == "append"
+        assert "def foo():" in edit.search
+        assert "# new code after" in edit.replace
+
+    def test_edit_mode_prepend(self):
+        """Test EDIT with mode=prepend on EDIT tag."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py" mode="prepend">
+        <SEARCH>def foo():
+    pass</SEARCH>
+        <REPLACE># comment before
+</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        edit = result.file_actions[0]
+        assert isinstance(edit, EditAction)
+        assert edit.mode == "prepend"
+
+    def test_edit_mode_default_is_replace(self):
+        """Test that default mode is 'replace' when not specified."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py">
+        <SEARCH>old</SEARCH>
+        <REPLACE>new</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        edit = result.file_actions[0]
+        assert isinstance(edit, EditAction)
+        assert edit.mode == "replace"
+
+    def test_edit_mode_explicit_replace(self):
+        """Test EDIT with explicit mode=replace."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py" mode="replace">
+        <SEARCH>old</SEARCH>
+        <REPLACE>new</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        edit = result.file_actions[0]
+        assert isinstance(edit, EditAction)
+        assert edit.mode == "replace"
+
+    def test_edit_mode_invalid_rejected(self):
+        """Test that invalid mode values are rejected."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py" mode="invalid">
+        <SEARCH>old</SEARCH>
+        <REPLACE>new</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        with pytest.raises(ResponseParseError, match="Invalid mode"):
+            parse_xml_response(xml)
+
+    def test_edit_mode_case_insensitive(self):
+        """Test that mode values are case-insensitive."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py" mode="APPEND">
+        <SEARCH>old</SEARCH>
+        <REPLACE>new</REPLACE>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        edit = result.file_actions[0]
+        assert isinstance(edit, EditAction)
+        assert edit.mode == "append"
+
+    def test_streaming_edit_mode_append(self):
+        """Test streaming tokenizer parses mode attribute from EDIT tag."""
+        from agex.llm.core import ResponseBuilder
+
+        builder = ResponseBuilder()
+        tokens = [
+            TokenChunk(type="thinking", content="reasoning", done=False),
+            TokenChunk(type="thinking", content="", done=True),
+            TokenChunk(
+                type="edit",
+                content="path=app.py,mode=append,replace_all=False",
+                done=False,
+            ),
+            TokenChunk(
+                type="edit",
+                content="<SEARCH>old</SEARCH><REPLACE>new</REPLACE>",
+                done=False,
+            ),
+            TokenChunk(type="edit", content="", done=True),
+            TokenChunk(type="python", content="pass", done=False),
+            TokenChunk(type="python", content="", done=True),
+        ]
+        for token in tokens:
+            builder.process_token(token)
+
+        response = builder.build()
+        assert len(response.file_actions) == 1
+        edit = response.file_actions[0]
+        assert isinstance(edit, EditAction)
+        assert edit.mode == "append"

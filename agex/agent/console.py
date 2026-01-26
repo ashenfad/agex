@@ -456,17 +456,25 @@ def pprint_tokens(
             content = f"📁 {path} {action}\n"
 
     elif token.type == "edit" and token.content.startswith("path="):
-        # Parse metadata: "path=foo.py,replace_all=False"
+        # Parse metadata: "path=foo.py,mode=append,replace_all=False"
 
         path_match = re.search(r"path=([^,]+)", token.content)
+        mode_match = re.search(r"mode=([^,]+)", token.content)
         replace_all_match = re.search(r"replace_all=([^,]+)", token.content)
 
         if path_match:
             path = path_match.group(1)
+            mode = mode_match.group(1) if mode_match else "replace"
             replace_all = (
                 replace_all_match and replace_all_match.group(1).lower() == "true"
             )
-            action = "[EDIT ALL]" if replace_all else "[EDIT]"
+            # Build action label
+            if replace_all:
+                action = "[EDIT ALL]"
+            elif mode != "replace":
+                action = f"[EDIT {mode.upper()}]"
+            else:
+                action = "[EDIT]"
             content = f"✏️ {path} {action}\n"
 
     # Color based on token type and optionally prepend context
