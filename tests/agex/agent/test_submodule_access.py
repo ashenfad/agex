@@ -186,6 +186,67 @@ def test_external_module_aliasing():
                 del sys.modules[name]
 
 
+def test_recursive_path_respects_exclude_on_leaf():
+    """Test that include/exclude patterns are applied to the leaf member in recursive paths."""
+    import sys
+    from types import ModuleType
+
+    # Create mock package with both public and private attributes
+    mock_pkg = ModuleType("mock_pkg_exclude")
+    mock_pkg_sub = ModuleType("mock_pkg_exclude.sub")
+    mock_pkg.sub = mock_pkg_sub
+    mock_pkg_sub.public_value = "allowed"
+    mock_pkg_sub._private_value = "should be blocked"
+
+    # Register in sys.modules
+    original_modules = {}
+    for name in ["mock_pkg_exclude", "mock_pkg_exclude.sub"]:
+        if name in sys.modules:
+            original_modules[name] = sys.modules[name]
+
+    sys.modules["mock_pkg_exclude"] = mock_pkg
+    sys.modules["mock_pkg_exclude.sub"] = mock_pkg_sub
+
+    try:
+        from agex.agent.policy.datatypes import Namespace, ResolutionScope
+        from agex.agent.policy.resolve import resolve_member
+
+        # Create namespace with default exclude pattern for private names
+        mock_ns = Namespace(
+            name="mock_pkg_exclude",
+            kind="module",
+            module=mock_pkg,
+            include="*",
+            exclude="_*",  # Exclude private names
+            recursive=True,
+        )
+
+        scope = ResolutionScope(
+            namespaces={"mock_pkg_exclude": mock_ns},
+            module_index={"mock_pkg_exclude": [mock_ns]},
+        )
+
+        # Public attribute should be accessible
+        result = resolve_member(mock_ns, "sub.public_value", scope)
+        assert result is not None, "Public attribute should be accessible"
+        from agex.agent.policy.datatypes import ResolvedObj
+
+        assert isinstance(result, ResolvedObj)
+        assert result.value == "allowed"
+
+        # Private attribute should be blocked
+        result = resolve_member(mock_ns, "sub._private_value", scope)
+        assert result is None, "Private attribute should be blocked by exclude pattern"
+
+    finally:
+        # Clean up sys.modules
+        for name in ["mock_pkg_exclude", "mock_pkg_exclude.sub"]:
+            if name in original_modules:
+                sys.modules[name] = original_modules[name]
+            elif name in sys.modules:
+                del sys.modules[name]
+
+
 def test_external_module_aliasing_class_access():
     """Test resolution of class attributes through externally aliased modules."""
     import sys
@@ -289,6 +350,9 @@ if __name__ == "__main__":
 
     test_external_module_aliasing()
     print("✓ test_external_module_aliasing passed")
+
+    test_recursive_path_respects_exclude_on_leaf()
+    print("✓ test_recursive_path_respects_exclude_on_leaf passed")
 
     test_external_module_aliasing_class_access()
     print("✓ test_external_module_aliasing_class_access passed")

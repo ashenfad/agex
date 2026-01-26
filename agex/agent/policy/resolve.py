@@ -239,6 +239,9 @@ def _resolve_module_member(
             except AttributeError:
                 return None
         leaf = parts[-1]
+        # Check include/exclude on the leaf member name
+        if not (include_pred(leaf) and not exclude_pred(leaf)):
+            return None
         member = getattr(submod, leaf, None)
         if member is None:
             return None
