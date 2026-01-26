@@ -151,6 +151,26 @@ def touch(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> Non
             raise TerminalError(f"touch: {e}")
 
 
+def _copy_recursive(src: str, dst: str, fs: FileSystem) -> None:
+    """Recursively copy src directory to dst."""
+    # Create destination directory
+    if not fs.exists(dst):
+        fs.mkdir(dst)
+
+    # Copy contents
+    for item in fs.list_detailed(src, recursive=False):
+        # Get just the name (last component of path)
+        name = item.path.rstrip("/").split("/")[-1]
+        src_path = f"{src.rstrip('/')}/{name}"
+        dst_path = f"{dst.rstrip('/')}/{name}"
+
+        if item.is_dir:
+            _copy_recursive(src_path, dst_path, fs)
+        else:
+            content = fs.read(src_path)
+            fs.write(dst_path, content)
+
+
 def cp(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Copy files."""
     parser = CommandArgParser(prog="cp", add_help=False)
@@ -176,19 +196,39 @@ def cp(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
                         f"cp: -r not specified; omitting directory '{src}'"
                     )
 
-                raise TerminalError("cp: recursive copy not fully implemented yet")
+                # Determine target path
+                if fs.isdir(dst):
+                    # cp -r foo/ bar/ -> bar/foo/
+                    import os.path
 
-            content = fs.read(src)
+                    dirname = os.path.basename(src.rstrip("/"))
+                    target_path = f"{dst.rstrip('/')}/{dirname}"
+                else:
+                    target_path = dst
 
-            if fs.isdir(dst):
-                import os.path
+                # Check for copying into self
+                src_abs = fs._resolve_path(src) if hasattr(fs, "_resolve_path") else src
+                dst_abs = (
+                    fs._resolve_path(target_path)
+                    if hasattr(fs, "_resolve_path")
+                    else target_path
+                )
+                if dst_abs.startswith(src_abs.rstrip("/") + "/"):
+                    raise TerminalError(f"cp: cannot copy '{src}' into itself")
 
-                filename = os.path.basename(src)
-                target_path = f"{dst}/{filename}"
+                _copy_recursive(src, target_path, fs)
             else:
-                target_path = dst
+                content = fs.read(src)
 
-            fs.write(target_path, content)
+                if fs.isdir(dst):
+                    import os.path
+
+                    filename = os.path.basename(src)
+                    target_path = f"{dst}/{filename}"
+                else:
+                    target_path = dst
+
+                fs.write(target_path, content)
 
         except FileNotFoundError:
             raise TerminalError(f"cp: cannot stat '{src}': No such file or directory")
@@ -212,10 +252,27 @@ def mv(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
         raise TerminalError(f"mv: {e}")
 
 
+def _remove_recursive(path: str, fs: FileSystem) -> None:
+    """Recursively remove directory and contents."""
+    # Remove contents first
+    for item in fs.list_detailed(path, recursive=False):
+        name = item.path.rstrip("/").split("/")[-1]
+        item_path = f"{path.rstrip('/')}/{name}"
+
+        if item.is_dir:
+            _remove_recursive(item_path, fs)
+        else:
+            fs.remove(item_path)
+
+    # Remove now-empty directory
+    fs.rmdir(path)
+
+
 def rm(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     """Remove files."""
     parser = CommandArgParser(prog="rm", add_help=False)
     parser.add_argument("-r", "-R", action="store_true")
+    parser.add_argument("-f", "--force", action="store_true")
     parser.add_argument("paths", nargs="+")
 
     parsed, unknown = parser.parse_known_args(args)
@@ -223,15 +280,25 @@ def rm(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
         try:
             if fs.isdir(path):
                 if not parsed.r:
-                    raise TerminalError(f"rm: cannot remove '{path}': Is a directory")
+                    raise TerminalError(
+                        f"rm: cannot remove '{path}': Is a directory (use -r to remove)"
+                    )
 
-                raise TerminalError("rm: recursive remove not fully implemented")
+                # Prevent removing root
+                resolved = (
+                    fs._resolve_path(path) if hasattr(fs, "_resolve_path") else path
+                )
+                if resolved == "/" or resolved == "":
+                    raise TerminalError("rm: cannot remove root directory")
+
+                _remove_recursive(path, fs)
             else:
                 fs.remove(path)
         except FileNotFoundError:
-            raise TerminalError(
-                f"rm: cannot remove '{path}': No such file or directory"
-            )
+            if not parsed.force:
+                raise TerminalError(
+                    f"rm: cannot remove '{path}': No such file or directory"
+                )
         except TerminalError:
             raise
         except Exception as e:
