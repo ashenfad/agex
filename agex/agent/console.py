@@ -456,23 +456,23 @@ def pprint_tokens(
             content = f"📁 {path} {action}\n"
 
     elif token.type == "edit" and token.content.startswith("path="):
-        # Parse metadata: "path=foo.py,mode=append,replace_all=False"
+        # Parse metadata: "path=foo.py,insert=after|None,replace_all=False"
 
         path_match = re.search(r"path=([^,]+)", token.content)
-        mode_match = re.search(r"mode=([^,]+)", token.content)
+        insert_match = re.search(r"insert=([^,]+)", token.content)
         replace_all_match = re.search(r"replace_all=([^,]+)", token.content)
 
         if path_match:
             path = path_match.group(1)
-            mode = mode_match.group(1) if mode_match else "replace"
+            insert = insert_match.group(1) if insert_match else "None"
             replace_all = (
                 replace_all_match and replace_all_match.group(1).lower() == "true"
             )
             # Build action label
             if replace_all:
                 action = "[EDIT ALL]"
-            elif mode != "replace":
-                action = f"[EDIT {mode.upper()}]"
+            elif insert in ("after", "before"):
+                action = f"[INSERT {insert.upper()}]"
             else:
                 action = "[EDIT]"
             content = f"✏️ {path} {action}\n"

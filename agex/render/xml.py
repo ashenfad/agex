@@ -98,14 +98,14 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             if event.file_actions:
                 for action in event.file_actions:
                     if isinstance(action, EditAction):
-                        mode_attr = (
-                            f' mode="{action.mode}"' if action.mode != "replace" else ""
+                        insert_attr = (
+                            f' insert="{action.insert}"' if action.insert else ""
                         )
                         replace_all_attr = (
                             ' replace_all="true"' if action.replace_all else ""
                         )
                         files_section += (
-                            f'<{TAG_EDIT} path="{action.path}"{mode_attr}{replace_all_attr}>\n'
+                            f'<{TAG_EDIT} path="{action.path}"{insert_attr}{replace_all_attr}>\n'
                             f"<{TAG_SEARCH}>{action.search}</{TAG_SEARCH}>\n"
                             f"<{TAG_REPLACE}>{action.replace}</{TAG_REPLACE}>\n"
                             f"</{TAG_EDIT}>\n"

@@ -106,32 +106,30 @@ def validate_edit_search(path: str, search: str) -> str:
     return search
 
 
-# Valid modes for REPLACE tag
-VALID_REPLACE_MODES = frozenset({"replace", "append", "prepend"})
+# Valid values for EDIT insert attribute
+VALID_INSERT_VALUES = frozenset({"after", "before"})
 
 
-def validate_replace_mode(
-    mode: str, path: str
-) -> Literal["replace", "append", "prepend"]:
-    """Validate mode attribute from <REPLACE> tag.
+def validate_edit_insert(insert: str, path: str) -> Literal["after", "before"]:
+    """Validate insert attribute from <EDIT> tag.
 
     Args:
-        mode: The mode string from the REPLACE tag's mode attribute.
+        insert: The insert string from the EDIT tag's insert attribute.
         path: The file path (for error messages).
 
     Returns:
-        The validated mode as a Literal type.
+        The validated insert value as a Literal type.
 
     Raises:
-        ResponseParseError: If mode is not 'replace', 'append', or 'prepend'.
+        ResponseParseError: If insert is not 'after' or 'before'.
     """
-    mode = mode.lower().strip()
-    if mode not in VALID_REPLACE_MODES:
+    insert = insert.lower().strip()
+    if insert not in VALID_INSERT_VALUES:
         raise ResponseParseError(
-            f"Invalid mode '{mode}' in <REPLACE> for {path}. "
-            f"Must be 'replace', 'append', or 'prepend'."
+            f"Invalid insert='{insert}' in <EDIT path=\"{path}\">. "
+            f"Must be 'after' or 'before'."
         )
-    return mode  # type: ignore[return-value]
+    return insert  # type: ignore[return-value]
 
 
 @dataclass
@@ -151,7 +149,7 @@ Format your response using XML tags:
 <{TAG_TITLE}>A brief title here</{TAG_TITLE}>
 <{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}>
 <{TAG_FILE} path="/helpers/file.py" mode="write|append"># File content here</{TAG_FILE}>
-<{TAG_EDIT} path="/helpers/file.py" mode="replace|append|prepend" replace_all="false">
+<{TAG_EDIT} path="/helpers/file.py" insert="after|before" replace_all="false">
 <{TAG_SEARCH}>text to find</{TAG_SEARCH}>
 <{TAG_REPLACE}>replacement text</{TAG_REPLACE}>
 </{TAG_EDIT}>
@@ -161,9 +159,9 @@ IMPORTANT:
 1. Generate EXACTLY ONE sequence of Title and Thinking.
 2. You can generate zero or more <{TAG_FILE}> or <{TAG_EDIT}> tags to create/modify files before execution.
 3. Use <{TAG_FILE}> with `mode="append"` to add code to an existing file. Defaults to `mode="write"`.
-4. Use <{TAG_EDIT}> for surgical search/replace edits. The <{TAG_SEARCH}> must match exactly (including whitespace/indentation) and occur once unless `replace_all="true"`.
-5. Use `mode="append"` on <{TAG_EDIT}> to add text after the match (keeps original), or `mode="prepend"` to add before. Default `mode="replace"` replaces the match entirely.
-6. If you just need to append to a file, prefer using <{TAG_FILE} mode="append"> over <{TAG_EDIT}>.
+4. Use <{TAG_EDIT}> for surgical search/replace edits. <{TAG_EDIT}> ALWAYS requires nested <{TAG_SEARCH}> and <{TAG_REPLACE}> tags. The search must match exactly (including whitespace/indentation) and occur once unless `replace_all="true"`.
+5. Use `insert="after"` on <{TAG_EDIT}> to insert text after the match (keeps original), or `insert="before"` to insert before. Without `insert`, the match is replaced entirely.
+6. If you just need to append to a file, use <{TAG_FILE} mode="append">. Do NOT use <{TAG_EDIT}> for this.
 7. When making python modules, use the `helpers` directory as the root.
 8. You MUST end your response with exactly one <{TAG_PYTHON}> tag.
 9. Do NOT attempt to simulate observations or multiple turns in a single response.
@@ -278,7 +276,7 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
         replace_all_match = re.search(
             r'replace_all=["\'](.*?)["\']', attrs_text, re.IGNORECASE
         )
-        mode_match = re.search(r'mode=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
+        insert_match = re.search(r'insert=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
 
         if path_match:
             path = validate_file_path(path_match.group(1))
@@ -286,10 +284,10 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
                 replace_all_match is not None
                 and replace_all_match.group(1).lower() == "true"
             )
-            mode = (
-                validate_replace_mode(mode_match.group(1), path)
-                if mode_match
-                else "replace"
+            insert = (
+                validate_edit_insert(insert_match.group(1), path)
+                if insert_match
+                else None
             )
 
             # Parse nested SEARCH and REPLACE tags
@@ -304,23 +302,35 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
                 re.DOTALL | re.IGNORECASE,
             )
 
-            if search_match and replace_match:
-                search = search_match.group(1)
-                replace = replace_match.group(1)
-
-                validate_edit_search(path, search)
-                all_matches.append(
-                    (
-                        match.start(),
-                        EditAction(
-                            path=path,
-                            search=search,
-                            replace=replace,
-                            replace_all=replace_all,
-                            mode=mode,
-                        ),
-                    )
+            # Validate that EDIT has both SEARCH and REPLACE tags
+            if not search_match:
+                raise ResponseParseError(
+                    f'<EDIT path="{path}"> is missing <SEARCH> tag. '
+                    f"EDIT requires both <SEARCH> and <REPLACE> tags. "
+                    f'To append content to a file, use <FILE mode="append"> instead.'
                 )
+            if not replace_match:
+                raise ResponseParseError(
+                    f'<EDIT path="{path}"> is missing <REPLACE> tag. '
+                    f"EDIT requires both <SEARCH> and <REPLACE> tags."
+                )
+
+            search = search_match.group(1)
+            replace = replace_match.group(1)
+
+            validate_edit_search(path, search)
+            all_matches.append(
+                (
+                    match.start(),
+                    EditAction(
+                        path=path,
+                        search=search,
+                        replace=replace,
+                        replace_all=replace_all,
+                        insert=insert,
+                    ),
+                )
+            )
 
     # Sort by position to preserve order
     all_matches.sort(key=lambda x: x[0])
@@ -442,26 +452,30 @@ class _XMLTokenizerState:
             replace_all_match = re.search(
                 r'replace_all=["\'](.*?)["\']', attrs_text, re.IGNORECASE
             )
-            mode_match = re.search(r'mode=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
+            insert_match = re.search(
+                r'insert=["\'](.*?)["\']', attrs_text, re.IGNORECASE
+            )
 
             if path_match:
-                # Validate path and mode
+                # Validate path and insert
                 path = validate_file_path(path_match.group(1))
                 replace_all = (
                     replace_all_match is not None
                     and replace_all_match.group(1).lower() == "true"
                 )
-                mode = (
-                    validate_replace_mode(mode_match.group(1), path)
-                    if mode_match
-                    else "replace"
+                insert = (
+                    validate_edit_insert(insert_match.group(1), path)
+                    if insert_match
+                    else None
                 )
+                # Format: path=x,insert=after|before|None,replace_all=True|False
+                insert_str = insert if insert else "None"
                 starts.append(
                     (
                         edit_start.start(),
                         "edit",
                         edit_start.end(),
-                        f"path={path},mode={mode},replace_all={replace_all}",
+                        f"path={path},insert={insert_str},replace_all={replace_all}",
                     )
                 )
 

@@ -438,8 +438,8 @@ class ActionEvent(BaseEvent):
         for action in self.file_actions:
             if isinstance(action, EditAction):
                 replace_all_str = ", replace_all" if action.replace_all else ""
-                mode_str = f", {action.mode}" if action.mode != "replace" else ""
-                files_info.append(f"{action.path} (edit{mode_str}{replace_all_str})")
+                insert_str = f", insert={action.insert}" if action.insert else ""
+                files_info.append(f"{action.path} (edit{insert_str}{replace_all_str})")
             else:
                 files_info.append(f"{action.path} ({action.mode})")
 
@@ -457,9 +457,9 @@ class ActionEvent(BaseEvent):
             for action in self.file_actions:
                 if isinstance(action, EditAction):
                     replace_all_str = ", replace_all" if action.replace_all else ""
-                    mode_str = f", {action.mode}" if action.mode != "replace" else ""
+                    insert_str = f", insert={action.insert}" if action.insert else ""
                     files_section += (
-                        f" - `{action.path}` (edit{mode_str}{replace_all_str})\n"
+                        f" - `{action.path}` (edit{insert_str}{replace_all_str})\n"
                     )
                 else:
                     mode_suffix = f" ({action.mode})" if action.mode != "write" else ""
@@ -494,13 +494,13 @@ class ActionEvent(BaseEvent):
                     replace_all_str = (
                         " <small>(replace_all)</small>" if action.replace_all else ""
                     )
-                    mode_str = (
-                        f" <small>({action.mode})</small>"
-                        if action.mode != "replace"
+                    insert_str = (
+                        f" <small>(insert {action.insert})</small>"
+                        if action.insert
                         else ""
                     )
                     file_links_parts.append(
-                        f"<code>{action.path}</code> <small>(edit)</small>{mode_str}{replace_all_str}"
+                        f"<code>{action.path}</code> <small>(edit)</small>{insert_str}{replace_all_str}"
                     )
                 else:
                     mode_suffix = (
