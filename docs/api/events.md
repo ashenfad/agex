@@ -99,9 +99,17 @@ action = EditAction(
     path="utils.py",         # str
     search="old_code",       # str - text to find
     replace="new_code",      # str - replacement text
-    replace_all=False        # bool - replace all occurrences
+    replace_all=False,       # bool - replace all occurrences
+    mode="replace"           # Literal["replace", "append", "prepend"]
 )
 ```
+
+**Mode Options:**
+- `"replace"` (default): The search text is replaced by the replace text
+- `"append"`: The search text is kept, replace text is added after it
+- `"prepend"`: The replace text is added before the search text, which is kept
+
+The `append` and `prepend` modes allow agents to add code before/after a match without repeating the search text in the replacement.
 
 #### `OutputEvent`
 Generated when agents produce output (print, view_image, etc.).

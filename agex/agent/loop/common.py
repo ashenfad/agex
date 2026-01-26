@@ -356,11 +356,21 @@ def apply_optimistic_file_actions(
                     f'Use replace_all="true" or provide more context.'
                 )
 
+            # Compute replacement based on mode
+            if action.mode == "append":
+                # Keep search text, add replace text after
+                replacement = action.search + action.replace
+            elif action.mode == "prepend":
+                # Add replace text before, keep search text
+                replacement = action.replace + action.search
+            else:  # "replace" (default)
+                replacement = action.replace
+
             # Apply replacement
             if action.replace_all:
-                new_content = existing_content.replace(action.search, action.replace)
+                new_content = existing_content.replace(action.search, replacement)
             else:
-                new_content = existing_content.replace(action.search, action.replace, 1)
+                new_content = existing_content.replace(action.search, replacement, 1)
 
             # Write back
             if isinstance(target_fs, VirtualFS):
