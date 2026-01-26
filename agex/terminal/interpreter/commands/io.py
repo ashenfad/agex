@@ -115,3 +115,25 @@ def tail(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None
 
         if i < len(parsed.files) - 1:
             stdout.write("\n")
+
+
+def tee(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
+    """Read from stdin and write to stdout and files."""
+    parser = CommandArgParser(prog="tee", add_help=False)
+    parser.add_argument("-a", "--append", action="store_true")
+    parser.add_argument("files", nargs="*")
+
+    parsed, _ = parser.parse_known_args(args)
+
+    content = stdin.read()
+
+    # Write to stdout
+    stdout.write(content)
+
+    # Write to each file
+    mode = "a" if parsed.append else "w"
+    for path in parsed.files:
+        try:
+            fs.write(path, content.encode("utf-8"), mode=mode)
+        except Exception as e:
+            raise TerminalError(f"tee: {path}: {e}")

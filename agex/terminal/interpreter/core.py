@@ -11,11 +11,13 @@ from agex.terminal.ast import Pipeline, Script
 from agex.terminal.interpreter.datatypes import CommandFunc, TerminalError
 from agex.terminal.quote_masker import mask_quotes, unmask_and_unquote
 
-from .commands import filesystem, search
+from .commands import diff as diff_cmd
+from .commands import filesystem, meta, search, text
 from .commands import io as io_cmds
 
 # Static mapping of built-in commands
 BUILTINS: dict[str, CommandFunc] = {
+    # Filesystem
     "pwd": filesystem.pwd,
     "cd": filesystem.cd,
     "mkdir": filesystem.mkdir,
@@ -24,12 +26,24 @@ BUILTINS: dict[str, CommandFunc] = {
     "cp": filesystem.cp,
     "mv": filesystem.mv,
     "rm": filesystem.rm,
+    # I/O
     "echo": io_cmds.echo,
     "cat": io_cmds.cat,
     "head": io_cmds.head,
     "tail": io_cmds.tail,
+    "tee": io_cmds.tee,
+    # Search
     "grep": search.grep,
     "find": search.find,
+    # Text processing
+    "wc": text.wc,
+    "sort": text.sort,
+    "uniq": text.uniq,
+    "cut": text.cut,
+    # Diff
+    "diff": diff_cmd.diff,
+    # Meta
+    "xargs": meta.xargs,
 }
 
 
