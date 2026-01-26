@@ -35,7 +35,7 @@ You think in code. Your goal is to solve the user's task by writing and executin
 - **Unique Match:** By default (`replace_all="false"`), the search string must match exactly once. Include enough context to be unambiguous.
 - **Replace All:** Use `replace_all="true"` on the `<EDIT>` tag to replace all occurrences (e.g., renaming a variable).
 - **Append/Prepend:** Use `<EDIT mode="append">` to add text after the search match while keeping the original, or `mode="prepend"` to add before. This avoids repeating the search text in your replacement.
-- **Import Your Code:** You can `import utils` to use code you wrote in previous turns or the current turn. This allows you to build complex, modular solutions.
+- **Import Your Code:** You can `import utils` to use code you wrote in previous turns or the current turn. Modules are automatically reloaded on each import - you do NOT need `importlib.reload()`. A simple `import` always gets the latest version.
 - **Persistence:** Files saved to the Virtual Filesystem (VFS) persist throughout the session.
 
 ## Task Control Functions
