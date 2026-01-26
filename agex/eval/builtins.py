@@ -40,8 +40,17 @@ def _import_stateful(
     """
     Sandbox-aware __import__ replacement that uses the resolver instead of Python's importer.
     """
-    if level != 0:
-        raise AgexError("Relative imports are not supported.")
+    if level > 0:
+        # Relative import - resolve to absolute module name
+        from agex.eval.statements import resolve_relative_import
+
+        try:
+            name = resolve_relative_import(
+                evaluator.package, level, name if name else None
+            )
+        except ValueError as e:
+            raise AgexError(str(e))
+
     if not isinstance(name, str) or not name:
         raise AgexError("__import__() requires a non-empty module name string.")
 

@@ -25,6 +25,59 @@ from .error import EvalError
 from .objects import AgexDataClass, AgexInstance, AgexObject
 
 
+def resolve_relative_import(
+    package: str,
+    level: int,
+    module: str | None,
+) -> str:
+    """
+    Resolve a relative import to an absolute module name.
+
+    Args:
+        package: Current package context (e.g., "app" or "app.sub")
+        level: Number of dots (1 = current package, 2 = parent, etc.)
+        module: Module name after dots, or None for "from . import x"
+
+    Returns:
+        Absolute module name
+
+    Raises:
+        ValueError: If relative import cannot be resolved
+
+    Examples:
+        resolve_relative_import("app", 1, "views") -> "app.views"
+        resolve_relative_import("app", 1, None) -> "app"
+        resolve_relative_import("app.sub", 2, "utils") -> "app.utils"
+        resolve_relative_import("app.sub", 2, None) -> "app"
+        resolve_relative_import("", 1, "views") -> ValueError
+    """
+    if not package and level > 0:
+        raise ValueError("Attempted relative import in non-package")
+
+    parts = package.split(".") if package else []
+
+    # level=1 means current package, level=2 means parent, etc.
+    # We go up (level - 1) levels from current package
+    levels_up = level - 1
+
+    # Can't go up more levels than we have, or exactly to root
+    # (e.g., "from .. import x" in a single-level package "app")
+    if levels_up >= len(parts):
+        raise ValueError("Attempted relative import beyond top-level package")
+
+    # Get base package after going up
+    base_parts = parts[: len(parts) - levels_up] if levels_up > 0 else parts
+
+    if module:
+        # from .views import x -> app.views
+        return ".".join(base_parts + [module])
+    else:
+        # from . import views -> need the base package itself
+        if not base_parts:
+            raise ValueError("Cannot resolve relative import - no parent package")
+        return ".".join(base_parts)
+
+
 def _handle_assignment_exceptions(
     operation, node: ast.AST, operation_name: str = "Operation"
 ):
@@ -576,9 +629,43 @@ class StatementEvaluator(BaseEvaluator):
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         """Handles `from <module> import <name>`."""
+        # Handle relative imports (level > 0)
+        if node.level > 0:
+            try:
+                if node.module:
+                    # from .views import func -> resolve to app.views, import func
+                    module_name_to_find = resolve_relative_import(
+                        self.package, node.level, node.module
+                    )
+                    for alias in node.names:
+                        name_to_import = alias.name
+                        target_name = alias.asname or name_to_import
+                        member = self.resolver.import_from(
+                            module_name_to_find, name_to_import, self.state, node
+                        )
+                        self.state.set(target_name, member)
+                else:
+                    # from . import views -> resolve base package, import views as submodule
+                    base_package = resolve_relative_import(
+                        self.package, node.level, None
+                    )
+                    for alias in node.names:
+                        submodule_name = alias.name
+                        target_name = alias.asname or submodule_name
+                        # Import base_package.submodule_name
+                        full_module = f"{base_package}.{submodule_name}"
+                        module = self.resolver.resolve_module(
+                            full_module, self.state, node
+                        )
+                        self.state.set(target_name, module)
+            except ValueError as e:
+                raise EvalError(str(e), node)
+            return
+
+        # Absolute import
         module_name_to_find = node.module
         if not module_name_to_find:
-            raise EvalError("Relative imports are not supported.", node)
+            raise EvalError("Import requires a module name.", node)
 
         # Special case: allow `from dataclasses import dataclass` as a no-op
         # because we provide our own built-in `dataclass` object.

@@ -50,12 +50,20 @@ class VFSLoader(BaseLoader):
                     f"Failed to read module '{spec.name}' from VFS: {e}", None
                 )
 
+        # Compute package for relative imports:
+        # - For packages (e.g., app/__init__.py): package is the module name itself
+        # - For regular modules (e.g., app/views.py): package is the parent
+        if is_package:
+            package = spec.name
+        elif "." in spec.name:
+            package = spec.name.rsplit(".", 1)[0]
+        else:
+            package = ""
+
         # Set standard module attributes
         module_state.set("__name__", spec.name)
         module_state.set("__file__", spec.location or f"<virtual:{spec.name}>")
-        module_state.set(
-            "__package__", spec.name.rsplit(".", 1)[0] if "." in spec.name else ""
-        )
+        module_state.set("__package__", package)
         if is_package:
             # Packages must have a __path__ attribute (list of strings)
             # For VFS packages, this is the directory containing __init__.py or the namespace dir
@@ -68,6 +76,7 @@ class VFSLoader(BaseLoader):
                 self.agent,
                 state=module_state,
                 session=self.session,
+                package=package,
             )
         except Exception as e:
             from agex.agent.datatypes import _AgentExit
