@@ -47,11 +47,13 @@ Use `<EDIT>` to modify specific parts of an existing file. **`<SEARCH>` is alway
 ```xml
 <EDIT path="utils.py">
 <SEARCH>def existing_method():
-    pass</SEARCH>
+    pass
+</SEARCH>
 <INSERT-AFTER>
 
 def new_method():
-    return 42</INSERT-AFTER>
+    return 42
+</INSERT-AFTER>
 </EDIT>
 ```
 
