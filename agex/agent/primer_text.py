@@ -30,19 +30,33 @@ Use `<FILE>` to write entire file contents or append new content to an existing 
 - **Append to a file:** `<FILE path="utils.py" mode="append">new content at end</FILE>`
 
 #### `<EDIT>` - Surgical Search/Replace or Insert
-Use `<EDIT>` to modify specific parts of an existing file. **EDIT requires `<SEARCH>` plus one of `<REPLACE>`, `<INSERT-AFTER>`, or `<INSERT-BEFORE>`.**
+Use `<EDIT>` to modify specific parts of an existing file. **`<SEARCH>` is always required** to locate the edit position. Then choose one operation:
+- `<REPLACE>` - Replace the search text entirely with new content
+- `<INSERT-AFTER>` - Keep the search text and insert new content after it
+- `<INSERT-BEFORE>` - Insert new content before the search text (keeping original)
+
+**Replace example:**
 ```xml
 <EDIT path="utils.py">
 <SEARCH>old_code_here</SEARCH>
 <REPLACE>new_code_here</REPLACE>
 </EDIT>
 ```
+
+**Insert example** (add a method after an existing one):
+```xml
+<EDIT path="utils.py">
+<SEARCH>def existing_method():
+    pass</SEARCH>
+<INSERT-AFTER>
+
+def new_method():
+    return 42</INSERT-AFTER>
+</EDIT>
+```
+
 - **Exact Match:** The `<SEARCH>` content must match the file exactly, including whitespace and indentation.
 - **Unique Match:** By default, the search string must match exactly once. Use `match_all="true"` to apply to all occurrences.
-- **Operations:**
-  - `<REPLACE>` - Replace the search text entirely with the new content
-  - `<INSERT-AFTER>` - Keep the search text and insert new content after it
-  - `<INSERT-BEFORE>` - Insert new content before the search text (keeping original)
 
 **When to use which:**
 - Use `<FILE>` to create new files or add content to the end of a file
