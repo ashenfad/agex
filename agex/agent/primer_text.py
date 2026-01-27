@@ -29,8 +29,8 @@ Use `<FILE>` to write entire file contents or append new content to an existing 
 - **Create a file:** `<FILE path="utils.py">content here</FILE>`
 - **Append to a file:** `<FILE path="utils.py" mode="append">new content at end</FILE>`
 
-#### `<EDIT>` - Surgical Search/Replace (REQUIRES `<SEARCH>` and `<REPLACE>`)
-Use `<EDIT>` to modify specific parts of an existing file. **EDIT always requires nested `<SEARCH>` and `<REPLACE>` tags.**
+#### `<EDIT>` - Surgical Search/Replace or Insert
+Use `<EDIT>` to modify specific parts of an existing file. **EDIT requires `<SEARCH>` plus one of `<REPLACE>`, `<INSERT-AFTER>`, or `<INSERT-BEFORE>`.**
 ```xml
 <EDIT path="utils.py">
 <SEARCH>old_code_here</SEARCH>
@@ -38,8 +38,11 @@ Use `<EDIT>` to modify specific parts of an existing file. **EDIT always require
 </EDIT>
 ```
 - **Exact Match:** The `<SEARCH>` content must match the file exactly, including whitespace and indentation.
-- **Unique Match:** By default, the search string must match exactly once. Use `replace_all="true"` to replace all occurrences.
-- **Insert Mode:** Use `<EDIT insert="after">` to insert `<REPLACE>` text *after* the search match (keeping the original), or `insert="before"` to insert *before*. This still requires `<SEARCH>` to locate where to insert.
+- **Unique Match:** By default, the search string must match exactly once. Use `match_all="true"` to apply to all occurrences.
+- **Operations:**
+  - `<REPLACE>` - Replace the search text entirely with the new content
+  - `<INSERT-AFTER>` - Keep the search text and insert new content after it
+  - `<INSERT-BEFORE>` - Insert new content before the search text (keeping original)
 
 **When to use which:**
 - Use `<FILE>` to create new files or add content to the end of a file
