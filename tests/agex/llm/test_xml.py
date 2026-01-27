@@ -599,34 +599,35 @@ class TestEditParsing:
         assert isinstance(result.file_actions[0], EditAction)
         assert result.file_actions[0].path == "app.py"
         assert result.file_actions[0].search == "old_code"
-        assert result.file_actions[0].replace == "new_code"
-        assert result.file_actions[0].replace_all is False
+        assert result.file_actions[0].content == "new_code"
+        assert result.file_actions[0].operation == "replace"
+        assert result.file_actions[0].match_all is False
 
-    def test_edit_replace_all(self):
-        """Test EDIT tag with replace_all attribute."""
+    def test_edit_match_all(self):
+        """Test EDIT tag with match_all attribute."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" replace_all="true">
+        <EDIT path="app.py" match_all="true">
         <SEARCH>var</SEARCH>
         <REPLACE>variable</REPLACE>
         </EDIT>
         <PYTHON>pass</PYTHON>
         """
         result = parse_xml_response(xml)
-        assert result.file_actions[0].replace_all is True
+        assert result.file_actions[0].match_all is True
 
-    def test_edit_replace_all_false(self):
-        """Test EDIT tag with explicit replace_all=false."""
+    def test_edit_match_all_false(self):
+        """Test EDIT tag with explicit match_all=false."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" replace_all="false">
+        <EDIT path="app.py" match_all="false">
         <SEARCH>var</SEARCH>
         <REPLACE>variable</REPLACE>
         </EDIT>
         <PYTHON>pass</PYTHON>
         """
         result = parse_xml_response(xml)
-        assert result.file_actions[0].replace_all is False
+        assert result.file_actions[0].match_all is False
 
     def test_mixed_file_and_edit_ordering(self):
         """FILE and EDIT actions should preserve order in unified list."""
@@ -688,7 +689,7 @@ class TestEditParsing:
         edit = result.file_actions[0]
         assert isinstance(edit, EditAction)
         assert "def old():" in edit.search
-        assert "def new():" in edit.replace
+        assert "def new():" in edit.content
 
     def test_edit_case_insensitive(self):
         """Test that EDIT tags are case-insensitive."""
@@ -724,13 +725,13 @@ class TestEditParsing:
             t for t in tokens if t.type == "edit" and t.content.startswith("path=")
         )
         assert "path=app.py" in metadata_token.content
-        assert "replace_all=False" in metadata_token.content
+        assert "match_all=False" in metadata_token.content
 
-    def test_streaming_edit_replace_all(self):
-        """Test streaming tokenizer with replace_all attribute."""
+    def test_streaming_edit_match_all(self):
+        """Test streaming tokenizer with match_all attribute."""
         chunks = [
             "<THINKING>reasoning</THINKING>",
-            '<EDIT path="app.py" replace_all="true">',
+            '<EDIT path="app.py" match_all="true">',
             "<SEARCH>old</SEARCH>",
             "<REPLACE>new</REPLACE>",
             "</EDIT>",
@@ -741,7 +742,7 @@ class TestEditParsing:
         metadata_token = next(
             t for t in tokens if t.type == "edit" and t.content.startswith("path=")
         )
-        assert "replace_all=True" in metadata_token.content
+        assert "match_all=True" in metadata_token.content
 
     def test_streaming_edit_path_validation(self):
         """Streaming tokenizer should also reject invalid EDIT paths."""
@@ -757,14 +758,14 @@ class TestEditParsing:
             list(tokenize_xml_stream(iter(chunks)))
 
     def test_edit_insert_after(self):
-        """Test EDIT with insert=after on EDIT tag."""
+        """Test EDIT with INSERT-AFTER tag."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" insert="after">
+        <EDIT path="app.py">
         <SEARCH>def foo():
     pass</SEARCH>
-        <REPLACE>
-    # new code after</REPLACE>
+        <INSERT-AFTER>
+    # new code after</INSERT-AFTER>
         </EDIT>
         <PYTHON>pass</PYTHON>
         """
@@ -772,29 +773,29 @@ class TestEditParsing:
         assert len(result.file_actions) == 1
         edit = result.file_actions[0]
         assert isinstance(edit, EditAction)
-        assert edit.insert == "after"
+        assert edit.operation == "insert-after"
         assert "def foo():" in edit.search
-        assert "# new code after" in edit.replace
+        assert "# new code after" in edit.content
 
     def test_edit_insert_before(self):
-        """Test EDIT with insert=before on EDIT tag."""
+        """Test EDIT with INSERT-BEFORE tag."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" insert="before">
+        <EDIT path="app.py">
         <SEARCH>def foo():
     pass</SEARCH>
-        <REPLACE># comment before
-</REPLACE>
+        <INSERT-BEFORE># comment before
+</INSERT-BEFORE>
         </EDIT>
         <PYTHON>pass</PYTHON>
         """
         result = parse_xml_response(xml)
         edit = result.file_actions[0]
         assert isinstance(edit, EditAction)
-        assert edit.insert == "before"
+        assert edit.operation == "insert-before"
 
-    def test_edit_default_insert_is_none(self):
-        """Test that default insert is None when not specified."""
+    def test_edit_default_operation_is_replace(self):
+        """Test that default operation is replace when REPLACE tag used."""
         xml = """
         <THINKING>x</THINKING>
         <EDIT path="app.py">
@@ -806,38 +807,37 @@ class TestEditParsing:
         result = parse_xml_response(xml)
         edit = result.file_actions[0]
         assert isinstance(edit, EditAction)
-        assert edit.insert is None
+        assert edit.operation == "replace"
 
-    def test_edit_insert_invalid_rejected(self):
-        """Test that invalid insert values are rejected."""
+    def test_edit_missing_operation_tag_rejected(self):
+        """Test that EDIT without any operation tag is rejected."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" insert="invalid">
+        <EDIT path="app.py">
         <SEARCH>old</SEARCH>
-        <REPLACE>new</REPLACE>
         </EDIT>
         <PYTHON>pass</PYTHON>
         """
-        with pytest.raises(ResponseParseError, match="Invalid insert"):
+        with pytest.raises(ResponseParseError, match="missing an operation tag"):
             parse_xml_response(xml)
 
-    def test_edit_insert_case_insensitive(self):
-        """Test that insert values are case-insensitive."""
+    def test_edit_insert_after_case_insensitive(self):
+        """Test that INSERT-AFTER tag is case-insensitive."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" insert="AFTER">
+        <EDIT path="app.py">
         <SEARCH>old</SEARCH>
-        <REPLACE>new</REPLACE>
+        <insert-after>new</insert-after>
         </EDIT>
         <PYTHON>pass</PYTHON>
         """
         result = parse_xml_response(xml)
         edit = result.file_actions[0]
         assert isinstance(edit, EditAction)
-        assert edit.insert == "after"
+        assert edit.operation == "insert-after"
 
     def test_streaming_edit_insert_after(self):
-        """Test streaming tokenizer parses insert attribute from EDIT tag."""
+        """Test streaming tokenizer parses INSERT-AFTER tag."""
         from agex.llm.core import ResponseBuilder
 
         builder = ResponseBuilder()
@@ -846,12 +846,12 @@ class TestEditParsing:
             TokenChunk(type="thinking", content="", done=True),
             TokenChunk(
                 type="edit",
-                content="path=app.py,insert=after,replace_all=False",
+                content="path=app.py,match_all=False",
                 done=False,
             ),
             TokenChunk(
                 type="edit",
-                content="<SEARCH>old</SEARCH><REPLACE>new</REPLACE>",
+                content="<SEARCH>old</SEARCH><INSERT-AFTER>new</INSERT-AFTER>",
                 done=False,
             ),
             TokenChunk(type="edit", content="", done=True),
@@ -865,13 +865,13 @@ class TestEditParsing:
         assert len(response.file_actions) == 1
         edit = response.file_actions[0]
         assert isinstance(edit, EditAction)
-        assert edit.insert == "after"
+        assert edit.operation == "insert-after"
 
     def test_edit_missing_search_tag_rejected(self):
         """Test EDIT without SEARCH tag raises an error with helpful message."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" insert="after">
+        <EDIT path="app.py">
         # This content has no SEARCH tag
         <REPLACE>new code</REPLACE>
         </EDIT>
@@ -880,24 +880,11 @@ class TestEditParsing:
         with pytest.raises(ResponseParseError, match="missing <SEARCH>"):
             parse_xml_response(xml)
 
-    def test_edit_missing_replace_tag_rejected(self):
-        """Test EDIT without REPLACE tag raises an error."""
+    def test_edit_missing_both_tags_rejected(self):
+        """Test EDIT without both SEARCH and operation tags raises error for SEARCH."""
         xml = """
         <THINKING>x</THINKING>
         <EDIT path="app.py">
-        <SEARCH>old code</SEARCH>
-        # No REPLACE tag here
-        </EDIT>
-        <PYTHON>pass</PYTHON>
-        """
-        with pytest.raises(ResponseParseError, match="missing <REPLACE>"):
-            parse_xml_response(xml)
-
-    def test_edit_missing_both_tags_rejected(self):
-        """Test EDIT without both SEARCH and REPLACE tags raises error for SEARCH."""
-        xml = """
-        <THINKING>x</THINKING>
-        <EDIT path="app.py" insert="after">
         # Just plain content, no tags
         This is wrong usage
         </EDIT>
@@ -911,7 +898,7 @@ class TestEditParsing:
         """Test that error message suggests FILE mode=append for simple appends."""
         xml = """
         <THINKING>x</THINKING>
-        <EDIT path="app.py" insert="after">
+        <EDIT path="app.py">
         new content to add
         </EDIT>
         <PYTHON>pass</PYTHON>

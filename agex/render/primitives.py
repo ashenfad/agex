@@ -703,13 +703,20 @@ def render_action_markdown(
         files_section = "## Files\n"
         for action in file_actions:
             if isinstance(action, EditAction):
-                replace_all_str = " (replace_all)" if action.replace_all else ""
-                insert_str = f" (insert={action.insert})" if action.insert else ""
-                files_section += (
-                    f"### EDIT {action.path}{insert_str}{replace_all_str}\n"
+                match_all_str = " (match_all)" if action.match_all else ""
+                op_str = (
+                    f" ({action.operation})" if action.operation != "replace" else ""
                 )
+                files_section += f"### EDIT {action.path}{op_str}{match_all_str}\n"
                 files_section += f"Search:\n```\n{action.search}\n```\n"
-                files_section += f"Replace:\n```\n{action.replace}\n```\n\n"
+                # Label based on operation
+                if action.operation == "insert-after":
+                    label = "Insert After"
+                elif action.operation == "insert-before":
+                    label = "Insert Before"
+                else:
+                    label = "Replace"
+                files_section += f"{label}:\n```\n{action.content}\n```\n\n"
             else:
                 path, content, mode = action.path, action.content, action.mode
                 mode_suffix = f" (mode: {mode})" if mode != "write" else ""

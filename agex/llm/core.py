@@ -241,30 +241,25 @@ class ResponseBuilder:
                 self.file_parts[self.current_file_path].append(token.content)
         elif token.type == "edit":
             if token.content.startswith("path="):
-                # Parse path and metadata: "path=foo.py,insert=after|None,replace_all=False"
+                # Parse path and metadata: "path=foo.py,match_all=False"
                 metadata = token.content
                 import re
 
                 from agex.llm.xml import validate_file_path
 
                 path_match = re.search(r"path=([^,]+)", metadata)
-                insert_match = re.search(r"insert=([^,]+)", metadata)
-                replace_all_match = re.search(r"replace_all=([^,]+)", metadata)
+                match_all_match = re.search(r"match_all=([^,]+)", metadata)
 
                 if path_match:
                     path = validate_file_path(path_match.group(1))
-                    # insert can be "after", "before", or "None" (string)
-                    insert_str = insert_match.group(1) if insert_match else "None"
-                    insert = insert_str if insert_str in ("after", "before") else None
-                    replace_all = (
-                        replace_all_match is not None
-                        and replace_all_match.group(1).lower() == "true"
+                    match_all = (
+                        match_all_match is not None
+                        and match_all_match.group(1).lower() == "true"
                     )
                     self.current_edit_path = path
                     self.edit_parts[path] = []
                     self.edit_metadata[path] = {
-                        "insert": insert,
-                        "replace_all": replace_all,
+                        "match_all": match_all,
                     }
                     # Track ordering
                     self.action_order.append(("edit", path))
@@ -279,6 +274,8 @@ class ResponseBuilder:
 
         from agex.agent.datatypes import EditAction, FileAction
         from agex.llm.xml import (
+            TAG_INSERT_AFTER,
+            TAG_INSERT_BEFORE,
             TAG_REPLACE,
             TAG_SEARCH,
             validate_edit_search,
@@ -299,33 +296,56 @@ class ResponseBuilder:
                 parts = self.edit_parts.get(path, [])
                 inner_content = "".join(parts)
                 metadata = self.edit_metadata.get(path, {})
-                insert = metadata.get("insert")  # None, "after", or "before"
-                replace_all = metadata.get("replace_all", False)
+                match_all = metadata.get("match_all", False)
 
-                # Parse SEARCH and REPLACE from the accumulated content
+                # Parse SEARCH tag (required)
                 search_match = re.search(
                     rf"<{TAG_SEARCH}>(.*?)</{TAG_SEARCH}>",
                     inner_content,
                     re.DOTALL | re.IGNORECASE,
                 )
+
+                # Parse operation tag - REPLACE, INSERT-AFTER, or INSERT-BEFORE
                 replace_match = re.search(
                     rf"<{TAG_REPLACE}>(.*?)</{TAG_REPLACE}>",
                     inner_content,
                     re.DOTALL | re.IGNORECASE,
                 )
+                insert_after_match = re.search(
+                    rf"<{TAG_INSERT_AFTER}>(.*?)</{TAG_INSERT_AFTER}>",
+                    inner_content,
+                    re.DOTALL | re.IGNORECASE,
+                )
+                insert_before_match = re.search(
+                    rf"<{TAG_INSERT_BEFORE}>(.*?)</{TAG_INSERT_BEFORE}>",
+                    inner_content,
+                    re.DOTALL | re.IGNORECASE,
+                )
 
-                if search_match and replace_match:
+                # Determine operation and content
+                if replace_match:
+                    operation = "replace"
+                    content = replace_match.group(1)
+                elif insert_after_match:
+                    operation = "insert-after"
+                    content = insert_after_match.group(1)
+                elif insert_before_match:
+                    operation = "insert-before"
+                    content = insert_before_match.group(1)
+                else:
+                    continue  # Skip if no operation tag found
+
+                if search_match:
                     search = search_match.group(1)
-                    replace = replace_match.group(1)
 
                     validate_edit_search(path, search)
                     file_actions.append(
                         EditAction(
                             path=path,
                             search=search,
-                            replace=replace,
-                            replace_all=replace_all,
-                            insert=insert,
+                            content=content,
+                            operation=operation,
+                            match_all=match_all,
                         )
                     )
 

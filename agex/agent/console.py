@@ -456,25 +456,17 @@ def pprint_tokens(
             content = f"📁 {path} {action}\n"
 
     elif token.type == "edit" and token.content.startswith("path="):
-        # Parse metadata: "path=foo.py,insert=after|None,replace_all=False"
+        # Parse metadata: "path=foo.py,match_all=False"
+        # Note: operation (replace/insert-after/insert-before) is determined by inner tags
 
         path_match = re.search(r"path=([^,]+)", token.content)
-        insert_match = re.search(r"insert=([^,]+)", token.content)
-        replace_all_match = re.search(r"replace_all=([^,]+)", token.content)
+        match_all_match = re.search(r"match_all=([^,]+)", token.content)
 
         if path_match:
             path = path_match.group(1)
-            insert = insert_match.group(1) if insert_match else "None"
-            replace_all = (
-                replace_all_match and replace_all_match.group(1).lower() == "true"
-            )
+            match_all = match_all_match and match_all_match.group(1).lower() == "true"
             # Build action label
-            if replace_all:
-                action = "[EDIT ALL]"
-            elif insert in ("after", "before"):
-                action = f"[INSERT {insert.upper()}]"
-            else:
-                action = "[EDIT]"
+            action = "[EDIT ALL]" if match_all else "[EDIT]"
             content = f"✏️ {path} {action}\n"
 
     # Color based on token type and optionally prepend context

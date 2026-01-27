@@ -437,9 +437,11 @@ class ActionEvent(BaseEvent):
         files_info = []
         for action in self.file_actions:
             if isinstance(action, EditAction):
-                replace_all_str = ", replace_all" if action.replace_all else ""
-                insert_str = f", insert={action.insert}" if action.insert else ""
-                files_info.append(f"{action.path} (edit{insert_str}{replace_all_str})")
+                match_all_str = ", match_all" if action.match_all else ""
+                op_str = (
+                    f", {action.operation}" if action.operation != "replace" else ""
+                )
+                files_info.append(f"{action.path} (edit{op_str}{match_all_str})")
             else:
                 files_info.append(f"{action.path} ({action.mode})")
 
@@ -456,10 +458,12 @@ class ActionEvent(BaseEvent):
             files_section = "**Files:**\n"
             for action in self.file_actions:
                 if isinstance(action, EditAction):
-                    replace_all_str = ", replace_all" if action.replace_all else ""
-                    insert_str = f", insert={action.insert}" if action.insert else ""
+                    match_all_str = ", match_all" if action.match_all else ""
+                    op_str = (
+                        f", {action.operation}" if action.operation != "replace" else ""
+                    )
                     files_section += (
-                        f" - `{action.path}` (edit{insert_str}{replace_all_str})\n"
+                        f" - `{action.path}` (edit{op_str}{match_all_str})\n"
                     )
                 else:
                     mode_suffix = f" ({action.mode})" if action.mode != "write" else ""
@@ -491,12 +495,12 @@ class ActionEvent(BaseEvent):
             file_links_parts = []
             for action in self.file_actions:
                 if isinstance(action, EditAction):
-                    # Build combined label: (edit, insert after, replace_all)
+                    # Build combined label: (edit, insert-after, match_all)
                     label_parts = ["edit"]
-                    if action.insert:
-                        label_parts.append(f"insert {action.insert}")
-                    if action.replace_all:
-                        label_parts.append("replace_all")
+                    if action.operation != "replace":
+                        label_parts.append(action.operation)
+                    if action.match_all:
+                        label_parts.append("match_all")
                     label = ", ".join(label_parts)
                     file_links_parts.append(
                         f"<code>{action.path}</code> <small>({label})</small>"

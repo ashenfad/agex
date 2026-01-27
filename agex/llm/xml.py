@@ -24,6 +24,8 @@ TAG_FILE = "FILE"
 TAG_EDIT = "EDIT"
 TAG_SEARCH = "SEARCH"
 TAG_REPLACE = "REPLACE"
+TAG_INSERT_AFTER = "INSERT-AFTER"
+TAG_INSERT_BEFORE = "INSERT-BEFORE"
 TAG_TITLE = "TITLE"
 TAG_OBSERVATION = "OBSERVATION"
 TAG_SUCCESS = "TASK_SUCCESS"
@@ -106,30 +108,8 @@ def validate_edit_search(path: str, search: str) -> str:
     return search
 
 
-# Valid values for EDIT insert attribute
-VALID_INSERT_VALUES = frozenset({"after", "before"})
-
-
-def validate_edit_insert(insert: str, path: str) -> Literal["after", "before"]:
-    """Validate insert attribute from <EDIT> tag.
-
-    Args:
-        insert: The insert string from the EDIT tag's insert attribute.
-        path: The file path (for error messages).
-
-    Returns:
-        The validated insert value as a Literal type.
-
-    Raises:
-        ResponseParseError: If insert is not 'after' or 'before'.
-    """
-    insert = insert.lower().strip()
-    if insert not in VALID_INSERT_VALUES:
-        raise ResponseParseError(
-            f"Invalid insert='{insert}' in <EDIT path=\"{path}\">. "
-            f"Must be 'after' or 'before'."
-        )
-    return insert  # type: ignore[return-value]
+# Valid operation values for EditAction
+VALID_OPERATIONS = frozenset({"replace", "insert-after", "insert-before"})
 
 
 @dataclass
@@ -149,7 +129,7 @@ Format your response using XML tags:
 <{TAG_TITLE}>A brief title here</{TAG_TITLE}>
 <{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}>
 <{TAG_FILE} path="/helpers/file.py" mode="write|append"># File content here</{TAG_FILE}>
-<{TAG_EDIT} path="/helpers/file.py" insert="after|before" replace_all="false">
+<{TAG_EDIT} path="/helpers/file.py" match_all="false">
 <{TAG_SEARCH}>text to find</{TAG_SEARCH}>
 <{TAG_REPLACE}>replacement text</{TAG_REPLACE}>
 </{TAG_EDIT}>
@@ -159,8 +139,8 @@ IMPORTANT:
 1. Generate EXACTLY ONE sequence of Title and Thinking.
 2. You can generate zero or more <{TAG_FILE}> or <{TAG_EDIT}> tags to create/modify files before execution.
 3. Use <{TAG_FILE}> with `mode="append"` to add code to an existing file. Defaults to `mode="write"`.
-4. Use <{TAG_EDIT}> for surgical search/replace edits. <{TAG_EDIT}> ALWAYS requires nested <{TAG_SEARCH}> and <{TAG_REPLACE}> tags. The search must match exactly (including whitespace/indentation) and occur once unless `replace_all="true"`.
-5. Use `insert="after"` on <{TAG_EDIT}> to insert text after the match (keeps original), or `insert="before"` to insert before. Without `insert`, the match is replaced entirely.
+4. Use <{TAG_EDIT}> for surgical edits. <{TAG_EDIT}> requires <{TAG_SEARCH}> plus ONE of: <{TAG_REPLACE}>, <{TAG_INSERT_AFTER}>, or <{TAG_INSERT_BEFORE}>. The search must match exactly (including whitespace/indentation) and occur once unless `match_all="true"`.
+5. <{TAG_REPLACE}> replaces the search text entirely. <{TAG_INSERT_AFTER}> keeps the search text and adds content after it. <{TAG_INSERT_BEFORE}> adds content before the search text.
 6. If you just need to append to a file, use <{TAG_FILE} mode="append">. Do NOT use <{TAG_EDIT}> for this.
 7. When making python modules, use the `helpers` directory as the root.
 8. You MUST end your response with exactly one <{TAG_PYTHON}> tag.
@@ -262,7 +242,7 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
                 (match.start(), FileAction(path=path, content=content, mode=mode))
             )
 
-    # Find all <EDIT path="..." replace_all="...">...</EDIT> tags
+    # Find all <EDIT path="..." match_all="...">...</EDIT> tags
     edit_matches = re.finditer(
         rf"<{TAG_EDIT}\s+([^>]*?)>(.*?)</{TAG_EDIT}>",
         xml_text,
@@ -273,50 +253,66 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
         inner_content = match.group(2)
 
         path_match = re.search(r'path=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
-        replace_all_match = re.search(
-            r'replace_all=["\'](.*?)["\']', attrs_text, re.IGNORECASE
+        match_all_match = re.search(
+            r'match_all=["\'](.*?)["\']', attrs_text, re.IGNORECASE
         )
-        insert_match = re.search(r'insert=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
 
         if path_match:
             path = validate_file_path(path_match.group(1))
-            replace_all = (
-                replace_all_match is not None
-                and replace_all_match.group(1).lower() == "true"
-            )
-            insert = (
-                validate_edit_insert(insert_match.group(1), path)
-                if insert_match
-                else None
+            match_all = (
+                match_all_match is not None
+                and match_all_match.group(1).lower() == "true"
             )
 
-            # Parse nested SEARCH and REPLACE tags
+            # Parse nested SEARCH tag (required)
             search_match = re.search(
                 rf"<{TAG_SEARCH}>(.*?)</{TAG_SEARCH}>",
                 inner_content,
                 re.DOTALL | re.IGNORECASE,
             )
+
+            # Parse operation tag - REPLACE, INSERT-AFTER, or INSERT-BEFORE (mutually exclusive)
             replace_match = re.search(
                 rf"<{TAG_REPLACE}>(.*?)</{TAG_REPLACE}>",
                 inner_content,
                 re.DOTALL | re.IGNORECASE,
             )
+            insert_after_match = re.search(
+                rf"<{TAG_INSERT_AFTER}>(.*?)</{TAG_INSERT_AFTER}>",
+                inner_content,
+                re.DOTALL | re.IGNORECASE,
+            )
+            insert_before_match = re.search(
+                rf"<{TAG_INSERT_BEFORE}>(.*?)</{TAG_INSERT_BEFORE}>",
+                inner_content,
+                re.DOTALL | re.IGNORECASE,
+            )
 
-            # Validate that EDIT has both SEARCH and REPLACE tags
+            # Validate that EDIT has SEARCH tag
             if not search_match:
                 raise ResponseParseError(
                     f'<EDIT path="{path}"> is missing <SEARCH> tag. '
-                    f"EDIT requires both <SEARCH> and <REPLACE> tags. "
+                    f"EDIT requires <SEARCH> and one of <REPLACE>, <INSERT-AFTER>, or <INSERT-BEFORE>. "
                     f'To append content to a file, use <FILE mode="append"> instead.'
                 )
-            if not replace_match:
+
+            # Determine operation and content from which tag was used
+            if replace_match:
+                operation = "replace"
+                content = replace_match.group(1)
+            elif insert_after_match:
+                operation = "insert-after"
+                content = insert_after_match.group(1)
+            elif insert_before_match:
+                operation = "insert-before"
+                content = insert_before_match.group(1)
+            else:
                 raise ResponseParseError(
-                    f'<EDIT path="{path}"> is missing <REPLACE> tag. '
-                    f"EDIT requires both <SEARCH> and <REPLACE> tags."
+                    f'<EDIT path="{path}"> is missing an operation tag. '
+                    f"EDIT requires one of <REPLACE>, <INSERT-AFTER>, or <INSERT-BEFORE>."
                 )
 
             search = search_match.group(1)
-            replace = replace_match.group(1)
 
             validate_edit_search(path, search)
             all_matches.append(
@@ -325,9 +321,9 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
                     EditAction(
                         path=path,
                         search=search,
-                        replace=replace,
-                        replace_all=replace_all,
-                        insert=insert,
+                        content=content,
+                        operation=operation,
+                        match_all=match_all,
                     ),
                 )
             )
@@ -449,33 +445,25 @@ class _XMLTokenizerState:
         if edit_start:
             attrs_text = edit_start.group(1)
             path_match = re.search(r'path=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
-            replace_all_match = re.search(
-                r'replace_all=["\'](.*?)["\']', attrs_text, re.IGNORECASE
-            )
-            insert_match = re.search(
-                r'insert=["\'](.*?)["\']', attrs_text, re.IGNORECASE
+            match_all_match = re.search(
+                r'match_all=["\'](.*?)["\']', attrs_text, re.IGNORECASE
             )
 
             if path_match:
-                # Validate path and insert
+                # Validate path
                 path = validate_file_path(path_match.group(1))
-                replace_all = (
-                    replace_all_match is not None
-                    and replace_all_match.group(1).lower() == "true"
+                match_all = (
+                    match_all_match is not None
+                    and match_all_match.group(1).lower() == "true"
                 )
-                insert = (
-                    validate_edit_insert(insert_match.group(1), path)
-                    if insert_match
-                    else None
-                )
-                # Format: path=x,insert=after|before|None,replace_all=True|False
-                insert_str = insert if insert else "None"
+                # Format: path=x,match_all=True|False
+                # Note: operation is determined by inner tag (REPLACE/INSERT-AFTER/INSERT-BEFORE)
                 starts.append(
                     (
                         edit_start.start(),
                         "edit",
                         edit_start.end(),
-                        f"path={path},insert={insert_str},replace_all={replace_all}",
+                        f"path={path},match_all={match_all}",
                     )
                 )
 
