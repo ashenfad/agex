@@ -14,6 +14,7 @@ from agex.terminal.quote_masker import mask_quotes, unmask_and_unquote
 from .commands import diff as diff_cmd
 from .commands import filesystem, meta, search, text
 from .commands import io as io_cmds
+from .commands import jq as jq_cmd
 
 # Static mapping of built-in commands
 BUILTINS: dict[str, CommandFunc] = {
@@ -44,6 +45,8 @@ BUILTINS: dict[str, CommandFunc] = {
     "diff": diff_cmd.diff,
     # Meta
     "xargs": meta.xargs,
+    # JSON
+    "jq": jq_cmd.jq,
 }
 
 
