@@ -350,24 +350,24 @@ def apply_optimistic_file_actions(
                     f"Search string not found in {path}:\n{search_preview}"
                 )
 
-            if count > 1 and not action.replace_all:
+            if count > 1 and not action.match_all:
                 raise ResponseParseError(
                     f"Search string found {count} times in {path}. "
-                    f'Use replace_all="true" or provide more context.'
+                    f'Use match_all="true" or provide more context.'
                 )
 
-            # Compute replacement based on insert attribute
-            if action.insert == "after":
-                # Keep search text, add replace text after
-                replacement = action.search + action.replace
-            elif action.insert == "before":
-                # Add replace text before, keep search text
-                replacement = action.replace + action.search
-            else:  # None (default) = replace entirely
-                replacement = action.replace
+            # Compute replacement based on operation
+            if action.operation == "insert-after":
+                # Keep search text, add content after
+                replacement = action.search + action.content
+            elif action.operation == "insert-before":
+                # Add content before, keep search text
+                replacement = action.content + action.search
+            else:  # "replace" (default) = replace entirely
+                replacement = action.content
 
             # Apply replacement
-            if action.replace_all:
+            if action.match_all:
                 new_content = existing_content.replace(action.search, replacement)
             else:
                 new_content = existing_content.replace(action.search, replacement, 1)

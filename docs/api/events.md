@@ -89,7 +89,7 @@ action = FileAction(
 ```
 
 #### `EditAction`
-Used within `ActionEvent` to represent a search/replace edit requested by the agent.
+Used within `ActionEvent` to represent a search/replace or insert edit requested by the agent.
 
 ```python
 from agex.agent.datatypes import EditAction
@@ -98,18 +98,18 @@ from agex.agent.datatypes import EditAction
 action = EditAction(
     path="utils.py",         # str
     search="old_code",       # str - text to find
-    replace="new_code",      # str - replacement text
-    replace_all=False,       # bool - replace all occurrences
-    insert=None              # Literal["after", "before"] | None
+    content="new_code",      # str - content to use
+    operation="replace",     # Literal["replace", "insert-after", "insert-before"]
+    match_all=False,         # bool - apply to all occurrences
 )
 ```
 
-**Insert Options:**
-- `None` (default): The search text is replaced entirely by the replace text
-- `"after"`: The search text is kept, replace text is inserted after it
-- `"before"`: The replace text is inserted before the search text, which is kept
+**Operation Options:**
+- `"replace"` (default): The search text is replaced entirely by the content
+- `"insert-after"`: The search text is kept, content is inserted after it
+- `"insert-before"`: Content is inserted before the search text, which is kept
 
-The `insert` attribute allows agents to add code before/after a match without repeating the search text in the replacement.
+The `operation` attribute controls how the edit is applied. Use `match_all=True` to apply the operation to all occurrences of the search text.
 
 #### `OutputEvent`
 Generated when agents produce output (print, view_image, etc.).

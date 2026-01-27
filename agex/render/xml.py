@@ -29,6 +29,8 @@ from agex.llm.xml import (
     TAG_EDIT,
     TAG_FAIL,
     TAG_FILE,
+    TAG_INSERT_AFTER,
+    TAG_INSERT_BEFORE,
     TAG_OBSERVATION,
     TAG_PYTHON,
     TAG_REPLACE,
@@ -98,16 +100,18 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             if event.file_actions:
                 for action in event.file_actions:
                     if isinstance(action, EditAction):
-                        insert_attr = (
-                            f' insert="{action.insert}"' if action.insert else ""
-                        )
-                        replace_all_attr = (
-                            ' replace_all="true"' if action.replace_all else ""
-                        )
+                        match_all_attr = ' match_all="true"' if action.match_all else ""
+                        # Determine which tag to use based on operation
+                        if action.operation == "insert-after":
+                            content_tag = TAG_INSERT_AFTER
+                        elif action.operation == "insert-before":
+                            content_tag = TAG_INSERT_BEFORE
+                        else:  # "replace"
+                            content_tag = TAG_REPLACE
                         files_section += (
-                            f'<{TAG_EDIT} path="{action.path}"{insert_attr}{replace_all_attr}>\n'
+                            f'<{TAG_EDIT} path="{action.path}"{match_all_attr}>\n'
                             f"<{TAG_SEARCH}>{action.search}</{TAG_SEARCH}>\n"
-                            f"<{TAG_REPLACE}>{action.replace}</{TAG_REPLACE}>\n"
+                            f"<{content_tag}>{action.content}</{content_tag}>\n"
                             f"</{TAG_EDIT}>\n"
                         )
                     elif isinstance(action, FileAction):
