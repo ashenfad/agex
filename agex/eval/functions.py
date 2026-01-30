@@ -28,6 +28,7 @@ class NativeFunction:
     name: str
     fn: Callable[..., Any]
     host_fs_access: bool = False
+    network_access: bool = False
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         # Directly call the wrapped native function.
@@ -276,6 +277,8 @@ class TaskUserFunction(UserFunction):
     task_agent_fingerprint: str = ""  # Agent that will execute the task
     task_docstring: str = ""  # Task instructions
     task_return_type: type = object  # Expected return type
+    # Allow network access for task calls (needed for LLM calls in sub-agent tasks)
+    network_access: bool = True
 
     def execute(
         self, args: list, kwargs: dict, source_code: str | None, parent_evaluator=None

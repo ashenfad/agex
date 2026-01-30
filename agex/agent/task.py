@@ -391,6 +391,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 self.__agex_task_namespace__ = namespace
                 # Track if the underlying task is async for @remote decorator
                 self.__agex_is_async__ = inspect.iscoroutinefunction(task_func)
+                # Allow network access for task calls (needed for LLM calls in sub-agent tasks)
+                self.network_access = True
 
             def __call__(self, *args, **kwargs):
                 return self._task_func(*args, **kwargs)

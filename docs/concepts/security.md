@@ -102,3 +102,94 @@ Resource limits use Unix `RLIMIT_AS` and `RLIMIT_NOFILE`, supported on Linux and
 Memory and file descriptor limits are process-wide. For concurrent tasks, size limits according to expected concurrency. For per-task isolation, use the Modal integration which provides containerized execution.
 
 See [Agent Resource Limits](../api/agent.md#resource-limits) and [VFS Size Limits](../api/fs.md#size-limits) for configuration details.
+
+## Network Access Control
+
+By default, agent code cannot make network connections. This prevents agents from exfiltrating data, making unauthorized API calls, or accessing internal services.
+
+### How It Works
+
+Network access is controlled at the socket level. During agent code evaluation, all network socket operations (connect, send, recv, bind, listen, DNS lookups) are blocked by default. This affects all networking code, including HTTP libraries like `requests`, `httpx`, and `aiohttp`.
+
+```python
+# Agent code trying to make HTTP requests will fail:
+import requests
+response = requests.get("https://example.com")  # SandboxError: Network access denied
+```
+
+### Granting Network Access
+
+To allow specific functions, classes, or modules to use the network, register them with `network_access=True`:
+
+```python
+import requests
+
+# Allow this specific function to make network calls
+@agent.fn(network_access=True)
+def fetch_weather(city: str) -> dict:
+    """Fetch weather data for a city."""
+    response = requests.get(f"https://api.weather.com/{city}")
+    return response.json()
+
+# Or register an HTTP client class
+agent.cls(requests.Session, network_access=True)
+
+# Or an entire module
+agent.module(requests, network_access=True)
+```
+
+### Practical Example: pandas
+
+Many libraries have functions that work with both local files and URLs. For example, pandas' `read_csv` can load data from disk or from the network:
+
+```python
+import pandas as pd
+
+# Register pandas WITHOUT network_access
+agent.module(pd, visibility="low", recursive=True)
+```
+
+With this registration, agent code can read local files but not URLs:
+
+```python
+# ✅ Works - reads from VFS or local disk
+df = pd.read_csv("data/sales.csv")
+
+# ❌ Blocked - attempts network connection
+df = pd.read_csv("https://example.com/data.csv")  # SandboxError
+```
+
+This gives agents full pandas functionality for data analysis while preventing them from loading arbitrary data from the internet or exfiltrating data to external servers.
+
+If you want to allow network access for pandas (e.g., for fetching public datasets), register it with `network_access=True`:
+
+```python
+agent.module(pd, visibility="low", recursive=True, network_access=True)
+```
+
+### What Gets Blocked
+
+The sandbox intercepts these socket operations when network access is denied:
+
+| Operation | Purpose |
+|-----------|---------|
+| `connect` / `connect_ex` | Outbound connections |
+| `bind` / `listen` / `accept` | Server sockets |
+| `send` / `sendall` / `sendto` / `sendfile` | Sending data |
+| `recv` / `recvfrom` / `recv_into` / `recvfrom_into` | Receiving data |
+| `getaddrinfo` | DNS resolution |
+
+### What's Allowed
+
+Local inter-process communication (Unix domain sockets, `AF_UNIX`) is always allowed. This ensures Python's internal mechanisms (like asyncio's event loop) continue to work correctly. Only actual network sockets (`AF_INET`, `AF_INET6`) are gated.
+
+### Error Handling
+
+When network access is denied, a `SandboxError` is raised with a helpful message:
+
+```
+SandboxError: Network access denied: connect() blocked by sandbox.
+Register function with network_access=True to allow network operations.
+```
+
+See [Registration Methods](../api/registration.md) for details on the `network_access` parameter.

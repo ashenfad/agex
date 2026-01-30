@@ -127,6 +127,7 @@ class RegistrationMixin(BaseAgent):
         visibility: Visibility = "high",
         docstring: str | None = None,
         host_fs_access: bool = False,
+        network_access: bool = False,
     ) -> F: ...
 
     @overload
@@ -138,6 +139,7 @@ class RegistrationMixin(BaseAgent):
         visibility: Visibility = "high",
         docstring: str | None = None,
         host_fs_access: bool = False,
+        network_access: bool = False,
     ) -> Callable[[F], F]: ...
 
     def fn(
@@ -148,6 +150,7 @@ class RegistrationMixin(BaseAgent):
         visibility: Visibility = "high",
         docstring: str | None = None,
         host_fs_access: bool = False,
+        network_access: bool = False,
     ) -> Callable[..., Any] | Callable[[Callable[..., Any]], Callable[..., Any]]:
         """
         Registers a function with the agent.
@@ -189,6 +192,7 @@ class RegistrationMixin(BaseAgent):
                     visibility=visibility,
                     docstring=final_doc,
                     host_fs_access=host_fs_access,
+                    network_access=network_access,
                 )
 
                 self._update_fingerprint()
@@ -255,12 +259,17 @@ class RegistrationMixin(BaseAgent):
                     self._track_module(f.__module__)
 
                 final_doc = docstring if docstring is not None else f.__doc__
+                # Preserve network_access from TaskWrappers (sub-agent tasks need network for LLM calls)
+                effective_network_access = network_access or getattr(
+                    f, "network_access", False
+                )
                 self._policy.register_fn(
                     func=f,
                     name=final_name,
                     visibility=visibility,
                     docstring=final_doc,
                     host_fs_access=host_fs_access,
+                    network_access=effective_network_access,
                 )
 
                 self._update_fingerprint()
@@ -293,6 +302,7 @@ class RegistrationMixin(BaseAgent):
         exclude: Pattern | None = "_*",
         configure: dict[str, MemberSpec] | None = None,
         host_fs_access: bool = False,
+        network_access: bool = False,
     ) -> T: ...
 
     @overload
@@ -306,6 +316,7 @@ class RegistrationMixin(BaseAgent):
         exclude: Pattern | None = "_*",
         configure: dict[str, MemberSpec] | None = None,
         host_fs_access: bool = False,
+        network_access: bool = False,
     ) -> Callable[[T], T]: ...
 
     def cls(
@@ -319,6 +330,7 @@ class RegistrationMixin(BaseAgent):
         exclude: Pattern | None = "_*",
         configure: dict[str, MemberSpec] | None = None,
         host_fs_access: bool = False,
+        network_access: bool = False,
     ) -> T | Callable[[T], T]:
         """
         Registers a class with the agent.
@@ -415,11 +427,14 @@ class RegistrationMixin(BaseAgent):
                 exclude=exclude,
                 configure=sec_final_configure,
                 host_fs_access=host_fs_access,
+                network_access=network_access,
             )
 
-            # Attach host_fs_access to the class itself so instance methods can check it
+            # Attach host_fs_access and network_access to the class itself
+            # so instance methods can check them
             try:
                 c.__agex_host_fs_access__ = host_fs_access
+                c.__agex_network_access__ = network_access
             except (AttributeError, TypeError):
                 # Can't set attributes on built-in types, skip
                 pass
@@ -443,6 +458,7 @@ class RegistrationMixin(BaseAgent):
         exception_mappings: dict[type, type] | None = None,
         recursive: bool = False,
         host_fs_access: bool = False,
+        network_access: bool = False,
     ) -> None:
         """
         Registers a module or instance object and its members with the agent.
@@ -475,6 +491,7 @@ class RegistrationMixin(BaseAgent):
                 configure=sec_configure,
                 recursive=True,
                 host_fs_access=host_fs_access,
+                network_access=network_access,
             )
             # Track module for lazy dependency resolution
             self._track_module(obj.__name__ if hasattr(obj, "__name__") else None)
@@ -504,6 +521,8 @@ class RegistrationMixin(BaseAgent):
                     exclude=tuple(exclude) if isinstance(exclude, list) else exclude,
                     configure={},
                     recursive=False,
+                    host_fs_access=host_fs_access,
+                    network_access=network_access,
                     parent=parent_ns,
                 )
                 self._policy.namespaces[final_name] = child_ns
@@ -534,6 +553,7 @@ class RegistrationMixin(BaseAgent):
                 configure=sec_configure,
                 recursive=False,
                 host_fs_access=host_fs_access,
+                network_access=network_access,
             )
             # Track module for lazy dependency resolution
             self._track_module(obj.__name__ if hasattr(obj, "__name__") else None)

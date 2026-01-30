@@ -112,6 +112,7 @@ class AgentPolicy:
         configure: dict[str, MemberSpec] | None = None,
         recursive: bool = False,
         host_fs_access: bool = False,
+        network_access: bool = False,
     ) -> Namespace:
         mod_name = name or (module if isinstance(module, str) else module.__name__)
         spec = Namespace(
@@ -124,6 +125,7 @@ class AgentPolicy:
             configure=configure or {},
             recursive=recursive,
             host_fs_access=host_fs_access,
+            network_access=network_access,
         )
         self.namespaces[mod_name] = spec
 
@@ -191,6 +193,7 @@ class AgentPolicy:
         visibility: Visibility = "high",
         docstring: str | None = None,
         host_fs_access: bool = False,
+        network_access: bool = False,
     ) -> Namespace:
         final_name = name or getattr(func, "__name__", None) or "fn"
         if final_name in RESERVED_NAMES:
@@ -203,7 +206,10 @@ class AgentPolicy:
             docstring if docstring is not None else getattr(func, "__doc__", None)
         )
         main.fns[final_name] = MemberSpec(
-            visibility=visibility, docstring=final_doc, host_fs_access=host_fs_access
+            visibility=visibility,
+            docstring=final_doc,
+            host_fs_access=host_fs_access,
+            network_access=network_access,
         )
         main.fn_objects[final_name] = func
         return main
@@ -219,6 +225,7 @@ class AgentPolicy:
         exclude: Pattern | None = "_*",
         configure: dict[str, MemberSpec] | None = None,
         host_fs_access: bool = False,
+        network_access: bool = False,
     ) -> Namespace:
         # Build a class spec using a synthetic namespace spec carrying filters
         temp_spec = Namespace(
@@ -229,6 +236,7 @@ class AgentPolicy:
             exclude=exclude,
             configure=configure or {},
             host_fs_access=host_fs_access,
+            network_access=network_access,
         )
         # Respect constructable override via configure at class-level
         cfg = temp_spec.configure.get(cls.__name__, MemberSpec())

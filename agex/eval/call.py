@@ -220,6 +220,40 @@ class CallEvaluator(BaseEvaluator):
 
         return False
 
+    def _should_allow_network(self, fn: Any) -> bool:
+        """Check if callable has network_access privilege.
+
+        Simply checks if the wrapper object has the network_access field set.
+        For Python bound methods, also checks if the class has __agex_network_access__.
+        For functions from registered modules, walks module hierarchy to find
+        a namespace with network_access=True (supports recursive=True).
+        """
+        # Check wrapper objects directly
+        if getattr(fn, "network_access", False):
+            return True
+
+        # Check if this is a bound method on a registered class
+        if hasattr(fn, "__self__") and hasattr(fn, "__func__"):
+            cls = type(fn.__self__)
+            if getattr(cls, "__agex_network_access__", False):
+                return True
+
+        # Check if function's module has a registered namespace with network_access
+        if callable(fn) and hasattr(fn, "__module__"):
+            module_name = fn.__module__
+            # Walk up module hierarchy to find registered namespace
+            while module_name:
+                ns = self.agent._policy.namespaces.get(module_name)
+                if ns and getattr(ns, "network_access", False):
+                    return True
+                # Try parent module
+                if "." in module_name:
+                    module_name = module_name.rsplit(".", 1)[0]
+                else:
+                    break
+
+        return False
+
     def visit_Call(self, node: ast.Call) -> Any:
         """Handles function calls."""
         call_name = self._callable_name(node.func)
@@ -289,15 +323,27 @@ class CallEvaluator(BaseEvaluator):
 
         fn = self.visit(node.func)
 
-        # Check if this call needs host filesystem access
+        # Check if this call needs host filesystem access or network access
         needs_host_fs = self._should_suspend_fs_interception(fn)
+        needs_network = self._should_allow_network(fn)
 
         try:
-            # Conditionally wrap with suspend_fs_interception
-            if needs_host_fs:
+            # Conditionally wrap with suspend_fs_interception and/or allow_network
+            if needs_host_fs and needs_network:
+                from agex.fs.context import suspend_fs_interception
+                from agex.net.context import allow_network
+
+                with suspend_fs_interception(), allow_network():
+                    return self._execute_call_logic(fn, args, kwargs, node, call_name)
+            elif needs_host_fs:
                 from agex.fs.context import suspend_fs_interception
 
                 with suspend_fs_interception():
+                    return self._execute_call_logic(fn, args, kwargs, node, call_name)
+            elif needs_network:
+                from agex.net.context import allow_network
+
+                with allow_network():
                     return self._execute_call_logic(fn, args, kwargs, node, call_name)
             else:
                 return self._execute_call_logic(fn, args, kwargs, node, call_name)

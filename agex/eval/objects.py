@@ -445,6 +445,7 @@ class BoundInstanceMethod:
     host_registry: dict[str, Any]
     method_name: str
     host_fs_access: bool = False
+    network_access: bool = False
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Look up the live object and call the real method."""

@@ -119,6 +119,7 @@ class MemberSpec:
     docstring: str | None = None
     constructable: bool | None = None
     host_fs_access: bool = False
+    network_access: bool = False
 
 
 @dataclass
