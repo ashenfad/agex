@@ -69,6 +69,9 @@ class UserFunction:
         None  # Fingerprint of the agent this function was defined in
     )
     session: str = "default"  # Session where the function was defined
+    # Pre-evaluated default values (captured at definition time, like Python)
+    evaluated_defaults: list[Any] | None = None
+    evaluated_kw_defaults: list[Any] | None = None
 
     # Ensure hashability for use in libraries that cache by callable (e.g., pandas.apply)
     def __hash__(self) -> int:  # type: ignore[override]
@@ -179,7 +182,13 @@ class UserFunction:
                 evaluator.current_self = instance
 
         bound_args = bind_arguments(
-            self.name, self.args, args, kwargs, eval_fn=evaluator.visit
+            self.name,
+            self.args,
+            args,
+            kwargs,
+            eval_fn=evaluator.visit,
+            evaluated_defaults=self.evaluated_defaults,
+            evaluated_kw_defaults=self.evaluated_kw_defaults,
         )
         for name, value in bound_args.items():
             exec_state.set(name, value)
@@ -470,6 +479,19 @@ class FunctionEvaluator(BaseEvaluator):
                 ):
                     docstring = first_stmt.value.value
 
+        # Evaluate default argument values NOW (at definition time)
+        # This matches Python semantics where default values are captured when
+        # the function is defined, not when it's called.
+        evaluated_defaults = None
+        if node.args.defaults:
+            evaluated_defaults = [self.visit(d) for d in node.args.defaults]
+
+        evaluated_kw_defaults = None
+        if node.args.kw_defaults:
+            evaluated_kw_defaults = [
+                self.visit(d) if d is not None else None for d in node.args.kw_defaults
+            ]
+
         func = UserFunction(
             name=node.name,
             args=node.args,
@@ -478,6 +500,8 @@ class FunctionEvaluator(BaseEvaluator):
             source_text=source_text,
             agent_fingerprint=self.agent.fingerprint,
             session=self.session,
+            evaluated_defaults=evaluated_defaults,
+            evaluated_kw_defaults=evaluated_kw_defaults,
         )
         # Set the docstring as a Python-compatible attribute
         func.__doc__ = docstring
@@ -544,6 +568,20 @@ class FunctionEvaluator(BaseEvaluator):
                 # where line numbers don't align properly
                 source_text = None
 
+        # Evaluate default argument values NOW (at definition time)
+        # This is critical for correct semantics: lambda f=fruit: ... should
+        # capture the VALUE of fruit when the lambda is created, not re-evaluate
+        # the name 'fruit' when the lambda is called.
+        evaluated_defaults = None
+        if node.args.defaults:
+            evaluated_defaults = [self.visit(d) for d in node.args.defaults]
+
+        evaluated_kw_defaults = None
+        if node.args.kw_defaults:
+            evaluated_kw_defaults = [
+                self.visit(d) if d is not None else None for d in node.args.kw_defaults
+            ]
+
         return UserFunction(
             name="<lambda>",
             args=node.args,
@@ -552,6 +590,8 @@ class FunctionEvaluator(BaseEvaluator):
             source_text=source_text,
             agent_fingerprint=self.agent.fingerprint,
             session=self.session,
+            evaluated_defaults=evaluated_defaults,
+            evaluated_kw_defaults=evaluated_kw_defaults,
         )
 
     def visit_Return(self, node: ast.Return) -> None:
