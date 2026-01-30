@@ -27,6 +27,7 @@ agent.fn(
 | `visibility` | `Literal["high", "medium", "low"]` | `"high"` | How prominently to show this function in agent context |
 | `docstring` | `str | None` | `None` | Override the function's docstring for the agent |
 | `host_fs_access` | `bool` | `False` | Allow this function to access the host filesystem even when VFS/IsolatedFS is active (see [FileSystem docs](fs.md#host-filesystem-access)) |
+| `network_access` | `bool` | `False` | Allow this function to make network connections (see [Security - Network Access](../concepts/security.md#network-access-control)) |
 
 ### Visibility Levels
 
@@ -113,6 +114,7 @@ agent.cls(
 | `constructable` | `bool` | `True` | Whether agents can create instances |
 | `configure` | `dict[str, MemberSpec] | None` | `None` | Per-member configuration overrides |
 | `host_fs_access` | `bool` | `False` | Allow this class and its methods to access the host filesystem (see [FileSystem docs](fs.md#host-filesystem-access)) |
+| `network_access` | `bool` | `False` | Allow this class and its methods to make network connections (see [Security - Network Access](../concepts/security.md#network-access-control)) |
 
 ### Usage Patterns
 
@@ -215,6 +217,7 @@ agent.module(
 | `configure` | `dict[str, MemberSpec] | None` | `None` | Per-member configuration overrides |
 | `recursive` | `bool` | `False` | If `True`, recursively register all sub-modules of the given module. |
 | `host_fs_access` | `bool` | `False` | Allow all functions/classes in this module to access the host filesystem (see [FileSystem docs](fs.md#host-filesystem-access)) |
+| `network_access` | `bool` | `False` | Allow all functions/classes in this module to make network connections (see [Security - Network Access](../concepts/security.md#network-access-control)) |
 
 ### A Note on Instance Registration
 

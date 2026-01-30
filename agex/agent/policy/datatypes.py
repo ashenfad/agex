@@ -48,6 +48,7 @@ class Namespace:
     configure: dict[str, MemberSpec] = field(default_factory=dict)
     recursive: bool = False
     host_fs_access: bool = False
+    network_access: bool = False
 
     # For instance namespaces, support exception mappings (external -> agex)
     exception_mappings: dict[type, type] = field(default_factory=dict)

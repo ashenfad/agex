@@ -182,10 +182,20 @@ def evaluate_program(
         swap_agent_fs_functions(agent)
         fs_context = with_fs_context(fs)
 
+    # Set up network sandbox context - blocks network during agent code evaluation
+    from agex.net import deny_network
+    from agex.net.patch import install_network_sandbox
+
+    install_network_sandbox()  # Idempotent - installs patches if not already done
+    network_context = deny_network()
+
     try:
         # Enter filesystem context if configured
         if fs_context is not None:
             fs_context.__enter__()
+
+        # Enter network sandbox context
+        network_context.__enter__()
 
         try:
             evaluator.visit(tree)
@@ -198,6 +208,8 @@ def evaluate_program(
             )
     finally:
         evaluator.cleanup_with_bindings()
+        # Exit network sandbox context
+        network_context.__exit__(None, None, None)
         # Exit filesystem context if we entered it
         if fs_context is not None:
             fs_context.__exit__(None, None, None)

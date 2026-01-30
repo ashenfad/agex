@@ -397,6 +397,20 @@ For stronger isolation guarantees with per-task limits, use the Modal integratio
 
 For virtual filesystem size limits, see [FileSystem Configuration](fs.md#size-limits).
 
+## Network Access Control
+
+By default, agent code cannot make network connections. This prevents data exfiltration and unauthorized API calls. To allow specific functions to use the network, register them with `network_access=True`:
+
+```python
+@agent.fn(network_access=True)
+def fetch_data(url: str) -> dict:
+    """Fetch data from a URL."""
+    import requests
+    return requests.get(url).json()
+```
+
+See **[Security - Network Access Control](../concepts/security.md#network-access-control)** for details.
+
 ## Next Steps
 
 - **[LLM Configuration](llm.md)**: Providers, models, and API options

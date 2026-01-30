@@ -113,14 +113,22 @@ class PolicyFinder(BaseFinder):
         if res is not None and hasattr(res, "fn"):
             from agex.eval.functions import NativeFunction
 
-            # Get MemberSpec to extract host_fs_access
+            # Get MemberSpec to extract host_fs_access and network_access
             main_ns = self.agent._policy.namespaces.get("__main__")
             member_spec = main_ns.fns.get(name) if main_ns else None
             host_fs_access = (
                 getattr(member_spec, "host_fs_access", False) if member_spec else False
             )
+            network_access = (
+                getattr(member_spec, "network_access", False) if member_spec else False
+            )
 
-            return NativeFunction(name=name, fn=res.fn, host_fs_access=host_fs_access)  # type: ignore[attr-defined]
+            return NativeFunction(
+                name=name,
+                fn=res.fn,
+                host_fs_access=host_fs_access,
+                network_access=network_access,
+            )  # type: ignore[attr-defined]
 
         # 3. Registered classes via policy
         res = self.agent._policy.resolve_module_member("__main__", name)
