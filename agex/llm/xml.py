@@ -296,21 +296,30 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
                     f'To append content to a file, use <FILE mode="append"> instead.'
                 )
 
-            # Determine operation and content from which tag was used
-            if replace_match:
-                operation = "replace"
-                content = replace_match.group(1)
-            elif insert_after_match:
-                operation = "insert-after"
-                content = insert_after_match.group(1)
-            elif insert_before_match:
-                operation = "insert-before"
-                content = insert_before_match.group(1)
-            else:
+            # Validate exactly one operation tag is present
+            operation_matches = [
+                (m, op)
+                for m, op in [
+                    (replace_match, "replace"),
+                    (insert_after_match, "insert-after"),
+                    (insert_before_match, "insert-before"),
+                ]
+                if m
+            ]
+
+            if len(operation_matches) == 0:
                 raise ResponseParseError(
                     f'<EDIT path="{path}"> is missing an operation tag. '
                     f"EDIT requires one of <REPLACE>, <INSERT-AFTER>, or <INSERT-BEFORE>."
                 )
+            elif len(operation_matches) > 1:
+                raise ResponseParseError(
+                    f'<EDIT path="{path}"> contains multiple operation tags. '
+                    f"Only one of <REPLACE>, <INSERT-AFTER>, or <INSERT-BEFORE> is allowed per <EDIT> block."
+                )
+
+            op_match, operation = operation_matches[0]
+            content = op_match.group(1)
 
             search = search_match.group(1)
 
