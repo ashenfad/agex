@@ -905,3 +905,17 @@ class TestEditParsing:
         """
         with pytest.raises(ResponseParseError, match='use <FILE mode="append">'):
             parse_xml_response(xml)
+
+    def test_edit_multiple_operation_tags_rejected(self):
+        """Test that EDIT with multiple operation tags is rejected."""
+        xml = """
+        <THINKING>x</THINKING>
+        <EDIT path="app.py">
+        <SEARCH>old</SEARCH>
+        <REPLACE>new</REPLACE>
+        <INSERT-AFTER>also this</INSERT-AFTER>
+        </EDIT>
+        <PYTHON>pass</PYTHON>
+        """
+        with pytest.raises(ResponseParseError, match="multiple operation tags"):
+            parse_xml_response(xml)
