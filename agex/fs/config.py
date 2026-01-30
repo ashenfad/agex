@@ -14,9 +14,12 @@ class VirtualFSConfig:
 
     Attributes:
         type: Always "virtual".
+        max_size_mb: Maximum total size of all files in megabytes.
+            None means unlimited.
     """
 
     type: Literal["virtual"] = "virtual"
+    max_size_mb: int | None = None
 
 
 @dataclass
@@ -77,11 +80,12 @@ def connect_fs(
         ... )
     """
     if type == "virtual":
+        max_size_mb = kwargs.pop("max_size_mb", None)
         if kwargs:
             raise ValueError(
                 f"Unexpected arguments for virtual fs: {list(kwargs.keys())}"
             )
-        return VirtualFSConfig(type=type)
+        return VirtualFSConfig(type=type, max_size_mb=max_size_mb)
 
     elif type == "isolated":
         # Extract isolated-specific kwargs

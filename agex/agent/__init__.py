@@ -78,6 +78,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         host: Host | None = None,
         state: "StateConfig | None" = None,
         fs: "FSConfig | None" = _UNSET,  # type: ignore
+        max_memory_mb: int | None = None,
+        max_open_files: int | None = None,
     ) -> "Agent":
         """
         Create a new agent with copied registrations but independent state/fs/host.
@@ -127,6 +129,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             host=host,
             state=state,
             fs=fs,
+            max_memory_mb=max_memory_mb,
+            max_open_files=max_open_files,
         )
 
         # Copy the policy so modifications don't affect source
@@ -167,6 +171,9 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
+        # Resource limits (per-task, Unix only)
+        max_memory_mb: int | None = None,
+        max_open_files: int | None = None,
         # Advanced: Override the built-in system instructions
         agex_primer_override: str | None = None,
     ):
@@ -192,6 +199,9 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
                 exceed this threshold. If None, no summarization is performed.
             log_low_water_tokens: Target token count after summarization. Defaults to
                 50% of log_high_water_tokens if not specified.
+            max_memory_mb: Per-task memory limit in megabytes. Each task can allocate
+                up to this much additional memory. Unix only (warns on Windows).
+            max_open_files: Maximum file descriptors for the process. Unix only.
             agex_primer_override: (Advanced) Override the built-in system instructions
                 that define the agent's core behavior and event protocol.
         """
@@ -208,6 +218,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             fs=fs,
             log_high_water_tokens=log_high_water_tokens,
             log_low_water_tokens=log_low_water_tokens,
+            max_memory_mb=max_memory_mb,
+            max_open_files=max_open_files,
             agex_primer_override=agex_primer_override,
         )
         # Track external package dependencies incrementally

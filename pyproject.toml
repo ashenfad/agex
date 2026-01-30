@@ -25,10 +25,11 @@ requires-python = ">=3.10"
 
 dependencies = [
     "tiktoken",
-    "xxhash", 
+    "xxhash",
     "diskcache",
     "pydantic",
     "pygments",
+    "psutil",
 ]
 
 [project.urls]

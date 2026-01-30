@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 from agex.agent.events import CancelledEvent
 from agex.agent.summarization import maybe_summarize_event_log
 from agex.eval.core import evaluate_program
+from agex.resource_limits import apply_resource_limits
 
 from .common import (
     # Constants
@@ -163,16 +164,17 @@ class SyncLoopMixin:
                     on_event(event)
 
             try:
-                evaluate_program(
-                    setup,
-                    self,
-                    exec_state,
-                    self.eval_timeout_seconds,
-                    fs=fs,
-                    session=session,
-                    on_event=setup_on_event,
-                    on_token=on_token,
-                )
+                with apply_resource_limits(self._resource_limits):
+                    evaluate_program(
+                        setup,
+                        self,
+                        exec_state,
+                        self.eval_timeout_seconds,
+                        fs=fs,
+                        session=session,
+                        on_event=setup_on_event,
+                        on_token=on_token,
+                    )
             except Exception:
                 pass
 
@@ -233,21 +235,22 @@ class SyncLoopMixin:
 
             # Evaluate the code
             try:
-                apply_optimistic_file_actions(
-                    self, llm_response, fs, exec_state, on_event=on_event
-                )
-
-                if code_to_evaluate:
-                    evaluate_program(
-                        code_to_evaluate,
-                        self,
-                        exec_state,
-                        self.eval_timeout_seconds,
-                        fs=fs,
-                        session=session,
-                        on_event=on_event,
-                        on_token=on_token,
+                with apply_resource_limits(self._resource_limits):
+                    apply_optimistic_file_actions(
+                        self, llm_response, fs, exec_state, on_event=on_event
                     )
+
+                    if code_to_evaluate:
+                        evaluate_program(
+                            code_to_evaluate,
+                            self,
+                            exec_state,
+                            self.eval_timeout_seconds,
+                            fs=fs,
+                            session=session,
+                            on_event=on_event,
+                            on_token=on_token,
+                        )
 
             except TaskSuccess as task_signal:
                 success_event = create_success_event(self.name, task_signal.result)
