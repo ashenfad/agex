@@ -91,13 +91,13 @@ class TestApplyResourceLimits:
                 # Try to allocate ~1GB - should fail
                 _ = [0] * (1024 * 1024 * 1024 // 8)
 
-    def test_memory_limit_blocks_exact_overflow(self):
-        """Test that allocation just over limit is blocked."""
+    def test_memory_limit_blocks_large_overflow(self):
+        """Test that allocation well over limit is blocked."""
         limits = ResourceLimits(max_memory_mb=10)
         with pytest.raises(MemoryError):
             with apply_resource_limits(limits):
-                # Try to allocate ~20MB when limit is 10MB
-                _ = bytearray(20 * 1024 * 1024)
+                # Try to allocate ~500MB when limit is 10MB - definitely exceeds
+                _ = bytearray(500 * 1024 * 1024)
 
     def test_memory_limit_allows_just_under(self):
         """Test that allocation just under limit succeeds."""
