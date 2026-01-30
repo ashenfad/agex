@@ -150,7 +150,7 @@ IMPORTANT:
 1. Generate EXACTLY ONE sequence of Title and Thinking.
 2. You can generate zero or more <{TAG_FILE}> or <{TAG_EDIT}> tags before the action.
 3. End with EITHER <{TAG_TERMINAL}> OR <{TAG_PYTHON}>.
-4. <{TAG_TERMINAL}> supports: ls, cat, head, tail, grep, find, wc, sort, uniq, cut, diff, jq, cp, mv, rm, mkdir, touch, pwd, cd, echo, tee
+4. <{TAG_TERMINAL}> supports: ls, cat, head, tail, grep, find, wc, sort, uniq, cut, diff, jq, cp, mv, rm, mkdir, touch, pwd, cd, echo, tee, tar, gzip, gunzip, zip, unzip
 5. <{TAG_TERMINAL}> implicitly continues the task. Use <{TAG_PYTHON}> with task_success()/task_fail() to complete.
 6. Use <{TAG_FILE}> with `mode="append"` to add code to an existing file. Defaults to `mode="write"`.
 7. Use <{TAG_EDIT}> for surgical edits. <{TAG_EDIT}> requires <{TAG_SEARCH}> plus ONE of: <{TAG_REPLACE}>, <{TAG_INSERT_AFTER}>, or <{TAG_INSERT_BEFORE}>. The search must match exactly (including whitespace/indentation) and occur once unless `match_all="true"`.
