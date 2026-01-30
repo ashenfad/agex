@@ -60,3 +60,45 @@ type(42).__mro__           # Method resolution order
 The built-in `dir()` and `help()` functions are overridden to show only the attributes and methods that have been explicitly whitelisted for the agent. This allows for useful introspection without leaking access to sensitive internal methods or private attributes (those prefixed with `_`).
 
 For a complete overview of all sandbox limitations, see our [Nearly Python guide](./nearly-python.md).
+
+## Resource Limits
+
+Beyond code validation, agex provides defense-in-depth resource limiting to protect against catastrophic resource exhaustion (e.g., `[0] * 10**9` or infinite file creation):
+
+### Memory Limits
+
+```python
+agent = Agent(max_memory_mb=500)  # 500MB headroom per task
+```
+
+Memory limits use a **delta-based approach**: the limit is set to current process memory + configured headroom. This gives each task a budget for new allocations without counting existing process memory.
+
+When exceeded, Python raises `MemoryError`, which the agent sees as an `EvalError` with the underlying `MemoryError` in the cause chain.
+
+### File Descriptor Limits
+
+```python
+agent = Agent(max_open_files=256)  # Max 256 open files
+```
+
+Prevents agents from exhausting system file descriptors through excessive file operations.
+
+### VFS Size Limits
+
+```python
+agent = Agent(
+    fs=connect_fs(type="virtual", max_size_mb=100),  # 100MB total VFS size
+)
+```
+
+Limits the total size of all files in the Virtual FileSystem, preventing unbounded storage consumption.
+
+### Platform Support
+
+Resource limits use Unix `RLIMIT_AS` and `RLIMIT_NOFILE`, supported on Linux and macOS. On Windows, limits are not enforced (a warning is issued).
+
+### Process-Level Limits
+
+Memory and file descriptor limits are process-wide. For concurrent tasks, size limits according to expected concurrency. For per-task isolation, use the Modal integration which provides containerized execution.
+
+See [Agent Resource Limits](../api/agent.md#resource-limits) and [VFS Size Limits](../api/fs.md#size-limits) for configuration details.

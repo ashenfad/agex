@@ -324,6 +324,55 @@ Agent-generated code runs in a synchronous sandbox. This is intentional:
 
 The separation means you get async benefits at the framework level (non-blocking I/O, compatibility with FastAPI/asyncio) without exposing async complexity to agents.
 
+## Resource Limits
+
+Beyond language restrictions, agex can enforce resource limits to prevent runaway code from exhausting system resources.
+
+### Memory Limits
+
+```python
+agent = Agent(max_memory_mb=500)  # 500MB headroom per task
+```
+
+If agent code attempts to allocate more memory than allowed:
+
+```python
+# Agent tries to allocate 1GB with 500MB limit
+data = bytearray(1024 * 1024 * 1024)
+# Raises MemoryError (wrapped in EvalError)
+```
+
+The agent receives an error and can adjust its approach—for example, processing data in chunks.
+
+### File Descriptor Limits
+
+```python
+agent = Agent(max_open_files=256)
+```
+
+Prevents agents from opening too many files simultaneously.
+
+### VFS Size Limits
+
+```python
+agent = Agent(
+    fs=connect_fs(type="virtual", max_size_mb=100),
+)
+```
+
+Limits total storage in the Virtual FileSystem:
+
+```python
+# Agent tries to write beyond the limit
+with open("huge.bin", "wb") as f:
+    f.write(b"x" * (200 * 1024 * 1024))  # 200MB
+# Raises OSError: VFS size limit exceeded
+```
+
+### Platform Note
+
+Memory and file descriptor limits require Unix (Linux/macOS). On Windows, these limits are not enforced. VFS size limits work on all platforms.
+
 ## Why These Limitations?
 
 These constraints exist for important reasons:
@@ -331,5 +380,6 @@ These constraints exist for important reasons:
 - **Security**: Prevents agents from accessing dangerous Python features
 - **Serialization**: Enables memory and rollback by ensuring all persistent state can be saved
 - **Sandboxing**: Ensures agent code cannot escape the execution environment
+- **Resource Protection**: Prevents runaway code from exhausting memory, files, or storage
 
 **Note**: With `Live` state, serialization constraints don't apply since no state is persisted between task calls. Choose `Versioned` state when you need agents to remember variables across multiple task executions.
