@@ -104,32 +104,8 @@ def uninstall_network_sandbox() -> None:
             return
 
         # Restore original socket methods
-        if "connect" in _originals:
-            socket.socket.connect = _originals["connect"]  # type: ignore[method-assign]
-        if "connect_ex" in _originals:
-            socket.socket.connect_ex = _originals["connect_ex"]  # type: ignore[method-assign]
-        if "bind" in _originals:
-            socket.socket.bind = _originals["bind"]  # type: ignore[method-assign]
-        if "listen" in _originals:
-            socket.socket.listen = _originals["listen"]  # type: ignore[method-assign]
-        if "accept" in _originals:
-            socket.socket.accept = _originals["accept"]  # type: ignore[method-assign]
-        if "send" in _originals:
-            socket.socket.send = _originals["send"]  # type: ignore[method-assign]
-        if "sendall" in _originals:
-            socket.socket.sendall = _originals["sendall"]  # type: ignore[method-assign]
-        if "sendto" in _originals:
-            socket.socket.sendto = _originals["sendto"]  # type: ignore[method-assign]
-        if "recv" in _originals:
-            socket.socket.recv = _originals["recv"]  # type: ignore[method-assign]
-        if "recvfrom" in _originals:
-            socket.socket.recvfrom = _originals["recvfrom"]  # type: ignore[method-assign]
-        if "recv_into" in _originals:
-            socket.socket.recv_into = _originals["recv_into"]  # type: ignore[method-assign]
-        if "recvfrom_into" in _originals:
-            socket.socket.recvfrom_into = _originals["recvfrom_into"]  # type: ignore[method-assign]
-        if "sendfile" in _originals:
-            socket.socket.sendfile = _originals["sendfile"]  # type: ignore[method-assign]
+        for method_name, original_method in _originals.items():
+            setattr(socket.socket, method_name, original_method)
 
         # Restore original getaddrinfo
         if gated_socket_module._original_getaddrinfo is not None:
