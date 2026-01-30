@@ -811,3 +811,183 @@ class TestTerminalStreaming:
 
         # Success should be last
         assert event_types[-1] == "SuccessEvent"
+
+
+class TestTerminalFileEvents:
+    """Tests for FileEvent emission during terminal execution."""
+
+    def test_multiple_file_writes_emit_single_agent_file_event(self):
+        """Test that multiple file writes emit one FileEvent with file_source='agent'."""
+        from agex.agent.events import FileEvent
+
+        fs = connect_fs(type="virtual")
+        state = connect_state(type="versioned", storage="memory")
+        llm = Dummy(
+            responses=[
+                LLMResponse(
+                    thinking="Create multiple files.",
+                    terminal=(
+                        "echo 'file1' > /workspace/file1.txt\n"
+                        "echo 'file2' > /workspace/file2.txt\n"
+                        "echo 'file3' > /workspace/file3.txt"
+                    ),
+                ),
+                LLMResponse(
+                    thinking="Done.",
+                    code="task_success('created')",
+                ),
+            ]
+        )
+        agent = Agent(name="multi_writer", llm=llm, fs=fs, state=state)
+
+        @agent.task
+        def create_files() -> str:
+            """Create multiple files."""
+            pass
+
+        events = []
+        result = create_files(on_event=events.append)
+        assert result == "created"
+
+        # Get all FileEvents
+        file_events = [e for e in events if isinstance(e, FileEvent)]
+
+        # Should have exactly one FileEvent (aggregated at task end)
+        assert len(file_events) == 1
+
+        # Should be from agent, not user
+        assert file_events[0].file_source == "agent"
+
+        # Should contain all created files (VFS paths may or may not have leading slash)
+        added_files = set(file_events[0].added)
+        assert any("file1.txt" in f for f in added_files)
+        assert any("file2.txt" in f for f in added_files)
+        assert any("file3.txt" in f for f in added_files)
+
+    def test_terminal_file_modifications_in_same_task(self):
+        """Test that creating and modifying a file in the same task is tracked."""
+        from agex.agent.events import FileEvent
+
+        fs = connect_fs(type="virtual")
+        state = connect_state(type="versioned", storage="memory")
+        llm = Dummy(
+            responses=[
+                LLMResponse(
+                    thinking="Create a file then modify it.",
+                    terminal=(
+                        "echo 'original' > /workspace/myfile.txt\n"
+                        "echo 'modified' >> /workspace/myfile.txt"
+                    ),
+                ),
+                LLMResponse(
+                    thinking="Done.",
+                    code="task_success('modified')",
+                ),
+            ]
+        )
+        agent = Agent(name="modifier", llm=llm, fs=fs, state=state)
+
+        @agent.task
+        def create_and_modify() -> str:
+            """Create and modify files."""
+            pass
+
+        events = []
+        result = create_and_modify(on_event=events.append)
+        assert result == "modified"
+
+        # Get FileEvents from agent
+        file_events = [
+            e for e in events if isinstance(e, FileEvent) and e.file_source == "agent"
+        ]
+
+        # Should have exactly one FileEvent
+        assert len(file_events) == 1
+        event = file_events[0]
+
+        # The file should appear in either added or modified
+        # (since it was created and modified in the same task, it shows as added)
+        all_changed = event.added + event.modified
+        assert any("myfile.txt" in f for f in all_changed)
+
+    def test_no_file_event_when_no_files_changed(self):
+        """Test that no FileEvent is emitted when no files are changed."""
+        from agex.agent.events import FileEvent
+
+        fs = connect_fs(type="virtual")
+        state = connect_state(type="versioned", storage="memory")
+        llm = Dummy(
+            responses=[
+                LLMResponse(
+                    thinking="Just read files, don't modify.",
+                    terminal="ls /workspace",
+                ),
+                LLMResponse(
+                    thinking="Done.",
+                    code="task_success('read only')",
+                ),
+            ]
+        )
+        agent = Agent(name="reader", llm=llm, fs=fs, state=state)
+
+        # Pre-create a file
+        vfs = agent.fs()
+        vfs.write("/workspace/data.txt", b"some data")
+
+        @agent.task
+        def read_only() -> str:
+            """Read-only operation."""
+            pass
+
+        events = []
+        result = read_only(on_event=events.append)
+        assert result == "read only"
+
+        # Should have no agent FileEvents (only user event from pre-creation)
+        agent_file_events = [
+            e for e in events if isinstance(e, FileEvent) and e.file_source == "agent"
+        ]
+        assert len(agent_file_events) == 0
+
+    @pytest.mark.asyncio
+    async def test_async_terminal_emits_single_file_event(self):
+        """Test that async terminal also emits single aggregated FileEvent."""
+        from agex.agent.events import FileEvent
+
+        fs = connect_fs(type="virtual")
+        state = connect_state(type="versioned", storage="memory")
+        llm = Dummy(
+            responses=[
+                LLMResponse(
+                    thinking="Create files async.",
+                    terminal=(
+                        "echo 'async1' > /workspace/async1.txt\n"
+                        "echo 'async2' > /workspace/async2.txt"
+                    ),
+                ),
+                LLMResponse(
+                    thinking="Done.",
+                    code="task_success('async created')",
+                ),
+            ]
+        )
+        agent = Agent(name="async_writer", llm=llm, fs=fs, state=state)
+
+        @agent.task
+        async def async_create_files() -> str:
+            """Create files asynchronously."""
+            pass
+
+        events = []
+        result = await async_create_files(on_event=events.append)
+        assert result == "async created"
+
+        # Get FileEvents
+        file_events = [e for e in events if isinstance(e, FileEvent)]
+
+        # Should have exactly one FileEvent
+        assert len(file_events) == 1
+        assert file_events[0].file_source == "agent"
+        # VFS paths may or may not have leading slash
+        assert any("async1.txt" in f for f in file_events[0].added)
+        assert any("async2.txt" in f for f in file_events[0].added)
