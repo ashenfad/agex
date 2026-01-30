@@ -171,7 +171,7 @@ class VirtualFS(FileSystem):
         self._state = state
         self._dir_cache: set[str] | None = None
         self._max_size_bytes: int | None = (
-            max_size_mb * 1024 * 1024 if max_size_mb else None
+            max_size_mb * 1024 * 1024 if max_size_mb is not None else None
         )
         self._current_size: int | None = None  # Lazy-computed from metadata
 
