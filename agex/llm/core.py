@@ -133,7 +133,7 @@ class LLMResponse(BaseModel):
 
     title: str = ""
     thinking: str
-    code: str = ""
+    code: str | None = None
     file_actions: list[FileAction | EditAction] = Field(default_factory=list)
     terminal: str | None = None
 

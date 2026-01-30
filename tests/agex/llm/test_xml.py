@@ -107,12 +107,12 @@ class TestParseXMLResponse:
             parse_xml_response(xml)
         assert "Missing <THINKING> tags" in str(exc_info.value)
 
-    def test_missing_code_tag(self):
-        """Test error when CODE tag is missing."""
+    def test_missing_code_or_terminal_tag(self):
+        """Test error when neither PYTHON nor TERMINAL tag is present."""
         xml = "<THINKING>some thinking</THINKING>"
         with pytest.raises(ResponseParseError) as exc_info:
             parse_xml_response(xml)
-        assert "Missing <PYTHON> tags" in str(exc_info.value)
+        assert "Missing <TERMINAL> or <PYTHON> tags" in str(exc_info.value)
 
     def test_empty_tags(self):
         """Test parsing with empty tags."""

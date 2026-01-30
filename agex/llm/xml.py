@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 # XML tag names as constants
 TAG_THINKING = "THINKING"
 TAG_PYTHON = "PYTHON"
+TAG_TERMINAL = "TERMINAL"
 TAG_FILE = "FILE"
 TAG_EDIT = "EDIT"
 TAG_SEARCH = "SEARCH"
@@ -133,24 +134,44 @@ Format your response using XML tags:
 <{TAG_SEARCH}>text to find</{TAG_SEARCH}>
 <{TAG_REPLACE}>replacement text</{TAG_REPLACE}>
 </{TAG_EDIT}>
+
+End your response with EITHER <{TAG_TERMINAL}> OR <{TAG_PYTHON}> (not both):
+
+<{TAG_TERMINAL}>
+ls -la
+grep -r "pattern" .
+</{TAG_TERMINAL}>
+
+OR
+
 <{TAG_PYTHON}># Your Python code here</{TAG_PYTHON}>
 
 IMPORTANT:
 1. Generate EXACTLY ONE sequence of Title and Thinking.
-2. You can generate zero or more <{TAG_FILE}> or <{TAG_EDIT}> tags to create/modify files before execution.
-3. Use <{TAG_FILE}> with `mode="append"` to add code to an existing file. Defaults to `mode="write"`.
-4. Use <{TAG_EDIT}> for surgical edits. <{TAG_EDIT}> requires <{TAG_SEARCH}> plus ONE of: <{TAG_REPLACE}>, <{TAG_INSERT_AFTER}>, or <{TAG_INSERT_BEFORE}>. The search must match exactly (including whitespace/indentation) and occur once unless `match_all="true"`.
-5. <{TAG_REPLACE}> replaces the search text entirely. <{TAG_INSERT_AFTER}> keeps the search text and adds content after it. <{TAG_INSERT_BEFORE}> adds content before the search text.
-6. If you just need to append to a file, use <{TAG_FILE} mode="append">. Do NOT use <{TAG_EDIT}> for this.
-7. When making python modules, use the `helpers` directory as the root.
-8. You MUST end your response with exactly one <{TAG_PYTHON}> tag.
-9. Do NOT attempt to simulate observations or multiple turns in a single response.
+2. You can generate zero or more <{TAG_FILE}> or <{TAG_EDIT}> tags before the action.
+3. End with EITHER <{TAG_TERMINAL}> OR <{TAG_PYTHON}>.
+4. <{TAG_TERMINAL}> supports: ls, cat, head, tail, grep, find, wc, sort, uniq, cut, diff, jq, cp, mv, rm, mkdir, touch, pwd, cd, echo, tee
+5. <{TAG_TERMINAL}> implicitly continues the task. Use <{TAG_PYTHON}> with task_success()/task_fail() to complete.
+6. Use <{TAG_FILE}> with `mode="append"` to add code to an existing file. Defaults to `mode="write"`.
+7. Use <{TAG_EDIT}> for surgical edits. <{TAG_EDIT}> requires <{TAG_SEARCH}> plus ONE of: <{TAG_REPLACE}>, <{TAG_INSERT_AFTER}>, or <{TAG_INSERT_BEFORE}>. The search must match exactly (including whitespace/indentation) and occur once unless `match_all="true"`.
+8. <{TAG_REPLACE}> replaces the search text entirely. <{TAG_INSERT_AFTER}> keeps the search text and adds content after it. <{TAG_INSERT_BEFORE}> adds content before the search text.
+9. If you just need to append to a file, use <{TAG_FILE} mode="append">. Do NOT use <{TAG_EDIT}> for this.
+10. When making python modules, use the `helpers` directory as the root.
+11. Do NOT attempt to simulate observations or multiple turns in a single response.
 
 You will receive environment output (stdout/images) in <{TAG_OBSERVATION}> tags.
-These will be visible after a `task_continue()` call.
+These will be visible after a `task_continue()` call or after <{TAG_TERMINAL}> execution.
 Treat this as data from your code execution, not a message from the user.
 
-Example:
+Example using terminal for exploration:
+<{TAG_TITLE}>Exploring project structure</{TAG_TITLE}>
+<{TAG_THINKING}>I'll use terminal commands to understand the codebase.</{TAG_THINKING}>
+<{TAG_TERMINAL}>
+find . -name "*.py" | head -20
+grep -r "def main" .
+</{TAG_TERMINAL}>
+
+Example using Python for task completion:
 <{TAG_TITLE}>Creating utility and using it</{TAG_TITLE}>
 <{TAG_THINKING}>I'll create a helper module and then use it in my main script.</{TAG_THINKING}>
 <{TAG_FILE} path="/helpers/utils.py">
@@ -171,14 +192,14 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
     """
     Parse complete XML response (non-streaming).
 
-    Extracts <TITLE>, <THINKING>, <FILE>, and <PYTHON> tags from complete text.
-    Tags are case-insensitive.
+    Extracts <TITLE>, <THINKING>, <FILE>, and <PYTHON> or <TERMINAL> tags from complete text.
+    Tags are case-insensitive. Response must contain exactly one of <PYTHON> or <TERMINAL>.
 
     Args:
         xml_text: Complete XML response text
 
     Returns:
-        XMLResponse with thinking, code, and files fields
+        XMLResponse with thinking, code/terminal, and files fields
 
     Raises:
         ResponseParseError: If required tags are missing or malformed
@@ -196,16 +217,32 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
         )
     thinking = thinking_match.group(1).strip()
 
+    # Extract terminal (case-insensitive)
+    terminal_match = re.search(
+        rf"<{TAG_TERMINAL}>(.*?)</{TAG_TERMINAL}>",
+        xml_text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    terminal = terminal_match.group(1).strip() if terminal_match else None
+
     # Extract code (case-insensitive)
     code_match = re.search(
         rf"<{TAG_PYTHON}>(.*?)</{TAG_PYTHON}>", xml_text, re.DOTALL | re.IGNORECASE
     )
-    if not code_match:
+
+    # Require exactly one of terminal or code
+    if terminal and code_match:
         raise ResponseParseError(
-            f"Missing <{TAG_PYTHON}> tags in XML response. "
+            f"Response contains both <{TAG_TERMINAL}> and <{TAG_PYTHON}>. "
+            f"Use one or the other."
+        )
+    if not terminal and not code_match:
+        raise ResponseParseError(
+            f"Missing <{TAG_TERMINAL}> or <{TAG_PYTHON}> tags in XML response. "
             f"Response: {xml_text[:200]}..."
         )
-    code = code_match.group(1).strip()
+
+    code = code_match.group(1).strip() if code_match else ""
 
     # Extract optional title (case-insensitive)
     title = ""
@@ -342,7 +379,11 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
     file_actions = [action for _, action in all_matches]
 
     return XMLResponse(
-        thinking=thinking, code=code, title=title, file_actions=file_actions
+        thinking=thinking,
+        code=code,
+        terminal=terminal,
+        title=title,
+        file_actions=file_actions,
     )
 
 
@@ -359,6 +400,7 @@ class _XMLTokenizerState:
         "title": TAG_TITLE,
         "thinking": TAG_THINKING,
         "python": TAG_PYTHON,
+        "terminal": TAG_TERMINAL,
         "file": TAG_FILE,
         "edit": TAG_EDIT,
     }
@@ -366,7 +408,7 @@ class _XMLTokenizerState:
     def __init__(self) -> None:
         self.buffer = ""
         self.current_section: (
-            Literal["title", "thinking", "python", "file", "edit"] | None
+            Literal["title", "thinking", "python", "terminal", "file", "edit"] | None
         ) = None
 
     def add_chunk(self, chunk: str) -> None:
@@ -420,6 +462,7 @@ class _XMLTokenizerState:
         title_start = re.search(rf"<{TAG_TITLE}>", self.buffer, re.IGNORECASE)
         thinking_start = re.search(rf"<{TAG_THINKING}>", self.buffer, re.IGNORECASE)
         python_start = re.search(rf"<{TAG_PYTHON}>", self.buffer, re.IGNORECASE)
+        terminal_start = re.search(rf"<{TAG_TERMINAL}>", self.buffer, re.IGNORECASE)
         file_start = re.search(rf"<{TAG_FILE}\s+([^>]*?)>", self.buffer, re.IGNORECASE)
         edit_start = re.search(rf"<{TAG_EDIT}\s+([^>]*?)>", self.buffer, re.IGNORECASE)
 
@@ -433,6 +476,10 @@ class _XMLTokenizerState:
             )
         if python_start:
             starts.append((python_start.start(), "python", python_start.end(), None))
+        if terminal_start:
+            starts.append(
+                (terminal_start.start(), "terminal", terminal_start.end(), None)
+            )
         if file_start:
             attrs_text = file_start.group(1)
             path_match = re.search(r'path=["\'](.*?)["\']', attrs_text, re.IGNORECASE)
@@ -511,8 +558,8 @@ class _XMLTokenizerState:
 
         should_stop = False
         if complete:
-            if self.current_section == "python":
-                # Enforce single turn: stop after first Python section
+            if self.current_section in ("python", "terminal"):
+                # Enforce single turn: stop after first Python or Terminal section
                 should_stop = True
             self.current_section = None
 
@@ -521,7 +568,9 @@ class _XMLTokenizerState:
     @staticmethod
     def _process_section_closing(
         buffer: str,
-        section_type: Literal["title", "thinking", "python", "file", "edit"],
+        section_type: Literal[
+            "title", "thinking", "python", "terminal", "file", "edit"
+        ],
         closing_tag: str,
     ) -> tuple[list[TokenChunk], str, bool]:
         """Process closing tag for a section.

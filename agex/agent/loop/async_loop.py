@@ -53,6 +53,8 @@ from .common import (
     # Event factories
     create_task_start_event,
     events,
+    # Terminal execution
+    execute_terminal,
     # State helpers
     get_commit_hash,
     get_events_from_log,
@@ -291,7 +293,7 @@ class AsyncLoopMixin:
             yield action_event
             events_yielded += 1
 
-            # Evaluate the code
+            # Evaluate terminal or code
             try:
                 # Apply resource limits for file actions (runs in main async context)
                 with apply_resource_limits(self._resource_limits):
@@ -299,7 +301,34 @@ class AsyncLoopMixin:
                         self, llm_response, fs, exec_state, on_event=on_event
                     )
 
-                if code_to_evaluate:
+                if llm_response.terminal:
+                    # Execute terminal script in executor - implicitly continues
+                    ctx = contextvars.copy_context()
+                    await loop.run_in_executor(
+                        None,
+                        partial(
+                            ctx.run,
+                            execute_terminal,
+                            self.name,
+                            llm_response.terminal,
+                            fs,
+                            exec_state,
+                            thread_safe_on_event,
+                        ),
+                    )
+
+                    # Yield any events from terminal execution
+                    for event in yield_new_events(exec_state, events_yielded):
+                        yield event
+                    events_yielded = len(events(exec_state))
+
+                    # Persist changes from this iteration
+                    if versioned_state is not None:
+                        safe_snapshot(versioned_state)
+
+                    continue  # Terminal implicitly continues to next iteration
+
+                elif code_to_evaluate:
                     # Copy context to preserve ContextVars (like agent registry) in thread pool
                     ctx = contextvars.copy_context()
                     await loop.run_in_executor(

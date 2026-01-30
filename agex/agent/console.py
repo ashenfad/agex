@@ -486,6 +486,8 @@ def pprint_tokens(
         color_code = _Colors.magenta if use_color else ""
     elif token.type == "python":
         color_code = _Colors.yellow if use_color else ""
+    elif token.type == "terminal":
+        color_code = _Colors.green if use_color else ""
     else:
         color_code = _Colors.cyan if use_color else ""
 
