@@ -329,21 +329,18 @@ class CallEvaluator(BaseEvaluator):
 
         try:
             # Conditionally wrap with suspend_fs_interception and/or allow_network
-            if needs_host_fs and needs_network:
-                from agex.fs.context import suspend_fs_interception
-                from agex.net.context import allow_network
+            if needs_host_fs or needs_network:
+                from contextlib import ExitStack
 
-                with suspend_fs_interception(), allow_network():
-                    return self._execute_call_logic(fn, args, kwargs, node, call_name)
-            elif needs_host_fs:
-                from agex.fs.context import suspend_fs_interception
+                with ExitStack() as stack:
+                    if needs_host_fs:
+                        from agex.fs.context import suspend_fs_interception
 
-                with suspend_fs_interception():
-                    return self._execute_call_logic(fn, args, kwargs, node, call_name)
-            elif needs_network:
-                from agex.net.context import allow_network
+                        stack.enter_context(suspend_fs_interception())
+                    if needs_network:
+                        from agex.net.context import allow_network
 
-                with allow_network():
+                        stack.enter_context(allow_network())
                     return self._execute_call_logic(fn, args, kwargs, node, call_name)
             else:
                 return self._execute_call_logic(fn, args, kwargs, node, call_name)
