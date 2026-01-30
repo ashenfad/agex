@@ -3,6 +3,7 @@ import uuid
 from typing import TYPE_CHECKING, Any, Callable, Dict, Literal
 
 from ..llm import LLM, connect_llm
+from ..resource_limits import ResourceLimits
 from .datatypes import MemberSpec, RegisteredClass
 from .fingerprint import compute_agent_fingerprint_from_policy
 from .policy.policy import AgentPolicy
@@ -116,6 +117,9 @@ class BaseAgent:
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
+        # Resource limits (per-task, Unix only)
+        max_memory_mb: int | None = None,
+        max_open_files: int | None = None,
         # Advanced: Override the builtin system instructions
         agex_primer_override: str | None = None,
     ):
@@ -176,6 +180,12 @@ class BaseAgent:
 
         self.log_high_water_tokens = log_high_water_tokens
         self.log_low_water_tokens = log_low_water_tokens
+
+        # Resource limits (per-task, Unix only)
+        self._resource_limits = ResourceLimits(
+            max_memory_mb=max_memory_mb,
+            max_open_files=max_open_files,
+        )
 
         # private, host-side registry for live, unpickleable objects
         self._host_object_registry: dict[str, Any] = {}
@@ -408,7 +418,7 @@ class BaseAgent:
         state = self.state(session)
 
         if isinstance(self._fs_config, VirtualFSConfig):
-            return VirtualFS(state), state
+            return VirtualFS(state, max_size_mb=self._fs_config.max_size_mb), state
 
         elif isinstance(self._fs_config, IsolatedFSConfig):
             from agex.eval.core import _get_session_root

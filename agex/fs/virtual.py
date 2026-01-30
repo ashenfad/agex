@@ -160,14 +160,20 @@ class VirtualFS(FileSystem):
     METADATA_KEY = "__vfs_metadata__"
     CWD_KEY = "__vfs_cwd__"
 
-    def __init__(self, state: "State"):
+    def __init__(self, state: "State", max_size_mb: int | None = None):
         """Initialize virtual filesystem backed by state.
 
         Args:
             state: State backend for file storage.
+            max_size_mb: Maximum total size of all files in megabytes.
+                None means unlimited.
         """
         self._state = state
         self._dir_cache: set[str] | None = None
+        self._max_size_bytes: int | None = (
+            max_size_mb * 1024 * 1024 if max_size_mb else None
+        )
+        self._current_size: int | None = None  # Lazy-computed from metadata
 
     # -------------------------------------------------------------------------
     # Working Directory
@@ -301,6 +307,52 @@ class VirtualFS(FileSystem):
             metadata: Dict mapping normalized paths to FileMetadata objects.
         """
         self._state.set(self.METADATA_KEY, pickle.dumps(metadata))
+
+    def _get_current_size(self) -> int:
+        """Get total size of all files in the VFS.
+
+        Computes from metadata on first call, then cached.
+        Cache is invalidated on write/remove.
+
+        Returns:
+            Total size in bytes.
+        """
+        if self._current_size is not None:
+            return self._current_size
+
+        metadata = self._get_metadata()
+        self._current_size = sum(
+            m.size for m in metadata.values() if not getattr(m, "is_dir", False)
+        )
+        return self._current_size
+
+    def _check_size_limit(self, path: str, new_content_size: int) -> None:
+        """Check if adding content would exceed size limit.
+
+        Args:
+            path: File path being written.
+            new_content_size: Size of new content in bytes.
+
+        Raises:
+            OSError: If write would exceed max_size_mb limit.
+        """
+        if self._max_size_bytes is None:
+            return
+
+        current = self._get_current_size()
+
+        # Account for overwriting existing file
+        metadata = self._get_metadata()
+        normalized = self._normalize_path(path)
+        existing_size = metadata.get(normalized, FileMetadata(0, "", "")).size
+
+        new_total = current - existing_size + new_content_size
+
+        if new_total > self._max_size_bytes:
+            raise OSError(
+                f"VFS size limit exceeded: {new_total / 1024 / 1024:.1f}MB > "
+                f"{self._max_size_bytes / 1024 / 1024:.1f}MB"
+            )
 
     def _update_file_metadata(self, path: str, size: int, is_new: bool) -> None:
         """Update metadata for a file (create or modify).
@@ -470,6 +522,10 @@ class VirtualFS(FileSystem):
             snapshot: If True, create snapshot after write (for external API).
                      If False, defer snapshot (for agent code via patching).
             mode: Write mode ('w' for write/overwrite, 'a' for append).
+
+        Raises:
+            TypeError: If content is not bytes.
+            OSError: If write would exceed max_size_mb limit.
         """
         if not isinstance(content, bytes):
             raise TypeError(f"Expected bytes, got {type(content).__name__}")
@@ -494,6 +550,9 @@ class VirtualFS(FileSystem):
         elif mode != "w":
             raise ValueError(f"Invalid mode: {mode}")
 
+        # Check size limit before writing
+        self._check_size_limit(path, len(content))
+
         # Check if file exists to determine if this is new or modified
         is_new = key not in self._state
 
@@ -503,8 +562,9 @@ class VirtualFS(FileSystem):
         # Update metadata
         self._update_file_metadata(path, len(content), is_new)
 
-        # Invalidate directory cache
+        # Invalidate caches
         self._dir_cache = None
+        self._current_size = None  # Will be recomputed on next access
 
         # Snapshot if requested and state supports it
         if snapshot and hasattr(self._state, "snapshot"):
@@ -521,6 +581,7 @@ class VirtualFS(FileSystem):
 
         Raises:
             TypeError: If any content is not bytes.
+            OSError: If writes would exceed max_size_mb limit.
 
         Example:
             >>> vfs.write_many({
@@ -535,6 +596,23 @@ class VirtualFS(FileSystem):
                     f"Expected bytes for '{path}', got {type(content).__name__}"
                 )
 
+        # Check combined size limit before writing any files
+        if self._max_size_bytes is not None:
+            current = self._get_current_size()
+            metadata = self._get_metadata()
+            new_total = current
+
+            for path, content in files.items():
+                normalized = self._normalize_path(path)
+                existing_size = metadata.get(normalized, FileMetadata(0, "", "")).size
+                new_total = new_total - existing_size + len(content)
+
+            if new_total > self._max_size_bytes:
+                raise OSError(
+                    f"VFS size limit exceeded: {new_total / 1024 / 1024:.1f}MB > "
+                    f"{self._max_size_bytes / 1024 / 1024:.1f}MB"
+                )
+
         # Write all files and update metadata
         for path, content in files.items():
             key = self._encode_path(path)
@@ -542,8 +620,9 @@ class VirtualFS(FileSystem):
             self._state.set(key, content)
             self._update_file_metadata(path, len(content), is_new)
 
-        # Invalidate directory cache
+        # Invalidate caches
         self._dir_cache = None
+        self._current_size = None  # Will be recomputed on next access
 
         # Create single snapshot if using versioned state
         if hasattr(self._state, "snapshot"):
@@ -766,8 +845,9 @@ class VirtualFS(FileSystem):
         metadata.pop(path, None)
         self._set_metadata(metadata)
 
-        # Invalidate directory cache
+        # Invalidate caches
         self._dir_cache = None
+        self._current_size = None  # Will be recomputed on next access
 
         # Snapshot if requested and state supports it (after successful removal)
         if snapshot and hasattr(self._state, "snapshot"):
@@ -804,8 +884,9 @@ class VirtualFS(FileSystem):
             metadata.pop(path, None)
         self._set_metadata(metadata)
 
-        # Invalidate directory cache
+        # Invalidate caches
         self._dir_cache = None
+        self._current_size = None  # Will be recomputed on next access
 
         # Create single snapshot if using versioned state
         if hasattr(self._state, "snapshot"):

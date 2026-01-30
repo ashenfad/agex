@@ -19,6 +19,7 @@ from agex.agent.events import CancelledEvent
 from agex.agent.summarization import maybe_summarize_event_log
 from agex.agent.utils import call_sync_or_async
 from agex.eval.core import evaluate_program
+from agex.resource_limits import apply_resource_limits
 
 from .common import (
     # Constants
@@ -60,6 +61,12 @@ from .common import (
     safe_snapshot,
     yield_new_events,
 )
+
+
+def _evaluate_with_limits(limits, code, agent, exec_state, timeout, **kwargs):
+    """Run evaluate_program within resource limits."""
+    with apply_resource_limits(limits):
+        return evaluate_program(code, agent, exec_state, timeout, **kwargs)
 
 
 class AsyncLoopMixin:
@@ -206,7 +213,8 @@ class AsyncLoopMixin:
                     None,
                     partial(
                         ctx.run,
-                        evaluate_program,
+                        _evaluate_with_limits,
+                        self._resource_limits,
                         setup,
                         self,
                         exec_state,
@@ -285,9 +293,11 @@ class AsyncLoopMixin:
 
             # Evaluate the code
             try:
-                apply_optimistic_file_actions(
-                    self, llm_response, fs, exec_state, on_event=on_event
-                )
+                # Apply resource limits for file actions (runs in main async context)
+                with apply_resource_limits(self._resource_limits):
+                    apply_optimistic_file_actions(
+                        self, llm_response, fs, exec_state, on_event=on_event
+                    )
 
                 if code_to_evaluate:
                     # Copy context to preserve ContextVars (like agent registry) in thread pool
@@ -296,7 +306,8 @@ class AsyncLoopMixin:
                         None,
                         partial(
                             ctx.run,
-                            evaluate_program,
+                            _evaluate_with_limits,
+                            self._resource_limits,
                             code_to_evaluate,
                             self,
                             exec_state,
