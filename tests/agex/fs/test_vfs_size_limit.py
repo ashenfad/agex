@@ -229,10 +229,7 @@ class TestVFSSizeLimitEdgeCases:
     def test_very_small_limit(self):
         """Test behavior with very small limit."""
         state = Live()
-        # 1KB limit
-        vfs = VirtualFS(state, max_size_mb=0)  # Actually need fractional MB support
-
-        # Since we can't do fractional MB, test with 1MB limit
+        # Test with 1MB limit (fractional MB not supported)
         vfs = VirtualFS(state, max_size_mb=1)
 
         # Write 999KB - should succeed
