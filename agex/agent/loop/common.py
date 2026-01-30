@@ -89,6 +89,8 @@ __all__ = [
     "create_error_output",
     "create_guidance_output",
     "create_unsaved_warning",
+    # Terminal execution
+    "execute_terminal",
     # State helpers
     "get_commit_hash",
     "initialize_exec_state",
@@ -416,6 +418,7 @@ def create_action_event(
         title=llm_response.title,
         thinking=llm_response.thinking,
         code=llm_response.code,
+        terminal=llm_response.terminal,
         file_actions=llm_response.file_actions,
         source=source,
     )
@@ -448,6 +451,74 @@ def create_error_output(agent_name: str, exception: Exception) -> OutputEvent:
             )
         ],
     )
+
+
+def execute_terminal(
+    agent_name: str,
+    terminal_script: str,
+    fs: Any,
+    exec_state: Any,
+    on_event: Callable[[BaseEvent], None] | None = None,
+) -> str:
+    """Execute terminal script and emit output event.
+
+    Args:
+        agent_name: Name of the agent (for OutputEvent attribution)
+        terminal_script: The terminal script to execute
+        fs: FileSystem to execute against
+        exec_state: Execution state for event logging
+        on_event: Optional callback for event emission
+
+    Returns:
+        The stdout from terminal execution
+
+    Raises:
+        Exception: Re-raises ParseError or TerminalError after logging output
+    """
+    from agex.terminal import ParseError, to_script
+    from agex.terminal.interpreter.core import execute_script
+    from agex.terminal.interpreter.datatypes import TerminalError
+
+    try:
+        script = to_script(terminal_script)
+        stdout = execute_script(script, fs)
+
+        # Create output event with stdout (no echo of input - ActionEvent has that)
+        if stdout:
+            output_event = OutputEvent(
+                agent_name=agent_name,
+                parts=[PrintAction([stdout])],
+            )
+            add_event_to_log(exec_state, output_event, on_event=on_event)
+
+        return stdout
+
+    except ParseError as e:
+        # Syntax error in terminal script
+        error_text = f"💥 Terminal parse error: {e}\nCheck your command syntax!"
+        error_event = OutputEvent(
+            agent_name=agent_name,
+            parts=[PrintAction([error_text])],
+        )
+        add_event_to_log(exec_state, error_event, on_event=on_event)
+        raise
+
+    except TerminalError as e:
+        # Execution error - include partial output if available
+        error_parts = []
+        if e.partial_output:
+            error_parts.append(e.partial_output)
+        error_parts.append(
+            f"💥 Terminal error: {e.message}\nAdjust your commands accordingly!"
+        )
+        error_text = "\n".join(error_parts)
+
+        error_event = OutputEvent(
+            agent_name=agent_name,
+            parts=[PrintAction([error_text])],
+        )
+        add_event_to_log(exec_state, error_event, on_event=on_event)
+        raise
 
 
 def create_guidance_output(agent_name: str) -> OutputEvent:

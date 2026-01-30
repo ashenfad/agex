@@ -36,6 +36,7 @@ from agex.llm.xml import (
     TAG_REPLACE,
     TAG_SEARCH,
     TAG_SUCCESS,
+    TAG_TERMINAL,
     TAG_THINKING,
     TAG_TITLE,
 )
@@ -123,10 +124,16 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                             f"{action.content}</{TAG_FILE}>\n"
                         )
 
+            # Choose terminal or python based on what's present
+            if event.terminal:
+                action_section = f"<{TAG_TERMINAL}>{event.terminal}</{TAG_TERMINAL}>"
+            else:
+                action_section = f"<{TAG_PYTHON}>{event.code or ''}</{TAG_PYTHON}>"
+
             content = (
                 f"{title_section}<{TAG_THINKING}>{event.thinking}</{TAG_THINKING}>\n"
                 f"{files_section}"
-                f"<{TAG_PYTHON}>{event.code}</{TAG_PYTHON}>"
+                f"{action_section}"
             )
             messages.append({"role": "assistant", "content": content})
 

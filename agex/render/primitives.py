@@ -686,12 +686,20 @@ class ValueRenderer:
 
 def render_action_markdown(
     thinking: str,
-    code: str,
+    code: str | None = None,
     title: str = "",
     file_actions: list[FileAction | EditAction] | None = None,
+    terminal: str | None = None,
 ) -> tuple[str, int]:
     """
     Render an action event as markdown.
+
+    Args:
+        thinking: The agent's thinking/reasoning
+        code: Python code to execute (None if terminal used)
+        title: Optional title for the action
+        file_actions: List of file write/edit actions
+        terminal: Terminal script to execute (mutually exclusive with code)
 
     Returns:
         (markdown_text, token_count)
@@ -722,7 +730,15 @@ def render_action_markdown(
                 mode_suffix = f" (mode: {mode})" if mode != "write" else ""
                 files_section += f"### {path}{mode_suffix}\n{content}\n\n"
 
-    content = f"{title_section}# Thinking\n{thinking}\n\n{files_section}# Code\n```python\n{code}\n```"
+    # Render terminal or code section
+    if terminal:
+        action_section = f"# Terminal\n```bash\n{terminal}\n```"
+    else:
+        action_section = f"# Code\n```python\n{code or ''}\n```"
+
+    content = (
+        f"{title_section}# Thinking\n{thinking}\n\n{files_section}{action_section}"
+    )
     tokens = count_tokens(content)
     return content, tokens
 

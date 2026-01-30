@@ -409,30 +409,30 @@ class TaskStartEvent(BaseEvent):
 
 
 class ActionEvent(BaseEvent):
-    """Fired when the agent decides on its next thought and code."""
+    """Fired when the agent decides on its next thought and action (code or terminal)."""
 
     title: str = ""
     thinking: str
-    code: str
+    code: str | None = None
+    terminal: str | None = None
     file_actions: list[FileAction | EditAction] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _compute_tokens(self):
         _, tokens = render_action_markdown(
-            self.thinking, self.code, self.title, self.file_actions
+            self.thinking, self.code, self.title, self.file_actions, self.terminal
         )
         self.full_detail_tokens = tokens
         self.low_detail_tokens = tokens  # No separate low-detail rendering
         return self
 
     def __str__(self) -> str:
-        """Detailed string with thinking and code preview."""
+        """Detailed string with thinking and code/terminal preview."""
         base = super().__str__()
         title_text = f"\n  Title: {self.title}" if self.title else ""
         thinking_preview = (
             self.thinking[:80] + "..." if len(self.thinking) > 80 else self.thinking
         )
-        code_lines = self.code.count("\n") + 1
 
         files_info = []
         for action in self.file_actions:
@@ -446,10 +446,18 @@ class ActionEvent(BaseEvent):
                 files_info.append(f"{action.path} ({action.mode})")
 
         files_text = f"\n  Files: {files_info}" if files_info else ""
-        return f"{base}{title_text}\n  Thinking: {thinking_preview}\n  Code: {code_lines} lines{files_text}"
+
+        if self.terminal:
+            terminal_lines = self.terminal.count("\n") + 1
+            action_text = f"\n  Terminal: {terminal_lines} lines"
+        else:
+            code_lines = (self.code or "").count("\n") + 1
+            action_text = f"\n  Code: {code_lines} lines"
+
+        return f"{base}{title_text}\n  Thinking: {thinking_preview}{action_text}{files_text}"
 
     def _repr_markdown_(self) -> str:
-        """Rich markdown with code block."""
+        """Rich markdown with code/terminal block."""
         base = super()._repr_markdown_()
         title_section = f"**Title:** {self.title}\n\n" if self.title else ""
 
@@ -470,13 +478,21 @@ class ActionEvent(BaseEvent):
                     files_section += f" - `{action.path}`{mode_suffix}\n"
             files_section += "\n"
 
+        if self.terminal:
+            action_section = f"""**Terminal:**
+```bash
+{self.terminal}
+```"""
+        else:
+            action_section = f"""**Code:**
+```python
+{self.code or ""}
+```"""
+
         return f"""{base}
 {title_section}**Thinking:** {self.thinking}
 
-{files_section}**Code:**
-```python
-{self.code}
-```"""
+{files_section}{action_section}"""
 
     def _repr_html_(self) -> str:
         """Rich HTML representation for IPython/Jupyter environments."""
@@ -486,9 +502,8 @@ class ActionEvent(BaseEvent):
                 _event_section("📝 Title:", html.escape(self.title), "#6f42c1")
             )
 
-        # Create the thinking and code sections
+        # Create the thinking section
         thinking_html = _render_markdown_html(self.thinking)
-
         thinking_section = _event_section("💭 Thinking:", thinking_html, "#0366d6")
 
         if self.file_actions:
@@ -516,9 +531,13 @@ class ActionEvent(BaseEvent):
             file_links = ", ".join(file_links_parts)
             sections.append(_event_section("📁 Files:", file_links, "#28a745"))
 
-        code_section = _code_section("🐍 Code:", self.code, "#28a745")
+        # Create the action section (terminal or code)
+        if self.terminal:
+            action_section = _code_section("💻 Terminal:", self.terminal, "#6f42c1")
+        else:
+            action_section = _code_section("🐍 Code:", self.code or "", "#28a745")
 
-        sections.extend([thinking_section, code_section])
+        sections.extend([thinking_section, action_section])
 
         content = "".join(sections)
 
