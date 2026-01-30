@@ -392,7 +392,8 @@ class SyncLoopMixin:
                 versioned_state = base
 
         if self._fs_config:
-            fs = self.fs(session=session)
+            # Use raw VFS for agent execution (not AgentAwareFS which emits per-write events)
+            fs, _ = self._get_fs_backend(session)
             fs_metadata_before = fs.get_metadata_snapshot()
         else:
             fs = None
