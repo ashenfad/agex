@@ -11,8 +11,8 @@ from agex.terminal.ast import Pipeline, Script
 from agex.terminal.interpreter.datatypes import CommandFunc, TerminalError
 from agex.terminal.quote_masker import mask_quotes, unmask_and_unquote
 
+from .commands import archive, filesystem, meta, search, text
 from .commands import diff as diff_cmd
-from .commands import filesystem, meta, search, text
 from .commands import io as io_cmds
 from .commands import jq as jq_cmd
 
@@ -47,6 +47,12 @@ BUILTINS: dict[str, CommandFunc] = {
     "xargs": meta.xargs,
     # JSON
     "jq": jq_cmd.jq,
+    # Archive
+    "tar": archive.tar,
+    "gzip": archive.gzip,
+    "gunzip": archive.gunzip,
+    "zip": archive.zip_cmd,
+    "unzip": archive.unzip,
 }
 
 
