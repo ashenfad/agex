@@ -15,6 +15,9 @@ from agex import connect_fs
 # Virtual filesystem (in-memory, state-backed)
 fs_config = connect_fs(type="virtual")
 
+# Virtual filesystem with size limit
+fs_config = connect_fs(type="virtual", max_size_mb=100)
+
 # Isolated filesystem (real filesystem, path-restricted)
 fs_config = connect_fs(
     type="isolated",
@@ -29,6 +32,7 @@ fs_config = connect_fs(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `type` | `str` | `"virtual"` | FileSystem type: `"virtual"` or `"isolated"` |
+| `max_size_mb` | `int \| None` | `None` | (virtual only) Maximum total size in MB. `None` means unlimited. |
 | `root` | `str` | — | (isolated only) Absolute path to root directory. Must exist. |
 | `tracking` | `bool` | `False` | (isolated only) Whether to track file changes for FileEvents |
 | `per_session` | `bool` | `False` | (isolated only) Whether to create session-specific subdirectories |
@@ -55,6 +59,39 @@ from agex import Agent, connect_state
 agent = Agent(
     state=connect_state(type="versioned", storage="disk", path="/tmp/agent-state"),
 )
+```
+
+### Size Limits
+
+Limit the total size of all files in the VFS to prevent unbounded storage consumption:
+
+```python
+agent = Agent(
+    fs=connect_fs(type="virtual", max_size_mb=100),  # 100MB limit
+)
+```
+
+When the limit is exceeded, file operations raise `OSError`:
+
+```python
+# Agent tries to write beyond the limit
+with open("large.bin", "wb") as f:
+    f.write(b"x" * (200 * 1024 * 1024))  # 200MB
+# Raises OSError: VFS size limit exceeded
+```
+
+**Behavior:**
+
+- The limit applies to the **total size** of all files combined
+- Overwriting a file accounts for the size difference (shrinking a file frees space)
+- Deleting files frees space for new writes
+- `write_many()` is atomic: if the combined size would exceed the limit, no files are written
+
+```python
+# Example: manage space by removing old files
+fs = agent.fs()
+fs.remove("old_data.bin")  # Free up space
+fs.write("new_data.bin", new_content)  # Now succeeds
 ```
 
 ## Isolated FileSystem
