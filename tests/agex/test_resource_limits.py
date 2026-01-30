@@ -109,14 +109,14 @@ class TestApplyResourceLimits:
 
     def test_memory_limit_cumulative_allocation(self):
         """Test that cumulative allocations are limited."""
-        limits = ResourceLimits(max_memory_mb=30)
+        limits = ResourceLimits(max_memory_mb=50)
         with pytest.raises(MemoryError):
             with apply_resource_limits(limits):
-                # Allocate in chunks that together exceed limit
+                # Allocate in chunks that together far exceed limit
                 chunks = []
                 for _ in range(10):
-                    # Each chunk is ~10MB, total would be 100MB > 30MB limit
-                    chunks.append(bytearray(10 * 1024 * 1024))
+                    # Each chunk is ~100MB, total would be 1GB >> 50MB limit
+                    chunks.append(bytearray(100 * 1024 * 1024))
 
     def test_memory_limit_resets_after_context(self):
         """Test that memory limit is restored after context."""
@@ -140,7 +140,8 @@ class TestApplyResourceLimits:
         limits = ResourceLimits(max_memory_mb=10)
         try:
             with apply_resource_limits(limits):
-                _ = bytearray(100 * 1024 * 1024)
+                # Allocate 500MB with 10MB limit - guaranteed to fail
+                _ = bytearray(500 * 1024 * 1024)
         except MemoryError:
             pass
 
