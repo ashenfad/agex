@@ -28,14 +28,26 @@ class VFSLoader(BaseLoader):
         root_ns = Namespaced(base, "modules")
         module_state = Namespaced(root_ns, spec.name)
 
-        # CLEAR OLD STATE: ensure clean slate for re-loading/overwriting
-        # Preserve sub-namespaces (submodules) during reload!
+        # CLEAR OLD STATE: ensure clean slate for re-loading.
+        # We need to distinguish between:
+        # - Stale/detached AgexVFSModule (state=None): These were deserialized from
+        #   committed state and rehydrate with old namespaces containing UnpicklableMarkers.
+        #   These MUST be removed so submodules get reloaded fresh.
+        # - Fresh/attached AgexVFSModule (state is set): These were just set in the
+        #   current execution (e.g., via resolve_module's parent linkage). Keep these.
+        # - Other values (UserFunctions, etc.): Remove them so code re-execution
+        #   creates fresh instances.
         for key in list(module_state.keys()):
-            # We check for AgexModule and AgexVFSModule to identify submodules
-            # that were attached to this module's namespace.
-            val = module_state.get(key)
-            if not isinstance(val, (AgexModule, AgexVFSModule)):
-                module_state.remove(key)
+            # Use peek() to avoid UnpicklableVariableError for stale markers
+            val = module_state.peek(key)
+            # Keep attached (fresh) VFS modules - they were just linked in this session
+            if isinstance(val, AgexVFSModule) and val.state is not None:
+                continue
+            # Keep policy modules (AgexModule) - they're static references
+            if isinstance(val, AgexModule):
+                continue
+            # Remove everything else (stale VFS modules, UserFunctions, markers, etc.)
+            module_state.remove(key)
 
         # Execute code if it's not a pure namespace package
         code = ""
