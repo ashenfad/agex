@@ -548,14 +548,32 @@ class AgexVFSModule:
                 f"Cannot rehydrate VFS module '{self.name}': missing agent fingerprint."
             )
 
-        from agex.agent.base import resolve_agent
+        import warnings
+
+        from agex.agent.base import get_any_registered_agent, resolve_agent
         from agex.state import Namespaced
 
-        # Resolve the agent
+        # Resolve the agent by fingerprint, with fallback
+        agent = None
         try:
             agent = resolve_agent(self.agent_fingerprint)
-        except RuntimeError as e:
-            raise RuntimeError(f"Cannot rehydrate VFS module '{self.name}': {e}") from e
+        except RuntimeError:
+            # Fingerprint not found - try fallback to any registered agent
+            agent = get_any_registered_agent()
+            if agent:
+                warnings.warn(
+                    f"VFS module '{self.name}' was created by agent with fingerprint "
+                    f"'{self.agent_fingerprint[:8]}...' which is no longer registered. "
+                    f"Falling back to currently registered agent '{agent.name}'. "
+                    f"This may happen after config changes (primer, registrations).",
+                    stacklevel=2,
+                )
+            else:
+                raise RuntimeError(
+                    f"Cannot rehydrate VFS module '{self.name}': "
+                    f"No agent found with fingerprint '{self.agent_fingerprint[:8]}...' "
+                    f"and no fallback agent is registered."
+                )
 
         # Get the agent's committed state for the specific session
         # Note: This creates a new Versioned view on the shared store.

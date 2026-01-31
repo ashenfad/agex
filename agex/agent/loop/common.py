@@ -6,6 +6,7 @@ This module contains shared logic used by both sync and async task loop implemen
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, Callable
@@ -284,6 +285,26 @@ def yield_new_events(
     return all_events[events_yielded_count:]
 
 
+def _build_trailing_ws_pattern(search: str) -> re.Pattern:
+    """Build a regex pattern that matches search with flexible trailing whitespace.
+
+    This allows the search to match even if the file has trailing spaces/tabs
+    at the end of lines that the agent didn't include in the search string.
+    Internal whitespace (indentation) is preserved exactly.
+    """
+    lines = search.split("\n")
+    pattern_parts = []
+    for line in lines:
+        # Escape the line for regex, strip trailing whitespace
+        escaped = re.escape(line.rstrip())
+        # Allow optional trailing whitespace (spaces/tabs only, not newlines)
+        pattern_parts.append(escaped + r"[ \t]*")
+
+    # Join with literal newline
+    pattern = "\n".join(pattern_parts)
+    return re.compile(pattern)
+
+
 def apply_optimistic_file_actions(
     agent: Any,
     llm_response: LLMResponse,
@@ -339,18 +360,26 @@ def apply_optimistic_file_actions(
             except FileNotFoundError:
                 raise ResponseParseError(f"File not found for EDIT: {path}")
 
-            # Count occurrences
+            # Try exact match first
             count = existing_content.count(action.search)
+            use_normalized = False
 
             if count == 0:
-                search_preview = (
-                    action.search[:100] + "..."
-                    if len(action.search) > 100
-                    else action.search
-                )
-                raise ResponseParseError(
-                    f"Search string not found in {path}:\n{search_preview}"
-                )
+                # Exact match failed - try normalized matching (flexible trailing whitespace)
+                pattern = _build_trailing_ws_pattern(action.search)
+                matches = list(pattern.finditer(existing_content))
+                count = len(matches)
+                use_normalized = True
+
+                if count == 0:
+                    search_preview = (
+                        action.search[:100] + "..."
+                        if len(action.search) > 100
+                        else action.search
+                    )
+                    raise ResponseParseError(
+                        f"Search string not found in {path}:\n{search_preview}"
+                    )
 
             if count > 1 and not action.match_all:
                 raise ResponseParseError(
@@ -358,21 +387,41 @@ def apply_optimistic_file_actions(
                     f'Use match_all="true" or provide more context.'
                 )
 
-            # Compute replacement based on operation
-            if action.operation == "insert-after":
-                # Keep search text, add content after
-                replacement = action.search + action.content
-            elif action.operation == "insert-before":
-                # Add content before, keep search text
-                replacement = action.content + action.search
-            else:  # "replace" (default) = replace entirely
-                replacement = action.content
+            # Apply replacement based on matching mode
+            if use_normalized:
+                # Normalized matching - use regex replacement
+                pattern = _build_trailing_ws_pattern(action.search)
 
-            # Apply replacement
-            if action.match_all:
-                new_content = existing_content.replace(action.search, replacement)
+                def make_replacement(match):
+                    matched_text = match.group(0)
+                    if action.operation == "insert-after":
+                        return matched_text + action.content
+                    elif action.operation == "insert-before":
+                        return action.content + matched_text
+                    else:  # "replace"
+                        return action.content
+
+                if action.match_all:
+                    new_content = pattern.sub(make_replacement, existing_content)
+                else:
+                    new_content = pattern.sub(
+                        make_replacement, existing_content, count=1
+                    )
             else:
-                new_content = existing_content.replace(action.search, replacement, 1)
+                # Exact matching - use str.replace
+                if action.operation == "insert-after":
+                    replacement = action.search + action.content
+                elif action.operation == "insert-before":
+                    replacement = action.content + action.search
+                else:  # "replace"
+                    replacement = action.content
+
+                if action.match_all:
+                    new_content = existing_content.replace(action.search, replacement)
+                else:
+                    new_content = existing_content.replace(
+                        action.search, replacement, 1
+                    )
 
             # Write back
             if isinstance(target_fs, VirtualFS):
