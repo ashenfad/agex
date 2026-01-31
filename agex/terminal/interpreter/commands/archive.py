@@ -218,6 +218,11 @@ def _tar_extract(
                 if not safe_name:
                     continue
 
+                # Skip macOS AppleDouble resource fork files (._*)
+                basename = os.path.basename(safe_name)
+                if basename.startswith("._"):
+                    continue
+
                 out_path = os.path.join(target_dir, safe_name)
 
                 if member.isdir():
@@ -385,6 +390,11 @@ def unzip(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> Non
                     # Strip leading slashes (like real unzip)
                     safe_name = info.filename.lstrip("/")
                     if not safe_name:
+                        continue
+
+                    # Skip macOS AppleDouble resource fork files (._*)
+                    basename = os.path.basename(safe_name)
+                    if basename.startswith("._"):
                         continue
 
                     out_path = os.path.join(target_dir, safe_name)

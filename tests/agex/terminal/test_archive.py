@@ -297,6 +297,48 @@ class TestTar:
         with pytest.raises(TerminalError, match="-f option is required"):
             execute_script(script, fs)
 
+    def test_tar_skips_macos_appledouble_files(self, fs):
+        """Test that macOS AppleDouble resource fork files (._*) are skipped."""
+        # Create archive with AppleDouble files (like macOS creates)
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as tf:
+            # Regular file
+            info = tarfile.TarInfo(name="app/main.py")
+            content = b"print('hello')"
+            info.size = len(content)
+            tf.addfile(info, io.BytesIO(content))
+
+            # AppleDouble resource fork (should be skipped)
+            info = tarfile.TarInfo(name="app/._main.py")
+            content = b"resource fork data"
+            info.size = len(content)
+            tf.addfile(info, io.BytesIO(content))
+
+            # Another regular file
+            info = tarfile.TarInfo(name="app/utils.py")
+            content = b"def helper(): pass"
+            info.size = len(content)
+            tf.addfile(info, io.BytesIO(content))
+
+            # Its AppleDouble (should be skipped)
+            info = tarfile.TarInfo(name="app/._utils.py")
+            content = b"resource fork data"
+            info.size = len(content)
+            tf.addfile(info, io.BytesIO(content))
+
+        fs.write("/workspace/app.tar", buffer.getvalue())
+
+        script = to_script("tar -xf /workspace/app.tar -C /workspace")
+        execute_script(script, fs)
+
+        # Regular files should exist
+        assert fs.exists("/workspace/app/main.py")
+        assert fs.exists("/workspace/app/utils.py")
+
+        # AppleDouble files should NOT exist
+        assert not fs.exists("/workspace/app/._main.py")
+        assert not fs.exists("/workspace/app/._utils.py")
+
     def test_tar_path_traversal_blocked(self, fs):
         """Test that path traversal is blocked during extraction."""
         # Create archive with path traversal attempt
@@ -430,6 +472,29 @@ class TestUnzip:
 
         assert fs.exists("/workspace/dir1/dir2/file.txt")
         assert fs.read("/workspace/dir1/dir2/file.txt") == b"nested content"
+
+    def test_unzip_skips_macos_appledouble_files(self, fs):
+        """Test that macOS AppleDouble resource fork files (._*) are skipped."""
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zf:
+            # Regular files
+            zf.writestr("app/main.py", b"print('hello')")
+            zf.writestr("app/utils.py", b"def helper(): pass")
+            # AppleDouble resource forks (should be skipped)
+            zf.writestr("app/._main.py", b"resource fork data")
+            zf.writestr("app/._utils.py", b"resource fork data")
+        fs.write("/workspace/app.zip", buffer.getvalue())
+
+        script = to_script("unzip /workspace/app.zip -d /workspace")
+        execute_script(script, fs)
+
+        # Regular files should exist
+        assert fs.exists("/workspace/app/main.py")
+        assert fs.exists("/workspace/app/utils.py")
+
+        # AppleDouble files should NOT exist
+        assert not fs.exists("/workspace/app/._main.py")
+        assert not fs.exists("/workspace/app/._utils.py")
 
     def test_unzip_list(self, fs):
         """Test listing zip contents."""
