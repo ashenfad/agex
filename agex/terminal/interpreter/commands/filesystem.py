@@ -74,6 +74,8 @@ def ls(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     parser.add_argument("paths", nargs="*", default=["."])
 
     parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"ls: unknown option: {unknown[0]}")
 
     for i, path in enumerate(parsed.paths):
         if len(parsed.paths) > 1:
@@ -179,6 +181,9 @@ def cp(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     parser.add_argument("dst")
 
     parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"cp: unknown option: {unknown[0]}")
+
     if len(parsed.src) > 1:
         sources = parsed.src
         dst = parsed.dst
@@ -276,6 +281,9 @@ def rm(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     parser.add_argument("paths", nargs="+")
 
     parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"rm: unknown option: {unknown[0]}")
+
     for path in parsed.paths:
         try:
             if fs.isdir(path):

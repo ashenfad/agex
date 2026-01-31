@@ -22,7 +22,9 @@ def diff(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None
     parser.add_argument("file1", nargs="?")
     parser.add_argument("file2", nargs="?")
 
-    parsed, _ = parser.parse_known_args(args)
+    parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"diff: unknown option: {unknown[0]}")
 
     if not parsed.file1 or not parsed.file2:
         raise TerminalError(

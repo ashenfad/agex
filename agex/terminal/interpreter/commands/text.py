@@ -19,7 +19,9 @@ def wc(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     parser.add_argument("-m", "--chars", action="store_true")
     parser.add_argument("files", nargs="*")
 
-    parsed, _ = parser.parse_known_args(args)
+    parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"wc: unknown option: {unknown[0]}")
 
     # If no flags specified, show all three (lines, words, bytes)
     show_lines = parsed.lines
@@ -92,7 +94,9 @@ def sort(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None
     parser.add_argument("-t", "--field-separator", type=str, default=None)
     parser.add_argument("files", nargs="*")
 
-    parsed, _ = parser.parse_known_args(args)
+    parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"sort: unknown option: {unknown[0]}")
 
     # Collect all lines
     lines: list[str] = []
@@ -167,7 +171,9 @@ def uniq(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None
     parser.add_argument("-i", "--ignore-case", action="store_true")
     parser.add_argument("file", nargs="?")
 
-    parsed, _ = parser.parse_known_args(args)
+    parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"uniq: unknown option: {unknown[0]}")
 
     # Read input
     if parsed.file:
@@ -230,7 +236,9 @@ def cut(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     parser.add_argument("--complement", action="store_true")
     parser.add_argument("files", nargs="*")
 
-    parsed, _ = parser.parse_known_args(args)
+    parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"cut: unknown option: {unknown[0]}")
 
     # Must specify one of -f, -c, or -b
     if not (parsed.fields or parsed.characters or parsed.bytes):
