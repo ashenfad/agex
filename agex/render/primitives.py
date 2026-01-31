@@ -896,13 +896,56 @@ def render_output_parts_full(
         if part and current_cost + cost <= budget:
             parts_with_cost.insert(0, (part, cost))
             current_cost += cost
+        elif part and isinstance(part, TextPart) and cost > 0:
+            # Text part exceeds remaining budget - truncate to fit
+            # Reserve space for truncation marker
+            marker = "... [output truncated]"
+            marker_cost = len(tokenizer.encode(marker + "\n"))
+            available_tokens = budget - current_cost - marker_cost
+
+            if (
+                available_tokens > 100
+            ):  # Only truncate if we can show something meaningful
+                # Binary search to find the right truncation point
+                text = part.text
+                low, high = 0, len(text)
+                best_text = ""
+                while low < high:
+                    mid = (low + high + 1) // 2
+                    candidate = text[:mid]
+                    candidate_tokens = len(tokenizer.encode(candidate + "\n"))
+                    if candidate_tokens <= available_tokens:
+                        best_text = candidate
+                        low = mid
+                    else:
+                        high = mid - 1
+
+                if best_text:
+                    truncated_text = best_text + "\n" + marker
+                    truncated_cost = len(tokenizer.encode(truncated_text + "\n"))
+                    parts_with_cost.insert(
+                        0, (TextPart(text=truncated_text), truncated_cost)
+                    )
+                    current_cost += truncated_cost
+                    omitted_items = True
+                else:
+                    omitted_items = True
+            else:
+                omitted_items = True
         elif cost > 0:  # If we calculated a cost but didn't add the part
             omitted_items = True
 
-    # Post-processing: add truncation markers
+    # Post-processing: add truncation markers for completely omitted parts
     final_parts: list[ContentPart] = [p for p, c in parts_with_cost]
 
-    if omitted_items and final_parts:
+    if omitted_items and not final_parts:
+        # Nothing was added but there was content - add a message
+        placeholder = "[Output exceeded display budget and was truncated]"
+        placeholder_cost = len(tokenizer.encode(placeholder + "\n"))
+        if placeholder_cost <= budget:
+            final_parts.append(TextPart(text=placeholder))
+            current_cost = placeholder_cost
+    elif omitted_items and final_parts:
         marker = "..."
         marker_cost = len(tokenizer.encode(marker + "\n"))
         if current_cost + marker_cost <= budget:
