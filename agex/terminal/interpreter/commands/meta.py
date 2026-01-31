@@ -23,7 +23,9 @@ def xargs(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> Non
     parser.add_argument("-t", "--verbose", action="store_true")
     parser.add_argument("command", nargs="*")
 
-    parsed, _ = parser.parse_known_args(args)
+    parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"xargs: unknown option: {unknown[0]}")
 
     # Default command is echo
     if not parsed.command:

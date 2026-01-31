@@ -40,7 +40,9 @@ def cat(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     )
     parser.add_argument("files", nargs="*")
 
-    parsed, _ = parser.parse_known_args(args)
+    parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"cat: unknown option: {unknown[0]}")
 
     show_ends = parsed.e or parsed.show_all
     show_tabs = parsed.show_tabs or parsed.show_all
@@ -121,6 +123,9 @@ def head(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None
     parser.add_argument("files", nargs="*")
 
     parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"head: unknown option: {unknown[0]}")
+
     limit = parsed.lines
 
     if not parsed.files:
@@ -157,6 +162,9 @@ def tail(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None
     parser.add_argument("files", nargs="*")
 
     parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"tail: unknown option: {unknown[0]}")
+
     limit = parsed.lines
 
     if not parsed.files:
@@ -189,7 +197,9 @@ def tee(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     parser.add_argument("-a", "--append", action="store_true")
     parser.add_argument("files", nargs="*")
 
-    parsed, _ = parser.parse_known_args(args)
+    parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"tee: unknown option: {unknown[0]}")
 
     content = stdin.read()
 

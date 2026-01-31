@@ -34,7 +34,9 @@ def jq(args: list[str], stdin: TextIO, stdout: TextIO, fs: FileSystem) -> None:
     parser.add_argument("filter", nargs="?", default=".")
     parser.add_argument("files", nargs="*")
 
-    parsed, _ = parser.parse_known_args(args)
+    parsed, unknown = parser.parse_known_args(args)
+    if unknown:
+        raise TerminalError(f"jq: unknown option: {unknown[0]}")
 
     # Parse the filter expression
     try:
