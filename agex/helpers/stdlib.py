@@ -7,6 +7,7 @@ data processing modules.
 """
 
 import base64
+import calendar
 import collections
 import csv
 import datetime
@@ -127,6 +128,7 @@ def register_stdlib(agent: Agent, io_friendly: bool = True) -> None:
     agent.module(itertools, visibility="low")
 
     # Date/time modules
+    agent.module(calendar, visibility="low")
     agent.module(datetime, visibility="low")
     agent.cls(datetime.datetime, visibility="low")
     agent.cls(datetime.date, visibility="low")
