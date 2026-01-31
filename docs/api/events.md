@@ -60,7 +60,7 @@ event = TaskStartEvent(
 ```
 
 #### `ActionEvent`
-Generated when an agent takes an action (thinks + executes code).
+Generated when an agent takes an action (thinks + executes code or terminal commands).
 
 ```python
 from agex.agent.events import ActionEvent
@@ -69,9 +69,24 @@ from agex.agent.events import ActionEvent
 event = ActionEvent(
     title="...",             # str
     thinking="...",          # str
-    code="...",              # str
+    code="...",              # str | None - Python code to execute
+    terminal="...",          # str | None - Terminal commands to execute
     file_actions=[...],      # list[FileAction | EditAction]
 )
+```
+
+**Action Types:**
+- **Python execution**: `code` contains Python code, `terminal` is `None`
+- **Terminal execution**: `terminal` contains shell commands, `code` is `None`
+
+Terminal commands are executed against the agent's virtual filesystem and support common Unix utilities like `ls`, `cat`, `grep`, `find`, `tar`, `gzip`, `zip`, etc. Terminal execution implicitly continues the task loop (no `task_success()` needed).
+
+```python
+# Check what type of action was taken
+if event.code:
+    print(f"Python: {event.code}")
+elif event.terminal:
+    print(f"Terminal: {event.terminal}")
 ```
 
 #### `FileAction`
@@ -189,6 +204,16 @@ event = FileEvent(
 )
 ```
 
+**File Source:**
+- `"agent"`: Files changed during agent execution (Python code or terminal commands). Emitted as a **single aggregated event** at task completion, containing all files added, modified, or removed during the task.
+- `"user"`: Files changed via external API calls through `agent.fs()`. Emitted **per operation** (each `write()`, `remove()`, etc. call generates its own event).
+
+```python
+# Filter events by source
+agent_changes = [e for e in events if isinstance(e, FileEvent) and e.file_source == "agent"]
+user_uploads = [e for e in events if isinstance(e, FileEvent) and e.file_source == "user"]
+```
+
 **When it appears:**
 `SummaryEvent` is automatically generated when an agent's event log exceeds the configured `log_high_water_tokens` threshold (see [Agent Configuration](agent.md#event-log-summarization)). The LLM condenses older events into a concise summary, preserving essential context while reducing token usage.
 
@@ -280,6 +305,18 @@ result = my_task("important task", on_event=custom_handler)
 - `content`: the text fragment for that section
 - `done`: a boolean that signals the end of the current section
 
+**Token Types:**
+| Type | Description |
+|------|-------------|
+| `"title"` | Optional title for the action |
+| `"thinking"` | Agent's reasoning/planning text |
+| `"file"` | File creation content (`<FILE>` tag) |
+| `"edit"` | File edit content (`<EDIT>` tag) |
+| `"terminal"` | Shell commands to execute (`<TERMINAL>` tag) |
+| `"python"` | Python code to execute (`<PYTHON>` tag) |
+
+> **Note:** `"terminal"` and `"python"` are mutually exclusive—the agent uses one or the other per turn, never both.
+
 **Choose `on_token` if:**
 *   You want progressive UI feedback while the LLM is generating content.
 *   You need to distinguish between the agent's reasoning and emitted code.
@@ -355,7 +392,7 @@ pprint_events(all_events, verbosity="brief")
 Notes:
 - Both helpers respect the `color="auto" | "always" | "never"` setting and the `NO_COLOR` environment variable.
 - `pprint_events` keeps a running Δ time between prints when used as `on_event`.
-- `pprint_tokens` renders 💭 reasoning in blue and 🐍 code in yellow.
+- `pprint_tokens` renders content with colors: 💭 thinking in blue, 🐍 Python in yellow, 💻 terminal in green.
 - `pprint_tokens` ignores section-complete markers (`done=True`) so streams remain tidy.
 
 ## Usage Patterns
