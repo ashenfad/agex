@@ -20,6 +20,7 @@ import json
 import math
 import os
 import pathlib
+import pickle
 import random
 import re
 import statistics
@@ -99,6 +100,7 @@ def register_io(agent: Agent) -> None:
     # Common serialization formats for file content
     agent.module(json, visibility="low")
     agent.module(csv, visibility="low")
+    agent.module(pickle, visibility="low")
 
     # pathlib - exclude methods that bypass VFS wrappers
     # Agents must use open() instead of Path.read_text()  etc.
