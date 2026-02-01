@@ -103,6 +103,7 @@ class VFSLoader(BaseLoader):
             name=spec.name,
             state=module_state,
             agent_fingerprint=self.agent.fingerprint,
+            agent_name=self.agent.name,
             session=self.session,
         )
 

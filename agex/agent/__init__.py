@@ -7,6 +7,7 @@ from .base import (
     _UNSET,
     BaseAgent,
     clear_agent_registry,
+    get_agent_by_name,
     register_agent,
     resolve_agent,
 )
@@ -41,6 +42,7 @@ __all__ = [
     # Core functionality
     "register_agent",
     "resolve_agent",
+    "get_agent_by_name",
     "clear_agent_registry",
     "clear_dynamic_dataclass_registry",
     # Task control functions

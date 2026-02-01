@@ -90,19 +90,17 @@ def clear_agent_registry() -> None:
     clear_dynamic_dataclass_registry()
 
 
-def get_any_registered_agent() -> "BaseAgent | None":
-    """Get any registered agent as a fallback.
+def get_agent_by_name(name: str) -> "BaseAgent | None":
+    """Get an agent by its name.
 
-    Used when a VFS module needs to rehydrate but its original agent
-    fingerprint is no longer registered (e.g., after config changes).
+    Used for fallback resolution when an agent's fingerprint has changed
+    (e.g., after config/primer changes) but the agent name is still the same.
 
     Returns:
-        The first available registered agent, or None if registry is empty.
+        The agent with the given name, or None if not found.
     """
     with _AGENT_REGISTRY_LOCK:
-        if _AGENT_REGISTRY:
-            return next(iter(_AGENT_REGISTRY.values()))
-        return None
+        return _AGENT_REGISTRY_BY_NAME.get(name)
 
 
 def _random_name() -> str:

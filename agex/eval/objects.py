@@ -518,6 +518,7 @@ class AgexVFSModule:
     name: str
     state: Any  # Namespaced state (runtime only, None when detached)
     agent_fingerprint: str | None = None
+    agent_name: str | None = None  # Name of the agent (for fallback resolution)
     session: str = "default"
 
     def __repr__(self):
@@ -528,6 +529,7 @@ class AgexVFSModule:
         return {
             "name": self.name,
             "agent_fingerprint": self.agent_fingerprint,
+            "agent_name": self.agent_name,
             "session": self.session,
         }
 
@@ -535,6 +537,7 @@ class AgexVFSModule:
         """Restore metadata and start in detached state."""
         self.name = state["name"]
         self.agent_fingerprint = state.get("agent_fingerprint")
+        self.agent_name = state.get("agent_name")
         self.session = state.get("session", "default")
         self.state = None  # Detached
 
@@ -550,21 +553,22 @@ class AgexVFSModule:
 
         import warnings
 
-        from agex.agent.base import get_any_registered_agent, resolve_agent
+        from agex.agent.base import get_agent_by_name, resolve_agent
         from agex.state import Namespaced
 
-        # Resolve the agent by fingerprint, with fallback
+        # Resolve the agent by fingerprint, with fallback by name
         agent = None
         try:
             agent = resolve_agent(self.agent_fingerprint)
         except RuntimeError:
-            # Fingerprint not found - try fallback to any registered agent
-            agent = get_any_registered_agent()
+            # Fingerprint not found - try fallback by agent name
+            if self.agent_name:
+                agent = get_agent_by_name(self.agent_name)
             if agent:
                 warnings.warn(
                     f"VFS module '{self.name}' was created by agent with fingerprint "
                     f"'{self.agent_fingerprint[:8]}...' which is no longer registered. "
-                    f"Falling back to currently registered agent '{agent.name}'. "
+                    f"Falling back to agent '{agent.name}' by name. "
                     f"This may happen after config changes (primer, registrations).",
                     stacklevel=2,
                 )
@@ -572,7 +576,7 @@ class AgexVFSModule:
                 raise RuntimeError(
                     f"Cannot rehydrate VFS module '{self.name}': "
                     f"No agent found with fingerprint '{self.agent_fingerprint[:8]}...' "
-                    f"and no fallback agent is registered."
+                    f"or name '{self.agent_name}'."
                 )
 
         # Get the agent's committed state for the specific session

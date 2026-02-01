@@ -1,10 +1,11 @@
 import ast
 import inspect
 import time
+import warnings
 from dataclasses import dataclass, make_dataclass
 from typing import Any, Callable
 
-from agex.agent.base import resolve_agent
+from agex.agent.base import get_agent_by_name, resolve_agent
 
 from ..state import State
 from ..state.closure import LiveClosureState
@@ -69,6 +70,7 @@ class UserFunction:
     agent_fingerprint: str | None = (
         None  # Fingerprint of the agent this function was defined in
     )
+    agent_name: str | None = None  # Name of the agent (for fallback resolution)
     session: str = "default"  # Session where the function was defined
     # Pre-evaluated default values (captured at definition time, like Python)
     evaluated_defaults: list[Any] | None = None
@@ -142,8 +144,28 @@ class UserFunction:
         if not self.agent_fingerprint:
             raise RuntimeError("Cannot execute function without an agent context.")
 
-        # Resolve agent from fingerprint
-        agent = resolve_agent(self.agent_fingerprint)
+        # Resolve agent from fingerprint, with fallback by name
+        agent = None
+        try:
+            agent = resolve_agent(self.agent_fingerprint)
+        except RuntimeError:
+            # Fingerprint not found - try fallback by agent name
+            if self.agent_name:
+                agent = get_agent_by_name(self.agent_name)
+            if agent:
+                warnings.warn(
+                    f"User function '{self.name}' was created by agent with fingerprint "
+                    f"'{self.agent_fingerprint[:8]}...' which is no longer registered. "
+                    f"Falling back to agent '{agent.name}' by name. "
+                    f"This may happen after config changes (primer, registrations).",
+                    stacklevel=2,
+                )
+            else:
+                raise RuntimeError(
+                    f"Cannot execute user function '{self.name}': "
+                    f"No agent found with fingerprint '{self.agent_fingerprint[:8]}...' "
+                    f"or name '{self.agent_name}'."
+                )
 
         # Create evaluator with timeout context from parent if available
         if parent_evaluator is not None:
@@ -275,6 +297,7 @@ class TaskUserFunction(UserFunction):
 
     # Required fields for task execution (with defaults to satisfy dataclass ordering)
     task_agent_fingerprint: str = ""  # Agent that will execute the task
+    task_agent_name: str = ""  # Agent name (for fallback resolution)
     task_docstring: str = ""  # Task instructions
     task_return_type: type = object  # Expected return type
     # Allow network access for task calls (needed for LLM calls in sub-agent tasks)
@@ -284,8 +307,28 @@ class TaskUserFunction(UserFunction):
         self, args: list, kwargs: dict, source_code: str | None, parent_evaluator=None
     ):
         """Override execute to run task loop instead of function body via agent.run_task."""
-        # Resolve the task-executing agent
-        task_agent = resolve_agent(self.task_agent_fingerprint)
+        # Resolve the task-executing agent, with fallback by name
+        task_agent = None
+        try:
+            task_agent = resolve_agent(self.task_agent_fingerprint)
+        except RuntimeError:
+            # Fingerprint not found - try fallback by agent name
+            if self.task_agent_name:
+                task_agent = get_agent_by_name(self.task_agent_name)
+            if task_agent:
+                warnings.warn(
+                    f"Task function '{self.name}' was created by agent with fingerprint "
+                    f"'{self.task_agent_fingerprint[:8]}...' which is no longer registered. "
+                    f"Falling back to agent '{task_agent.name}' by name. "
+                    f"This may happen after config changes (primer, registrations).",
+                    stacklevel=2,
+                )
+            else:
+                raise RuntimeError(
+                    f"Cannot execute task function '{self.name}': "
+                    f"No agent found with fingerprint '{self.task_agent_fingerprint[:8]}...' "
+                    f"or name '{self.task_agent_name}'."
+                )
 
         # Agent.run_task expects the wrapper callable which embeds loop invocation
         # We synthesize an adapter that validates args and calls the loop
@@ -502,6 +545,7 @@ class FunctionEvaluator(BaseEvaluator):
             closure_state=closure,
             source_text=source_text,
             agent_fingerprint=self.agent.fingerprint,
+            agent_name=self.agent.name,
             session=self.session,
             evaluated_defaults=evaluated_defaults,
             evaluated_kw_defaults=evaluated_kw_defaults,
@@ -592,6 +636,7 @@ class FunctionEvaluator(BaseEvaluator):
             closure_state=closure,
             source_text=source_text,
             agent_fingerprint=self.agent.fingerprint,
+            agent_name=self.agent.name,
             session=self.session,
             evaluated_defaults=evaluated_defaults,
             evaluated_kw_defaults=evaluated_kw_defaults,
