@@ -218,6 +218,14 @@ class CallEvaluator(BaseEvaluator):
                 else:
                     break
 
+            # Fallback: search namespaces by module object (handles custom aliases)
+            for ns in self.agent._policy.namespaces.values():
+                if ns.module is not None and not isinstance(ns.module, str):
+                    if ns.module.__name__ == fn.__module__ and getattr(
+                        ns, "host_fs_access", False
+                    ):
+                        return True
+
         return False
 
     def _should_allow_network(self, fn: Any) -> bool:
@@ -251,6 +259,16 @@ class CallEvaluator(BaseEvaluator):
                     module_name = module_name.rsplit(".", 1)[0]
                 else:
                     break
+
+            # Fallback: search namespaces by module object (handles custom aliases)
+            # When a module is registered with name="alias", the namespace is keyed
+            # by "alias" not module.__name__, so we need to check module objects directly
+            for ns in self.agent._policy.namespaces.values():
+                if ns.module is not None and not isinstance(ns.module, str):
+                    if ns.module.__name__ == fn.__module__ and getattr(
+                        ns, "network_access", False
+                    ):
+                        return True
 
         return False
 
