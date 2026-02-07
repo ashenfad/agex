@@ -305,6 +305,180 @@ def _build_trailing_ws_pattern(search: str) -> re.Pattern:
     return re.compile(pattern)
 
 
+def _find_indent_flexible_match(
+    search: str, content: str
+) -> list[tuple[int, int, str]]:
+    """Find matches for search in content with flexible indentation.
+
+    This handles cases where the search and content have the same code structure
+    but different absolute indentation levels (e.g., agent sends 2-space indent
+    but file uses 4-space or tabs).
+
+    The algorithm:
+    1. Find the first non-empty line in search and strip it
+    2. Search for that stripped content in the file
+    3. For each potential match, verify all lines match when stripped
+    4. Return matches with their positions and the actual matched text
+
+    Args:
+        search: The search string from the EDIT action
+        content: The file content to search in
+
+    Returns:
+        List of (start_pos, end_pos, matched_text) tuples for each match found.
+        Positions are byte offsets into content.
+    """
+    search_lines = search.split("\n")
+    content_lines = content.split("\n")
+
+    # Find first non-empty line in search for anchoring
+    anchor_stripped = None
+    anchor_idx = 0
+    for idx, line in enumerate(search_lines):
+        stripped = line.strip()
+        if stripped:
+            anchor_stripped = stripped
+            anchor_idx = idx
+            break
+
+    if anchor_stripped is None:
+        return []
+
+    # Build list of stripped search lines for comparison
+    search_stripped = [line.strip() for line in search_lines]
+
+    matches = []
+
+    # Search for anchor line in content
+    for i, content_line in enumerate(content_lines):
+        content_line_stripped = content_line.strip()
+
+        # Check if this line matches our anchor (accounting for trailing ws)
+        if content_line_stripped != anchor_stripped:
+            continue
+
+        # Potential match - calculate where the full block would start
+        start_line = i - anchor_idx
+        if start_line < 0:
+            continue
+
+        # Check if we have enough lines
+        end_line = start_line + len(search_lines)
+        if end_line > len(content_lines):
+            continue
+
+        # Verify all lines match when stripped
+        match = True
+        for j, search_line_stripped in enumerate(search_stripped):
+            content_idx = start_line + j
+            content_stripped = content_lines[content_idx].strip()
+
+            # Both should be empty or both should have same stripped content
+            # Also handle trailing whitespace flexibility
+            if search_line_stripped.rstrip() != content_stripped.rstrip():
+                match = False
+                break
+
+        if match:
+            # Calculate byte positions
+            # Sum lengths of all lines before start_line, plus newlines
+            start_pos = sum(len(content_lines[k]) + 1 for k in range(start_line))
+
+            # Calculate end position (end of the last matched line)
+            matched_lines = content_lines[start_line:end_line]
+            matched_text = "\n".join(matched_lines)
+
+            # End position is start + length of matched text
+            end_pos = start_pos + len(matched_text)
+
+            matches.append((start_pos, end_pos, matched_text))
+
+    return matches
+
+
+def _adjust_replacement_indent(replacement: str, search: str, matched_text: str) -> str:
+    """Adjust replacement indentation to match the target file's style.
+
+    When we match with flexible indentation, the replacement content needs
+    its indentation adjusted to fit naturally into the target file.
+
+    Args:
+        replacement: The replacement text from the EDIT action
+        search: The original search text (to determine agent's indent baseline)
+        matched_text: The actual text that was matched in the file
+
+    Returns:
+        Replacement text with indentation adjusted to match the file's style
+    """
+    search_lines = search.split("\n")
+    matched_lines = matched_text.split("\n")
+    replacement_lines = replacement.split("\n")
+
+    def get_base_indent_info(lines: list[str]) -> tuple[int, str, int]:
+        """Get base indentation info from first non-empty line.
+
+        Returns:
+            (indent_in_spaces, indent_char, raw_char_count)
+            - indent_in_spaces: equivalent space count (tabs count as 4)
+            - indent_char: '\t' if tabs used, ' ' otherwise
+            - raw_char_count: actual character count of leading whitespace
+        """
+        for line in lines:
+            stripped = line.lstrip()
+            if stripped:
+                leading = line[: len(line) - len(stripped)]
+                indent_char = "\t" if "\t" in leading else " "
+                # Calculate equivalent spaces (tabs = 4 spaces each)
+                indent_in_spaces = leading.count("\t") * 4 + leading.count(" ")
+                return indent_in_spaces, indent_char, len(leading)
+        return 0, " ", 0
+
+    search_base_indent, _, _ = get_base_indent_info(search_lines)
+    target_base_indent, target_indent_char, _ = get_base_indent_info(matched_lines)
+    replacement_base_indent, _, _ = get_base_indent_info(replacement_lines)
+
+    # Calculate the indent adjustment needed (in equivalent spaces)
+    # Heuristic: if replacement base indent matches search base indent,
+    # assume agent wrote replacement relative to search context
+    if replacement_base_indent == search_base_indent:
+        indent_delta = target_base_indent - search_base_indent
+    else:
+        # Agent used different indent in replacement - shift to match target
+        indent_delta = target_base_indent - replacement_base_indent
+
+    # Adjust each line in replacement
+    adjusted = []
+    for line in replacement_lines:
+        stripped = line.lstrip()
+        if not stripped:
+            # Preserve empty lines (but strip any whitespace for cleanliness)
+            adjusted.append("")
+        else:
+            # Calculate current indent in equivalent spaces
+            current_leading = line[: len(line) - len(stripped)]
+            current_indent = current_leading.count("\t") * 4 + current_leading.count(
+                " "
+            )
+            new_indent = max(0, current_indent + indent_delta)
+
+            # Use target indent style
+            if target_indent_char == "\t":
+                # Convert to tabs (4 spaces per tab)
+                tabs = new_indent // 4
+                spaces = new_indent % 4
+                new_leading = "\t" * tabs + " " * spaces
+            else:
+                new_leading = " " * new_indent
+
+            # Preserve trailing whitespace from original replacement
+            trailing = (
+                line[len(line) - len(line.rstrip()) :] if line.rstrip() != line else ""
+            )
+            adjusted.append(new_leading + stripped + trailing)
+
+    return "\n".join(adjusted)
+
+
 def apply_optimistic_file_actions(
     agent: Any,
     llm_response: LLMResponse,
@@ -360,26 +534,39 @@ def apply_optimistic_file_actions(
             except FileNotFoundError:
                 raise ResponseParseError(f"File not found for EDIT: {path}")
 
-            # Try exact match first
+            # Matching strategy (try in order, stop at first success):
+            # 1. Exact match
+            # 2. Trailing whitespace flexible match
+            # 3. Indent-flexible match (different absolute indentation)
+
+            match_mode = "exact"
             count = existing_content.count(action.search)
-            use_normalized = False
+            indent_matches: list[tuple[int, int, str]] = []
 
             if count == 0:
-                # Exact match failed - try normalized matching (flexible trailing whitespace)
+                # Exact match failed - try trailing whitespace flexible matching
                 pattern = _build_trailing_ws_pattern(action.search)
-                matches = list(pattern.finditer(existing_content))
-                count = len(matches)
-                use_normalized = True
+                regex_matches = list(pattern.finditer(existing_content))
+                count = len(regex_matches)
+                match_mode = "trailing_ws"
 
                 if count == 0:
-                    search_preview = (
-                        action.search[:100] + "..."
-                        if len(action.search) > 100
-                        else action.search
+                    # Trailing ws match failed - try indent-flexible matching
+                    indent_matches = _find_indent_flexible_match(
+                        action.search, existing_content
                     )
-                    raise ResponseParseError(
-                        f"Search string not found in {path}:\n{search_preview}"
-                    )
+                    count = len(indent_matches)
+                    match_mode = "indent_flexible"
+
+                    if count == 0:
+                        search_preview = (
+                            action.search[:100] + "..."
+                            if len(action.search) > 100
+                            else action.search
+                        )
+                        raise ResponseParseError(
+                            f"Search string not found in {path}:\n{search_preview}"
+                        )
 
             if count > 1 and not action.match_all:
                 raise ResponseParseError(
@@ -388,11 +575,36 @@ def apply_optimistic_file_actions(
                 )
 
             # Apply replacement based on matching mode
-            if use_normalized:
-                # Normalized matching - use regex replacement
+            if match_mode == "indent_flexible":
+                # Indent-flexible matching - need to adjust replacement indentation
+                # Process matches in reverse order to preserve positions
+                matches_to_apply = (
+                    indent_matches if action.match_all else indent_matches[:1]
+                )
+                new_content = existing_content
+
+                for start_pos, end_pos, matched_text in reversed(matches_to_apply):
+                    # Adjust replacement content's indentation to match the file
+                    adjusted_content = _adjust_replacement_indent(
+                        action.content, action.search, matched_text
+                    )
+
+                    if action.operation == "insert-after":
+                        replacement = matched_text + adjusted_content
+                    elif action.operation == "insert-before":
+                        replacement = adjusted_content + matched_text
+                    else:  # "replace"
+                        replacement = adjusted_content
+
+                    new_content = (
+                        new_content[:start_pos] + replacement + new_content[end_pos:]
+                    )
+
+            elif match_mode == "trailing_ws":
+                # Trailing whitespace flexible matching - use regex replacement
                 pattern = _build_trailing_ws_pattern(action.search)
 
-                def make_replacement(match):
+                def make_replacement(match: re.Match) -> str:
                     matched_text = match.group(0)
                     if action.operation == "insert-after":
                         return matched_text + action.content

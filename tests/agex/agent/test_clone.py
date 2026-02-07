@@ -257,6 +257,17 @@ class TestPolicyCopy:
         assert copy_ns.include == ["sqrt", "floor"]
         assert copy_ns.module is math
 
+    def test_copy_preserves_host_fs_and_network_access(self):
+        """Copied namespaces preserve host_fs_access and network_access."""
+        source = Agent(name="source")
+        source.module(math, host_fs_access=True, network_access=True)
+
+        copy = source._policy.copy()
+
+        copy_ns = copy.namespaces["math"]
+        assert copy_ns.host_fs_access is True
+        assert copy_ns.network_access is True
+
     def test_copy_configure_dict_independent(self):
         """Configure dict in namespace is copied, not shared."""
         from agex import MemberSpec
