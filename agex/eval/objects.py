@@ -5,6 +5,10 @@ Internal representation of user-defined objects (dataclasses).
 from dataclasses import dataclass, field
 from typing import Any, Literal, Union
 
+from kvit import Namespaced, Store
+
+from agex.state import get_root
+
 from .user_errors import AgexAttributeError, AgexTypeError
 
 
@@ -516,7 +520,7 @@ class AgexVFSModule:
     """A module object backed by a Namespaced VFS state."""
 
     name: str
-    state: Any  # Namespaced state (runtime only, None when detached)
+    state: Store | None  # Namespaced state (runtime only, None when detached)
     agent_fingerprint: str | None = None
     agent_name: str | None = None  # Name of the agent (for fallback resolution)
     session: str = "default"
@@ -554,7 +558,6 @@ class AgexVFSModule:
         import warnings
 
         from agex.agent.base import get_agent_by_name, resolve_agent
-        from agex.state import Namespaced
 
         # Resolve the agent by fingerprint, with fallback by name
         agent = None
@@ -580,8 +583,8 @@ class AgexVFSModule:
                 )
 
         # Get the agent's committed state for the specific session
-        # Note: This creates a new Versioned view on the shared store.
-        base = agent.state(session=self.session).base_store
+        # Note: This creates a new Staged view on the shared store.
+        base = get_root(agent.state(session=self.session))
 
         # Reconstruct the namespace hierarchy: modules/<name>
         root_ns = Namespaced(base, "modules")

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from types import ModuleType
 
 import pytest
+from kvit import Live, Namespaced, Staged, Versioned
 
 from agex import events
 from agex.agent import Agent, MemberSpec
@@ -19,7 +20,8 @@ from agex.agent.policy.describe import (
 )
 from agex.llm import Dummy
 from agex.llm.core import LLMResponse
-from agex.state import Namespaced, Versioned, connect_state
+from agex.state import _agex_decoder, _agex_encoder, connect_state
+from agex.state.kv import Memory
 from tests.agex import test_module
 
 
@@ -152,7 +154,7 @@ def test_helper_recap_skips_unpicklable_markers():
         original_exception="cannot pickle",
     )
     state.set("marker_agent/bad", marker)
-    state.snapshot()
+    state.commit()
 
     assert marker_task(session="test_session") == "ok"
 
@@ -625,7 +627,9 @@ def test_dual_decorator_namespace_setting():
 def test_namespaced_state_isolation():
     """Test that Namespaced state provides proper isolation."""
     # Create shared state
-    main_state = Versioned()
+    main_state = Staged(
+        Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder
+    )
 
     # Create namespaced views
     namespace_a = Namespaced(main_state, "agent_a")
@@ -689,10 +693,10 @@ def test_task_input_dataclass_pickling():
     assert unpickled_inputs.message == "hello"
     assert unpickled_inputs.value == 42
 
-    # Test state snapshotting (which internally pickles all state data)
-    snapshot_hash = state.snapshot().commit_hash
-    assert snapshot_hash is not None
-    assert len(snapshot_hash) > 0
+    # Test state committing (which internally pickles all state data)
+    commit_hash = state.commit().commit
+    assert commit_hash is not None
+    assert len(commit_hash) > 0
 
 
 def test_unserializable_object_in_state_is_handled_gracefully():
@@ -738,7 +742,7 @@ def test_unserializable_object_in_state_is_handled_gracefully():
     # Pre-populate the state with a serializable object.
     state = agent._host.resolve_state(config, "test_session")
     state.set("my_object", {"a": 1})  # No longer namespaced
-    state.snapshot()
+    state.commit()
 
     # Run the task. This will mutate my_object and then try to snapshot.
     # It should NOT raise a PicklingError - a marker is created instead.
@@ -755,12 +759,10 @@ def test_unserializable_object_in_state_is_handled_gracefully():
     with pytest.raises(UnpicklableVariableError) as exc_info:
         state.get("my_object")  # No longer namespaced
 
-    # Verify the error message is helpful
+    # Verify the marker contains useful information
     error_msg = str(exc_info.value)
-    assert "my_object" in error_msg
-    assert "not available" in error_msg
-    assert "unpicklable" in error_msg
-    assert "Solutions:" in error_msg
+    assert "dict" in error_msg  # type_name of the original object
+    assert "cannot be pickled" in error_msg  # original exception info
 
 
 def test_shallow_validation_on_large_input_list():
@@ -1300,7 +1302,6 @@ def test_vfs_append_integration():
     """Test that mode='append' in <FILE> tag correctly appends to existing files."""
     from agex.agent.loop.common import apply_optimistic_file_actions
     from agex.llm.core import ResponseBuilder, TokenChunk
-    from agex.state import Live
 
     llm = Dummy(provider="dummy")
     agent = Agent(llm=llm)

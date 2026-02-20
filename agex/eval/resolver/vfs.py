@@ -1,12 +1,14 @@
 from typing import TYPE_CHECKING, Any
 
+from kvit import Namespaced, Store
+
 from agex.eval.error import EvalError
+from agex.state import get_root
 
 from .base import BaseFinder, BaseLoader, ModuleSpec
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
-    from agex.state.core import State
 
 
 class VFSLoader(BaseLoader):
@@ -16,13 +18,12 @@ class VFSLoader(BaseLoader):
         self.agent = agent
         self.session = session
 
-    def load(self, spec: ModuleSpec, state: "State") -> Any:
+    def load(self, spec: ModuleSpec, state: Store) -> Any:
         from agex.eval.core import evaluate_program
         from agex.eval.objects import AgexModule, AgexVFSModule
-        from agex.state import Namespaced
 
-        # Get the underlying base store for namespacing
-        base = state.base_store
+        # Get the underlying root store for namespacing
+        base = get_root(state)
 
         # Create isolated namespaced state: modules/<name>
         root_ns = Namespaced(base, "modules")
@@ -38,8 +39,7 @@ class VFSLoader(BaseLoader):
         # - Other values (UserFunctions, etc.): Remove them so code re-execution
         #   creates fresh instances.
         for key in list(module_state.keys()):
-            # Use peek() to avoid UnpicklableVariableError for stale markers
-            val = module_state.peek(key)
+            val = module_state.get(key)
             # Keep attached (fresh) VFS modules - they were just linked in this session
             if isinstance(val, AgexVFSModule) and val.state is not None:
                 continue

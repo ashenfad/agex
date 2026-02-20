@@ -1,14 +1,16 @@
 from typing import TYPE_CHECKING, Any
 
+from kvit import Store
+
 from agex.eval.error import EvalError
 from agex.eval.objects import AgexAttributeError, AgexInstance, AgexModule, AgexObject
+from agex.state import get_root
 
 from .policy import PolicyFinder
 from .vfs import VFSFinder
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
-    from agex.state.core import State
 
 
 class Resolver:
@@ -25,7 +27,7 @@ class Resolver:
         self.finders = [self.policy_finder, self.vfs_finder]
 
     # --- Name Resolution ---
-    def resolve_name(self, name: str, state: "State", node) -> Any:
+    def resolve_name(self, name: str, state: Store, node) -> Any:
         from agex.eval.builtins import BUILTINS
         from agex.eval.user_errors import AgexNameError
 
@@ -127,14 +129,14 @@ class Resolver:
         )
 
     # --- Import Resolution ---
-    def resolve_module(self, module_name: str, state: "State", node) -> Any:
+    def resolve_module(self, module_name: str, state: Store, node) -> Any:
         """Resolve a module name to a module object using finders and loaders."""
         # 1. Access or initialize the shared module cache for this session
         cache_key = f"__agex_modules__{self.session}"
-        module_cache = state.base_store.get(cache_key)
+        module_cache = get_root(state).get(cache_key)
         if module_cache is None:
             module_cache = {}
-            state.base_store.set(cache_key, module_cache)
+            get_root(state).set(cache_key, module_cache)
 
         # 2. Iteratively resolve segments to handle packages
         parts = module_name.split(".")
@@ -179,7 +181,7 @@ class Resolver:
 
             # Update cache and parent linkage
             module_cache[current_full_name] = next_mod
-            state.base_store.set(cache_key, module_cache)
+            get_root(state).set(cache_key, module_cache)
 
             if current_mod and hasattr(current_mod, "setattr"):
                 current_mod.setattr(part, next_mod)
@@ -189,7 +191,7 @@ class Resolver:
         return current_mod
 
     def import_from(
-        self, module_name: str, member_name: str, state: "State", node
+        self, module_name: str, member_name: str, state: Store, node
     ) -> Any:
         """Handles 'from <module> import <name>'."""
         from types import ModuleType

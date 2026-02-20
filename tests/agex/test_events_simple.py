@@ -4,6 +4,8 @@ Simple, focused tests for the core event system.
 Focus on getting basic functionality working before complex scenarios.
 """
 
+from kvit import Staged, Versioned
+
 from agex import Agent, clear_agent_registry
 from agex.agent.events import (
     ActionEvent,
@@ -13,7 +15,12 @@ from agex.agent.events import (
 )
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
-from agex.state import Versioned, connect_state, events
+from agex.state import _agex_decoder, _agex_encoder, connect_state, events
+from agex.state.kv import Memory
+
+
+def _make_state():
+    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class TestEventsSimple:
@@ -28,7 +35,7 @@ class TestEventsSimple:
         from agex.eval.builtins import _print_stateful
         from agex.state import events
 
-        state = Versioned()
+        state = _make_state()
         state.set("__event_log__", [])
 
         _print_stateful("Test message", state=state, agent_name="test_agent")

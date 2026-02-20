@@ -1,7 +1,7 @@
 import pytest
+from kvit import Live
 
 from agex.fs.virtual import VirtualFS
-from agex.state import Live
 
 
 def test_vfs_directory_behavior():

@@ -1,9 +1,10 @@
 """Tests for event log management."""
 
 import pytest
+from kvit import store as kvit_store
 
 from agex.agent.events import ActionEvent, SummaryEvent
-from agex.state import Versioned
+from agex.state import _agex_decoder, _agex_encoder
 from agex.state.log import (
     add_event_to_log,
     get_events_from_log,
@@ -11,9 +12,13 @@ from agex.state.log import (
 )
 
 
+def _make_state():
+    return kvit_store(encoder=_agex_encoder, decoder=_agex_decoder)
+
+
 def test_add_and_get_events():
     """Test basic event log operations."""
-    state = Versioned()
+    state = _make_state()
 
     # Add some events
     event1 = ActionEvent(agent_name="test", thinking="thought 1", code="x = 1")
@@ -30,7 +35,7 @@ def test_add_and_get_events():
 
 def test_replace_oldest_events_with_summary():
     """Test replacing oldest events with a summary."""
-    state = Versioned()
+    state = _make_state()
 
     # Add 5 events
     for i in range(5):
@@ -69,7 +74,7 @@ def test_replace_oldest_events_with_summary():
 
 def test_replace_oldest_validates_count():
     """Test that replace_oldest_events_with_summary validates count parameter."""
-    state = Versioned()
+    state = _make_state()
 
     # Add 3 events
     for i in range(3):
@@ -99,7 +104,7 @@ def test_replace_oldest_validates_count():
 
 def test_replace_oldest_edge_cases():
     """Test edge cases for replace_oldest_events_with_summary."""
-    state = Versioned()
+    state = _make_state()
 
     # Add 3 events
     for i in range(3):
@@ -139,7 +144,7 @@ def test_replace_oldest_edge_cases():
 
 def test_replace_preserves_event_storage():
     """Test that replacing events reuses existing event storage (no duplication)."""
-    state = Versioned()
+    state = _make_state()
 
     # Add events
     for i in range(5):
@@ -172,7 +177,7 @@ def test_replace_preserves_event_storage():
 
 def test_cascading_summaries():
     """Test that summaries can themselves be summarized."""
-    state = Versioned()
+    state = _make_state()
 
     # Add 10 events
     for i in range(10):

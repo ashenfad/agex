@@ -1,9 +1,10 @@
 import pytest
+from kvit import Staged, Versioned
 
 from agex.agent import Agent, MemberSpec
 from agex.render.view import view
-from agex.state import kv
-from agex.state.versioned import Versioned
+from agex.state import _agex_decoder, _agex_encoder
+from agex.state.kv import Memory
 
 
 def test_view_agent_default():
@@ -76,24 +77,28 @@ def test_view_agent_full():
     assert "..." in output
 
 
+def _make_state():
+    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
+
+
 def test_view_full():
-    store = Versioned(kv.Memory())
+    store = _make_state()
     store.set("x", 1)
-    store.snapshot()
+    store.commit()
     store.set("y", "hello")
-    store.snapshot()
+    store.commit()
 
     full_state = view(store, focus="full")
     assert full_state == {"x": 1, "y": "hello"}
 
 
 def test_view_recent_shows_last_commit_state_only():
-    store = Versioned(kv.Memory())
+    store = _make_state()
     store.set("x", 100)
-    store.snapshot()
+    store.commit()
 
     store.set("y", 200)
-    store.snapshot()
+    store.commit()
 
     recent_view = view(store, focus="recent")
     assert "y = 200" in recent_view
@@ -102,7 +107,7 @@ def test_view_recent_shows_last_commit_state_only():
 
 
 def test_view_raises_on_hot_storage():
-    store = Versioned(kv.Memory())
+    store = _make_state()
     store.set("x", 1)
 
     with pytest.raises(ValueError, match="uncommitted live changes"):
@@ -110,9 +115,9 @@ def test_view_raises_on_hot_storage():
 
 
 def test_view_recent_with_token_budgets():
-    store = Versioned(kv.Memory())
+    store = _make_state()
     store.set("y", "b" * 1000)
-    store.snapshot()
+    store.commit()
 
     recent_view_small = view(store, focus="recent", max_tokens=30)
     assert len(recent_view_small) < 200

@@ -1,9 +1,9 @@
 """Tests for VirtualFS core functionality."""
 
 import pytest
+from kvit import Live
 
 from agex.fs import VirtualFS
-from agex.state import Live
 
 
 class TestVirtualFSBasics:

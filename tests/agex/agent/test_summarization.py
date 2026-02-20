@@ -1,6 +1,7 @@
 """Tests for event log summarization."""
 
 import pytest
+from kvit import Namespaced, Staged, Versioned
 
 from agex import Agent, clear_agent_registry
 from agex.agent.events import ActionEvent, SummaryEvent, TaskStartEvent
@@ -9,8 +10,13 @@ from agex.agent.summarization import (
     maybe_summarize_event_log,
 )
 from agex.llm.dummy_client import Dummy
-from agex.state import Namespaced, Versioned
+from agex.state import _agex_decoder, _agex_encoder
+from agex.state.kv import Memory
 from agex.state.log import add_event_to_log, get_events_from_log
+
+
+def _make_state():
+    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class TestEventLogSummarization:
@@ -24,7 +30,7 @@ class TestEventLogSummarization:
         """Test that summarization doesn't run when not configured."""
         llm = Dummy()
         agent = Agent(name="test", llm=llm)  # No log_high_water_tokens
-        state = Versioned()
+        state = _make_state()
 
         # Add many events
         for i in range(10):
@@ -48,7 +54,7 @@ class TestEventLogSummarization:
             llm=llm,
             log_high_water_tokens=10000,  # Very high threshold
         )
-        state = Versioned()
+        state = _make_state()
 
         # Add a few events (well below threshold)
         for i in range(3):
@@ -79,7 +85,7 @@ class TestEventLogSummarization:
             log_high_water_tokens=100,  # Low threshold for testing
             log_low_water_tokens=50,
         )
-        state = Versioned()
+        state = _make_state()
 
         # Add events until we exceed threshold
         for i in range(10):
@@ -128,7 +134,7 @@ class TestEventLogSummarization:
         # Verify default is 50%
         assert agent.log_low_water_tokens == 50
 
-        state = Versioned()
+        state = _make_state()
 
         # Add events to exceed high water
         for i in range(10):
@@ -154,7 +160,7 @@ class TestEventLogSummarization:
             llm=llm,
             log_high_water_tokens=100,
         )
-        state = Versioned()
+        state = _make_state()
 
         # Add TaskStartEvent
         task_start = TaskStartEvent(
@@ -204,7 +210,7 @@ class TestEventLogSummarization:
             llm=llm,
             log_high_water_tokens=50,
         )
-        state = Versioned()
+        state = _make_state()
 
         # Add events to trigger summarization
         for i in range(5):
@@ -228,7 +234,7 @@ class TestEventLogSummarization:
             log_high_water_tokens=100,
             log_low_water_tokens=50,
         )
-        state = Versioned()
+        state = _make_state()
 
         # Add events and trigger first summarization
         for i in range(10):
@@ -300,10 +306,10 @@ class TestEventLogSummarization:
             log_high_water_tokens=100,
             log_low_water_tokens=50,
         )
-        state = Versioned()
+        state = _make_state()
 
         # Snapshot to create a commit
-        state.snapshot()
+        state.commit()
 
         # Add events to exceed threshold
         for i in range(10):
@@ -315,7 +321,7 @@ class TestEventLogSummarization:
             add_event_to_log(state, event)
 
         # Snapshot to commit events
-        state.snapshot()
+        state.commit()
         commit_before = state.current_commit
 
         # Run summarization
@@ -347,7 +353,7 @@ class TestEventLogSummarization:
         )
 
         # Create nested namespaced state (simulating hierarchical agents)
-        state = Versioned()
+        state = _make_state()
         parent_state = Namespaced(state, "parent")
         ns_state = Namespaced(parent_state, "sub_agent")
 

@@ -1,11 +1,11 @@
 import numpy as np
+from kvit import Live, Staged, Versioned
 
 from agex.agent import Agent, clear_agent_registry
 from agex.eval.core import evaluate_program
 from agex.render.view import view
+from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Memory
-from agex.state.live import Live
-from agex.state.versioned import Versioned
 
 
 def test_numpy_live_ops():
@@ -40,11 +40,11 @@ result_mul = (arr1 + arr2) * 10
 """
     # 3. Initialize a versioned state with an in-memory store
     store = Memory()
-    state = Versioned(store)
+    state = Staged(Versioned(store), encoder=_agex_encoder, decoder=_agex_decoder)
 
     # 4. Execute the program and save the state
     evaluate_program(program, agent, state)
-    state.snapshot()
+    state.commit()
 
     # 5. Check the operator overloading results
     result = state.get("result_mul")
@@ -75,15 +75,16 @@ def test_numpy_state_continuity():
     agent = Agent()
     agent.module(np, name="np")
     store = Memory()
-    state1 = Versioned(store)
+    state1 = Staged(Versioned(store), encoder=_agex_encoder, decoder=_agex_decoder)
 
-    # 2. Run a program that just imports the module, and snapshot the state
+    # 2. Run a program that just imports the module, and commit the state
     evaluate_program("import np", agent, state1)
-    commit_hash = state1.snapshot().commit_hash
+    commit_result = state1.commit()
+    commit_hash = commit_result.commit
     assert commit_hash is not None
 
-    # 3. Create a new state from the snapshot and run code that uses the module
-    state2 = Versioned(store, commit_hash=commit_hash)
+    # 3. Create a new state from the commit and run code that uses the module
+    state2 = state1.checkout(commit_hash)
     program = "result = np.array([1, 2, 3]) + 10"
     evaluate_program(program, agent, state2)
 

@@ -7,28 +7,27 @@ using a reference-based approach that avoids O(N) storage growth.
 
 from typing import Callable
 
+from kvit import Namespaced, Staged
+
 from agex.agent.events import BaseEvent, Event, SummaryEvent
-from agex.state.core import State
-from agex.state.versioned import Versioned
+from agex.state import get_root
 
 
 def add_event_to_log(
-    state: State, event: BaseEvent, on_event: Callable[[BaseEvent], None] | None = None
+    state, event: BaseEvent, on_event: Callable[[BaseEvent], None] | None = None
 ) -> None:
     """Add an event to the log using references for O(1) storage per event."""
     # If the root state is versioned, stamp the current commit hash on the event
-    root_state = state.base_store
-    if isinstance(root_state, Versioned) and root_state.current_commit:
+    root_state = get_root(state)
+    if isinstance(root_state, Staged) and root_state.current_commit:
         event.commit_hash = root_state.current_commit
 
     # Set the full_namespace based on the state context
-    from agex.state.namespaced import Namespaced
-
     if isinstance(state, Namespaced):
         # Use the full namespace path from the Namespaced state
         event.full_namespace = state.namespace
     else:
-        # For root-level states (Versioned, Live), full_namespace equals agent_name
+        # For root-level states (Staged, Live), full_namespace equals agent_name
         event.full_namespace = event.agent_name
 
     # Call the event handler first, if provided
@@ -59,7 +58,7 @@ def add_event_to_log(
     state.set("__event_log__", new_refs)
 
 
-def get_events_from_log(state: State) -> list[Event]:
+def get_events_from_log(state) -> list[Event]:
     """Get events from the state."""
     event_refs = state.get("__event_log__", [])
     # It's possible for events to be added to the log but not yet committed
@@ -68,7 +67,7 @@ def get_events_from_log(state: State) -> list[Event]:
 
 
 def replace_oldest_events_with_summary(
-    state: State,
+    state,
     count: int,
     summary: SummaryEvent,
 ) -> None:
@@ -102,18 +101,16 @@ def replace_oldest_events_with_summary(
 
     # Set commit_hash and full_namespace on summary event (same as add_event_to_log)
     # If the root state is versioned, stamp the current commit hash on the event
-    root_state = state.base_store
-    if isinstance(root_state, Versioned) and root_state.current_commit:
+    root_state = get_root(state)
+    if isinstance(root_state, Staged) and root_state.current_commit:
         summary.commit_hash = root_state.current_commit
 
     # Set the full_namespace based on the state context
-    from agex.state.namespaced import Namespaced
-
     if isinstance(state, Namespaced):
         # Use the full namespace path from the Namespaced state
         summary.full_namespace = state.namespace
     else:
-        # For root-level states (Versioned, Live), full_namespace equals agent_name
+        # For root-level states (Staged, Live), full_namespace equals agent_name
         summary.full_namespace = summary.agent_name
 
     # Generate unique timestamp-based key for summary

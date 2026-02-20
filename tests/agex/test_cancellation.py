@@ -3,23 +3,24 @@
 import threading
 
 import pytest
+from kvit import Staged
 
 from agex import Agent, TaskCancelled, connect_state, events
 from agex.llm import Dummy
 from agex.llm.core import LLMResponse
-from agex.state import Versioned
+from agex.state import raw_get, raw_set
 
 
-def _set_cancel_sentinel(state: Versioned, task_name: str) -> None:
+def _set_cancel_sentinel(state: Staged, task_name: str) -> None:
     """Write cancellation sentinel directly to KV store (like cancel() does)."""
     cancel_key = f"__agex_cancel__{task_name}"
-    state.set_raw(cancel_key, True)
+    raw_set(state, cancel_key, True)
 
 
-def _get_cancel_sentinel(state: Versioned, task_name: str) -> bool | None:
+def _get_cancel_sentinel(state: Staged, task_name: str) -> bool | None:
     """Read cancellation sentinel directly from KV store."""
     cancel_key = f"__agex_cancel__{task_name}"
-    return state.get_raw(cancel_key)
+    return raw_get(state, cancel_key)
 
 
 class TestTaskCancellation:

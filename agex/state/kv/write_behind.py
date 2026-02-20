@@ -2,7 +2,7 @@ import queue
 import threading
 from typing import Iterable, Mapping
 
-from agex.state.kv.base import KVStore
+from kvit.kv import KVStore
 
 
 class WriteBehind(KVStore):

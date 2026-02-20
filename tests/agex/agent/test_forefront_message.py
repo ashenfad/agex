@@ -74,7 +74,7 @@ def test_forefront_logic_thresholds():
     """Unit test for the threshold logic."""
     agent = Agent(name="tester", max_iterations=10)
     # Mock state
-    from agex.state import Live, Namespaced
+    from kvit import Live, Namespaced
 
     state = Namespaced(Live(), "test")
 
@@ -98,8 +98,9 @@ def test_forefront_user_functions():
     """Test that user defined functions appear in the system note."""
     from unittest.mock import Mock
 
+    from kvit import Live, Namespaced
+
     from agex.eval.functions import UserFunction
-    from agex.state import Live, Namespaced
 
     agent = Agent(name="tester", max_iterations=10)
     state = Namespaced(Live(), "test_namespace")

@@ -1,8 +1,9 @@
 import numpy as np
+from kvit import Staged, Versioned
 
 from agex.agent import Agent
 from agex.eval.core import evaluate_program
-from agex.state import Versioned
+from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Memory
 
 
@@ -15,7 +16,7 @@ def test_class_serialization_with_closures():
     agent.module(np, name="np")
 
     store = Memory()
-    state = Versioned(store)
+    state = Staged(Versioned(store), encoder=_agex_encoder, decoder=_agex_decoder)
 
     program = """
 import np
@@ -48,7 +49,7 @@ stats_func = processor.get_stats()
 """
 
     evaluate_program(program, agent, state)
-    state.snapshot()
+    state.commit()
 
     # After the snapshot, retrieve the function.
     stats_func = state.get("stats_func")

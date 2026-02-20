@@ -9,11 +9,12 @@ from .fingerprint import compute_agent_fingerprint_from_policy
 from .policy.policy import AgentPolicy
 
 if TYPE_CHECKING:
+    from kvit import Store
+
     from ..fs.aware import AgentAwareFS
     from ..fs.config import FSConfig
     from ..host import Host
     from ..host.dependencies import Dependencies
-    from ..state import State
     from ..state.config import StateConfig
 
 # Global registry mapping fingerprints to agents
@@ -333,7 +334,7 @@ class BaseAgent:
 
         self._host.warmup(deps)
 
-    def state(self, session: str = "default") -> "State":
+    def state(self, session: str = "default") -> "Store":
         """
         Get the state object for a session.
 

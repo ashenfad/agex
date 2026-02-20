@@ -2,6 +2,8 @@ import ast
 from abc import ABC, abstractmethod
 from typing import Any
 
+from kvit import Store
+
 from agex.agent.datatypes import _AgentExit
 from agex.eval.builtins import dataclass
 from agex.eval.functions import UserFunction, _ReturnException
@@ -16,7 +18,6 @@ from agex.eval.user_errors import (
     AgexTypeError,
     AgexValueError,
 )
-from agex.state import State
 from agex.state.scoped import Scoped
 
 from .base import BaseEvaluator
@@ -128,11 +129,11 @@ class AssignmentTarget(ABC):
         """Gets the current value of the target."""
         ...
 
-    def set_value(self, value: Any, state: State):
+    def set_value(self, value: Any, state: "Store"):
         """Sets a new value for the target.
 
         Unpicklable objects are allowed - they will be handled by the marker
-        system at snapshot time for Versioned state.
+        system at commit time for Staged state.
         """
         self._do_set_value(value)
 

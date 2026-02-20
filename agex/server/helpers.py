@@ -11,13 +11,14 @@ import json
 from typing import Any
 
 import cloudpickle
+from kvit import Store
 
 
 def execute_worker(
     task_func: Any,
     args: list[Any],
     kwargs: dict[str, Any],
-    state: Any | None,
+    state: Store | None,
     queue: Any,
     loop: Any,
     finished_sentinel: Any,

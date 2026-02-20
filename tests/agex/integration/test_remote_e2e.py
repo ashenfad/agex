@@ -153,11 +153,12 @@ class TestClientServerProtocol:
 
     def test_state_uri_schemes(self, tmp_path):
         """Test that disk:// URIs work correctly."""
+        from kvit import Staged
+
         from agex.server.state import resolve_state_uri
-        from agex.state import Versioned
 
         state = resolve_state_uri("disk://test_session", base_path=str(tmp_path))
-        assert isinstance(state, Versioned)
+        assert isinstance(state, Staged)
 
 
 class TestSecurityValidation:

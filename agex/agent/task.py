@@ -9,12 +9,15 @@ import inspect
 from dataclasses import make_dataclass
 from typing import Any, Callable
 
+from kvit import Staged
+
 from agex.agent.base import BaseAgent
 from agex.agent.datatypes import TaskClarify, TaskFail
 from agex.agent.loop import TaskLoopMixin
 from agex.agent.utils import is_function_body_empty
 from agex.eval.validation import validate_with_sampling
 from agex.host import Local
+from agex.state import raw_set
 
 # Global registry for dynamically created input dataclasses
 # This allows pickle to find them by module.classname lookup
@@ -421,8 +424,6 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 if agent is None:
                     raise RuntimeError("TaskWrapper has no associated agent")
 
-                from agex.state import Versioned
-
                 state = agent.state(session)
                 if state is None:
                     raise RuntimeError(
@@ -435,8 +436,8 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
                 # Write directly to underlying KV store for immediate visibility
                 # (bypasses versioned commits so running tasks can see it)
-                if isinstance(state, Versioned):
-                    state.set_raw(cancel_key, True)
+                if isinstance(state, Staged):
+                    raw_set(state, cancel_key, True)
                 else:
                     # Live state - just set normally
                     state.set(cancel_key, True)

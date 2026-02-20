@@ -14,7 +14,7 @@ state like event logs).
 import time
 from typing import TYPE_CHECKING, Iterable, Mapping
 
-from agex.state.kv.base import KVStore
+from kvit.kv import KVStore
 
 if TYPE_CHECKING:
     import modal

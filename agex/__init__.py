@@ -20,7 +20,7 @@ from .llm import LLM, connect_llm
 from .render.capabilities import summarize_capabilities
 from .render.token_count import system_token_count
 from .render.view import view
-from .state import GCVersioned, Live, Namespaced, Versioned, connect_state, events
+from .state import GCVersioned, Live, Namespaced, Staged, connect_state, events
 
 __all__ = [
     # Core Classes
@@ -31,7 +31,7 @@ __all__ = [
     "connect_host",
     # State Management
     "connect_state",
-    "Versioned",
+    "Staged",
     "GCVersioned",
     "Live",
     "Namespaced",

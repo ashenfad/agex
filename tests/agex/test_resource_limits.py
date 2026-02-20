@@ -363,10 +363,11 @@ class TestAgentIntegration:
 
     def test_memory_error_propagates_through_eval(self):
         """Test that MemoryError from limit propagates through eval sandbox."""
+        from kvit import Live
+
         from agex import Agent, connect_llm
         from agex.eval.core import evaluate_program
         from agex.eval.error import EvalError
-        from agex.state import Live
 
         agent = Agent(
             llm=connect_llm(provider="dummy"),

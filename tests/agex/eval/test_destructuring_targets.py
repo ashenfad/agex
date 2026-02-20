@@ -1,6 +1,13 @@
+from kvit import Live, Staged, Versioned
+
 from agex import Agent
 from agex.eval.core import evaluate_program
-from agex.state import Live, Versioned
+from agex.state import _agex_decoder, _agex_encoder
+from agex.state.kv import Memory
+
+
+def _make_state():
+    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 def test_tuple_to_dict_keys_live_state():
@@ -47,7 +54,7 @@ def test_nested_destructuring_mixed_targets_live_state():
 
 def test_tuple_to_dict_keys_versioned_state_pickle_safety():
     agent = Agent()
-    s = Versioned()
+    s = _make_state()
     # Non-picklable placeholder (open file handle) used transiently
     evaluate_program("state = {}", agent, s)
     # This should raise due to Versioned pickle enforcement when assigning file handle

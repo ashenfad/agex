@@ -1,10 +1,11 @@
 from typing import TYPE_CHECKING, Any
 
+from kvit import Store
+
 from .base import BaseFinder, BaseLoader, ModuleSpec
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
-    from agex.state.core import State
 
 
 class PolicyLoader(BaseLoader):
@@ -13,7 +14,7 @@ class PolicyLoader(BaseLoader):
     def __init__(self, agent: "BaseAgent"):
         self.agent = agent
 
-    def load(self, spec: ModuleSpec, state: "State") -> Any:
+    def load(self, spec: ModuleSpec, state: Store) -> Any:
         from agex.eval.objects import AgexModule
 
         return AgexModule(name=spec.name, agent_fingerprint=self.agent.fingerprint)

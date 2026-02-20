@@ -1,9 +1,15 @@
 """Tests for VirtualFS bulk operations (write_many, remove_many)."""
 
 import pytest
+from kvit import Live, Staged, Versioned
 
 from agex.fs import VirtualFS
-from agex.state import Live, Versioned
+from agex.state import _agex_decoder, _agex_encoder
+from agex.state.kv import Memory
+
+
+def _make_state():
+    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class TestBulkOperations:
@@ -45,10 +51,10 @@ class TestBulkOperations:
 
     def test_write_many_with_versioned_state_snapshots(self):
         """Test that write_many creates a single snapshot with Versioned state."""
-        state = Versioned()
+        state = _make_state()
         vfs = VirtualFS(state)
 
-        initial_history_length = len(list(state.history()))
+        initial_history_length = len(list(state.versioned.history()))
 
         files = {
             "file1.txt": b"content 1",
@@ -59,7 +65,7 @@ class TestBulkOperations:
         vfs.write_many(files)
 
         # Should have created exactly one new commit (not 3)
-        new_history_length = len(list(state.history()))
+        new_history_length = len(list(state.versioned.history()))
         assert new_history_length == initial_history_length + 1
 
     def test_write_many_with_live_state_no_snapshot(self):
@@ -122,24 +128,24 @@ class TestBulkOperations:
 
     def test_remove_many_with_versioned_state_snapshots(self):
         """Test that remove_many creates a single snapshot with Versioned state."""
-        state = Versioned()
+        state = _make_state()
         vfs = VirtualFS(state)
 
         # Create files
         vfs.write("file1.txt", b"content 1")
-        state.snapshot()
+        state.commit()
         vfs.write("file2.txt", b"content 2")
-        state.snapshot()
+        state.commit()
         vfs.write("file3.txt", b"content 3")
-        state.snapshot()
+        state.commit()
 
-        commits_before = len(list(state.history()))
+        commits_before = len(list(state.versioned.history()))
 
         # Remove all three
         vfs.remove_many(["file1.txt", "file2.txt", "file3.txt"])
 
         # Should have created exactly one new commit (not 3)
-        commits_after = len(list(state.history()))
+        commits_after = len(list(state.versioned.history()))
         assert commits_after == commits_before + 1
 
     def test_remove_many_empty_list(self):

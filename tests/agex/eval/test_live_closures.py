@@ -1,6 +1,7 @@
+from kvit import Live, Staged, Versioned
+
+from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Memory
-from agex.state.live import Live
-from agex.state.versioned import Versioned
 from tests.agex.eval.helpers import eval_and_get_state
 
 
@@ -39,23 +40,24 @@ def get_x():
     return x
 """
     kv_store = Memory()
-    state = Versioned(kv_store)
+    state = Staged(Versioned(kv_store), encoder=_agex_encoder, decoder=_agex_decoder)
     eval_and_get_state(program1, state=state)
 
     # 2. Verify initial behavior
     result1 = eval_and_get_state("res = get_x()", state=state).get("res")
     assert result1 == 100
 
-    # 3. Update the closed-over variable and take a snapshot
+    # 3. Update the closed-over variable and commit
     eval_and_get_state("x = 200", state=state)
-    commit_hash = state.snapshot().commit_hash
+    commit_result = state.commit()
+    commit_hash = commit_result.commit
 
     # 4. Verify that the live function sees the update
     result2 = eval_and_get_state("res = get_x()", state=state).get("res")
     assert result2 == 200
 
-    # 5. Create a NEW versioned state from the snapshot
-    restored_state = Versioned(kv_store, commit_hash=commit_hash)
+    # 5. Create a NEW versioned state from the snapshot (checkout)
+    restored_state = state.checkout(commit_hash)
 
     # 6. Verify the restored function has the frozen value (200)
     result3 = eval_and_get_state("res = get_x()", state=restored_state).get("res")

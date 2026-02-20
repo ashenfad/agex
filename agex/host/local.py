@@ -7,12 +7,14 @@ Executes agent tasks in the current process using the agent's task loop.
 import os
 from typing import TYPE_CHECKING, Any, Callable
 
+from kvit import Live, Staged, Store, Versioned
+
 from .base import Host
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
-    from agex.state import State
     from agex.state.config import StateConfig
+    from agex.state.kv import KVStore
 
 
 class Local(Host):
@@ -29,7 +31,7 @@ class Local(Host):
     def __init__(self):
         # Per-agent session cache for memory-backed states
         # Key format: "{type}:{session}"
-        self._session_cache: dict[str, "State"] = {}
+        self._session_cache: dict[str, Store] = {}
 
     def dump_config(self) -> dict[str, Any]:
         """Serialize local host configuration."""
@@ -51,9 +53,8 @@ class Local(Host):
 
     def resolve_state(
         self, config: "StateConfig | None", session: str, fingerprint: str = ""
-    ) -> "State":
+    ) -> Store:
         """Create or retrieve a State instance for this session."""
-        from agex.state import Live
         from agex.state.kv import Disk, Memory
 
         # Ephemeral: fresh Live instance per call
@@ -88,22 +89,24 @@ class Local(Host):
             self._session_cache[cache_key] = self._create_state(config, Memory())
         return self._session_cache[cache_key]
 
-    def _create_state(self, config: "StateConfig", kv: Any) -> "State":
+    def _create_state(self, config: "StateConfig", kv: "KVStore") -> Store:
         """Create a state instance from config and KV store."""
-        from agex.state import Live, Versioned
-        from agex.state.gc import GCVersioned
+        from kvit.gc import GCVersioned
+
+        from agex.state import _agex_decoder, _agex_encoder
 
         from .base import apply_init_if_fresh
 
         if config.type == "versioned":
-            state: "State" = Versioned(store=kv)
-            # Wrap with GC if high_water_bytes is set
             if config.high_water_bytes is not None:
-                state = GCVersioned(
-                    state,
+                versioned = GCVersioned(
+                    kv,
                     high_water_bytes=config.high_water_bytes,
                     low_water_bytes=config.low_water_bytes,
                 )
+            else:
+                versioned = Versioned(kv)
+            state = Staged(versioned, encoder=_agex_encoder, decoder=_agex_decoder)
         elif config.type == "live":
             state = Live()
         else:  # ephemeral
@@ -177,7 +180,7 @@ class Local(Host):
         config: "StateConfig | None",
         session: str,
         fingerprint: str = "",
-    ) -> "State":
+    ) -> Store:
         """Get state for client-side access.
 
         For Local host, this is the same as resolve_state since we have

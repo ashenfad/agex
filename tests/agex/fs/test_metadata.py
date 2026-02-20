@@ -1,7 +1,14 @@
 """Tests for VirtualFS file metadata tracking."""
 
+from kvit import Live, Staged, Versioned
+
 from agex.fs import VirtualFS
-from agex.state import Live, Versioned
+from agex.state import _agex_decoder, _agex_encoder
+from agex.state.kv import Memory
+
+
+def _make_state():
+    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class TestFileMetadata:
@@ -157,14 +164,14 @@ class TestFileMetadata:
 
     def test_metadata_persists_with_versioned_state(self):
         """Test that metadata persists across snapshots in Versioned state."""
-        state = Versioned()
+        state = _make_state()
         vfs = VirtualFS(state)
 
         vfs.write("file.txt", b"content")
         original_meta = vfs.stat("file.txt")
 
-        # Snapshot
-        state.snapshot()
+        # Commit
+        state.commit()
 
         # Metadata still accessible
         meta_after = vfs.stat("file.txt")

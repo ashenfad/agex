@@ -3,6 +3,8 @@ import inspect
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
+from kvit import Store
+
 from agex.agent.base import BaseAgent
 from agex.agent.datatypes import TaskClarify, TaskContinue, TaskFail, TaskSuccess
 from agex.agent.events import OutputEvent
@@ -26,7 +28,7 @@ from agex.eval.user_errors import (
     AgexZeroDivisionError,
 )
 from agex.eval.utils import get_allowed_attributes_for_instance
-from agex.state import Live, State
+from agex.state import is_live_root
 
 
 def _import_stateful(
@@ -107,7 +109,7 @@ class StatefulFn:
     needs_evaluator: bool = False
 
 
-def _print_stateful(*args: Any, state: State, agent_name: str, on_event=None):
+def _print_stateful(*args: Any, state: Store, agent_name: str, on_event=None):
     """
     A custom implementation of 'print' that appends its arguments to the
     `__event_log__` list in the agent's state as a single `OutputEvent`.
@@ -128,7 +130,7 @@ def _print_stateful(*args: Any, state: State, agent_name: str, on_event=None):
 
 
 def _view_image_stateful(
-    image: Any, detail: str = "high", *, state: State, agent_name: str, on_event=None
+    image: Any, detail: str = "high", *, state: Store, agent_name: str, on_event=None
 ) -> None:
     """
     A custom builtin to "view" an image, which adds an ImageAction to the event log.
@@ -137,7 +139,7 @@ def _view_image_stateful(
         raise AgexValueError("detail must be 'low' or 'high'")
 
     # "Snapshot" the arguments to ensure immutability in the log
-    is_live = isinstance(state.base_store, Live)
+    is_live = is_live_root(state)
     snapped_image: Any
     try:
         if is_live:
@@ -573,7 +575,7 @@ def _help(evaluator, *args, **kwargs) -> None:
 
 
 def _task_continue_with_observations(
-    *observations: Any, state: State, agent_name: str, on_event=None
+    *observations: Any, state: Store, agent_name: str, on_event=None
 ) -> None:
     """
     Signal to the agent to continue, providing a list of observations.
