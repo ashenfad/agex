@@ -429,9 +429,11 @@ class StatementEvaluator(BaseEvaluator):
                 # An exception occurred.
                 exception_was_caught = True
 
-                # IMPORTANT: If this is an internal control-flow exception,
-                # we must not let the user's code catch it. Re-raise it.
-                if isinstance(e, (_ReturnException, _AgentExit)):
+                # IMPORTANT: If this is an internal control-flow exception
+                # (_ReturnException), we must not let the user's code catch it.
+                # Note: _AgentExit signals are BaseException and bypass this
+                # handler entirely, so they're already uncatchable by agent code.
+                if isinstance(e, _ReturnException):
                     raise e
 
                 # Find a matching 'except' handler in the user's code.
@@ -547,7 +549,7 @@ class StatementEvaluator(BaseEvaluator):
         try:
             for stmt in node.body:
                 self.visit(stmt)
-        except Exception as e:
+        except BaseException as e:
             exception_info = (type(e), e, None)  # Simplified traceback
 
             # Let control flow exceptions pass through immediately

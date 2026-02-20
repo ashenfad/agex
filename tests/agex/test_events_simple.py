@@ -139,7 +139,7 @@ class TestEventsSimple:
         # This will timeout since no task_success, but let's see what events we get
         try:
             investigate_task(session="test_session")
-        except Exception as e:
+        except BaseException as e:
             print(f"Expected exception: {type(e).__name__}")
 
         state = agent._host.resolve_state(config, "test_session")

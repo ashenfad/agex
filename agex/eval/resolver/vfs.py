@@ -91,10 +91,6 @@ class VFSLoader(BaseLoader):
                 package=package,
             )
         except Exception as e:
-            from agex.agent.datatypes import _AgentExit
-
-            if isinstance(e, _AgentExit):
-                raise
             raise EvalError(
                 f"Error initializing module '{spec.name}': {e}", None
             ) from e

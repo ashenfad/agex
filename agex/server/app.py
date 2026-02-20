@@ -143,7 +143,8 @@ async def generate_execution_events(
 
                     result = await task_func(*args, **exec_kwargs)
                     queue.put_nowait((FINISHED, result))
-                except Exception as e:
+                except BaseException as e:
+                    # BaseException to catch _AgentExit subclasses like TaskFail/LLMFail
                     queue.put_nowait((FINISHED, e))
 
             # Start async task
@@ -166,7 +167,7 @@ async def generate_execution_events(
         async for event_data in _stream_from_queue(queue, FINISHED):
             yield {"data": event_data}
 
-    except Exception as e:
+    except BaseException as e:
         yield {
             "data": format_error_data(
                 f"Execution error: {e}",
@@ -195,7 +196,7 @@ async def _stream_from_queue(
         # Check for completion
         if isinstance(item, tuple) and item[0] is finished_sentinel:
             result = item[1]
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 raise result
 
             # Handle async results (if task returned coroutine)

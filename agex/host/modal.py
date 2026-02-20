@@ -127,7 +127,7 @@ def _agex_runner(
             # Manually serialize result to prevent Modal from doing it in the IO loop
             stream_queue.put(_serialize_result(result))
 
-        except Exception as e:
+        except BaseException as e:
             import traceback
 
             stream_queue.put(

@@ -49,8 +49,9 @@ def execute_worker(
         # Send result
         loop.call_soon_threadsafe(queue.put_nowait, (finished_sentinel, result))
 
-    except Exception as e:
+    except BaseException as e:
         # Capture exception and send as result
+        # (BaseException to catch _AgentExit subclasses like TaskFail/LLMFail)
         loop.call_soon_threadsafe(queue.put_nowait, (finished_sentinel, e))
 
 
@@ -71,7 +72,7 @@ async def stream_execution_results(
         # Check for completion
         if isinstance(item, tuple) and item[0] is finished_sentinel:
             result = item[1]
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 # Re-raise to be handled by outer try/except (which formats error event)
                 raise result
 
