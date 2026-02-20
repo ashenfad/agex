@@ -142,6 +142,23 @@ class FileSystem(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def listdir(self, path: str = "/", recursive: bool = False) -> list[str]:
+        """List directory contents as paths."""
+        pass
+
+    @abc.abstractmethod
+    def listdir_detailed(
+        self, path: str = "/", recursive: bool = False
+    ) -> list[FileInfo]:
+        """List directory contents with full metadata."""
+        pass
+
+    @abc.abstractmethod
+    def rmdir(self, path: str) -> None:
+        """Remove an empty directory."""
+        pass
+
+    @abc.abstractmethod
     def remove(self, path: str) -> None:
         """Remove a file."""
         pass

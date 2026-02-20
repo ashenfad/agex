@@ -544,3 +544,8 @@ class IsolatedFS(FileSystem):
                     )
 
         return sorted(result, key=lambda x: x.path)
+
+    def listdir_detailed(
+        self, path: str = ".", recursive: bool = False
+    ) -> list[FileInfo]:
+        return self.list_detailed(path, recursive=recursive)
