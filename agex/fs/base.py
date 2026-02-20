@@ -26,6 +26,63 @@ class FileMetadata:
     modified_at: str
     is_dir: bool = False
 
+    # os.stat_result-compatible properties — allows FileMetadata to be
+    # returned directly from stat() when used with sblite's os.stat() patch.
+
+    @property
+    def st_size(self) -> int:
+        return self.size
+
+    @property
+    def st_mode(self) -> int:
+        return 0o040755 if self.is_dir else 0o100644
+
+    @property
+    def st_ino(self) -> int:
+        return 0
+
+    @property
+    def st_dev(self) -> int:
+        return 0
+
+    @property
+    def st_nlink(self) -> int:
+        return 1
+
+    @property
+    def st_uid(self) -> int:
+        import os as _os
+
+        return _os.getuid() if hasattr(_os, "getuid") else 0
+
+    @property
+    def st_gid(self) -> int:
+        import os as _os
+
+        return _os.getgid() if hasattr(_os, "getgid") else 0
+
+    def _parse_ts(self, iso_str: str) -> float:
+        from datetime import datetime
+
+        try:
+            return datetime.fromisoformat(iso_str).timestamp()
+        except Exception:
+            import time
+
+            return time.time()
+
+    @property
+    def st_atime(self) -> float:
+        return self._parse_ts(self.modified_at)
+
+    @property
+    def st_mtime(self) -> float:
+        return self._parse_ts(self.modified_at)
+
+    @property
+    def st_ctime(self) -> float:
+        return self._parse_ts(self.created_at)
+
 
 @dataclass
 class FileInfo:

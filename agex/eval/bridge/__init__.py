@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any, Callable
 from kvit import Store
 from sblite import Sandbox
 
-from .fs_adapter import SbliteFS
 from .namespace import build_namespace, make_print_handler
 from .policy import translate_policy
 from .result import handle_result
@@ -56,20 +55,17 @@ def execute_sandboxed(
     # 1. Translate policy
     policy = translate_policy(agent, timeout=timeout)
 
-    # 2. Wrap filesystem if provided
-    sb_fs = SbliteFS(fs) if fs is not None else None
-
-    # 3. Create sandbox with custom print handler
+    # 2. Create sandbox with custom print handler
     print_handler = make_print_handler(state, agent.name, on_event)
     sandbox = Sandbox(
-        policy, mode="wrapped", filesystem=sb_fs, print_handler=print_handler
+        policy, mode="wrapped", filesystem=fs, print_handler=print_handler
     )
 
-    # 4. Build namespace from state + builtins
+    # 3. Build namespace from state + builtins
     namespace, pre_keys = build_namespace(state, agent, agent.name, on_event=on_event)
 
-    # 5. Execute
+    # 4. Execute
     result = sandbox.exec(program, namespace=namespace)
 
-    # 6. Handle result (syncs state, re-raises signals)
+    # 5. Handle result (syncs state, re-raises signals)
     handle_result(result, state, agent.name, pre_keys, on_event=on_event)
