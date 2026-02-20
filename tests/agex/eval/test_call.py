@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 import pytest
+from kvit import Live
 
 from agex.agent import Agent
 from agex.agent.datatypes import TaskSuccess
@@ -11,7 +12,6 @@ from agex.eval.user_errors import (
     AgexNameError,
     AgexTypeError,
 )
-from agex.state import Live
 
 from .helpers import eval_and_get_state
 

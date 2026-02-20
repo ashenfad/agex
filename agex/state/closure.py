@@ -1,9 +1,7 @@
 from typing import Any, Iterable, Optional
 
-from .core import State
 
-
-class LiveClosureState(State):
+class LiveClosureState:
     """
     A read-only, 'live' view into another state, restricted to a set of keys.
 
@@ -20,19 +18,12 @@ class LiveClosureState(State):
     into static storage by capturing the current values of all free variables.
     """
 
-    def __init__(self, state_source: State, free_vars: set[str]):
-        self._source: Optional[State] = state_source
+    def __init__(self, state_source, free_vars: set[str]):
+        self._source = state_source
         self._keys = free_vars
         self._frozen_store: Optional[dict[str, Any]] = (
             None  # Will be set if we're in frozen state
         )
-
-    @property
-    def base_store(self) -> "State":
-        if self._frozen_store is not None:
-            return self  # We are the base store when frozen
-        assert self._source is not None
-        return self._source.base_store
 
     def get(self, key: str, default: Any = None) -> Any:
         # If we're in frozen state, use the frozen store
@@ -62,31 +53,6 @@ class LiveClosureState(State):
 
         return default
 
-    def peek(self, key: str, default: Any = None) -> Any:
-        # If we're in frozen state, use the frozen store
-        if self._frozen_store is not None:
-            return self._frozen_store.get(key, default)
-
-        assert self._source is not None
-
-        # Allow access to system variables (starting with __) even if not captured
-        if key.startswith("__"):
-            return self._source.peek(key, default)
-
-        # If the key is in our captured variables, get it from source first
-        if key in self._keys:
-            return self._source.peek(key, default)
-
-        # If not a captured variable, check builtins
-        from ..eval.builtins import BUILTINS, STATEFUL_BUILTINS
-
-        if key in BUILTINS:
-            return BUILTINS[key]
-        if key in STATEFUL_BUILTINS:
-            return STATEFUL_BUILTINS[key]
-
-        return default
-
     def set(self, key: str, value: Any) -> None:
         raise TypeError("Closures are read-only.")
 
@@ -104,8 +70,28 @@ class LiveClosureState(State):
         for key in self._keys:
             yield key, self.get(key)
 
+    def get_many(self, *keys: str) -> dict[str, Any]:
+        return {k: self.get(k) for k in keys if k in self}
+
     def __contains__(self, key: str) -> bool:
         return key in self._keys
+
+    def __getitem__(self, key: str) -> Any:
+        if key in self:
+            return self.get(key)
+        raise KeyError(key)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self.set(key, value)
+
+    def __delitem__(self, key: str) -> None:
+        self.remove(key)
+
+    def __iter__(self):
+        return iter(self._keys)
+
+    def __len__(self) -> int:
+        return len(self._keys)
 
     def __getstate__(self) -> dict[str, Any]:
         """

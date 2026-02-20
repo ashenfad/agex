@@ -2,9 +2,10 @@ import ast
 import asyncio
 from typing import Any, Callable
 
+from kvit import Store
+
 from agex.agent.base import BaseAgent
 from agex.fs.base import FileSystem
-from agex.state.core import State
 
 from .base import BaseEvaluator
 from .binop import BinOpEvaluator
@@ -35,7 +36,7 @@ class Evaluator(
     def __init__(
         self,
         agent: BaseAgent,
-        state: State,
+        state: Store,
         source_code: str | None = None,
         eval_timeout_seconds: float | None = None,
         start_time: float | None = None,
@@ -128,7 +129,7 @@ def _get_session_root(root: str, session: str, per_session: bool) -> str:
 def evaluate_program(
     program: str,
     agent: BaseAgent,
-    state: State,
+    state: Store,
     eval_timeout_seconds: float | None = None,
     *,
     fs: FileSystem | None = None,
@@ -224,7 +225,7 @@ def run_file_in_sandbox(
     on_event: Callable[[Any], None] | None = None,
     on_token: Callable[[Any], None] | None = None,
     main_loop: asyncio.AbstractEventLoop | None = None,
-) -> State:
+) -> Any:
     """
     Run a file from VFS in the agent's sandbox.
 

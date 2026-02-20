@@ -1,8 +1,9 @@
 import numpy as np
+from kvit import Staged, Versioned
 
 from agex.agent import Agent
 from agex.eval.core import evaluate_program
-from agex.state import Versioned
+from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Memory
 
 
@@ -14,7 +15,7 @@ def test_minimal_failure_repro():
     agent.module(np, name="np")
 
     store = Memory()
-    state = Versioned(store)
+    state = Staged(Versioned(store), encoder=_agex_encoder, decoder=_agex_decoder)
 
     # Phase A: Define a class and create an instance.
     phase_A = """
@@ -28,7 +29,7 @@ class MyProc:
 p1 = MyProc([1,2,3])
 """
     evaluate_program(phase_A, agent, state)
-    state.snapshot()
+    state.commit()
 
     # Phase B: Reference the object from the previous phase in a new data structure.
     phase_B = """
@@ -37,4 +38,4 @@ d = {'proc': p1}
     evaluate_program(phase_B, agent, state)
 
     # This snapshot will fail.
-    state.snapshot()
+    state.commit()

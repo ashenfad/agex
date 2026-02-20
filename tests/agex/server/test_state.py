@@ -1,9 +1,9 @@
 """Tests for server state URI resolution."""
 
 import pytest
+from kvit import Staged
 
 from agex.server.state import InvalidStateURIError, resolve_state_uri
-from agex.state import Versioned
 
 
 class TestResolveStateUri:
@@ -12,17 +12,17 @@ class TestResolveStateUri:
     def test_disk_uri_basic(self, tmp_path):
         """Test basic disk:// URI resolution."""
         result = resolve_state_uri("disk://my_session", base_path=str(tmp_path))
-        assert isinstance(result, Versioned)
+        assert isinstance(result, Staged)
 
     def test_disk_uri_with_underscores(self, tmp_path):
         """Test disk:// URI with underscores in session ID."""
         result = resolve_state_uri("disk://user_123_session", base_path=str(tmp_path))
-        assert isinstance(result, Versioned)
+        assert isinstance(result, Staged)
 
     def test_disk_uri_with_hyphens(self, tmp_path):
         """Test disk:// URI with hyphens in session ID."""
         result = resolve_state_uri("disk://user-session-456", base_path=str(tmp_path))
-        assert isinstance(result, Versioned)
+        assert isinstance(result, Staged)
 
     def test_disk_uri_empty_session(self, tmp_path):
         """Test disk:// URI with empty session ID raises error."""

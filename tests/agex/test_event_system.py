@@ -6,6 +6,7 @@ attribution, and filtering.
 """
 
 import pytest
+from kvit import Staged, Versioned
 
 from agex import Agent, clear_agent_registry
 from agex.agent.events import (
@@ -18,7 +19,8 @@ from agex.agent.events import (
 )
 from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
-from agex.state import Versioned, connect_state, events
+from agex.state import _agex_decoder, _agex_encoder, connect_state, events
+from agex.state.kv import Memory
 from agex.state.log import add_event_to_log
 
 
@@ -287,7 +289,9 @@ class TestEventSystem:
         from agex.render.events import render_events_as_markdown
         from agex.state.log import get_events_from_log
 
-        state = Versioned()
+        state = Staged(
+            Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder
+        )
 
         # Manually add events including an ErrorEvent
         add_event_to_log(
@@ -413,9 +417,9 @@ class TestEventSystem:
         persistence_task(session="test_session")
         state = agent._host.resolve_state(config, "test_session")
 
-        # Take a snapshot
-        snapshot_result = state.snapshot()
-        assert len(snapshot_result.unsaved_keys) == 0  # All should be saved
+        # Commit staged changes
+        commit_result = state.commit()
+        assert commit_result.merged  # Commit should succeed
 
         # Get events from the agent's namespace
         event_list = [

@@ -11,8 +11,9 @@ import pickle
 from pathlib import Path
 from typing import Any
 
+from kvit import Store
+
 from agex.fs.context import suspend_fs_interception
-from agex.state import State
 
 from .base import FileInfo, FileMetadata, FileSystem
 
@@ -32,7 +33,7 @@ class IsolatedFS(FileSystem):
     METADATA_KEY = "__isolated_fs_metadata__"
     CWD_KEY = "__isolated_cwd__"
 
-    def __init__(self, root: str, state: State):
+    def __init__(self, root: str, state: Store):
         """Initialize isolated filesystem.
 
         Args:

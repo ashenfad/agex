@@ -84,7 +84,7 @@ def test_from_import_still_works():
     agent = MockAgent(policy)
     resolver = Resolver(agent)
 
-    from agex.state import Live
+    from kvit import Live
 
     # This is how 'from os.path import exists' resolves
     result = resolver.import_from("os.path", "exists", state=Live(), node=None)

@@ -5,10 +5,12 @@ These tests verify automatic merge/retry behavior when concurrent tasks
 modify the same Versioned state.
 """
 
+from kvit import Staged, Versioned
+
 from agex import Agent
 from agex.llm import Dummy
 from agex.llm.core import LLMResponse
-from agex.state import connect_state
+from agex.state import _agex_decoder, _agex_encoder, connect_state, kv
 
 
 def test_task_merges_on_success():
@@ -142,11 +144,12 @@ def test_concurrent_tasks_with_actual_conflict():
     import threading
     import time
 
-    from agex.state import Versioned, kv
-
     store = kv.Memory()
     results = {}
     errors = {}
+
+    def _make_shared(kv_store):
+        return Staged(Versioned(kv_store), encoder=_agex_encoder, decoder=_agex_decoder)
 
     # Create two agents that will run concurrently with shared store
     agent1_responses = [
@@ -164,7 +167,7 @@ def test_concurrent_tasks_with_actual_conflict():
         max_iterations=2, llm=Dummy(responses=agent1_responses), state=config1
     )
     # Inject shared store for conflict testing
-    agent1._host._session_cache["versioned:default"] = Versioned(store)
+    agent1._host._session_cache["versioned:default"] = _make_shared(store)
 
     agent2_responses = [
         LLMResponse(
@@ -181,7 +184,7 @@ def test_concurrent_tasks_with_actual_conflict():
         max_iterations=2, llm=Dummy(responses=agent2_responses), state=config2
     )
     # Inject shared store for conflict testing
-    agent2._host._session_cache["versioned:default"] = Versioned(store)
+    agent2._host._session_cache["versioned:default"] = _make_shared(store)
 
     @agent1.task(on_conflict="retry", max_conflict_retries=2)
     def task1() -> str:
@@ -231,10 +234,11 @@ def test_concurrent_abandon_strategy():
     """
     import threading
 
-    from agex.state import Versioned, kv
-
     store = kv.Memory()
     results = {}
+
+    def _make_shared(kv_store):
+        return Staged(Versioned(kv_store), encoder=_agex_encoder, decoder=_agex_decoder)
 
     agent1_responses = [
         LLMResponse(
@@ -246,7 +250,7 @@ def test_concurrent_abandon_strategy():
     agent1 = Agent(
         max_iterations=2, llm=Dummy(responses=agent1_responses), state=config1
     )
-    agent1._host._session_cache["versioned:default"] = Versioned(store)
+    agent1._host._session_cache["versioned:default"] = _make_shared(store)
 
     agent2_responses = [
         LLMResponse(
@@ -258,7 +262,7 @@ def test_concurrent_abandon_strategy():
     agent2 = Agent(
         max_iterations=2, llm=Dummy(responses=agent2_responses), state=config2
     )
-    agent2._host._session_cache["versioned:default"] = Versioned(store)
+    agent2._host._session_cache["versioned:default"] = _make_shared(store)
 
     @agent1.task(on_conflict="abandon")
     def bg_task1() -> str:

@@ -7,16 +7,17 @@ This module defines the Host ABC that encapsulates where/how agent tasks execute
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Callable
 
+from kvit import Staged, Store
+
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
     from agex.host.dependencies import Dependencies
-    from agex.state import State
     from agex.state.config import StateConfig
     from agex.state.kv import KVStore
 
 
 def apply_init_if_fresh(
-    state: "State",
+    state: Store,
     kv: "KVStore",
     init: "Callable[[], dict[str, Any]] | dict[str, Any] | None",
 ) -> None:
@@ -32,11 +33,11 @@ def apply_init_if_fresh(
         for key, value in init_vars.items():
             state.set(key, value)
         state.set("__agex_init__", True)
-        # Commit snapshot for versioned state
-        from agex.state import Versioned
+        # Commit for versioned state
+        from agex.state import safe_commit
 
-        if isinstance(state, Versioned):
-            state.snapshot()
+        if isinstance(state, Staged):
+            safe_commit(state)
 
 
 class Host(ABC):
@@ -113,7 +114,7 @@ class Host(ABC):
         ...
 
     @abstractmethod
-    def resolve_state(self, config: "StateConfig | None", session: str) -> "State":
+    def resolve_state(self, config: "StateConfig | None", session: str) -> Store:
         """
         Create or retrieve a State instance for this session.
 
@@ -187,7 +188,7 @@ class Host(ABC):
         config: "StateConfig | None",
         session: str,
         fingerprint: str = "",
-    ) -> "State":
+    ) -> Store:
         """
         Get state for client-side access.
 

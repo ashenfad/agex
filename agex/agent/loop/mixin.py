@@ -111,7 +111,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             missing_names = set()
 
             for name in sorted(fn_names):
-                obj = exec_state.peek(name)
+                obj = exec_state.get(name)
                 if isinstance(obj, UserFunction):
                     try:
                         sig = str(obj.__signature__)

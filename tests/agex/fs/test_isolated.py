@@ -1,11 +1,17 @@
 """Tests for IsolatedFS - secure filesystem with path restriction."""
 
 import pytest
+from kvit import Live, Staged, Versioned
 
 from agex import Agent, connect_fs, pprint_events
 from agex.fs import IsolatedFS
 from agex.llm import Dummy, LLMResponse
-from agex.state import Live, Versioned
+from agex.state import _agex_decoder, _agex_encoder
+from agex.state.kv import Memory
+
+
+def _make_state():
+    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class TestIsolatedFSPathValidation:
@@ -208,7 +214,7 @@ class TestIsolatedFSTracking:
 
     def test_tracking_disabled_no_state_updates(self, tmp_path):
         """When tracking=False, no state updates occur."""
-        state = Versioned()
+        state = _make_state()
         fs = IsolatedFS(root=str(tmp_path), state=Live())  # Separate state, no tracking
 
         fs.write("file.txt", b"data")
@@ -218,7 +224,7 @@ class TestIsolatedFSTracking:
 
     def test_tracking_enabled_updates_metadata(self, tmp_path):
         """When tracking=True, metadata is updated."""
-        state = Versioned()
+        state = _make_state()
         fs = IsolatedFS(root=str(tmp_path), state=state)
 
         fs.write("file.txt", b"data")
@@ -230,7 +236,7 @@ class TestIsolatedFSTracking:
 
     def test_tracking_detects_file_changes(self, tmp_path):
         """Tracking detects when files are modified."""
-        state = Versioned()
+        state = _make_state()
         fs = IsolatedFS(root=str(tmp_path), state=state)
 
         fs.write("file.txt", b"original")

@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any, Callable
 
 from faketerm import ParseError, TerminalError, execute_script, to_script
+from kvit import Live, Namespaced, Staged, Store
 from pydantic import ValidationError
 
 from agex.agent.datatypes import (
@@ -40,42 +41,18 @@ from agex.agent.events import (
 from agex.eval.error import EvalError
 from agex.eval.objects import PrintAction
 from agex.fs.aware import AgentAwareFS
-from agex.fs.context import suspend_fs_interception
 from agex.fs.virtual import VirtualFS
 from agex.llm.core import LLMResponse, ResponseBuilder, ResponseParseError, StreamToken
 from agex.state import (
     ConcurrencyError,
-    Live,
-    Namespaced,
-    Versioned,
+    MergeConflict,
     events,
-    get_commit_hash,
     is_live_root,
+    raw_get,
+    raw_remove,
+    safe_commit,
 )
 from agex.state.log import add_event_to_log, get_events_from_log
-from agex.state.versioned import SnapshotResult
-
-
-def safe_snapshot(
-    versioned_state: Versioned, commit_hash: str | None = None
-) -> SnapshotResult:
-    """Snapshot state with filesystem interception suspended.
-
-    This ensures that any I/O performed by KV backends during snapshot
-    (e.g., disk writes) doesn't get intercepted by VFS/IsolatedFS patching.
-    Critical for hierarchical agents where sub-agent snapshots occur while
-    parent's filesystem interception is still active.
-
-    Args:
-        versioned_state: The versioned state to snapshot.
-        commit_hash: Optional pre-generated commit hash.
-
-    Returns:
-        SnapshotResult from the underlying snapshot call.
-    """
-    with suspend_fs_interception():
-        return versioned_state.snapshot(commit_hash=commit_hash)
-
 
 # Re-export commonly used items for convenience
 __all__ = [
@@ -94,7 +71,6 @@ __all__ = [
     # Terminal execution
     "execute_terminal",
     # State helpers
-    "get_commit_hash",
     "initialize_exec_state",
     "check_for_task_call",
     "strip_namespace_prefix",
@@ -102,7 +78,7 @@ __all__ = [
     "maybe_file_event",
     "maybe_add_file_event",
     "apply_optimistic_file_actions",
-    "safe_snapshot",
+    "safe_commit",
     "ResponseBuilder",
     # Re-exports
     "ValidationError",
@@ -128,9 +104,10 @@ __all__ = [
     "ResponseParseError",
     "StreamToken",
     "ConcurrencyError",
+    "MergeConflict",
     "Live",
     "Namespaced",
-    "Versioned",
+    "Staged",
     "events",
     "is_live_root",
     "add_event_to_log",
@@ -143,18 +120,18 @@ MAX_USER_FUNCTIONS_IN_RECAP = 12
 
 def check_cancellation(
     task_name: str,
-    versioned_state: Versioned | None,
-    exec_state: Any,
+    versioned_state: Staged | None,
+    exec_state: Store,
 ) -> bool:
     """
     Check if a cancellation sentinel is present for the given task.
 
-    Reads directly from the underlying KV store for Versioned state to ensure
+    Reads directly from the underlying KV store for Staged state to ensure
     immediate visibility of cancellation requests from other threads/processes.
 
     Args:
         task_name: Name of the task to check cancellation for
-        versioned_state: The Versioned state if present, or None
+        versioned_state: The Staged state if present, or None
         exec_state: The execution state (Live or Namespaced)
 
     Returns:
@@ -162,11 +139,11 @@ def check_cancellation(
     """
     cancel_key = f"__agex_cancel__{task_name}"
 
-    if isinstance(versioned_state, Versioned):
+    if isinstance(versioned_state, Staged):
         # Read directly from KV store for immediate visibility
-        if versioned_state.get_raw(cancel_key):
+        if raw_get(versioned_state, cancel_key):
             # Clean up the sentinel
-            versioned_state.remove_raw(cancel_key)
+            raw_remove(versioned_state, cancel_key)
             return True
     else:
         # Live/Namespaced state - check exec_state directly
@@ -196,11 +173,11 @@ TASK_CONTROL_GUIDANCE = (
 
 def initialize_exec_state(
     agent_name: str,
-    state: Versioned | Live | Namespaced | None,
+    state: Staged | Live | Namespaced | None,
     inputs_instance: Any,
     return_type: type,
     session: str = "default",
-) -> tuple[Versioned | Live | Namespaced, Versioned | None]:
+) -> tuple[Staged | Live | Namespaced, Staged | None]:
     """
     Initialize the execution state based on the provided state argument.
 
@@ -216,15 +193,15 @@ def initialize_exec_state(
         state we're responsible for snapshotting (or None if we don't own it
         or if the state is Live/ephemeral).
     """
-    versioned_state: Versioned | None = None
-    exec_state: Versioned | Live | Namespaced
+    versioned_state: Staged | None = None
+    exec_state: Staged | Live | Namespaced
 
     if isinstance(state, Namespaced):
         # Namespaced = someone else owns versioning, we just work within namespace
         exec_state = state
         versioned_state = None
-    elif isinstance(state, Versioned):
-        # Versioned = we're responsible for versioning this state
+    elif isinstance(state, Staged):
+        # Staged = we're responsible for versioning this state
         versioned_state = state
         exec_state = state  # No namespacing - use directly
     elif isinstance(state, Live):
@@ -484,7 +461,7 @@ def apply_optimistic_file_actions(
     agent: Any,
     llm_response: LLMResponse,
     fs: Any,
-    exec_state: Any,
+    exec_state: Store,
     on_event: Callable[[BaseEvent], None] | None = None,
 ) -> None:
     """
@@ -719,7 +696,7 @@ def execute_terminal(
     agent_name: str,
     terminal_script: str,
     fs: Any,
-    exec_state: Any,
+    exec_state: Store,
     on_event: Callable[[BaseEvent], None] | None = None,
 ) -> str:
     """Execute terminal script and emit output event.
@@ -855,20 +832,18 @@ def maybe_add_file_event(
     fs_metadata_before: dict,
     exec_state,
     agent_name: str,
-    commit_hash: str | None,
 ):
     """Check for file changes and add FileEvent to log if needed.
 
-    This should be called BEFORE snapshot so the FileEvent is included in the commit.
+    This should be called BEFORE commit so the FileEvent is included in the commit.
     The FileEvent should be yielded to the caller, but NOT emitted via on_event yet.
-    Emission happens after merge.
+    Emission happens after commit.
 
     Args:
         fs: The filesystem instance (or None if no fs)
         fs_metadata_before: Snapshot of file metadata before execution
         exec_state: The execution state to add the event to
         agent_name: Name of the agent
-        commit_hash: Pre-generated commit hash for the event
 
     Returns:
         The FileEvent if created, None otherwise
@@ -881,8 +856,7 @@ def maybe_add_file_event(
     file_event = maybe_file_event(agent_name, fs_metadata_before, fs_metadata_after)
 
     if file_event:
-        file_event.commit_hash = commit_hash
-        # Add to log WITHOUT on_event - we'll emit after merge
+        # Add to log WITHOUT on_event - we'll emit after commit
         add_event_to_log(exec_state, file_event)
 
     return file_event

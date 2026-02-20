@@ -10,15 +10,16 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+from kvit import Live, Staged, Store, Versioned
+
 from agex.host.base import Host, apply_init_if_fresh
 from agex.host.local import Local
-from agex.state import Live, Versioned
+from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv.modal_dict import ModalDict
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
     from agex.host.dependencies import Dependencies
-    from agex.state import State
     from agex.state.config import StateConfig
 
 
@@ -201,7 +202,7 @@ class ModalLocal(Local):
     """
 
     def __init__(self):
-        self._session_cache: dict[str, Any] = {}
+        self._session_cache: dict[str, Store] = {}
 
     def dump_config(self) -> dict[str, Any]:
         """Not used for ModalLocal (internal only)."""
@@ -213,7 +214,7 @@ class ModalLocal(Local):
 
     def resolve_state(
         self, config: "StateConfig | None", session: str, fingerprint: str = ""
-    ) -> "State":
+    ) -> Store:
         """
         Resolve state for Modal container execution.
 
@@ -227,9 +228,8 @@ class ModalLocal(Local):
         import shutil
         from pathlib import Path
 
-        from agex.state import Live, Versioned
-        from agex.state.kv import Disk
-        from agex.state.kv.composite import Composite
+        from agex.state import _agex_decoder, _agex_encoder
+        from agex.state.kv import Composite, Disk
         from agex.state.kv.modal_dict import ModalDict
 
         if config is None:
@@ -297,7 +297,7 @@ class ModalLocal(Local):
 
             cache = Disk(str(cache_dir))
             kv = Composite([cache, source, volume])
-            state = Versioned(store=kv)
+            state = Staged(Versioned(kv), encoder=_agex_encoder, decoder=_agex_decoder)
             apply_init_if_fresh(state, kv, config.init)
             return state
 
@@ -316,7 +316,7 @@ class ModalLocal(Local):
 
             cache = Disk(str(cache_dir))
             kv = Composite([cache, source])
-            state = Versioned(store=kv)
+            state = Staged(Versioned(kv), encoder=_agex_encoder, decoder=_agex_decoder)
             apply_init_if_fresh(state, kv, config.init)
             return state
 
@@ -471,17 +471,15 @@ class Modal(Host):
         """Validate state config is compatible with Modal host."""
         _validate_modal_state(config)
 
-    def resolve_state(self, config: "StateConfig | None", session: str) -> "State":
+    def resolve_state(self, config: "StateConfig | None", session: str) -> Store:
         """
         Resolve state for Modal execution.
 
         Note: This is typically not called during remote execution.
         The runner uses ModalLocal which handles state resolution appropriately.
         """
-        from agex.state import Ephemeral
-
         if config is None:
-            return Ephemeral()
+            return Live()
 
         # For remote execution, ModalLocal handles disk/memory storage
         # This fallback handles edge cases like local testing
@@ -854,7 +852,7 @@ class Modal(Host):
         config: "StateConfig | None",
         session: str,
         fingerprint: str = "",
-    ) -> "State":
+    ) -> Store:
         """
         Get state for client-side access.
 
@@ -904,7 +902,7 @@ class Modal(Host):
 
         if storage == "disk":
             # Also connect to Volume for disk storage
-            from agex.state.kv.composite import Composite
+            from agex.state.kv import Composite
             from agex.state.kv.modal_volume import Volume
 
             volume_name = base_name
@@ -913,12 +911,12 @@ class Modal(Host):
         else:
             kv = source
 
-        # Create Versioned and verify state exists
-        versioned = Versioned(store=kv)
+        # Create versioned layer and verify state exists
+        v = Versioned(kv)
 
         # Check that state has been initialized (has history)
         try:
-            history = versioned.history()
+            history = v.history()
             if not history:
                 raise ValueError(
                     f"No state found for session '{session}'. "
@@ -931,4 +929,5 @@ class Modal(Host):
                 f"Could not access Modal state for session '{session}': {e}"
             ) from e
 
-        return versioned
+        state = Staged(v, encoder=_agex_encoder, decoder=_agex_decoder)
+        return state

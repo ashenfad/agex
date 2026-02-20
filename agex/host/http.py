@@ -14,12 +14,12 @@ try:
 except ImportError:
     cloudpickle = None  # type: ignore
 import httpx
+from kvit import Store
 
 from .base import Host
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
-    from agex.state import State
     from agex.state.config import StateConfig
 
 
@@ -123,7 +123,7 @@ class HTTP(Host):
                 f"Supported: disk (server resolves state)"
             )
 
-    def resolve_state(self, config: "StateConfig | None", session: str) -> "State":
+    def resolve_state(self, config: "StateConfig | None", session: str) -> Store:
         """
         Placeholder for HTTP host - state is resolved server-side.
 

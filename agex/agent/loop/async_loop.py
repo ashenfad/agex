@@ -15,11 +15,14 @@ from typing import TYPE_CHECKING, Any, Callable
 if TYPE_CHECKING:
     from agex.fs.base import FileSystem
 
+from kvit import Staged
+
 from agex.agent.events import CancelledEvent
 from agex.agent.summarization import maybe_summarize_event_log
 from agex.agent.utils import call_sync_or_async
 from agex.eval.core import evaluate_program
 from agex.resource_limits import apply_resource_limits
+from agex.state import get_root, raw_remove, safe_commit
 
 from .common import (
     # Constants
@@ -28,6 +31,7 @@ from .common import (
     EvalError,
     Live,
     LLMFail,
+    MergeConflict,
     Namespaced,
     SuccessEvent,
     TaskCancelled,
@@ -37,7 +41,6 @@ from .common import (
     # Re-exports
     TaskSuccess,
     TaskTimeout,
-    Versioned,
     _AgentExit,
     add_event_to_log,
     apply_optimistic_file_actions,
@@ -55,12 +58,9 @@ from .common import (
     events,
     # Terminal execution
     execute_terminal,
-    # State helpers
-    get_commit_hash,
     get_events_from_log,
     initialize_exec_state,
     maybe_add_file_event,
-    safe_snapshot,
     yield_new_events,
 )
 
@@ -83,23 +83,17 @@ class AsyncLoopMixin:
         events_yielded,
         terminal_event,
         on_event,
+        referenced_keys=None,
     ):
         """Helper to handle common terminal condition logic (success, fail, clarify)."""
         for event in yield_new_events(exec_state, events_yielded):
             yield event
 
-        # Pre-generate commit hash so the terminal event can reference
-        # the commit that will include it
-        next_commit = get_commit_hash() if versioned_state else None
-
-        # Check for file changes and add to log before snapshot
-        file_event = maybe_add_file_event(
-            fs, fs_metadata_before, exec_state, self.name, next_commit
-        )
+        # Check for file changes and add to log before commit
+        file_event = maybe_add_file_event(fs, fs_metadata_before, exec_state, self.name)
         if file_event:
             yield file_event
 
-        terminal_event.commit_hash = next_commit
         add_event_to_log(exec_state, terminal_event, on_event=None)
         if on_event:
             res = call_sync_or_async(on_event, terminal_event)
@@ -107,9 +101,9 @@ class AsyncLoopMixin:
                 await res
         yield terminal_event
 
-        # Snapshot with the pre-generated hash so event.commit_hash matches
+        # Commit with mutation detection
         if versioned_state is not None:
-            safe_snapshot(versioned_state, commit_hash=next_commit)
+            safe_commit(versioned_state, referenced_keys=referenced_keys)
 
     async def _atask_loop_generator(
         self,
@@ -118,7 +112,7 @@ class AsyncLoopMixin:
         inputs_dataclass: type,
         inputs_instance: Any,
         return_type: type,
-        state: Versioned | Live | Namespaced | None,
+        state: Staged | Live | Namespaced | None,
         fs: FileSystem | None,
         fs_metadata_before: dict,
         session: str = "default",
@@ -141,8 +135,8 @@ class AsyncLoopMixin:
         # This handles the race condition where a cancel arrives just as the previous
         # task finishes - we don't want it to immediately cancel this fresh task.
         cancel_key = f"__agex_cancel__{task_name}"
-        if versioned_state is not None:
-            versioned_state.remove_raw(cancel_key)
+        if isinstance(versioned_state, Staged):
+            raw_remove(versioned_state, cancel_key)
         elif hasattr(exec_state, "remove"):
             exec_state.remove(cancel_key)
 
@@ -235,21 +229,22 @@ class AsyncLoopMixin:
                 yield event
             events_yielded = len(events(exec_state))
 
+        # Accumulate referenced state keys across iterations for mutation
+        # detection.  find_refs is called once per iteration and the results
+        # are unioned so that in-place mutations from earlier iterations are
+        # still detected at commit time.
+        accumulated_refs: set[str] = set()
+
         # Main task loop
         for iteration in range(self.max_iterations):
             # Check for cancellation at the start of each iteration
             if check_cancellation(task_name, versioned_state, exec_state):
-                # Pre-generate commit hash so the terminal event can reference
-                # the commit that will include it
-                next_commit = get_commit_hash() if versioned_state else None
-
                 # Record CancelledEvent in the log FIRST
                 cancelled_event = CancelledEvent(
                     agent_name=self.name,
                     task_name=task_name,
                     iterations_completed=iteration,
                 )
-                cancelled_event.commit_hash = next_commit
                 add_event_to_log(exec_state, cancelled_event, on_event=None)
                 if on_event:
                     res = call_sync_or_async(on_event, cancelled_event)
@@ -257,9 +252,9 @@ class AsyncLoopMixin:
                         await res
                 yield cancelled_event
 
-                # Snapshot AFTER adding the event so it's included
+                # Commit AFTER adding the event so it's included
                 if versioned_state is not None:
-                    safe_snapshot(versioned_state, commit_hash=next_commit)
+                    safe_commit(versioned_state)
 
                 raise TaskCancelled(
                     message=f"Task '{task_name}' was cancelled",
@@ -282,6 +277,15 @@ class AsyncLoopMixin:
             )
             llm_response.code = self._strip_markdown_code_fence(llm_response.code)
             code_to_evaluate = llm_response.code
+            if code_to_evaluate:
+                from sblite import find_refs
+
+                try:
+                    accumulated_refs |= find_refs(
+                        code_to_evaluate, namespace=exec_state
+                    )
+                except SyntaxError:
+                    pass
 
             # Create and yield action event
             action_event = create_action_event(self.name, llm_response)
@@ -324,7 +328,7 @@ class AsyncLoopMixin:
 
                     # Persist changes from this iteration
                     if versioned_state is not None:
-                        safe_snapshot(versioned_state)
+                        safe_commit(versioned_state, referenced_keys=accumulated_refs)
 
                     continue  # Terminal implicitly continues to next iteration
 
@@ -359,6 +363,7 @@ class AsyncLoopMixin:
                     events_yielded,
                     success_event,
                     on_event,
+                    referenced_keys=accumulated_refs,
                 ):
                     yield event
                 return
@@ -370,7 +375,7 @@ class AsyncLoopMixin:
 
                 # Persist changes from this iteration (including <file> writes)
                 if versioned_state is not None:
-                    safe_snapshot(versioned_state)
+                    safe_commit(versioned_state, referenced_keys=accumulated_refs)
 
                 continue
 
@@ -384,6 +389,7 @@ class AsyncLoopMixin:
                     events_yielded,
                     clarify_event,
                     on_event,
+                    referenced_keys=accumulated_refs,
                 ):
                     yield event
 
@@ -404,6 +410,7 @@ class AsyncLoopMixin:
                     events_yielded,
                     fail_event,
                     on_event,
+                    referenced_keys=accumulated_refs,
                 ):
                     yield event
 
@@ -457,7 +464,7 @@ class AsyncLoopMixin:
         inputs_dataclass: type,
         inputs_instance: Any,
         return_type: type,
-        state: Versioned | Namespaced | None,
+        state: Staged | Namespaced | None,
         session: str = "default",
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
@@ -467,12 +474,12 @@ class AsyncLoopMixin:
     ):
         """Async version of _run_task_loop."""
 
-        versioned_state: Versioned | None = None
-        if isinstance(state, Versioned):
+        versioned_state: Staged | None = None
+        if isinstance(state, Staged):
             versioned_state = state
         elif isinstance(state, Namespaced):
-            base = state.base_store
-            if isinstance(base, Versioned):
+            base = get_root(state)
+            if isinstance(base, Staged):
                 versioned_state = base
 
         if self._fs_config:
@@ -503,7 +510,7 @@ class AsyncLoopMixin:
                 )
 
                 async for event in generator:
-                    # Track FileEvents but don't emit yet - wait for merge
+                    # Track FileEvents but don't emit yet - wait for completion
                     from agex.agent.events import FileEvent
 
                     if isinstance(event, FileEvent):
@@ -511,38 +518,23 @@ class AsyncLoopMixin:
                     elif isinstance(event, SuccessEvent):
                         result = event.result
 
-                if versioned_state is not None:
-                    success = versioned_state.merge(on_conflict=on_conflict)
-                    if not success:
-                        raise ConcurrencyError("Failed to merge state")
-
-                # Emit FileEvents after merge
+                # Emit FileEvents after successful completion
                 for file_event in file_events:
                     if on_event:
                         on_event(file_event)
 
                 return result
 
-            except ConcurrencyError:
+            except (ConcurrencyError, MergeConflict):
                 if on_conflict == "abandon":
                     return None
                 if attempt >= max_conflict_retries:
                     raise
                 if versioned_state is not None:
-                    versioned_state.reset()
+                    versioned_state.refresh()
 
             except (TaskFail, TaskClarify, _AgentExit):
-                if versioned_state is not None:
-                    try:
-                        if on_conflict == "abandon":
-                            versioned_state.merge(on_conflict="abandon")
-                        else:
-                            versioned_state.merge()
-                    except ConcurrencyError:
-                        if on_conflict != "abandon":
-                            raise
-
-                # Emit FileEvents after merge
+                # Emit FileEvents before re-raising
                 for file_event in file_events:
                     if on_event:
                         on_event(file_event)

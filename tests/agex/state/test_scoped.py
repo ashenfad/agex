@@ -1,4 +1,6 @@
-from agex.state import Live, Scoped
+from kvit import Live
+
+from agex.state import Scoped
 
 
 def test_scoped_state_read_through():

@@ -1,7 +1,7 @@
 from typing import Any, Literal, Union, overload
 
 from ..agent import Agent
-from ..state.versioned import Versioned
+from ..state import Staged, state_diffs
 from .definitions import render_definitions
 from .stream import StreamRenderer
 from .token_count import system_token_count
@@ -17,7 +17,7 @@ def view(
 
 @overload
 def view(
-    obj: Versioned,
+    obj: Staged,
     *,
     focus: Literal["recent", "full"] = "recent",
     model_name: str = "gpt-4",
@@ -26,7 +26,7 @@ def view(
 
 
 def view(
-    obj: Union[Agent, Versioned],
+    obj: Union[Agent, Staged],
     *,
     focus: Literal["recent", "full", "tokens"] = "recent",
     model_name: str = "gpt-4",
@@ -47,7 +47,7 @@ def view(
     - `view(state)`: Shows a snapshot of the agent's memory.
 
     Args:
-        obj: The Agent or Versioned state store to view.
+        obj: The Agent or Staged state store to view.
         focus: For state views, the type of view to generate.
             "recent": A summary of state changes from the most recent execution.
             "full": The complete, raw key-value state at the current commit.
@@ -77,9 +77,9 @@ def view(
             return "\n".join(lines)
         return render_definitions(obj, full=full)
 
-    if isinstance(obj, Versioned):
+    if isinstance(obj, Staged):
         state = obj
-        if state.live:
+        if state.has_changes:
             raise ValueError("Cannot view state with uncommitted live changes.")
 
         if focus == "full":
@@ -90,7 +90,7 @@ def view(
                 return ""
 
             # 1. Get the state changes from the most recent commit.
-            state_changes = state.diffs()
+            state_changes = state_diffs(state)
 
             # 2. Render just the state stream.
             renderer = StreamRenderer(model_name=model_name)

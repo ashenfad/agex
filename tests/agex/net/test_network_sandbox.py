@@ -215,9 +215,10 @@ class TestAgentNetworkIntegration:
 
     def test_evaluate_program_installs_sandbox(self):
         """Test that evaluate_program installs the network sandbox lazily."""
+        from kvit import Live
+
         from agex import Agent, connect_llm, connect_state
         from agex.eval.core import evaluate_program
-        from agex.state import Live
 
         # Uninstall first to verify evaluate_program installs it
         uninstall_network_sandbox()
@@ -239,9 +240,10 @@ class TestAgentNetworkIntegration:
 
     def test_registered_fn_with_network_access(self):
         """Test that functions registered with network_access=True can use network."""
+        from kvit import Live
+
         from agex import Agent, connect_llm, connect_state
         from agex.eval.core import evaluate_program
-        from agex.state import Live
 
         agent = Agent(
             llm=connect_llm(provider="dummy"),
@@ -272,9 +274,10 @@ class TestAgentNetworkIntegration:
 
     def test_registered_fn_without_network_access(self):
         """Test that functions without network_access=True cannot use network."""
+        from kvit import Live
+
         from agex import Agent, connect_llm, connect_state
         from agex.eval.core import evaluate_program
-        from agex.state import Live
 
         agent = Agent(
             llm=connect_llm(provider="dummy"),
@@ -303,9 +306,10 @@ class TestAgentNetworkIntegration:
 
     def test_registered_cls_with_network_access(self):
         """Test that classes registered with network_access=True have network access."""
+        from kvit import Live
+
         from agex import Agent, connect_llm, connect_state
         from agex.eval.core import evaluate_program
-        from agex.state import Live
 
         agent = Agent(
             llm=connect_llm(provider="dummy"),
@@ -332,9 +336,10 @@ class TestAgentNetworkIntegration:
         """Test that modules registered with network_access=True have network access."""
         from types import ModuleType
 
+        from kvit import Live
+
         from agex import Agent, connect_llm, connect_state
         from agex.eval.core import evaluate_program
-        from agex.state import Live
 
         agent = Agent(
             llm=connect_llm(provider="dummy"),

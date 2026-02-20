@@ -1,4 +1,5 @@
 import pytest
+from kvit import Versioned
 
 from agex.agent import Agent
 from agex.agent.datatypes import MemberSpec
@@ -102,10 +103,11 @@ def test_register_instance_without_name_fails():
 
 def test_access_unexposed_member_fails():
     """Tests that accessing a member not included in the spec fails."""
+    from kvit import Namespaced, Staged
+
     from agex.eval.core import evaluate_program
+    from agex.state import _agex_decoder, _agex_encoder
     from agex.state.kv import Memory
-    from agex.state.namespaced import Namespaced
-    from agex.state.versioned import Versioned
 
     db = DatabaseConnection("test_db")
     agent = Agent(primer="Test agent.")
@@ -114,7 +116,9 @@ def test_access_unexposed_member_fails():
     agent.module(db, name="db", exclude=["query"])
 
     # Set up state for direct evaluation
-    versioned_state = Versioned(Memory())
+    versioned_state = Staged(
+        Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder
+    )
     exec_state = Namespaced(versioned_state, namespace=agent.name)
 
     # Test code that tries to access unexposed method

@@ -81,7 +81,7 @@ class TestStateInit:
         state = host.resolve_state(config, "test_session")
 
         # Check that a snapshot was taken (history has commits)
-        history = list(state.history())
+        history = list(state.versioned.history())
         assert len(history) >= 1  # At least the init snapshot
         # Initial commit should contain x
         assert state.get("x") == 42

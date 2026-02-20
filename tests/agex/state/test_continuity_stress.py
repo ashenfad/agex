@@ -1,11 +1,26 @@
 import numpy as np
 import pytest
+from kvit import Staged, Versioned
 
 from agex.agent import Agent
 from agex.eval.core import evaluate_program
 from agex.eval.user_errors import AgexAttributeError
-from agex.state import Versioned
+from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Memory
+
+
+def _make_versioned(store=None, commit_hash=None):
+    """Create a Staged store wrapping a kvit Versioned with agex codecs."""
+    if store is None:
+        store = Memory()
+    kw = {}
+    if commit_hash is not None:
+        kw["commit_hash"] = commit_hash
+    return Staged(
+        Versioned(store, **kw),
+        encoder=_agex_encoder,
+        decoder=_agex_decoder,
+    )
 
 
 def test_multi_step_program_with_snapshots():
@@ -19,7 +34,7 @@ def test_multi_step_program_with_snapshots():
     agent.module(np, name="np")
 
     store = Memory()
-    state = Versioned(store)
+    state = _make_versioned(store)
 
     # 2. Define a sequence of programs that build on each other
     programs = [
@@ -43,10 +58,10 @@ instance = MyClass(arr[1])
         "d = my_lambda(5)",
     ]
 
-    # 3. Execute the programs in sequence, snapshotting after each one
+    # 3. Execute the programs in sequence, committing after each one
     for i, program in enumerate(programs):
         evaluate_program(program, agent, state)
-        state.snapshot()
+        state.commit()
 
     # 4. Verify the final state
     assert state.get("d") == 25
@@ -54,7 +69,7 @@ instance = MyClass(arr[1])
     np.testing.assert_array_equal(final_arr, np.array([1, 20]))
 
     # 5. Load the state into a new agent and verify it still works
-    state2 = Versioned(store, commit_hash=state.current_commit)
+    state2 = _make_versioned(store, commit_hash=state.current_commit)
     agent2 = Agent()
     agent2.module(np, name="np")
 
@@ -64,7 +79,7 @@ instance = MyClass(arr[1])
     assert state2.get("f") == 30
 
     # 6. Test that state is clean and doesn't leak
-    state3 = Versioned(store, commit_hash=state.current_commit)
+    state3 = _make_versioned(store, commit_hash=state.current_commit)
     with pytest.raises(AgexAttributeError):
         # This agent doesn't have numpy registered
         evaluate_program("z = np.array([1])", Agent(), state3)
@@ -80,7 +95,7 @@ def test_comprehensive_serialization_stress():
     agent.module(np, name="np")
 
     store = Memory()
-    state = Versioned(store)
+    state = _make_versioned(store)
 
     # Phase 1: Complex function definitions and closures
     phase1 = """
@@ -132,7 +147,7 @@ chain_result = chain_func("level4")
 """
 
     evaluate_program(phase1, agent, state)
-    state.snapshot()
+    state.commit()
 
     # Verify phase 1 results
     assert state.get("result1") == 55
@@ -232,7 +247,7 @@ stats2_func = processor2.get_stats()
 """
 
     evaluate_program(phase2, agent, state)
-    state.snapshot()
+    state.commit()
 
     # Verify phase 2 results
     stats1 = state.get("stats1_func")()
@@ -321,7 +336,7 @@ complex_structure = {
 """
 
     evaluate_program(phase3, agent, state)
-    state.snapshot()
+    state.commit()
 
     # Verify phase 3 results
     assert len(state.get("points")) > 0
@@ -411,7 +426,7 @@ results_calc = result_func_calc("full")
 """
 
     evaluate_program(phase4, agent, state)
-    state.snapshot()
+    state.commit()
 
     # Verify phase 4 results
     results_default = state.get("result_func_default")("full")
@@ -491,7 +506,7 @@ mega_structure = {
 """
 
     evaluate_program(phase5, agent, state)
-    state.snapshot()
+    state.commit()
 
     # Verify phase 5 results
     mega_struct = state.get("mega_structure")
@@ -574,7 +589,7 @@ final_summary_short = final_report_func("summary")
 """
 
     evaluate_program(phase6, agent, state)
-    state.snapshot()
+    state.commit()
 
     # Verify phase 6 results
     final_results = state.get("final_summary")
@@ -584,14 +599,14 @@ final_summary_short = final_report_func("summary")
     assert final_results["cross_phase_dependencies"] == "verified"
 
     # EXTREME TEST: Multiple rehydration cycles with different agents
-    print(f"Testing EXTREME rehydration with {len(state.live)} state variables...")
+    print(f"Testing EXTREME rehydration with {len(state)} state variables...")
 
     # Create multiple new agents and test rehydration robustness
     for cycle in range(3):  # 3 rehydration cycles
         agent_new = Agent()
         agent_new.module(np, name="np")
 
-        state_new = Versioned(store, commit_hash=state.current_commit)
+        state_new = _make_versioned(store, commit_hash=state.current_commit)
 
         # Test that ALL complex functionality still works after rehydration
         rehydration_test = f"""
@@ -660,7 +675,7 @@ cycle_results['integration_sum'] = cycle_integration
         )  # Should have 1 error (division by zero)
 
     print("✅ EXTREME Comprehensive serialization stress test passed!")
-    print(f"   - Serialized and rehydrated {len(state.live)} state variables")
+    print(f"   - Serialized and rehydrated {len(state)} state variables")
     print(
         f"   - Tested 6 phases with {final_results['total_serialized_objects']} total objects"
     )

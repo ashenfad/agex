@@ -5,9 +5,10 @@ import warnings
 from dataclasses import dataclass, make_dataclass
 from typing import Any, Callable
 
+from kvit import Store
+
 from agex.agent.base import get_agent_by_name, resolve_agent
 
-from ..state import State
 from ..state.closure import LiveClosureState
 from ..state.scoped import Scoped
 from .analysis import get_free_variables
@@ -65,7 +66,7 @@ class UserFunction:
     name: str
     args: ast.arguments
     body: list[ast.stmt]
-    closure_state: State  # A *reference* to the state where the function was defined.
+    closure_state: Store  # A *reference* to the state where the function was defined.
     source_text: str | None = None
     agent_fingerprint: str | None = (
         None  # Fingerprint of the agent this function was defined in

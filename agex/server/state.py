@@ -2,13 +2,15 @@
 State URI resolution for remote execution.
 
 Handles translation of state URIs (e.g., "disk://session_id") to actual
-Versioned state objects.
+Staged state objects.
 """
 
 import os
 from urllib.parse import urlparse
 
-from agex.state import Versioned
+from kvit import Staged, Versioned
+
+from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Disk
 
 
@@ -21,9 +23,9 @@ class InvalidStateURIError(ValueError):
 def resolve_state_uri(
     uri: str,
     base_path: str = "/var/agex/state",
-) -> Versioned:
+) -> Staged:
     """
-    Resolve a state URI to a Versioned state object.
+    Resolve a state URI to a Staged state object.
 
     Currently supports:
     - disk://session_id: Disk-backed state in base_path/session_id
@@ -33,7 +35,7 @@ def resolve_state_uri(
         base_path: Base path for disk:// URIs (server-configured)
 
     Returns:
-        A Versioned state object
+        A Staged state object
 
     Raises:
         InvalidStateURIError: If the URI is malformed or the scheme is unsupported
@@ -51,9 +53,9 @@ def resolve_state_uri(
     raise InvalidStateURIError(f"Unsupported state scheme: {scheme}")
 
 
-def _resolve_disk_uri(parsed, base_path: str) -> Versioned:
+def _resolve_disk_uri(parsed, base_path: str) -> Staged:
     """
-    Resolve a disk:// URI to a Versioned state backed by disk storage.
+    Resolve a disk:// URI to a Staged state backed by disk storage.
 
     Security: Paths are normalized and sandboxed to the base_path directory.
     """
@@ -88,5 +90,7 @@ def _resolve_disk_uri(parsed, base_path: str) -> Versioned:
             f"Path traversal prevented for session: {session_id}"
         )
 
-    # Create the Versioned state
-    return Versioned(Disk(full_path))
+    # Create the Staged state
+    return Staged(
+        Versioned(Disk(full_path)), encoder=_agex_encoder, decoder=_agex_decoder
+    )

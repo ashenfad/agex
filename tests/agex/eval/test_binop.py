@@ -1,7 +1,7 @@
 import pytest
+from kvit import Live
 
 from agex.eval.error import EvalError
-from agex.state import Live
 
 from .helpers import eval_and_get_state
 

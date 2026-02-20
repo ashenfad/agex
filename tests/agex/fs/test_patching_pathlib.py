@@ -4,9 +4,15 @@ import os
 from pathlib import Path
 
 import pytest
+from kvit import Live, Staged, Versioned
 
 from agex.fs import IsolatedFS, VirtualFS, with_isolated_fs, with_virtual_fs
-from agex.state import Live, Versioned
+from agex.state import _agex_decoder, _agex_encoder
+from agex.state.kv import Memory
+
+
+def _make_state():
+    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class TestPathlibIntegration:
@@ -226,7 +232,7 @@ class TestPathlibIntegration:
 
     def test_versioned_vfs(self):
         """Test VirtualFS work with Versioned state and snapshots."""
-        state = Versioned()
+        state = _make_state()
         vfs = VirtualFS(state)
 
         with with_virtual_fs(vfs):
@@ -235,9 +241,9 @@ class TestPathlibIntegration:
             # 1. Create file (Version 1)
             p.write_text("v1")
             assert p.read_text() == "v1"
-            # Versioned state should snapshot on write (if configured, VFS handles this via state.snapshot())
-            # For manual VFS usage, implicit snapshotting depends on VFS implementation.
-            # VirtualFS.write calls state.snapshot() by default.
+            # Versioned state should commit on write (if configured, VFS handles this via state.commit())
+            # For manual VFS usage, implicit committing depends on VFS implementation.
+            # VirtualFS.write calls state.commit() by default.
 
             # 2. Update file (Version 2)
             p.write_text("v2")
@@ -245,7 +251,7 @@ class TestPathlibIntegration:
 
             # 3. Verify history
             # We expect at least 2 commits (one for each write)
-            history = list(state.history())
+            history = list(state.versioned.history())
             assert len(history) >= 2
 
             # 4. Revert to previous version (history[1] is the second newest)

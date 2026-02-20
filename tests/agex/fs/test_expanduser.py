@@ -7,15 +7,22 @@ correctly sanitize home directory references when VFS or IsolatedFS is active.
 import os
 import tempfile
 
+from kvit import Live, Staged, Versioned
+
 from agex.fs.isolated import IsolatedFS
 from agex.fs.patching import with_isolated_fs, with_virtual_fs
 from agex.fs.virtual import VirtualFS
-from agex.state import Live, Versioned
+from agex.state import _agex_decoder, _agex_encoder
+from agex.state.kv import Memory
+
+
+def _make_state():
+    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 def test_expanduser_vfs():
     """Test that expanduser returns / when VFS is active."""
-    state = Versioned()
+    state = _make_state()
     vfs = VirtualFS(state)
 
     # Without VFS, should return real home
@@ -51,7 +58,7 @@ def test_expanduser_isolated():
 
 def test_getenv_home_vfs():
     """Test that getenv('HOME') returns / when VFS is active."""
-    state = Versioned()
+    state = _make_state()
     vfs = VirtualFS(state)
 
     # Without VFS, should return real home
@@ -84,7 +91,7 @@ def test_getenv_home_isolated():
 
 def test_expandvars_vfs():
     """Test that expandvars replaces $HOME with / when VFS is active."""
-    state = Versioned()
+    state = _make_state()
     vfs = VirtualFS(state)
 
     # Without VFS, $HOME should expand to real home
@@ -120,7 +127,7 @@ def test_expandvars_isolated():
 
 def test_combined_expansion_vfs():
     """Test that expanduser and expandvars work together correctly with VFS."""
-    state = Versioned()
+    state = _make_state()
     vfs = VirtualFS(state)
 
     with with_virtual_fs(vfs):
@@ -138,7 +145,7 @@ def test_combined_expansion_vfs():
 
 def test_pathlike_support():
     """Test that Path objects work with expanduser when VFS is active."""
-    state = Versioned()
+    state = _make_state()
     vfs = VirtualFS(state)
 
     with with_virtual_fs(vfs):
@@ -154,7 +161,7 @@ def test_pathlike_support():
 
 def test_no_leak_in_error_messages():
     """Verify that error messages don't leak home directory paths."""
-    state = Versioned()
+    state = _make_state()
     vfs = VirtualFS(state)
 
     with with_virtual_fs(vfs):

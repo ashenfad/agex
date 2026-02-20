@@ -6,13 +6,13 @@ and the improved class registration that automatically detects instance attribut
 """
 
 import pytest
+from kvit import Live
 
 from agex import Agent, events
 from agex.agent.datatypes import MemberSpec
 from agex.agent.events import OutputEvent
 from agex.eval.core import evaluate_program
 from agex.eval.user_errors import AgexAttributeError
-from agex.state import Live
 
 
 class MockDatabaseConnection:

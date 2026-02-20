@@ -2,8 +2,9 @@ import ast
 import time
 from typing import Any, Callable
 
+from kvit import Store
+
 from agex.agent.base import BaseAgent
-from agex.state.core import State
 
 from .error import EvalError
 from .resolver import Resolver
@@ -15,7 +16,7 @@ class BaseEvaluator(ast.NodeVisitor):
     def __init__(
         self,
         agent: "BaseAgent",
-        state: "State",
+        state: Store,
         eval_timeout_seconds: float = 5.0,
         start_time: float | None = None,
         sub_agent_time: float = 0.0,

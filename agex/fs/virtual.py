@@ -11,13 +11,10 @@ import io
 import os
 import pickle
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+
+from kvit import Store
 
 from agex.fs.context import vfs_defer_snapshots
-
-if TYPE_CHECKING:
-    from agex.state import State
-
 
 from .base import FileInfo, FileMetadata, FileSystem
 
@@ -33,9 +30,7 @@ class VirtualFile:
         mode: The file mode ('w', 'wb', 'a', 'ab').
     """
 
-    def __init__(
-        self, vfs: "VirtualFS", state: "State", key: str, path: str, mode: str
-    ):
+    def __init__(self, vfs: "VirtualFS", state: Store, key: str, path: str, mode: str):
         """Initialize a writable virtual file.
 
         Args:
@@ -135,7 +130,7 @@ class VirtualFS(FileSystem):
     """State-backed virtual filesystem with metadata tracking.
 
     Provides file operations backed by agent state. Each file is stored
-    as a separate state key, enabling granular versioning with Versioned state.
+    as a separate state key, enabling granular versioning with Staged state.
 
     File metadata (size, creation time, modification time) is automatically
     tracked for all files and can be accessed via stat() or list_detailed().
@@ -160,7 +155,7 @@ class VirtualFS(FileSystem):
     METADATA_KEY = "__vfs_metadata__"
     CWD_KEY = "__vfs_cwd__"
 
-    def __init__(self, state: "State", max_size_mb: int | None = None):
+    def __init__(self, state: Store, max_size_mb: int | None = None):
         """Initialize virtual filesystem backed by state.
 
         Args:
@@ -567,8 +562,8 @@ class VirtualFS(FileSystem):
         self._current_size = None  # Will be recomputed on next access
 
         # Snapshot if requested and state supports it
-        if snapshot and hasattr(self._state, "snapshot"):
-            self._state.snapshot()
+        if snapshot and hasattr(self._state, "commit"):
+            self._state.commit()
 
     def write_many(self, files: dict[str, bytes]) -> None:
         """Write multiple files atomically.
@@ -625,8 +620,8 @@ class VirtualFS(FileSystem):
         self._current_size = None  # Will be recomputed on next access
 
         # Create single snapshot if using versioned state
-        if hasattr(self._state, "snapshot"):
-            self._state.snapshot()
+        if hasattr(self._state, "commit"):
+            self._state.commit()
 
     def list(self, path: str = "/", recursive: bool = False) -> list[str]:
         """List directory contents.
@@ -835,9 +830,9 @@ class VirtualFS(FileSystem):
             FileNotFoundError: If file doesn't exist.
         """
         key = self._encode_path(path)
-        removed = self._state.remove(key)
-        if not removed:
+        if key not in self._state:
             raise FileNotFoundError(path)
+        self._state.remove(key)
 
         # Remove from metadata
         path = self._normalize_path(path)
@@ -850,8 +845,8 @@ class VirtualFS(FileSystem):
         self._current_size = None  # Will be recomputed on next access
 
         # Snapshot if requested and state supports it (after successful removal)
-        if snapshot and hasattr(self._state, "snapshot"):
-            self._state.snapshot()
+        if snapshot and hasattr(self._state, "commit"):
+            self._state.commit()
 
     def remove_many(self, paths: list[str]) -> None:
         """Remove multiple files atomically.
@@ -889,8 +884,8 @@ class VirtualFS(FileSystem):
         self._current_size = None  # Will be recomputed on next access
 
         # Create single snapshot if using versioned state
-        if hasattr(self._state, "snapshot"):
-            self._state.snapshot()
+        if hasattr(self._state, "commit"):
+            self._state.commit()
 
     def mkdir(self, path: str, exist_ok: bool = True) -> None:
         """Create a directory.
@@ -1020,8 +1015,8 @@ class VirtualFS(FileSystem):
         self.remove(src, snapshot=False)
 
         # Snapshot once at the end if requested
-        if snapshot and hasattr(self._state, "snapshot"):
-            self._state.snapshot()
+        if snapshot and hasattr(self._state, "commit"):
+            self._state.commit()
 
     def stat(self, path: str) -> FileMetadata:
         """Get metadata for a specific file.

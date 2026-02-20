@@ -1,11 +1,19 @@
 import pytest
+from kvit import Namespaced, Staged, Versioned
 
-from agex.state import Namespaced, Versioned, kv
+from agex.state import _agex_decoder, _agex_encoder
+from agex.state.kv import Memory
+
+
+def _make_state(store=None):
+    if store is None:
+        store = Memory()
+    return Staged(Versioned(store), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 def test_namespaced_get_set():
-    store = kv.Memory()
-    state = Versioned(store)
+    store = Memory()
+    state = _make_state(store)
     ns1 = Namespaced(state, "ns1")
 
     ns1.set("a", 1)
@@ -13,7 +21,7 @@ def test_namespaced_get_set():
 
 
 def test_namespaced_isolation():
-    state = Versioned(kv.Memory())
+    state = _make_state()
     ns1 = Namespaced(state, "ns1")
     ns2 = Namespaced(state, "ns2")
 
@@ -25,7 +33,7 @@ def test_namespaced_isolation():
 
 
 def test_nested_namespaces():
-    state = Versioned(kv.Memory())
+    state = _make_state()
     top = Namespaced(state, "top")
     bottom = Namespaced(top, "bottom")
 
@@ -35,7 +43,7 @@ def test_nested_namespaces():
     assert top.get("a") == 1
     assert bottom.get("a") == 2
 
-    state.snapshot()
+    state.commit()
 
     # Recreate from scratch to test reading
     top2 = Namespaced(state, "top")
@@ -45,23 +53,23 @@ def test_nested_namespaces():
     assert bottom2.get("a") == 2
 
 
-def test_namespaced_base_store():
-    state = Versioned(kv.Memory())
+def test_namespaced_root_store():
+    state = _make_state()
     ns1 = Namespaced(state, "ns1")
     ns2 = Namespaced(ns1, "ns2")
 
-    assert ns2.base_store is state
+    assert ns2._store is state
 
 
 def test_namespace_disallows_slash():
-    state = Versioned(kv.Memory())
+    state = _make_state()
     with pytest.raises(ValueError):
         Namespaced(state, "a/b")
 
 
 def test_full_path_tracking():
     """Test that namespace path is properly tracked for nested namespaces."""
-    state = Versioned(kv.Memory())
+    state = _make_state()
 
     # Single level
     ns1 = Namespaced(state, "agent")
@@ -77,7 +85,7 @@ def test_full_path_tracking():
 
 def test_namespace_collision_prevention():
     """Test that similar namespace paths don't collide."""
-    state = Versioned(kv.Memory())
+    state = _make_state()
 
     # Create overlapping namespace hierarchies:
     # Path 1: a/b
@@ -112,7 +120,7 @@ def test_namespace_collision_prevention():
 
 def test_complex_namespace_isolation():
     """Test isolation with multiple overlapping paths."""
-    state = Versioned(kv.Memory())
+    state = _make_state()
 
     # Create multiple agents with similar path structures
     orchestrator = Namespaced(state, "orchestrator")
@@ -148,37 +156,9 @@ def test_complex_namespace_isolation():
     assert worker2.get("nonexistent") is None
 
 
-def test_local_namespace_detection():
-    """Test the _local_namespace method works correctly with full paths."""
-    state = Versioned(kv.Memory())
-
-    # Create nested namespace
-    ns_a = Namespaced(state, "a")
-    ns_ab = Namespaced(ns_a, "b")
-
-    # Test keys that should and shouldn't match
-    test_cases = [
-        ("a/b/data", "data"),  # Direct child - should be visible
-        ("a/b/config", "config"),  # Another direct child - should be visible
-        ("a/b/sub/task", None),  # Child namespace - should be hidden
-        ("a/b/worker/status", None),  # Another child namespace - should be hidden
-        ("a/b/", None),  # Empty remainder
-        ("a/c/data", None),  # Different sibling path
-        ("a/c/b/data", None),  # Similar but longer path
-        ("other/data", None),  # Completely different path
-        ("a/b", None),  # Path without trailing slash/content
-    ]
-
-    for key, expected in test_cases:
-        result = ns_ab._local_namespace(key)
-        assert (
-            result == expected
-        ), f"Key '{key}' should return '{expected}', got '{result}'"
-
-
 def test_keys_only_shows_direct_children():
     """Test that keys() only shows direct keys, not sub-namespace keys (filesystem-like behavior)."""
-    state = Versioned(kv.Memory())
+    state = _make_state()
 
     # Create namespace
     ns_ab = Namespaced(Namespaced(state, "a"), "b")
@@ -213,7 +193,7 @@ def test_keys_only_shows_direct_children():
 
 def test_mixed_direct_and_nested_keys():
     """Test complex scenario with both direct keys and nested namespaces."""
-    state = Versioned(kv.Memory())
+    state = _make_state()
 
     # Create base namespace
     ns_root = Namespaced(state, "root")
@@ -271,7 +251,7 @@ def test_mixed_direct_and_nested_keys():
 
 def test_descendant_keys_hierarchical_traversal():
     """Test descendant_keys() returns all keys including nested namespaces."""
-    state = Versioned(kv.Memory())
+    state = _make_state()
 
     # Create namespace
     ns_ab = Namespaced(Namespaced(state, "a"), "b")
@@ -311,7 +291,7 @@ def test_descendant_keys_hierarchical_traversal():
 
 def test_descendant_keys_nested_namespace_isolation():
     """Test descendant_keys() respects namespace boundaries."""
-    state = Versioned(kv.Memory())
+    state = _make_state()
 
     # Create multiple top-level namespaces
     ns_a = Namespaced(state, "a")
@@ -360,7 +340,7 @@ def test_descendant_keys_nested_namespace_isolation():
 
 def test_descendant_keys_empty_namespace():
     """Test descendant_keys() on namespace with no keys."""
-    state = Versioned(kv.Memory())
+    state = _make_state()
     ns_empty = Namespaced(state, "empty")
 
     # Should return empty iterable
@@ -380,7 +360,7 @@ def test_descendant_keys_empty_namespace():
 
 def test_descendant_keys_vs_keys_comparison():
     """Test the difference between keys() and descendant_keys() in various scenarios."""
-    state = Versioned(kv.Memory())
+    state = _make_state()
 
     # Test 1: Only direct keys
     ns1 = Namespaced(state, "test1")

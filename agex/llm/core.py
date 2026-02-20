@@ -21,6 +21,8 @@ from pydantic import BaseModel, Field
 from agex.agent.datatypes import EditAction, FileAction
 
 if TYPE_CHECKING:
+    from kvit import Store
+
     from agex.agent.events import Event
 
 # ============================================================================
@@ -155,7 +157,7 @@ class ResponseBuilder:
     def __init__(
         self,
         agent_name: str | None = None,
-        exec_state: Any | None = None,
+        exec_state: "Store | None" = None,
     ):
         self.agent_name = agent_name
         self.exec_state = exec_state

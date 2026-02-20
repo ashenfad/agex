@@ -7,9 +7,15 @@ functionality added to VirtualFS.
 import os
 
 import pytest
+from kvit import Live, Staged, Versioned
 
 from agex.fs import VirtualFS, with_virtual_fs
-from agex.state import Live, Versioned
+from agex.state import _agex_decoder, _agex_encoder
+from agex.state.kv import Memory
+
+
+def _make_state():
+    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class TestVFSMkdir:
@@ -330,12 +336,12 @@ class TestVFSCwdPersistence:
 
     def test_cwd_persists_across_snapshots(self):
         """CWD is saved and restored with Versioned state."""
-        state = Versioned()
+        state = _make_state()
         vfs = VirtualFS(state)
 
         vfs.makedirs("level1/level2")
         vfs.chdir("level1/level2")
-        state.snapshot()
+        state.commit()
 
         # Create new VFS from same state
         vfs2 = VirtualFS(state)
@@ -343,19 +349,19 @@ class TestVFSCwdPersistence:
 
     def test_cwd_revert_on_checkout(self):
         """CWD is restored when checking out old state."""
-        state = Versioned()
+        state = _make_state()
         vfs = VirtualFS(state)
 
         # State 1: CWD at root
         vfs.mkdir("dir1")
-        state.snapshot()
+        state.commit()
 
         # State 2: CWD at /dir1
         vfs.chdir("dir1")
-        state.snapshot()
+        state.commit()
 
         # Checkout state 1
-        commits = list(state.history())
+        commits = list(state.versioned.history())
         old_state = state.checkout(commits[1])  # Second newest = first snapshot
 
         old_vfs = VirtualFS(old_state)

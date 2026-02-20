@@ -1,6 +1,13 @@
+from kvit import Namespaced, Staged, Versioned
+
 from agex.agent.events import ActionEvent, OutputEvent, SuccessEvent, TaskStartEvent
-from agex.state import Namespaced, Versioned, events, kv
+from agex.state import _agex_decoder, _agex_encoder, events
+from agex.state.kv import Memory
 from agex.state.log import add_event_to_log
+
+
+def _make_state():
+    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class TestUnifiedEventsAPI:
@@ -8,7 +15,7 @@ class TestUnifiedEventsAPI:
 
     def test_events_current_namespace_with_children_default(self):
         """Test events() on current namespace includes children by default."""
-        state = Versioned(kv.Memory())
+        state = _make_state()
 
         # Create namespace hierarchy
         ns_root = Namespaced(state, "root")
@@ -44,7 +51,7 @@ class TestUnifiedEventsAPI:
 
     def test_events_current_namespace_children_false(self):
         """Test events() with children=False only shows current namespace."""
-        state = Versioned(kv.Memory())
+        state = _make_state()
 
         # Create namespace hierarchy
         ns_root = Namespaced(state, "root")
@@ -83,7 +90,7 @@ class TestUnifiedEventsAPI:
 
     def test_events_namespace_navigation(self):
         """Test events() can navigate to specific namespaces."""
-        state = Versioned(kv.Memory())
+        state = _make_state()
 
         # Create complex hierarchy: root -> orchestrator -> worker
         ns_root = Namespaced(state, "root")
@@ -128,10 +135,10 @@ class TestUnifiedEventsAPI:
 
     def test_events_versioned_and_live_states(self):
         """Test events() works correctly with Versioned and Live states."""
-        from agex.state import Live
+        from kvit import Live
 
         # Test with Versioned state
-        versioned_state = Versioned(kv.Memory())
+        versioned_state = _make_state()
         add_event_to_log(
             versioned_state,
             TaskStartEvent(
@@ -156,7 +163,7 @@ class TestUnifiedEventsAPI:
 
     def test_events_hierarchical_collection(self):
         """Test events() correctly collects from complex namespace hierarchies."""
-        state = Versioned(kv.Memory())
+        state = _make_state()
 
         # Create multi-level hierarchy with multiple branches
         ns_app = Namespaced(state, "app")
@@ -201,7 +208,7 @@ class TestUnifiedEventsAPI:
 
     def test_events_empty_namespaces(self):
         """Test events() handles empty namespaces correctly."""
-        state = Versioned(kv.Memory())
+        state = _make_state()
 
         # Test empty root state
         empty_events = events(state)
@@ -221,7 +228,7 @@ class TestUnifiedEventsAPI:
 
     def test_events_key_filtering(self):
         """Test that events() only processes __event_log__ keys."""
-        state = Versioned(kv.Memory())
+        state = _make_state()
         ns_test = Namespaced(state, "test")
 
         # Add event log and other keys
@@ -255,7 +262,7 @@ def test_events_chronological_sorting():
     """Test that events() returns events sorted by timestamp in chronological order."""
     from datetime import datetime, timezone
 
-    state = Versioned(kv.Memory())
+    state = _make_state()
 
     # Create events with known timestamps (simulate events created at different times)
     base_time = datetime.now(timezone.utc)
