@@ -174,6 +174,20 @@ class AgentAwareFS(FileSystem):
         """List directory with metadata (no event)."""
         return self._fs.list_detailed(path, recursive=recursive)
 
+    def listdir(self, path: str = "/", recursive: bool = False) -> list[str]:
+        """List directory as paths (no event)."""
+        return self._fs.listdir(path, recursive=recursive)
+
+    def listdir_detailed(
+        self, path: str = "/", recursive: bool = False
+    ) -> list[FileInfo]:
+        """List directory with full metadata (no event)."""
+        return self._fs.listdir_detailed(path, recursive=recursive)
+
+    def rmdir(self, path: str) -> None:
+        """Remove an empty directory."""
+        self._fs.rmdir(path)
+
     def stat(self, path: str) -> FileMetadata:
         """Get file metadata (no event)."""
         return self._fs.stat(path)

@@ -24,6 +24,7 @@ classifiers = [
 requires-python = ">=3.10"
 
 dependencies = [
+    "faketerm",
     "tiktoken",
     "xxhash",
     "diskcache",
@@ -104,6 +105,9 @@ all-hosts = [
     "agex[http]",
     "agex[modal]",
 ]
+
+[tool.uv.sources]
+faketerm = { path = "../faketerm", editable = true }
 
 [tool.ruff]
 line-length = 88

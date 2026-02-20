@@ -1133,3 +1133,11 @@ class VirtualFS(FileSystem):
                     )
 
         return result
+
+    def listdir(self, path: str = "/", recursive: bool = False) -> list[str]:
+        return self.list(path, recursive=recursive)
+
+    def listdir_detailed(
+        self, path: str = "/", recursive: bool = False
+    ) -> list[FileInfo]:
+        return self.list_detailed(path, recursive=recursive)

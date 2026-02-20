@@ -11,6 +11,7 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any, Callable
 
+from faketerm import ParseError, TerminalError, execute_script, to_script
 from pydantic import ValidationError
 
 from agex.agent.datatypes import (
@@ -736,10 +737,6 @@ def execute_terminal(
     Raises:
         Exception: Re-raises ParseError or TerminalError after logging output
     """
-    from agex.terminal import ParseError, to_script
-    from agex.terminal.interpreter.core import execute_script
-    from agex.terminal.interpreter.datatypes import TerminalError
-
     try:
         script = to_script(terminal_script)
         stdout = execute_script(script, fs)
