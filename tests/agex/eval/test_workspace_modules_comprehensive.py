@@ -138,7 +138,7 @@ def test_syntax_error_in_module():
         """Test task"""
         pass
 
-    with pytest.raises(Exception) as exc:  # TaskFail
+    with pytest.raises(BaseException) as exc:  # TaskFail
         task(on_event=pprint_events)
 
     assert "syntax error" in str(exc.value)
@@ -163,7 +163,7 @@ def test_syntax_error_recovery():
         """Test task"""
         pass
 
-    with pytest.raises(Exception) as exc:  # TaskFail
+    with pytest.raises(BaseException) as exc:  # TaskFail
         task(on_event=pprint_events)
     assert "syntax error" in str(exc.value)
 
@@ -186,7 +186,7 @@ def test_runtime_error_in_module_body():
         """Test task"""
         pass
 
-    with pytest.raises(Exception) as exc:  # TaskFail
+    with pytest.raises(BaseException) as exc:  # TaskFail
         task(on_event=pprint_events)
 
     assert "crashed" in str(exc.value)
@@ -211,7 +211,7 @@ def test_circular_imports_detection():
 
     try:
         task(on_event=pprint_events)
-    except Exception:
+    except BaseException:
         # We expect TaskFail("recursion") or TaskTimeout if it loops too long
         # But we mostly want to ensure it doesn't crash the *host* process stack
         # (which pytest would catch as a crash).

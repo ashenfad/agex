@@ -238,7 +238,7 @@ def _run_single_trial(task: Callable[..., T], trial: Trial[T, U]) -> TrialResult
             handler = event_collector
         result = task(*trial.params.args, on_event=handler, **kwargs)
         return TrialResult(trial=trial, result=result, events=events, error=None)
-    except Exception as e:
+    except BaseException as e:
         return TrialResult(trial=trial, result=None, events=events, error=e)
 
 

@@ -222,7 +222,7 @@ class AsyncLoopMixin:
                         main_loop=loop,
                     ),
                 )
-            except Exception:
+            except BaseException:
                 pass
 
             for event in yield_new_events(exec_state, events_yielded):

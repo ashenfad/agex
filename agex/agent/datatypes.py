@@ -7,8 +7,13 @@ Visibility = Literal["high", "medium", "low"]
 RESERVED_NAMES = {"dataclass", "dataclasses"}
 
 
-class _AgentExit(Exception):
-    """Base class for agent exit signals. Should not be caught by agent code."""
+class _AgentExit(BaseException):
+    """Base class for agent exit signals.
+
+    Inherits from BaseException (not Exception) so that agent code using
+    ``except Exception`` cannot catch these signals. sblite's sandbox
+    excludes BaseException from the namespace, making these uncatchable.
+    """
 
     pass
 

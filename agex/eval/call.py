@@ -331,8 +331,6 @@ class CallEvaluator(BaseEvaluator):
                 except AgexError:
                     raise
                 except Exception as e:
-                    if isinstance(e, _AgentExit):
-                        raise e
                     raise EvalError(
                         f"Error calling stateful builtin function '{fn_name}': {e}",
                         node,
@@ -365,8 +363,6 @@ class CallEvaluator(BaseEvaluator):
         except AgexError:
             raise
         except Exception as e:
-            if isinstance(e, _AgentExit):
-                raise
             raise EvalError(
                 f"Error calling '{call_name}': {e}",
                 node,
@@ -518,8 +514,6 @@ class CallEvaluator(BaseEvaluator):
                     if isinstance(e, exc_type):
                         raise agex_exc_type(str(e), node) from e
 
-            if isinstance(e, _AgentExit):
-                raise e
             fn_name_for_error = getattr(
                 node.func, "attr", getattr(node.func, "id", "object")
             )

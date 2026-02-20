@@ -469,8 +469,9 @@ class TaskProxy:
             self._safe_add_sub_agent_time(sub_agent_duration)
             return result
 
-        except Exception:
+        except BaseException:
             # Sync error: still account for time spent
+            # (BaseException to catch _AgentExit subclasses like TaskFail)
             sub_agent_duration = time.time() - sub_agent_start
             self._safe_add_sub_agent_time(sub_agent_duration)
             raise

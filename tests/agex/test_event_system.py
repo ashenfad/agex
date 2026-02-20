@@ -184,7 +184,7 @@ class TestEventSystem:
             pass
 
         # Task should raise TaskFail exception
-        with pytest.raises(Exception):
+        with pytest.raises(BaseException):
             fail_task(session="test_session")
 
         state = agent._host.resolve_state(config, "test_session")

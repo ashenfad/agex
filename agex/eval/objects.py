@@ -458,12 +458,10 @@ class BoundInstanceMethod:
         try:
             return method(*args, **kwargs)
         except Exception as e:  # Map to agent-catchable errors
-            from agex.agent.datatypes import _AgentExit
-
             from .user_errors import AgexError
 
-            # Pass through agent control and already agent errors
-            if isinstance(e, (_AgentExit, AgexError)):
+            # Pass through already-wrapped agent errors
+            if isinstance(e, AgexError):
                 raise
             # Specific mappings take precedence
             for src_exc, target_exc in self.reg_object.exception_mappings.items():
@@ -479,11 +477,9 @@ class BoundInstanceMethod:
         try:
             return method(*args, **kwargs)
         except Exception as e:  # Map to agent-catchable errors
-            from agex.agent.datatypes import _AgentExit
-
             from .user_errors import AgexError
 
-            if isinstance(e, (_AgentExit, AgexError)):
+            if isinstance(e, AgexError):
                 raise
             for src_exc, target_exc in self.reg_object.exception_mappings.items():
                 if isinstance(e, src_exc):

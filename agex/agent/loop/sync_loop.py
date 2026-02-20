@@ -171,7 +171,7 @@ class SyncLoopMixin:
                         on_event=setup_on_event,
                         on_token=on_token,
                     )
-            except Exception:
+            except BaseException:
                 pass
 
             # Yield new events
