@@ -5,14 +5,17 @@ Handles:
 - Syncing namespace changes back to the kvit Store
 - Detecting variable deletions
 - Re-raising _AgentExit signals captured by sblite
+- Converting modules to pickleable ModuleRef for cross-turn persistence
 """
 
 from __future__ import annotations
 
+import types
 from typing import Any, Callable
 
 from kvit import Store
 from sblite import ExecResult
+from sblite.wrappers import ModuleRef
 
 
 def handle_result(
@@ -21,6 +24,7 @@ def handle_result(
     agent_name: str,
     pre_keys: set[str],
     on_event: Callable[[Any], None] | None = None,
+    injected_keys: set[str] | None = None,
 ) -> None:
     """Process an ExecResult: sync state and re-raise errors.
 
@@ -31,15 +35,26 @@ def handle_result(
         pre_keys: Set of user-visible state keys before execution
                   (for deletion detection).
         on_event: Optional event callback.
+        injected_keys: Set of bridge-injected names (task_success, etc.)
+                       that should not be synced back to state.
 
     Raises:
         _AgentExit subclasses: TaskSuccess, TaskFail, TaskContinue, etc.
         Exception: Any regular exception from agent code.
     """
+    skip = injected_keys or set()
+
     # 1. Sync namespace values back to state
     for key, value in result.namespace.items():
-        if not key.startswith("__"):
-            state.set(key, value)
+        if not key.startswith("__") and key not in skip:
+            if isinstance(value, types.ModuleType):
+                # Modules can't survive pickle — store a ref that _auto_activate
+                # will resolve via __sb_import__ on the next turn.
+                state.set(
+                    key, ModuleRef(value.__name__, getattr(value, "__file__", None))
+                )
+            else:
+                state.set(key, value)
 
     # 2. Detect deletions (key was in state before exec, not in namespace after)
     post_keys = {k for k in result.namespace if not k.startswith("__")}

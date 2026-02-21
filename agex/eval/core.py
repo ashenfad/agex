@@ -223,8 +223,6 @@ def run_file_in_sandbox(
     *,
     eval_timeout_seconds: float | None = None,
     on_event: Callable[[Any], None] | None = None,
-    on_token: Callable[[Any], None] | None = None,
-    main_loop: asyncio.AbstractEventLoop | None = None,
 ) -> Any:
     """
     Run a file from VFS in the agent's sandbox.
@@ -239,8 +237,6 @@ def run_file_in_sandbox(
         session: Session identifier for state/fs access
         eval_timeout_seconds: Optional timeout override
         on_event: Optional handler to call for each event
-        on_token: Optional handler to call for each token
-        main_loop: Optional asyncio loop for bridging async calls
 
     Returns:
         The state after execution
@@ -261,6 +257,8 @@ def run_file_in_sandbox(
         # Run user-generated app code
         run_file_in_sandbox(sandbox, "app/main.py", session_id)
     """
+    from agex.eval.bridge import execute_sandboxed
+
     # Get filesystem and state for this session
     fs = agent.fs(session)
     state = agent.state(session)
@@ -271,30 +269,22 @@ def run_file_in_sandbox(
 
     code = fs.read(file_path).decode("utf-8")
 
-    # Derive package from file path for relative import support
-    # "app/main.py" -> "app"
-    # "app/sub/module.py" -> "app.sub"
-    # "main.py" -> ""
-    package = ""
-    if "/" in file_path:
-        dir_path = file_path.rsplit("/", 1)[0]
-        package = dir_path.replace("/", ".")
-
-    # Get the underlying filesystem backend for evaluate_program
+    # Get the underlying filesystem backend
     backend, _ = agent._get_fs_backend(session)
 
+    # Normalize file_path for relative import resolution
+    normalized = file_path if file_path.startswith("/") else f"/{file_path}"
+
     # Execute in sandbox
-    evaluate_program(
+    execute_sandboxed(
         code,
         agent,
         state,
         eval_timeout_seconds=eval_timeout_seconds,
         fs=backend,
         session=session,
-        package=package,
         on_event=on_event,
-        on_token=on_token,
-        main_loop=main_loop,
+        file_path=normalized,
     )
 
     return state

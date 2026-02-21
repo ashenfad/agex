@@ -85,21 +85,19 @@ async def test_async_event_handler():
 
 
 @pytest.mark.asyncio
-async def test_sync_code_calling_async_function_in_async_task():
+async def test_async_code_calling_async_function():
     """
-    Test that sync code (evaluated in thread) can transparently call
-    async functions (bridged to main loop).
+    Test that async sandbox code can await async registered functions.
     """
     responses = [
         LLMResponse(
             thinking="Calling async user function",
-            code="res = my_async_fn(5); task_success(res)",
+            code="res = await my_async_fn(5)\ntask_success(res)",
         )
     ]
     client = Dummy(responses=responses)
     a = Agent(llm=client)
 
-    # Register an async user function
     @a.fn
     async def my_async_fn(x: int) -> int:
         await asyncio.sleep(0.01)
@@ -110,9 +108,6 @@ async def test_sync_code_calling_async_function_in_async_task():
         """Mixed task."""
         pass
 
-    # When the agent calls 'my_async_fn(5)' in the generated code (which is sync),
-    # it receives a coroutine. The CallEvaluator should detect this, bridge it
-    # to the main loop, wait for result, and return 10.
     result = await mixed_task()
     assert result == 10
 
@@ -242,7 +237,7 @@ async def test_async_recursive_task():
     responses = [
         LLMResponse(
             thinking="Calling async helper",
-            code="result = async_helper(5); task_success(result)",
+            code="result = await async_helper(5)\ntask_success(result)",
         )
     ]
     client = Dummy(responses=responses)
@@ -275,7 +270,7 @@ async def test_async_fn_error_propagation():
         # First attempt calls the async fn which raises
         LLMResponse(
             thinking="Calling risky function",
-            code="result = risky_async_fn()",
+            code="result = await risky_async_fn()",
         ),
         # Agent sees the error and recovers
         LLMResponse(
@@ -308,7 +303,7 @@ async def test_async_fn_returns_none():
     responses = [
         LLMResponse(
             thinking="Calling async fn",
-            code="result = async_void_fn(); task_success('done' if result is None else 'unexpected')",
+            code="result = await async_void_fn()\ntask_success('done' if result is None else 'unexpected')",
         )
     ]
     client = Dummy(responses=responses)
@@ -335,7 +330,7 @@ async def test_async_fn_complex_return_type():
     responses = [
         LLMResponse(
             thinking="Calling async fn",
-            code="data = fetch_complex_data(); task_success(data['items'][0])",
+            code="data = await fetch_complex_data()\ntask_success(data['items'][0])",
         )
     ]
     client = Dummy(responses=responses)
@@ -362,7 +357,7 @@ async def test_multiple_async_fn_calls():
     responses = [
         LLMResponse(
             thinking="Calling multiple async functions",
-            code="a = async_add(1); b = async_add(a); c = async_add(b); task_success(c)",
+            code="a = await async_add(1)\nb = await async_add(a)\nc = await async_add(b)\ntask_success(c)",
         )
     ]
     client = Dummy(responses=responses)
@@ -391,7 +386,7 @@ async def test_async_fn_with_exception_type_preserved():
             thinking="Calling fn that raises KeyError",
             code="""
 try:
-    result = async_key_error_fn()
+    result = await async_key_error_fn()
 except KeyError as e:
     task_success(f'caught_keyerror:{e}')
 """,
@@ -417,12 +412,17 @@ except KeyError as e:
 
 
 def test_sync_task_async_fn_error_surfaces():
-    """Test that calling async fn from sync task produces clear error to agent."""
+    """Test that calling async fn from sync task produces clear error to agent.
+
+    Calling an async function without ``await`` returns a coroutine object
+    rather than a result.  The agent sees unexpected output and recovers.
+    The sandbox code explicitly closes the coroutine to avoid RuntimeWarning.
+    """
     responses = [
-        # Agent tries to call async fn
+        # Agent tries to call async fn — close the coroutine to avoid GC warning
         LLMResponse(
             thinking="Calling async function",
-            code="result = async_fn_not_available()",
+            code="result = async_fn_not_available()\nif hasattr(result, 'close'): result.close()",
         ),
         # Agent sees error and uses fallback
         LLMResponse(

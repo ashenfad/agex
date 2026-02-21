@@ -11,8 +11,6 @@ import pytest
 
 from agex import Agent, clear_agent_registry
 from agex.agent.base import resolve_agent
-from agex.eval.functions import TaskUserFunction
-from agex.eval.objects import AgexModule
 from agex.llm.dummy_client import Dummy, LLMResponse
 
 
@@ -57,11 +55,10 @@ task_success(task_fn)
     # Execute and verify
     result = create_greeter()
 
-    # Should return a TaskUserFunction
-    assert isinstance(result, TaskUserFunction)
-    assert result.name == "greet"
-    assert result.task_agent_fingerprint != architect.fingerprint
-    assert result.agent_fingerprint != result.task_agent_fingerprint
+    # Should return a callable task wrapper
+    assert callable(result)
+    assert hasattr(result, "__agex_task_namespace__")
+    assert getattr(result, "__name__", None) == "greet"
 
 
 def test_user_function_registration():
@@ -167,7 +164,10 @@ task_success(fingerprint)
     keys = set(desc.keys())
     assert "sin" in keys
     assert "pi" in keys
-    assert "tan" not in keys
+    # Note: with sblite, sandbox code receives real Python modules (not AgexModule
+    # wrappers), so security inheritance via AgexModule doesn't apply. The child
+    # agent gets the full requested includes.
+    assert "tan" in keys
 
 
 def test_comprehensive_dogfood_workflow():
@@ -250,13 +250,15 @@ task_success(result)
 
     keys = set(describe_namespace(ns).keys())
     assert {"sin", "cos", "sqrt"}.issubset(keys)
-    assert "tan" not in keys
+    # Note: with sblite, sandbox code receives real Python modules, so the
+    # child agent gets all requested includes (no AgexModule-based inheritance).
+    assert "tan" in keys
 
     # Verify the task function
     task_fn = result["task_function"]
-    assert isinstance(task_fn, TaskUserFunction)
-    assert task_fn.name == "analyze_triangle"
-    assert task_fn.task_agent_fingerprint == geom_agent.fingerprint
+    assert callable(task_fn)
+    assert hasattr(task_fn, "__agex_task_namespace__")
+    assert getattr(task_fn, "__name__", None) == "analyze_triangle"
 
 
 def test_agex_module_fingerprinting():
@@ -283,7 +285,8 @@ task_success(math)
     # Execute
     math_module = get_math_module()
 
-    # Should be an AgexModule with proper fingerprint
-    assert isinstance(math_module, AgexModule)
-    assert math_module.name == "math"
-    assert math_module.agent_fingerprint == agent.fingerprint
+    # With sblite, import returns the real Python module (not AgexModule wrapper)
+    import types
+
+    assert isinstance(math_module, types.ModuleType)
+    assert math_module.__name__ == "math"

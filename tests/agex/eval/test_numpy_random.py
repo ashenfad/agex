@@ -5,11 +5,10 @@ from agex import Agent, clear_agent_registry
 from agex.agent.datatypes import TaskTimeout
 
 
-def test_numpy_random_normal_without_recursive_fails_dummy():
+def test_numpy_random_normal_without_recursive_fails():
     """
-    Without recursive registration (and without explicitly registering the submodule),
-    accessing numpy.random.normal via attribute chaining should fail under policy
-    and not complete the task, resulting in a timeout.
+    Without recursive registration, accessing numpy.random (a submodule)
+    via attribute access should be blocked by the policy.
     """
     from agex.llm.dummy_client import Dummy, LLMResponse
 
@@ -34,6 +33,7 @@ def test_numpy_random_normal_without_recursive_fails_dummy():
     def make_noise() -> bool:  # type: ignore[return-value]
         pass
 
+    # Should fail because numpy.random (a submodule) is blocked without recursive=True
     with pytest.raises(TaskTimeout):
         make_noise()
 

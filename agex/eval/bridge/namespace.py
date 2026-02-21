@@ -25,7 +25,7 @@ def build_namespace(
     agent: "BaseAgent",
     agent_name: str,
     on_event: Callable[[Any], None] | None = None,
-) -> tuple[dict[str, Any], set[str]]:
+) -> tuple[dict[str, Any], set[str], set[str]]:
     """Build the execution namespace from state and builtins.
 
     Args:
@@ -35,8 +35,10 @@ def build_namespace(
         on_event: Optional event callback.
 
     Returns:
-        A tuple of (namespace_dict, pre_keys) where pre_keys is the set
-        of user-visible state keys before execution (for deletion tracking).
+        A tuple of (namespace_dict, pre_keys, injected_keys) where pre_keys
+        is the set of user-visible state keys before execution (for deletion
+        tracking) and injected_keys is the set of bridge-injected names that
+        should not be synced back to state.
     """
     namespace: dict[str, Any] = {}
     pre_keys: set[str] = set()
@@ -44,13 +46,17 @@ def build_namespace(
     # 1. Hydrate from state (skip internal keys)
     for key in state.keys():
         if not key.startswith("__"):
-            namespace[key] = state.get(key)
+            try:
+                namespace[key] = state.get(key)
+            except Exception:
+                continue  # Skip unpicklable or corrupt values
             pre_keys.add(key)
 
     # 2. Inject task control functions (wrappers that raise, since
     #    in real exec() calling a BaseException subclass constructor
     #    just creates an instance — it doesn't raise automatically)
     def task_success(result=None):
+        _validate_task_result(result, state)
         raise TaskSuccess(result)
 
     def task_fail(message=""):
@@ -69,7 +75,44 @@ def build_namespace(
     namespace["help"] = _make_help(agent, agent_name, state, on_event)
     namespace["dir"] = _make_dir(agent, agent_name, state, on_event)
 
-    return namespace, pre_keys
+    injected_keys = {
+        "task_success",
+        "task_fail",
+        "task_clarify",
+        "task_continue",
+        "view_image",
+        "help",
+        "dir",
+    }
+
+    return namespace, pre_keys, injected_keys
+
+
+def _validate_task_result(result: Any, state: Store) -> None:
+    """Validate task_success result against the expected return type."""
+    import inspect
+
+    return_type = state.get("__expected_return_type__")
+    if not return_type or return_type is inspect.Parameter.empty:
+        return
+
+    from agex.eval.validation import validate_with_sampling
+
+    try:
+        validate_with_sampling(result, return_type)
+    except Exception as e:
+        if (
+            hasattr(return_type, "__module__")
+            and hasattr(return_type, "__name__")
+            and not hasattr(return_type, "__origin__")
+        ):
+            type_name = return_type.__name__
+        else:
+            type_name = str(return_type)
+        raise TypeError(
+            f"Output validation failed. The returned value did not match "
+            f"the expected type '{type_name}'.\nDetails: {e}",
+        ) from e
 
 
 def make_print_handler(

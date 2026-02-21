@@ -118,7 +118,7 @@ class TestNamespaceBuilder:
         state.set("x", 42)
         state.set("name", "alice")
         agent = Agent(name="ns_test")
-        ns, pre_keys = build_namespace(state, agent, "ns_test")
+        ns, pre_keys, _ = build_namespace(state, agent, "ns_test")
         assert ns["x"] == 42
         assert ns["name"] == "alice"
         assert pre_keys == {"x", "name"}
@@ -129,7 +129,7 @@ class TestNamespaceBuilder:
         state.set("__expected_return_type__", str)
         state.set("x", 1)
         agent = Agent(name="ns_test")
-        ns, pre_keys = build_namespace(state, agent, "ns_test")
+        ns, pre_keys, _ = build_namespace(state, agent, "ns_test")
         assert "__event_log__" not in ns
         assert "__expected_return_type__" not in ns
         assert "x" in ns
@@ -138,7 +138,7 @@ class TestNamespaceBuilder:
     def test_task_control_present(self):
         state = Live()
         agent = Agent(name="ns_test")
-        ns, _ = build_namespace(state, agent, "ns_test")
+        ns, _, _ = build_namespace(state, agent, "ns_test")
         assert callable(ns["task_success"])
         assert callable(ns["task_fail"])
         assert callable(ns["task_clarify"])
@@ -147,7 +147,7 @@ class TestNamespaceBuilder:
     def test_stateful_builtins_present(self):
         state = Live()
         agent = Agent(name="ns_test")
-        ns, _ = build_namespace(state, agent, "ns_test")
+        ns, _, _ = build_namespace(state, agent, "ns_test")
         # print is handled via Sandbox print_handler, not in namespace
         assert "print" not in ns
         assert callable(ns["view_image"])
@@ -175,7 +175,7 @@ class TestNamespaceBuilder:
         state = Live()
         state.set("__event_log__", [])
         agent = Agent(name="ns_test")
-        ns, _ = build_namespace(state, agent, "ns_test")
+        ns, _, _ = build_namespace(state, agent, "ns_test")
 
         with pytest.raises(TaskContinue):
             ns["task_continue"]()

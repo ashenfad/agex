@@ -157,6 +157,7 @@ result = v.VAL
             "beyond" in error_msg
             or "top-level" in error_msg
             or "no parent package" in error_msg
+            or "resolved from relative import" in error_msg
         )
 
 
