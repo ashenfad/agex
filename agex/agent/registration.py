@@ -19,6 +19,22 @@ T = TypeVar("T", bound=type)
 F = TypeVar("F", bound=Callable[..., Any])
 
 
+def _cached_packages_distributions() -> dict[str, list[str]]:
+    """Return packages_distributions(), cached for the lifetime of the process."""
+    global _pkg_distributions_cache
+    if _pkg_distributions_cache is None:
+        from importlib import metadata
+
+        try:
+            _pkg_distributions_cache = metadata.packages_distributions()
+        except Exception:
+            _pkg_distributions_cache = {}
+    return _pkg_distributions_cache
+
+
+_pkg_distributions_cache: dict[str, list[str]] | None = None
+
+
 def _is_local_module(module_name: str) -> bool:
     """
     Determine whether a module should be treated as local to the project/workspace.
@@ -599,11 +615,7 @@ class RegistrationMixin(BaseAgent):
         # Track distribution names for optional dep lookup
         distribution_names: set[str] = set()
 
-        # Cache packages_distributions() result for this computation
-        try:
-            pkg_map = metadata.packages_distributions()
-        except Exception:
-            pkg_map = {}
+        pkg_map = _cached_packages_distributions()
 
         for module_name in self._tracked_modules:
             # Skip standard library and built-ins
