@@ -24,7 +24,7 @@ classifiers = [
 requires-python = ">=3.10"
 
 dependencies = [
-    "faketerm",
+    "termish",
     "gitkv",
     "sandtrap",
     "tiktoken",
@@ -109,7 +109,7 @@ all-hosts = [
 ]
 
 [tool.uv.sources]
-faketerm = { path = "../faketerm", editable = true }
+termish = { path = "../faketerm", editable = true }
 gitkv = { path = "../kvit", editable = true }
 sandtrap = { path = "../sblite", editable = true }
 

@@ -9,7 +9,7 @@ from agex.state.kv import Memory
 
 def test_minimal_failure_repro():
     """
-    Verifies that a sandbox-defined class instance (SbInstance) can be
+    Verifies that a sandbox-defined class instance (StInstance) can be
     created in one phase, referenced inside a dict in a second phase,
     and that committing the state succeeds in both cases.
     """
@@ -39,5 +39,5 @@ d = {'proc': p1}
 """
     execute_sandboxed(phase_B, agent, state)
 
-    # This commit should succeed -- the SbInstance inside the dict is pickleable.
+    # This commit should succeed -- the StInstance inside the dict is pickleable.
     state.commit()

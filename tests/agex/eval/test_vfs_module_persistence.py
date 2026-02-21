@@ -64,8 +64,8 @@ def test_vfs_module_persistence_across_turns():
     # Verify the closure works immediately (in-memory)
     assert closure() == 42
 
-    # Note: SbFunction pickle roundtrip requires re-activation (sandbox context).
-    # External pickle/unpickle without a sandbox will produce an inactive SbFunction.
+    # Note: StFunction pickle roundtrip requires re-activation (sandbox context).
+    # External pickle/unpickle without a sandbox will produce an inactive StFunction.
     # The important behavior is that in-memory closures over VFS modules work.
 
 
