@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from kvit import Live, Staged, Store, Versioned
+from gitkv import Live, Staged, Store, Versioned
 
 from agex.host.base import Host, apply_init_if_fresh
 from agex.host.local import Local

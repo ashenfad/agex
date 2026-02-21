@@ -2,7 +2,7 @@ import queue
 import threading
 from typing import Iterable, Mapping
 
-from kvit.kv import KVStore
+from gitkv.kv import KVStore
 
 
 class WriteBehind(KVStore):

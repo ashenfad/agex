@@ -7,7 +7,7 @@ Executes agent tasks in the current process using the agent's task loop.
 import os
 from typing import TYPE_CHECKING, Any, Callable
 
-from kvit import Live, Staged, Store, Versioned
+from gitkv import Live, Staged, Store, Versioned
 
 from .base import Host
 
@@ -91,7 +91,7 @@ class Local(Host):
 
     def _create_state(self, config: "StateConfig", kv: "KVStore") -> Store:
         """Create a state instance from config and KV store."""
-        from kvit.gc import GCVersioned
+        from gitkv.gc import GCVersioned
 
         from agex.state import _agex_decoder, _agex_encoder
 

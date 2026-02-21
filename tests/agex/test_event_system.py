@@ -6,7 +6,7 @@ attribution, and filtering.
 """
 
 import pytest
-from kvit import Staged, Versioned
+from gitkv import Staged, Versioned
 
 from agex import Agent, clear_agent_registry
 from agex.agent.events import (

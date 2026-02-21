@@ -7,7 +7,7 @@ using a reference-based approach that avoids O(N) storage growth.
 
 from typing import Callable
 
-from kvit import Namespaced, Staged
+from gitkv import Namespaced, Staged
 
 from agex.agent.events import BaseEvent, Event, SummaryEvent
 from agex.state import get_root

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable
 if TYPE_CHECKING:
     from agex.fs.base import FileSystem
 
-from kvit import Staged
+from gitkv import Staged
 
 from agex.agent.events import CancelledEvent
 from agex.agent.summarization import maybe_summarize_event_log

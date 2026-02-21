@@ -14,7 +14,7 @@ try:
 except ImportError:
     cloudpickle = None  # type: ignore
 import httpx
-from kvit import Store
+from gitkv import Store
 
 from .base import Host
 

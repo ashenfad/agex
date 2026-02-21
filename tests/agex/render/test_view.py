@@ -1,5 +1,5 @@
 import pytest
-from kvit import Staged, Versioned
+from gitkv import Staged, Versioned
 
 from agex.agent import Agent, MemberSpec
 from agex.render.view import view

@@ -215,7 +215,7 @@ class TestAgentNetworkIntegration:
 
     def test_execute_sandboxed_installs_sandbox(self):
         """Test that execute_sandboxed installs the network sandbox via sandtrap."""
-        from kvit import Live
+        from gitkv import Live
         from sandtrap.net import patch as sandtrap_net_patch
 
         from agex.agent import Agent, clear_agent_registry
@@ -234,7 +234,7 @@ class TestAgentNetworkIntegration:
 
     def test_registered_fn_with_network_access(self):
         """Test that functions registered with network_access=True can use network."""
-        from kvit import Live
+        from gitkv import Live
         from sandtrap.net.context import network_allowed as sandtrap_network_allowed
 
         from agex.agent import Agent, clear_agent_registry
@@ -268,7 +268,7 @@ class TestAgentNetworkIntegration:
 
     def test_registered_fn_without_network_access(self):
         """Test that functions without network_access=True cannot use network."""
-        from kvit import Live
+        from gitkv import Live
         from sandtrap.net.context import network_allowed as sandtrap_network_allowed
 
         from agex.agent import Agent, clear_agent_registry
@@ -300,7 +300,7 @@ class TestAgentNetworkIntegration:
 
     def test_registered_cls_with_network_access(self):
         """Test that classes registered with network_access=True have network access."""
-        from kvit import Live
+        from gitkv import Live
         from sandtrap.net.context import network_allowed as sandtrap_network_allowed
 
         from agex.agent import Agent, clear_agent_registry
@@ -330,7 +330,7 @@ class TestAgentNetworkIntegration:
         """Test that modules registered with network_access=True have network access."""
         from types import ModuleType
 
-        from kvit import Live
+        from gitkv import Live
         from sandtrap.net.context import network_allowed as sandtrap_network_allowed
 
         from agex.agent import Agent, clear_agent_registry

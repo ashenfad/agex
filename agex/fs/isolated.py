@@ -11,7 +11,7 @@ import pickle
 from pathlib import Path
 from typing import Any
 
-from kvit import Store
+from gitkv import Store
 
 from agex.fs.context import suspend_fs_interception
 

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import pytest
-from kvit import Live, Staged, Versioned
+from gitkv import Live, Staged, Versioned
 
 from agex.fs import IsolatedFS, VirtualFS, with_isolated_fs, with_virtual_fs
 from agex.state import _agex_decoder, _agex_encoder

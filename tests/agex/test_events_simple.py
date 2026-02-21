@@ -4,7 +4,7 @@ Simple, focused tests for the core event system.
 Focus on getting basic functionality working before complex scenarios.
 """
 
-from kvit import Staged, Versioned
+from gitkv import Staged, Versioned
 
 from agex import Agent, clear_agent_registry
 from agex.agent.events import (

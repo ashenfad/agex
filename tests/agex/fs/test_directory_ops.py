@@ -7,7 +7,7 @@ functionality added to VirtualFS.
 import os
 
 import pytest
-from kvit import Live, Staged, Versioned
+from gitkv import Live, Staged, Versioned
 
 from agex.fs import VirtualFS, with_virtual_fs
 from agex.state import _agex_decoder, _agex_encoder

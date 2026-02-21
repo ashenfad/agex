@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, Callable
 
 from faketerm import ParseError, TerminalError, execute_script, to_script
-from kvit import Live, Namespaced, Staged, Store
+from gitkv import Live, Namespaced, Staged, Store
 from pydantic import ValidationError
 
 from agex.agent.datatypes import (

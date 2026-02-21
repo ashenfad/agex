@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from kvit import Store
+from gitkv import Store
 
 from agex.fs.base import FileSystem
 from agex.fs.virtual import FileInfo, FileMetadata

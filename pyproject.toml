@@ -25,8 +25,8 @@ requires-python = ">=3.10"
 
 dependencies = [
     "faketerm",
-    "kvit",
-    "sblite",
+    "gitkv",
+    "sandtrap",
     "tiktoken",
     "xxhash",
     "diskcache",
@@ -110,8 +110,8 @@ all-hosts = [
 
 [tool.uv.sources]
 faketerm = { path = "../faketerm", editable = true }
-kvit = { path = "../kvit", editable = true }
-sblite = { path = "../sblite", editable = true }
+gitkv = { path = "../kvit", editable = true }
+sandtrap = { path = "../sblite", editable = true }
 
 [tool.ruff]
 line-length = 88

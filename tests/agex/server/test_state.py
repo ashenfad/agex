@@ -1,7 +1,7 @@
 """Tests for server state URI resolution."""
 
 import pytest
-from kvit import Staged
+from gitkv import Staged
 
 from agex.server.state import InvalidStateURIError, resolve_state_uri
 

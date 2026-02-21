@@ -11,7 +11,7 @@ import json
 from typing import Any
 
 import cloudpickle
-from kvit import Store
+from gitkv import Store
 
 
 def execute_worker(

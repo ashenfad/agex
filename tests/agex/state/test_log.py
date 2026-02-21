@@ -1,7 +1,7 @@
 """Tests for event log management."""
 
 import pytest
-from kvit import store as kvit_store
+from gitkv import store as gitkv_store
 
 from agex.agent.events import ActionEvent, SummaryEvent
 from agex.state import _agex_decoder, _agex_encoder
@@ -13,7 +13,7 @@ from agex.state.log import (
 
 
 def _make_state():
-    return kvit_store(encoder=_agex_encoder, decoder=_agex_decoder)
+    return gitkv_store(encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 def test_add_and_get_events():

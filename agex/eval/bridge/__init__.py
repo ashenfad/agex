@@ -1,7 +1,7 @@
 """
 Bridge layer between agex's registration/state system and sandtrap's Sandbox.
 
-This package translates agex's AgentPolicy and kvit state into
+This package translates agex's AgentPolicy and gitkv state into
 sandtrap's Policy and namespace dict, then processes the ExecResult
 back into agex's state and event system.
 """
@@ -9,7 +9,7 @@ back into agex's state and event system.
 import asyncio
 from typing import TYPE_CHECKING, Any, Callable
 
-from kvit import Store
+from gitkv import Store
 from sandtrap import Sandbox
 
 from .namespace import build_namespace, make_print_handler

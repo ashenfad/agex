@@ -9,7 +9,7 @@ import inspect
 from dataclasses import make_dataclass
 from typing import Any, Callable
 
-from kvit import Staged
+from gitkv import Staged
 
 from agex.agent.base import BaseAgent
 from agex.agent.datatypes import TaskClarify, TaskFail

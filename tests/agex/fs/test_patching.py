@@ -5,7 +5,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from kvit import Live
+from gitkv import Live
 
 from agex.fs import VirtualFS, with_virtual_fs
 
