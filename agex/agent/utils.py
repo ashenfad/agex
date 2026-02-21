@@ -4,6 +4,8 @@ import inspect
 import textwrap
 from typing import Awaitable, Callable, TypeVar
 
+from sblite.wrappers import SbFunction
+
 
 def is_function_body_empty(func: Callable) -> bool:
     """
@@ -11,6 +13,10 @@ def is_function_body_empty(func: Callable) -> bool:
 
     Returns True if the function body is effectively empty (suitable for @agent.task).
     """
+    # SbFunction (sandbox-defined): can't inspect source, assume empty-bodied
+    if isinstance(func, SbFunction):
+        return True
+
     try:
         source = inspect.getsource(func)
 

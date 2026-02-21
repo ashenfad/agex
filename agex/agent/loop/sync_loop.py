@@ -15,7 +15,7 @@ from kvit import Staged
 
 from agex.agent.events import CancelledEvent
 from agex.agent.summarization import maybe_summarize_event_log
-from agex.eval.core import evaluate_program
+from agex.eval.bridge import execute_sandboxed
 from agex.resource_limits import apply_resource_limits
 from agex.state import get_root, raw_remove, safe_commit
 
@@ -161,7 +161,7 @@ class SyncLoopMixin:
 
             try:
                 with apply_resource_limits(self._resource_limits):
-                    evaluate_program(
+                    execute_sandboxed(
                         setup,
                         self,
                         exec_state,
@@ -169,7 +169,6 @@ class SyncLoopMixin:
                         fs=fs,
                         session=session,
                         on_event=setup_on_event,
-                        on_token=on_token,
                     )
             except BaseException:
                 pass
@@ -230,7 +229,7 @@ class SyncLoopMixin:
                     accumulated_refs |= find_refs(
                         code_to_evaluate, namespace=exec_state
                     )
-                except SyntaxError:
+                except Exception:
                     pass
 
             # Create and yield action event
@@ -270,7 +269,7 @@ class SyncLoopMixin:
                         continue  # Terminal implicitly continues to next iteration
 
                     elif code_to_evaluate:
-                        evaluate_program(
+                        execute_sandboxed(
                             code_to_evaluate,
                             self,
                             exec_state,
@@ -278,7 +277,6 @@ class SyncLoopMixin:
                             fs=fs,
                             session=session,
                             on_event=on_event,
-                            on_token=on_token,
                         )
 
             except TaskSuccess as task_signal:

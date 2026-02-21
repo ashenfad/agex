@@ -20,7 +20,7 @@ from kvit import Staged
 from agex.agent.events import CancelledEvent
 from agex.agent.summarization import maybe_summarize_event_log
 from agex.agent.utils import call_sync_or_async
-from agex.eval.core import evaluate_program
+from agex.eval.bridge import aexecute_sandboxed, execute_sandboxed
 from agex.resource_limits import apply_resource_limits
 from agex.state import get_root, raw_remove, safe_commit
 
@@ -65,10 +65,16 @@ from .common import (
 )
 
 
-def _evaluate_with_limits(limits, code, agent, exec_state, timeout, **kwargs):
-    """Run evaluate_program within resource limits."""
+def _execute_with_limits(limits, code, agent, exec_state, timeout, **kwargs):
+    """Run execute_sandboxed within resource limits (sync, for executor)."""
     with apply_resource_limits(limits):
-        return evaluate_program(code, agent, exec_state, timeout, **kwargs)
+        return execute_sandboxed(code, agent, exec_state, timeout, **kwargs)
+
+
+async def _aexecute_with_limits(limits, code, agent, exec_state, timeout, **kwargs):
+    """Run aexecute_sandboxed within resource limits."""
+    with apply_resource_limits(limits):
+        return await aexecute_sandboxed(code, agent, exec_state, timeout, **kwargs)
 
 
 class AsyncLoopMixin:
@@ -203,24 +209,15 @@ class AsyncLoopMixin:
                 thread_safe_on_event(event)
 
             try:
-                # Copy context to preserve ContextVars (like agent registry) in thread pool
-                ctx = contextvars.copy_context()
-                await loop.run_in_executor(
-                    None,
-                    partial(
-                        ctx.run,
-                        _evaluate_with_limits,
-                        self._resource_limits,
-                        setup,
-                        self,
-                        exec_state,
-                        self.eval_timeout_seconds,
-                        fs=fs,
-                        session=session,
-                        on_event=setup_on_event,
-                        on_token=thread_safe_on_token,
-                        main_loop=loop,
-                    ),
+                await _aexecute_with_limits(
+                    self._resource_limits,
+                    setup,
+                    self,
+                    exec_state,
+                    self.eval_timeout_seconds,
+                    fs=fs,
+                    session=session,
+                    on_event=setup_on_event,
                 )
             except BaseException:
                 pass
@@ -284,7 +281,7 @@ class AsyncLoopMixin:
                     accumulated_refs |= find_refs(
                         code_to_evaluate, namespace=exec_state
                     )
-                except SyntaxError:
+                except Exception:
                     pass
 
             # Create and yield action event
@@ -333,24 +330,15 @@ class AsyncLoopMixin:
                     continue  # Terminal implicitly continues to next iteration
 
                 elif code_to_evaluate:
-                    # Copy context to preserve ContextVars (like agent registry) in thread pool
-                    ctx = contextvars.copy_context()
-                    await loop.run_in_executor(
-                        None,
-                        partial(
-                            ctx.run,
-                            _evaluate_with_limits,
-                            self._resource_limits,
-                            code_to_evaluate,
-                            self,
-                            exec_state,
-                            self.eval_timeout_seconds,
-                            fs=fs,
-                            session=session,
-                            on_event=thread_safe_on_event,
-                            on_token=thread_safe_on_token,
-                            main_loop=loop,
-                        ),
+                    await _aexecute_with_limits(
+                        self._resource_limits,
+                        code_to_evaluate,
+                        self,
+                        exec_state,
+                        self.eval_timeout_seconds,
+                        fs=fs,
+                        session=session,
+                        on_event=on_event,
                     )
 
             except TaskSuccess as task_signal:

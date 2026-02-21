@@ -1019,29 +1019,36 @@ class VirtualFS(FileSystem):
             self._state.commit()
 
     def stat(self, path: str) -> FileMetadata:
-        """Get metadata for a specific file.
+        """Get metadata for a specific file or directory.
 
         Args:
-            path: File path.
+            path: File or directory path.
 
         Returns:
             FileMetadata object with size and timestamps.
 
         Raises:
-            FileNotFoundError: If file doesn't exist.
+            FileNotFoundError: If path doesn't exist.
 
         Example:
             >>> meta = vfs.stat("data.csv")
             >>> print(f"Size: {meta.size} bytes")
             >>> print(f"Created: {meta.created_at}")
         """
-        # Check file exists
-        if not self.isfile(path):
-            raise FileNotFoundError(path)
+        # Check for file first
+        if self.isfile(path):
+            path = self._normalize_path(path)
+            metadata = self._get_metadata()
+            return metadata[path]
 
-        path = self._normalize_path(path)
-        metadata = self._get_metadata()
-        return metadata[path]
+        # Check for directory
+        if self.isdir(path):
+            from datetime import datetime, timezone
+
+            now = datetime.now(timezone.utc).isoformat()
+            return FileMetadata(size=0, created_at=now, modified_at=now, is_dir=True)
+
+        raise FileNotFoundError(path)
 
     def list_detailed(self, path: str = "/", recursive: bool = False) -> list[FileInfo]:
         """List directory contents with full file metadata.

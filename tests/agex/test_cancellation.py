@@ -309,7 +309,7 @@ class TestTaskCancellationAsync:
             """Async task."""
             pass
 
-        async def on_event_set_cancel(event):
+        def on_event_set_cancel(event):
             # Set cancel after first ActionEvent
             if type(event).__name__ == "ActionEvent":
                 state = agent.state()
