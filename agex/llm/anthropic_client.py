@@ -30,7 +30,7 @@ def _format_message_for_anthropic(
     Handles multimodal content (images) conversion.
 
     Note: All images are converted to PNG format by the rendering layer
-    (StreamRenderer._serialize_image_to_base64) before reaching this function.
+    (serialize_image_to_base64) before reaching this function.
     """
     content_parts: list[dict] = []
     if isinstance(message.get("content"), list):

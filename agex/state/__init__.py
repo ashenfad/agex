@@ -12,7 +12,7 @@ from typing import Any, Callable, Literal
 
 from kvit import ConcurrencyError, Live, MergeResult, Namespaced, Staged
 from kvit.errors import MergeConflict
-from kvit.gc import GCVersioned, RebaseResult
+from kvit.gc import GCVersioned
 from kvit.kv import KVStore
 from kvit.store import Store
 
@@ -28,7 +28,6 @@ __all__ = [
     "MergeConflict",
     "MergeResult",
     "GCVersioned",
-    "RebaseResult",
     "KVStore",
     # agex types
     "StateConfig",

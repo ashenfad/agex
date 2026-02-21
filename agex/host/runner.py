@@ -27,7 +27,6 @@ def prepare_agent(payload: bytes) -> "BaseAgent":
     - Deserializes from cloudpickle bytes
     - Rehydrates LLM client from serialized config
     - Overrides host to Local (so nested calls don't bounce back over network)
-    - Re-registers agent in the new process's global registry
 
     Args:
         payload: Cloudpickle bytes from serialize_agent()

@@ -31,9 +31,9 @@ class ImageAction:
         # For other image types, convert to base64 and display as HTML image
         try:
             # Import here to avoid circular dependency
-            from agex.render.stream import _serialize_image_to_base64
+            from agex.render.primitives import serialize_image_to_base64
 
-            base64_image = _serialize_image_to_base64(self.image)
+            base64_image = serialize_image_to_base64(self.image)
             if base64_image:
                 return f'<img src="data:image/png;base64,{base64_image}" style="max-width: 100%; height: auto;" />'
         except Exception:
