@@ -17,27 +17,6 @@ DEFAULT_SAMPLE_SIZE = 10
 STRICT_CONFIG = ConfigDict(arbitrary_types_allowed=True, strict=True)
 
 
-def _numpy_peek_serializer(obj: Any) -> list:
-    """
-    A Pydantic serializer fallback that converts the head of a numpy array
-    into a list for 'peek' validation.
-    """
-    try:
-        import numpy as np
-
-        if isinstance(obj, np.ndarray):
-            # We just return the head, no need for "..." string which would fail validation
-            return obj[:DEFAULT_SAMPLE_SIZE].tolist()
-    except ImportError:
-        # If numpy is not present, we can't handle it.
-        pass
-
-    # If it's not a numpy array, or numpy is not installed, we can't handle it.
-    # Raising TypeError is the signal to the Pydantic serializer
-    # that this fallback did not handle the object.
-    raise TypeError
-
-
 def validate_with_sampling(value: Any, annotation: Any) -> Any:
     """
     Validates a value against a type annotation using Pydantic, but with

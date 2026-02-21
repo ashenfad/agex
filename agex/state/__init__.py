@@ -17,7 +17,6 @@ from kvit.kv import KVStore
 from kvit.store import Store
 
 from .config import StateConfig
-from .scoped import Scoped
 
 __all__ = [
     # kvit types (direct)
@@ -33,7 +32,6 @@ __all__ = [
     "KVStore",
     # agex types
     "StateConfig",
-    "Scoped",
     # Utility functions
     "get_root",
     "is_live_root",
@@ -85,13 +83,11 @@ def _agex_decoder(raw: bytes) -> Any:
 def get_root(state: Any) -> Any:
     """Get the root store from any state wrapper.
 
-    Navigates through Namespaced and Scoped wrappers
-    to reach the underlying root store (Staged or Live).
+    Navigates through Namespaced wrappers to reach the underlying
+    root store (Staged or Live).
     """
     if isinstance(state, Namespaced):
         return state._store  # kvit flattens nested namespaces
-    if isinstance(state, Scoped):
-        return get_root(state._parent_store)
     return state  # Staged, Live, or unknown
 
 

@@ -524,9 +524,6 @@ class RegistrationMixin(BaseAgent):
                 self._track_module(obj.__module__)
             self._update_fingerprint()
 
-    # NOTE: `_handle_agex_module_inheritance` removed. Inheritance is handled lazily
-    # via a child policy namespace of kind "inherited" created in `module()`.
-
     def _track_module(self, module_name: str | None) -> None:
         """Record a module name for lazy dependency resolution (fast, no package lookup)."""
         if module_name:
