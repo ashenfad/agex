@@ -1,7 +1,7 @@
 """Tests for event log summarization."""
 
 import pytest
-from kvit import Namespaced, Staged, Versioned
+from gitkv import Namespaced, Staged, Versioned
 
 from agex import Agent, clear_agent_registry
 from agex.agent.events import ActionEvent, SummaryEvent, TaskStartEvent

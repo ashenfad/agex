@@ -1,5 +1,5 @@
 import pytest
-from kvit import Live
+from gitkv import Live
 
 from agex.fs.virtual import VirtualFS
 

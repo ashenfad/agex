@@ -3,7 +3,7 @@
 import threading
 
 import pytest
-from kvit import Staged
+from gitkv import Staged
 
 from agex import Agent, TaskCancelled, connect_state, events
 from agex.llm import Dummy

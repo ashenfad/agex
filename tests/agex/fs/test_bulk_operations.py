@@ -1,7 +1,7 @@
 """Tests for VirtualFS bulk operations (write_many, remove_many)."""
 
 import pytest
-from kvit import Live, Staged, Versioned
+from gitkv import Live, Staged, Versioned
 
 from agex.fs import VirtualFS
 from agex.state import _agex_decoder, _agex_encoder

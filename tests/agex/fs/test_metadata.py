@@ -1,6 +1,6 @@
 """Tests for VirtualFS file metadata tracking."""
 
-from kvit import Live, Staged, Versioned
+from gitkv import Live, Staged, Versioned
 
 from agex.fs import VirtualFS
 from agex.state import _agex_decoder, _agex_encoder

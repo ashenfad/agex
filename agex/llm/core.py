@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from agex.agent.datatypes import EditAction, FileAction
 
 if TYPE_CHECKING:
-    from kvit import Store
+    from gitkv import Store
 
     from agex.agent.events import Event
 

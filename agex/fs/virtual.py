@@ -12,7 +12,7 @@ import os
 import pickle
 from datetime import datetime, timezone
 
-from kvit import Store
+from gitkv import Store
 
 from agex.fs.context import vfs_defer_snapshots
 

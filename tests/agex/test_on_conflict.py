@@ -5,7 +5,7 @@ These tests verify automatic merge/retry behavior when concurrent tasks
 modify the same Versioned state.
 """
 
-from kvit import Staged, Versioned
+from gitkv import Staged, Versioned
 
 from agex import Agent
 from agex.llm import Dummy

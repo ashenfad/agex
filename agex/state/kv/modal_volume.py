@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Mapping
 
-from kvit.kv import KVStore
+from gitkv.kv import KVStore
 
 if TYPE_CHECKING:
     import modal

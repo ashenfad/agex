@@ -7,7 +7,7 @@ This module defines the Host ABC that encapsulates where/how agent tasks execute
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Callable
 
-from kvit import Staged, Store
+from gitkv import Staged, Store
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent

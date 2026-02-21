@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from types import ModuleType
 
 import pytest
-from kvit import Live, Namespaced, Staged, Versioned
+from gitkv import Live, Namespaced, Staged, Versioned
 
 from agex import events
 from agex.agent import Agent, MemberSpec

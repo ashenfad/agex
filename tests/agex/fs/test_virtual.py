@@ -1,7 +1,7 @@
 """Tests for VirtualFS core functionality."""
 
 import pytest
-from kvit import Live
+from gitkv import Live
 
 from agex.fs import VirtualFS
 

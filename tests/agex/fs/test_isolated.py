@@ -1,7 +1,7 @@
 """Tests for IsolatedFS - secure filesystem with path restriction."""
 
 import pytest
-from kvit import Live, Staged, Versioned
+from gitkv import Live, Staged, Versioned
 
 from agex import Agent, connect_fs, pprint_events
 from agex.fs import IsolatedFS

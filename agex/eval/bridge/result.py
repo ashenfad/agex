@@ -1,8 +1,8 @@
 """
-Processes sandtrap ExecResult back into agex's kvit state and event system.
+Processes sandtrap ExecResult back into agex's gitkv state and event system.
 
 Handles:
-- Syncing namespace changes back to the kvit Store
+- Syncing namespace changes back to the gitkv Store
 - Detecting variable deletions
 - Re-raising _AgentExit signals captured by sandtrap
 - Converting modules to pickleable ModuleRef for cross-turn persistence
@@ -13,7 +13,7 @@ from __future__ import annotations
 import types
 from typing import Any, Callable
 
-from kvit import Store
+from gitkv import Store
 from sandtrap import ExecResult
 from sandtrap.wrappers import ModuleRef
 
@@ -30,7 +30,7 @@ def handle_result(
 
     Args:
         result: The ExecResult from sandtrap Sandbox.exec().
-        state: The kvit state to sync changes back to.
+        state: The gitkv state to sync changes back to.
         agent_name: Agent name for event attribution.
         pre_keys: Set of user-visible state keys before execution
                   (for deletion detection).

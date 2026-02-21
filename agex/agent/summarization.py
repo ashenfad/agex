@@ -7,7 +7,7 @@ grows beyond configured token limits, similar to garbage collection for memory.
 
 from typing import TYPE_CHECKING
 
-from kvit import Store
+from gitkv import Store
 
 from agex.agent.events import SummaryEvent
 from agex.state.log import get_events_from_log, replace_oldest_events_with_summary

@@ -7,7 +7,7 @@ correctly sanitize home directory references when VFS or IsolatedFS is active.
 import os
 import tempfile
 
-from kvit import Live, Staged, Versioned
+from gitkv import Live, Staged, Versioned
 
 from agex.fs.isolated import IsolatedFS
 from agex.fs.patching import with_isolated_fs, with_virtual_fs

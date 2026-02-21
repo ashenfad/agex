@@ -1,7 +1,7 @@
 """Tests for VFS size limiting."""
 
 import pytest
-from kvit import Live
+from gitkv import Live
 
 from agex.fs import VirtualFS, connect_fs
 

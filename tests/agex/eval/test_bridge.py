@@ -8,7 +8,7 @@ builds namespaces, handles results, and executes code through sandtrap's sandbox
 import math
 
 import pytest
-from kvit import Live
+from gitkv import Live
 from sandtrap import ExecResult
 
 from agex.agent import Agent, clear_agent_registry

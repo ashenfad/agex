@@ -1,4 +1,4 @@
-from kvit import Namespaced, Staged, Versioned
+from gitkv import Namespaced, Staged, Versioned
 
 from agex.agent.events import ActionEvent, OutputEvent, SuccessEvent, TaskStartEvent
 from agex.state import _agex_decoder, _agex_encoder, events
@@ -135,7 +135,7 @@ class TestUnifiedEventsAPI:
 
     def test_events_versioned_and_live_states(self):
         """Test events() works correctly with Versioned and Live states."""
-        from kvit import Live
+        from gitkv import Live
 
         # Test with Versioned state
         versioned_state = _make_state()

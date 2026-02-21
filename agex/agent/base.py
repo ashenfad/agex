@@ -9,7 +9,7 @@ from .fingerprint import compute_agent_fingerprint_from_policy
 from .policy.policy import AgentPolicy
 
 if TYPE_CHECKING:
-    from kvit import Store
+    from gitkv import Store
 
     from ..fs.aware import AgentAwareFS
     from ..fs.config import FSConfig

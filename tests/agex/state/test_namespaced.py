@@ -1,5 +1,5 @@
 import pytest
-from kvit import Namespaced, Staged, Versioned
+from gitkv import Namespaced, Staged, Versioned
 
 from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Memory

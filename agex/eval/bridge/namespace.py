@@ -1,7 +1,7 @@
 """
 Builds the execution namespace dict for sandtrap's Sandbox.exec().
 
-Hydrates kvit state values into a plain dict, then injects
+Hydrates gitkv state values into a plain dict, then injects
 task control functions and stateful builtins as closures.
 """
 
@@ -11,7 +11,7 @@ import copy
 import inspect
 from typing import TYPE_CHECKING, Any, Callable
 
-from kvit import Store
+from gitkv import Store
 
 from agex.agent.datatypes import TaskClarify, TaskContinue, TaskFail, TaskSuccess
 from agex.agent.events import OutputEvent
@@ -32,7 +32,7 @@ def build_namespace(
     """Build the execution namespace from state and builtins.
 
     Args:
-        state: The kvit state to hydrate from.
+        state: The gitkv state to hydrate from.
         agent: The agent providing policy context.
         agent_name: Name of the agent (for event attribution).
         on_event: Optional event callback.

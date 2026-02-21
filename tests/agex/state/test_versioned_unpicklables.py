@@ -3,7 +3,7 @@
 import pickle
 
 import pytest
-from kvit import Staged, Versioned
+from gitkv import Staged, Versioned
 
 from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
 from agex.state import _agex_decoder, _agex_encoder
@@ -123,7 +123,7 @@ def test_mutation_to_unpicklable_creates_marker():
     state.set("my_list", my_list)
     state.commit()
 
-    # Mutate and explicitly re-set (kvit requires explicit set for changes)
+    # Mutate and explicitly re-set (gitkv requires explicit set for changes)
     my_list.append(UnpicklableObject(42))
     state.set("my_list", my_list)
 
