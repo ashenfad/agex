@@ -8,12 +8,15 @@ task control functions and stateful builtins as closures.
 from __future__ import annotations
 
 import copy
+import inspect
 from typing import TYPE_CHECKING, Any, Callable
 
 from kvit import Store
 
 from agex.agent.datatypes import TaskClarify, TaskContinue, TaskFail, TaskSuccess
 from agex.agent.events import OutputEvent
+from agex.eval.objects import BoundInstanceObject, ImageAction
+from agex.state import is_live_root
 from agex.state.log import add_event_to_log
 
 if TYPE_CHECKING:
@@ -90,8 +93,6 @@ def build_namespace(
 
 def _validate_task_result(result: Any, state: Store) -> None:
     """Validate task_success result against the expected return type."""
-    import inspect
-
     return_type = state.get("__expected_return_type__")
     if not return_type or return_type is inspect.Parameter.empty:
         return
@@ -157,8 +158,6 @@ def _do_print(
     try:
         snapped = copy.deepcopy(args)
     except Exception:
-        from agex.eval.builtins import _smart_render_for_snapshot
-
         snapped = tuple(_smart_render_for_snapshot(a) for a in args)
 
     event = OutputEvent(agent_name=agent_name, parts=list(snapped))
@@ -171,11 +170,29 @@ def _make_view_image(
     """Create a view_image function closure."""
 
     def view_image(image: Any, detail: str = "high") -> None:
-        from agex.eval.builtins import _view_image_stateful
+        if detail not in ("low", "high"):
+            raise ValueError("detail must be 'low' or 'high'")
 
-        _view_image_stateful(
-            image, detail, state=state, agent_name=agent_name, on_event=on_event
-        )
+        # Snapshot the arguments to ensure immutability in the log
+        is_live = is_live_root(state)
+        snapped_image: Any
+        try:
+            if is_live:
+                snapped_image = copy.deepcopy(image)
+            else:
+                snapped_image = image
+                # Test if this would be serializable to avoid breaking the event log
+                import pickle
+
+                image_action = ImageAction(image=snapped_image, detail=detail)
+                test_event = OutputEvent(agent_name=agent_name, parts=[image_action])
+                pickle.dumps(test_event)
+        except Exception:
+            snapped_image = _smart_render_for_snapshot(image)
+
+        image_action = ImageAction(image=snapped_image, detail=detail)
+        event = OutputEvent(agent_name=agent_name, parts=[image_action])
+        add_event_to_log(state, event, on_event=on_event)
 
     return view_image
 
@@ -189,20 +206,13 @@ def _make_help(
     """Create a help function that inspects agent policy."""
 
     def help_fn(*args: Any) -> None:
-        from agex.eval.builtins import (
-            _get_general_help_text,
-            _get_help_text,
-            _is_allowed_for_help,
-        )
-        from agex.eval.user_errors import AgexError, AgexTypeError
-
         if len(args) > 1:
-            raise AgexError(f"help() takes at most 1 argument ({len(args)} given)")
+            raise TypeError(f"help() takes at most 1 argument ({len(args)} given)")
 
         item = args[0] if args else None
 
         if item is not None and not _is_allowed_for_help(item):
-            raise AgexTypeError("help() is only supported for registered resources.")
+            raise TypeError("help() is only supported for registered resources.")
 
         doc = _get_help_text(agent, item) if item else _get_general_help_text(agent)
         event = OutputEvent(agent_name=agent_name, parts=[doc])
@@ -220,13 +230,10 @@ def _make_dir(
     """Create a dir function that lists available attributes."""
 
     def dir_fn(*args: Any) -> list[str]:
-        from agex.eval.builtins import _is_bound_instance_object
-        from agex.eval.objects import BoundInstanceObject
-        from agex.eval.user_errors import AgexError
         from agex.eval.utils import get_allowed_attributes_for_instance
 
         if len(args) > 1:
-            raise AgexError(f"dir() takes at most 1 argument ({len(args)} given)")
+            raise TypeError(f"dir() takes at most 1 argument ({len(args)} given)")
 
         obj = args[0] if args else None
 
@@ -248,3 +255,100 @@ def _make_dir(
         return final_attrs
 
     return dir_fn
+
+
+# --- Helpers ---
+
+
+def _smart_render_for_snapshot(value: Any) -> str:
+    """Render a value with conservative limits for snapshotting."""
+    from agex.render.value import ValueRenderer
+
+    renderer = ValueRenderer(max_len=512, max_depth=2)
+    return renderer.render(value)
+
+
+def _is_bound_instance_object(obj: Any) -> bool:
+    """Check if an object is a BoundInstanceObject (registered live object)."""
+    return (
+        hasattr(obj, "reg_object")
+        and hasattr(obj.reg_object, "methods")
+        and hasattr(obj.reg_object, "properties")
+    )
+
+
+def _get_general_help_text(agent: "BaseAgent") -> str:
+    """Returns a string with a summary of all registered items."""
+    parts = ["Available items:"]
+
+    # Functions and classes from policy __main__
+    try:
+        main_ns = agent._policy.namespaces.get("__main__")
+    except Exception:
+        main_ns = None
+    if main_ns is not None and main_ns.kind == "virtual":
+        fns = sorted(main_ns.fns.keys())
+        if fns:
+            parts.append("\nFunctions:")
+            parts.extend([f"- {fn}" for fn in fns])
+        clss = sorted(main_ns.classes.keys())
+        if clss:
+            parts.append("\nClasses:")
+            parts.extend([f"- {cls}" for cls in clss])
+
+    # Modules and objects from policy namespaces
+    mods = []
+    objects = []
+    try:
+        for name, ns in agent._policy.namespaces.items():
+            if name == "__main__":
+                continue
+            if getattr(ns, "kind", None) == "module":
+                mods.append(name)
+            elif getattr(ns, "kind", None) == "instance":
+                objects.append(name)
+    except Exception:
+        pass
+    all_objects = sorted(set(mods) | set(objects))
+    if all_objects:
+        parts.append("\nObjects:")
+        parts.extend([f"- {obj}" for obj in all_objects])
+
+    if len(parts) == 1:  # Only "Available items:" was added
+        return "No resources registered with the agent."
+
+    return "\n".join(parts)
+
+
+def _get_help_text(agent: "BaseAgent", item: Any) -> str:
+    """Returns a detailed help string for a specific registered item."""
+    if _is_bound_instance_object(item) and isinstance(item, BoundInstanceObject):
+        parts = [f"Help on object {item.reg_object.name}:\n"]
+        # Methods
+        methods = sorted(item.reg_object.methods.keys())
+        if methods:
+            parts.append("METHODS")
+            for name in methods:
+                doc = item.reg_object.methods[name].docstring
+                parts.append(f"    {name} - {doc}" if doc else f"    {name}")
+        # Properties
+        properties = sorted(item.reg_object.properties.keys())
+        if properties:
+            if methods:
+                parts.append("")
+            parts.append("PROPERTIES")
+            for name in properties:
+                doc = item.reg_object.properties[name].docstring
+                parts.append(f"    {name} - {doc}" if doc else f"    {name}")
+        return "\n".join(parts)
+    # For other types, try to get a docstring.
+    return inspect.getdoc(item) or "No help available."
+
+
+def _is_allowed_for_help(item: Any) -> bool:
+    """Check if an item is allowed for help() - registered resources or basic Python types."""
+    return (
+        _is_bound_instance_object(item)
+        or isinstance(item, (int, float, str, bool, list, dict, tuple, set, type(None)))
+        or hasattr(item, "__doc__")
+    )

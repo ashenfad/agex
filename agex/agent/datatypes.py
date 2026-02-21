@@ -181,11 +181,6 @@ class RegisteredObject(RegisteredItem):
     # A dictionary for exposed read-only attributes/properties.
     properties: dict[str, MemberSpec] = field(default_factory=dict)
 
-    # Exception mappings: external exception type -> agex exception type
-    # This allows live objects to map their library-specific exceptions
-    # to user-catchable agex exceptions
-    exception_mappings: dict[type, type] = field(default_factory=dict)
-
 
 @dataclass
 class StateType(Mapping):

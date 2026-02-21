@@ -59,13 +59,6 @@ class AgentPolicy:
             # Copy mutable init fields (dicts) to avoid sharing
             if "configure" in init_kwargs and init_kwargs["configure"]:
                 init_kwargs["configure"] = init_kwargs["configure"].copy()
-            if (
-                "exception_mappings" in init_kwargs
-                and init_kwargs["exception_mappings"]
-            ):
-                init_kwargs["exception_mappings"] = init_kwargs[
-                    "exception_mappings"
-                ].copy()
             if "submodules" in init_kwargs and init_kwargs["submodules"]:
                 init_kwargs["submodules"] = init_kwargs["submodules"].copy()
 
@@ -161,7 +154,6 @@ class AgentPolicy:
         include: Pattern | None = "*",
         exclude: Pattern | None = ("_*", "*._*"),
         configure: dict[str, MemberSpec] | None = None,
-        exception_mappings: dict[type, type] | None = None,
     ) -> Namespace:
         spec = Namespace(
             name=name,
@@ -173,7 +165,6 @@ class AgentPolicy:
             configure=configure or {},
             recursive=False,
         )
-        spec.exception_mappings = exception_mappings or {}
         self.namespaces[name] = spec
         return spec
 
