@@ -9,7 +9,7 @@ def _sync_submodule_attributes(namespaces: dict[str, Namespace]) -> None:
     """Ensure parent modules can access registered submodules as attributes.
 
     For example, if both 'os' and 'os.path' are registered, this ensures
-    that accessing 'path' on the 'os' AgexModule returns the 'os.path' AgexModule.
+    that accessing 'path' on the 'os' module returns the 'os.path' module.
 
     This handles module aliases (e.g., os.path is actually posixpath on Unix).
 

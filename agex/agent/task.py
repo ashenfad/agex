@@ -110,10 +110,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
                     sub_agent._host = Local()
 
-            # Re-register in global registry
-            # (fingerprint is None after deserialization until registered)
-            if sub_agent.fingerprint is None:
-                sub_agent._update_fingerprint()
+            # Fingerprint recomputes lazily on first access
 
         # Prepare kwargs - pass session for state resolution
         call_kwargs = dict(kwargs) if kwargs is not None else {}

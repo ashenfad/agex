@@ -10,7 +10,6 @@ import math
 import pytest
 
 from agex import Agent, clear_agent_registry
-from agex.agent.base import resolve_agent
 from agex.llm.dummy_client import Dummy, LLMResponse
 
 
@@ -81,11 +80,8 @@ new_agent = Agent()
 # Register the helper function from parent
 new_agent.fn(helper, name="math_helper")
 
-# Get fingerprint
-fingerprint = new_agent.fingerprint
-
-# Return the agent fingerprint so we can verify it
-task_success(fingerprint)
+# Return the agent directly
+task_success(new_agent)
 """,
         )
     ]
@@ -98,15 +94,14 @@ task_success(fingerprint)
     architect.fn(parent_helper, name="helper")
 
     @architect.task
-    def create_processor() -> str:  # type: ignore[return-value]
+    def create_processor() -> object:  # type: ignore[return-value]
         """Create an agent with helper functions."""
         pass
 
     # Execute
-    new_agent_fingerprint = create_processor()
+    new_agent = create_processor()
 
     # Verify the new agent exists and has the registered function (policy)
-    new_agent = resolve_agent(new_agent_fingerprint)
     main = new_agent._policy.namespaces.get("__main__")
     assert main is not None and "math_helper" in main.fns
 
@@ -131,10 +126,8 @@ new_agent = Agent()
 # This should only get the intersection of what parent had and what we request
 new_agent.module(math, include=["sin", "tan", "pi"], name="math")
 
-# Get fingerprint
-fingerprint = new_agent.fingerprint
-
-task_success(fingerprint)
+# Return the agent directly
+task_success(new_agent)
 """,
         )
     ]
@@ -147,15 +140,14 @@ task_success(fingerprint)
     )  # Same permissions as parent
 
     @architect.task
-    def create_math_agent() -> str:  # type: ignore[return-value]
+    def create_math_agent() -> object:  # type: ignore[return-value]
         """Create an agent with math capabilities."""
         pass
 
     # Execute
-    new_agent_fingerprint = create_math_agent()
+    new_agent = create_math_agent()
 
     # Verify security inheritance worked via policy describe
-    new_agent = resolve_agent(new_agent_fingerprint)
     ns = new_agent._policy.namespaces.get("math")
     assert ns is not None
     from agex.agent.policy.describe import describe_namespace
@@ -164,8 +156,7 @@ task_success(fingerprint)
     keys = set(desc.keys())
     assert "sin" in keys
     assert "pi" in keys
-    # Note: with sblite, sandbox code receives real Python modules (not AgexModule
-    # wrappers), so security inheritance via AgexModule doesn't apply. The child
+    # With sblite, sandbox code receives real Python modules, so the child
     # agent gets the full requested includes.
     assert "tan" in keys
 
@@ -206,7 +197,7 @@ triangle_analyzer = geom_agent.task(analyze_triangle)
 
 # Build result
 result = {
-    'agent_fingerprint': geom_agent.fingerprint,
+    'agent': geom_agent,
     'task_function': triangle_analyzer
 }
 
@@ -233,11 +224,11 @@ task_success(result)
 
     # Verify results
     assert isinstance(result, dict)
-    assert "agent_fingerprint" in result
+    assert "agent" in result
     assert "task_function" in result
 
     # Get the created agent
-    geom_agent = resolve_agent(result["agent_fingerprint"])
+    geom_agent = result["agent"]
 
     # Verify function registration (policy)
     main = geom_agent._policy.namespaces.get("__main__")
@@ -250,8 +241,8 @@ task_success(result)
 
     keys = set(describe_namespace(ns).keys())
     assert {"sin", "cos", "sqrt"}.issubset(keys)
-    # Note: with sblite, sandbox code receives real Python modules, so the
-    # child agent gets all requested includes (no AgexModule-based inheritance).
+    # With sblite, sandbox code receives real Python modules, so the
+    # child agent gets all requested includes.
     assert "tan" in keys
 
     # Verify the task function
@@ -262,7 +253,7 @@ task_success(result)
 
 
 def test_agex_module_fingerprinting():
-    """Test that AgexModule objects get proper agent fingerprints."""
+    """Test that modules get proper agent fingerprints."""
     # Create a simple function that returns the math module
     responses = [
         LLMResponse(
@@ -285,7 +276,7 @@ task_success(math)
     # Execute
     math_module = get_math_module()
 
-    # With sblite, import returns the real Python module (not AgexModule wrapper)
+    # sblite returns the real Python module
     import types
 
     assert isinstance(math_module, types.ModuleType)

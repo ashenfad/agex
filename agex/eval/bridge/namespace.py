@@ -221,10 +221,7 @@ def _make_dir(
 
     def dir_fn(*args: Any) -> list[str]:
         from agex.eval.builtins import _is_bound_instance_object
-        from agex.eval.objects import (
-            AgexModule,
-            BoundInstanceObject,
-        )
+        from agex.eval.objects import BoundInstanceObject
         from agex.eval.user_errors import AgexError
         from agex.eval.utils import get_allowed_attributes_for_instance
 
@@ -235,15 +232,6 @@ def _make_dir(
 
         if obj is None:
             attrs = sorted(state.keys())
-        elif isinstance(obj, AgexModule):
-            ns = agent._policy.namespaces.get(obj.name)
-            if ns is None:
-                attrs = []
-            else:
-                from agex.agent.policy.describe import describe_namespace
-
-                desc = describe_namespace(ns, include_low=False)
-                attrs = sorted(k for k in desc.keys())
         elif _is_bound_instance_object(obj) and isinstance(obj, BoundInstanceObject):
             methods = list(obj.reg_object.methods.keys())
             properties = list(obj.reg_object.properties.keys())

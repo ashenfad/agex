@@ -2,7 +2,7 @@
 Internal representation of objects used by the bridge and render layers.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal, Union
 
 from .user_errors import AgexAttributeError, AgexError
@@ -112,29 +112,6 @@ class BoundInstanceMethod:
                     raise target_exc(str(e)) from e
             # Fallback: wrap into generic AgexError with original type name
             raise AgexError(f"{type(e).__name__}: {e}") from e
-
-
-@dataclass
-class AgexModule:
-    """A serializable module reference for use within the agex bridge."""
-
-    name: str
-    agent_fingerprint: str = (
-        ""  # Parent agent who registered this module (for security inheritance)
-    )
-    submodules: dict[str, Any] = field(default_factory=dict)
-
-    def __repr__(self):
-        return f"<agexmodule '{self.name}'>"
-
-    def getattr(self, name: str) -> Any:
-        if name in self.submodules:
-            return self.submodules[name]
-        raise AgexAttributeError(f"module '{self.name}' has no attribute '{name}'")
-
-    def setattr(self, name: str, value: Any):
-        # Allow attaching submodules
-        self.submodules[name] = value
 
 
 class PrintAction(tuple):

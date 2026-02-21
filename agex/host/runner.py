@@ -75,8 +75,7 @@ def prepare_agent(payload: bytes) -> "BaseAgent":
 
     agent._host = Local()
 
-    # Re-register in the new process's global registry
-    agent._update_fingerprint()
+    # Fingerprint recomputes lazily on first access
 
     return agent
 
