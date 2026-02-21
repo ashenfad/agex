@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 # Data types and exceptions
 from .datatypes import (
     RESERVED_NAMES,
-    AttrDescriptor,
     MemberSpec,
     Pattern,
     RegisteredClass,
@@ -45,7 +44,6 @@ __all__ = [
     "TaskContinue",
     # Registration types
     "MemberSpec",
-    "AttrDescriptor",
     "RegisteredItem",
     "RegisteredFn",
     "RegisteredClass",
@@ -218,5 +216,3 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             max_open_files=max_open_files,
             agex_primer_override=agex_primer_override,
         )
-        # Track external package dependencies incrementally
-        self._dependencies: set[str] = set()

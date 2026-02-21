@@ -15,7 +15,7 @@ from kvit import Store
 
 from agex.agent.datatypes import TaskClarify, TaskContinue, TaskFail, TaskSuccess
 from agex.agent.events import OutputEvent
-from agex.eval.objects import BoundInstanceObject, ImageAction
+from agex.eval.objects import ImageAction
 from agex.state import is_live_root
 from agex.state.log import add_event_to_log
 
@@ -239,10 +239,6 @@ def _make_dir(
 
         if obj is None:
             attrs = sorted(state.keys())
-        elif _is_bound_instance_object(obj) and isinstance(obj, BoundInstanceObject):
-            methods = list(obj.reg_object.methods.keys())
-            properties = list(obj.reg_object.properties.keys())
-            attrs = sorted(methods + properties)
         else:
             allowed = get_allowed_attributes_for_instance(agent, obj)
             attrs = sorted(list(allowed))
@@ -266,15 +262,6 @@ def _smart_render_for_snapshot(value: Any) -> str:
 
     renderer = ValueRenderer(max_len=512, max_depth=2)
     return renderer.render(value)
-
-
-def _is_bound_instance_object(obj: Any) -> bool:
-    """Check if an object is a BoundInstanceObject (registered live object)."""
-    return (
-        hasattr(obj, "reg_object")
-        and hasattr(obj.reg_object, "methods")
-        and hasattr(obj.reg_object, "properties")
-    )
 
 
 def _get_general_help_text(agent: "BaseAgent") -> str:
@@ -322,33 +309,11 @@ def _get_general_help_text(agent: "BaseAgent") -> str:
 
 def _get_help_text(agent: "BaseAgent", item: Any) -> str:
     """Returns a detailed help string for a specific registered item."""
-    if _is_bound_instance_object(item) and isinstance(item, BoundInstanceObject):
-        parts = [f"Help on object {item.reg_object.name}:\n"]
-        # Methods
-        methods = sorted(item.reg_object.methods.keys())
-        if methods:
-            parts.append("METHODS")
-            for name in methods:
-                doc = item.reg_object.methods[name].docstring
-                parts.append(f"    {name} - {doc}" if doc else f"    {name}")
-        # Properties
-        properties = sorted(item.reg_object.properties.keys())
-        if properties:
-            if methods:
-                parts.append("")
-            parts.append("PROPERTIES")
-            for name in properties:
-                doc = item.reg_object.properties[name].docstring
-                parts.append(f"    {name} - {doc}" if doc else f"    {name}")
-        return "\n".join(parts)
-    # For other types, try to get a docstring.
     return inspect.getdoc(item) or "No help available."
 
 
 def _is_allowed_for_help(item: Any) -> bool:
     """Check if an item is allowed for help() - registered resources or basic Python types."""
-    return (
-        _is_bound_instance_object(item)
-        or isinstance(item, (int, float, str, bool, list, dict, tuple, set, type(None)))
-        or hasattr(item, "__doc__")
-    )
+    return isinstance(
+        item, (int, float, str, bool, list, dict, tuple, set, type(None))
+    ) or hasattr(item, "__doc__")

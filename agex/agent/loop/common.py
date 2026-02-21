@@ -57,7 +57,6 @@ from agex.state.log import add_event_to_log, get_events_from_log
 # Re-export commonly used items for convenience
 __all__ = [
     # Constants
-    "MAX_USER_FUNCTIONS_IN_RECAP",
     "TASK_CONTROL_GUIDANCE",
     # Event factories
     "create_task_start_event",
@@ -114,8 +113,6 @@ __all__ = [
     "get_events_from_log",
     "check_cancellation",
 ]
-
-MAX_USER_FUNCTIONS_IN_RECAP = 12
 
 
 def check_cancellation(

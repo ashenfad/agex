@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from types import ModuleType
-from typing import Any, Callable, Iterable, Literal, Mapping, Union
+from typing import Any, Callable, Iterable, Literal, Union
 
 Pattern = Union[str, Iterable[str], Callable[[str], bool]]
 Visibility = Literal["high", "medium", "low"]
@@ -128,13 +128,6 @@ class MemberSpec:
 
 
 @dataclass
-class AttrDescriptor:
-    # A descriptor to hold metadata until the class is processed.
-    default: Any
-    visibility: Visibility
-
-
-@dataclass
 class RegisteredItem:
     visibility: Visibility
 
@@ -180,8 +173,3 @@ class RegisteredObject(RegisteredItem):
 
     # A dictionary for exposed read-only attributes/properties.
     properties: dict[str, MemberSpec] = field(default_factory=dict)
-
-
-@dataclass
-class StateType(Mapping):
-    """Represents the agent's state at a particular moment in time."""
