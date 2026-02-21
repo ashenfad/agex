@@ -11,7 +11,6 @@ import tempfile
 from pathlib import Path
 
 from agex import Agent
-from agex.eval.user_errors import AgexValueError
 from agex.llm.dummy_client import Dummy, LLMResponse
 
 
@@ -269,7 +268,6 @@ task_success(result)
             db_manager,
             name="db",
             include=["execute", "__enter__", "__exit__"],
-            exception_mappings={sqlite3.IntegrityError: AgexValueError},
         )
         agent.cls(sqlite3.Cursor, include=["fetchone", "fetchall", "fetchmany"])
 

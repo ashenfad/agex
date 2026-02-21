@@ -5,8 +5,6 @@ Internal representation of objects used by the bridge and render layers.
 from dataclasses import dataclass
 from typing import Any, Literal, Union
 
-from .user_errors import AgexAttributeError, AgexError
-
 
 @dataclass
 class BoundInstanceObject:
@@ -32,7 +30,7 @@ class BoundInstanceObject:
             live_instance = self.host_registry[self.reg_object.name]
             return getattr(live_instance, name)
 
-        raise AgexAttributeError(
+        raise AttributeError(
             f"'{self.reg_object.name}' object has no attribute '{name}'"
         )
 
@@ -40,7 +38,7 @@ class BoundInstanceObject:
         """Set an attribute on the live host object."""
         # Check if this attribute is registered as a property
         if name not in self.reg_object.properties:
-            raise AgexAttributeError(
+            raise AttributeError(
                 f"'{self.reg_object.name}' object has no registered property '{name}'"
             )
 
@@ -51,7 +49,7 @@ class BoundInstanceObject:
         """Delete an attribute from the live host object."""
         # Check if this attribute is registered as a property
         if name not in self.reg_object.properties:
-            raise AgexAttributeError(
+            raise AttributeError(
                 f"'{self.reg_object.name}' object has no registered property '{name}'"
             )
 
@@ -100,18 +98,7 @@ class BoundInstanceMethod:
         """Look up the live object and call the real method."""
         live_instance = self.host_registry[self.reg_object.name]
         method = getattr(live_instance, self.method_name)
-        try:
-            return method(*args, **kwargs)
-        except Exception as e:  # Map to agent-catchable errors
-            # Pass through already-wrapped agent errors
-            if isinstance(e, AgexError):
-                raise
-            # Specific mappings take precedence
-            for src_exc, target_exc in self.reg_object.exception_mappings.items():
-                if isinstance(e, src_exc):
-                    raise target_exc(str(e)) from e
-            # Fallback: wrap into generic AgexError with original type name
-            raise AgexError(f"{type(e).__name__}: {e}") from e
+        return method(*args, **kwargs)
 
 
 class PrintAction(tuple):

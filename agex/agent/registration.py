@@ -408,7 +408,6 @@ class RegistrationMixin(BaseAgent):
         include: Pattern | None = "*",
         exclude: Pattern | None = ["_*", "*._*"],
         configure: dict[str, MemberSpec] | None = None,
-        exception_mappings: dict[type, type] | None = None,
         recursive: bool = False,
         host_fs_access: bool = False,
         network_access: bool = False,
@@ -517,7 +516,6 @@ class RegistrationMixin(BaseAgent):
                 include=include,
                 exclude=tuple(exclude) if isinstance(exclude, list) else exclude,
                 configure=sec_configure,
-                exception_mappings=exception_mappings,
             )
             # Store the live instance in the host registry for runtime access
             self._host_object_registry[name] = obj
