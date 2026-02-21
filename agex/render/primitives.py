@@ -29,7 +29,7 @@ from ..agent.datatypes import EditAction, FileAction
 from ..eval.objects import ImageAction, PrintAction
 from ..llm.core import ContentPart, ImagePart, TextPart
 from ..tokenizers import get_tokenizer
-from .value import ValueRenderer
+from .value import render_value
 
 # Standard token budget for "hi" detail rendering
 HI_DETAIL_BUDGET = 8192
@@ -68,7 +68,7 @@ def render_dataframe_with_budget(value: Any, token_budget: int | None) -> str:
     Render a DataFrame to string with optimal pandas display settings.
 
     Uses iterative token counting to find the best row limit within budget.
-    This is a shared utility used by ValueRenderer.
+    This is a shared utility used by render_value.
 
     Args:
         value: The DataFrame to render
@@ -356,16 +356,7 @@ def render_success(result: Any, budget: int = HI_DETAIL_BUDGET) -> tuple[str, in
         (success_text, token_count)
     """
     estimated_chars = budget * 4  # ~4 chars per token
-    # Adjust depth based on budget (low detail = shallower depth)
-    max_depth = 2 if budget == LOW_DETAIL_BUDGET else 4
-    max_items = 10 if budget == LOW_DETAIL_BUDGET else 25
-
-    renderer = ValueRenderer(
-        max_len=estimated_chars,
-        max_depth=max_depth,
-        max_items=max_items,
-    )
-    rendered = renderer.render(result)
+    rendered = render_value(result, budget=estimated_chars)
     text = f"✅ Task completed: {rendered}"
     tokens = count_tokens(text)
     return text, tokens
@@ -418,21 +409,10 @@ def render_output_parts_full(
 
     tokenizer = get_tokenizer("gpt-4")
 
-    # Adjust rendering parameters based on budget
-    # Use ~4 chars per token as rough estimate for max_len
-    if budget == LOW_DETAIL_BUDGET:
-        render_func = ValueRenderer(
-            max_len=budget * 4,  # 1024 tokens → 4K chars
-            max_depth=2,
-            max_items=10,
-            token_budget=budget,
-        ).render
-    else:
-        render_func = ValueRenderer(
-            max_len=budget * 4,  # 8192 tokens → 32K chars
-            max_depth=4,
-            token_budget=budget,
-        ).render
+    char_budget = budget * 4  # ~4 chars per token
+
+    def render_func(v):
+        return render_value(v, budget=char_budget, token_budget=budget)
 
     # Store tuples of (ContentPart, cost) to manage budget.
     parts_with_cost: list[tuple[ContentPart, int]] = []

@@ -258,10 +258,9 @@ def _make_dir(
 
 def _smart_render_for_snapshot(value: Any) -> str:
     """Render a value with conservative limits for snapshotting."""
-    from agex.render.value import ValueRenderer
+    from agex.render.value import render_value
 
-    renderer = ValueRenderer(max_len=512, max_depth=2)
-    return renderer.render(value)
+    return render_value(value, budget=512)
 
 
 def _get_general_help_text(agent: "BaseAgent") -> str:

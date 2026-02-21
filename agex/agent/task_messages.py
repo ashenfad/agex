@@ -8,7 +8,7 @@ receive, including smart rendering of input parameters and task descriptions.
 import inspect
 from typing import Any
 
-from agex.render.value import ValueRenderer
+from agex.render.value import render_value
 
 
 def build_task_message(
@@ -92,16 +92,11 @@ def _smart_render_for_task_input(value: Any) -> str:
     """
     Smart rendering for individual task input values.
 
-    Uses ValueRenderer with generous task-appropriate limits to show
-    rich content like DataFrames, arrays, and other complex objects
-    in their natural representation when possible.
+    Uses generous limits to show rich content like DataFrames, arrays,
+    and other complex objects in their natural representation when possible.
     """
     from agex.render.primitives import HI_DETAIL_BUDGET
 
-    renderer = ValueRenderer(
-        max_len=HI_DETAIL_BUDGET * 4,  # Align with token budget (~32K chars)
-        max_depth=4,
-        max_items=50,
-        token_budget=HI_DETAIL_BUDGET,  # Enable iterative DataFrame rendering
+    return render_value(
+        value, budget=HI_DETAIL_BUDGET * 4, token_budget=HI_DETAIL_BUDGET
     )
-    return renderer.render(value, compact=False)

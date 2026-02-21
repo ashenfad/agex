@@ -43,11 +43,11 @@ from agex.llm.xml import (
 from agex.render.primitives import (
     HI_DETAIL_BUDGET,
     LOW_DETAIL_BUDGET,
-    ValueRenderer,
     render_output_parts_full,
     render_summary,
     render_task_start,
 )
+from agex.render.value import render_value
 
 
 def render_events_as_xml(events: List[Event]) -> List[dict]:
@@ -170,20 +170,8 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
 
         elif isinstance(event, SuccessEvent):
             # Render result and wrap in TASK_SUCCESS tag
-            # We use ValueRenderer directly to get the string representation
-            # instead of render_success which adds emoji text
-
-            # Use similar logic to render_success but without the emoji wrapper
             estimated_chars = budget * 4
-            max_depth = 2 if budget == LOW_DETAIL_BUDGET else 4
-            max_items = 10 if budget == LOW_DETAIL_BUDGET else 25
-
-            renderer = ValueRenderer(
-                max_len=estimated_chars,
-                max_depth=max_depth,
-                max_items=max_items,
-            )
-            rendered = renderer.render(event.result)
+            rendered = render_value(event.result, budget=estimated_chars)
 
             content = f"<{TAG_SUCCESS}>{rendered}</{TAG_SUCCESS}>"
             messages.append({"role": "assistant", "content": content})
