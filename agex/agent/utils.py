@@ -4,7 +4,7 @@ import inspect
 import textwrap
 from typing import Awaitable, Callable, TypeVar
 
-from sblite.wrappers import SbFunction
+from sandtrap.wrappers import SbFunction
 
 
 def is_function_body_empty(func: Callable) -> bool:

@@ -1,10 +1,10 @@
 """
-Processes sblite ExecResult back into agex's kvit state and event system.
+Processes sandtrap ExecResult back into agex's kvit state and event system.
 
 Handles:
 - Syncing namespace changes back to the kvit Store
 - Detecting variable deletions
-- Re-raising _AgentExit signals captured by sblite
+- Re-raising _AgentExit signals captured by sandtrap
 - Converting modules to pickleable ModuleRef for cross-turn persistence
 """
 
@@ -14,8 +14,8 @@ import types
 from typing import Any, Callable
 
 from kvit import Store
-from sblite import ExecResult
-from sblite.wrappers import ModuleRef
+from sandtrap import ExecResult
+from sandtrap.wrappers import ModuleRef
 
 
 def handle_result(
@@ -29,7 +29,7 @@ def handle_result(
     """Process an ExecResult: sync state and re-raise errors.
 
     Args:
-        result: The ExecResult from sblite Sandbox.exec().
+        result: The ExecResult from sandtrap Sandbox.exec().
         state: The kvit state to sync changes back to.
         agent_name: Agent name for event attribution.
         pre_keys: Set of user-visible state keys before execution
@@ -62,8 +62,8 @@ def handle_result(
         if key in state:
             state.remove(key)
 
-    # 3. Re-raise any error captured by sblite
-    # sblite catches ALL BaseException (except KeyboardInterrupt) and puts it
+    # 3. Re-raise any error captured by sandtrap
+    # sandtrap catches ALL BaseException (except KeyboardInterrupt) and puts it
     # in result.error. This includes _AgentExit subclasses (TaskSuccess, TaskFail,
     # TaskContinue, TaskClarify) which are BaseException.
     if result.error is not None:

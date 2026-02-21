@@ -27,7 +27,7 @@ class FileMetadata:
     is_dir: bool = False
 
     # os.stat_result-compatible properties — allows FileMetadata to be
-    # returned directly from stat() when used with sblite's os.stat() patch.
+    # returned directly from stat() when used with sandtrap's os.stat() patch.
 
     @property
     def st_size(self) -> int:

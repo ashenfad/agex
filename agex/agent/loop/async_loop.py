@@ -275,7 +275,7 @@ class AsyncLoopMixin:
             llm_response.code = self._strip_markdown_code_fence(llm_response.code)
             code_to_evaluate = llm_response.code
             if code_to_evaluate:
-                from sblite import find_refs
+                from sandtrap import find_refs
 
                 try:
                     accumulated_refs |= find_refs(

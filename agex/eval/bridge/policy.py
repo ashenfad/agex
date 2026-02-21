@@ -1,8 +1,8 @@
 """
-Translates agex's AgentPolicy into a sblite Policy.
+Translates agex's AgentPolicy into a sandtrap Policy.
 
 Maps agex Namespace registrations (module, instance, virtual/__main__)
-to sblite's policy.fn(), policy.cls(), and policy.module() calls.
+to sandtrap's policy.fn(), policy.cls(), and policy.module() calls.
 """
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ from __future__ import annotations
 import contextvars
 from typing import TYPE_CHECKING, Any, Callable
 
-from sblite.policy import MemberSpec as SbliteMemberSpec
-from sblite.policy import Policy
+from sandtrap.policy import MemberSpec as SandtrapMemberSpec
+from sandtrap.policy import Policy
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
@@ -29,15 +29,15 @@ _current_on_event: contextvars.ContextVar[Callable[[Any], None] | None] = (
 
 def _translate_configure(
     agex_configure: dict[str, "AgexMemberSpec"],
-) -> dict[str, SbliteMemberSpec]:
-    """Convert agex MemberSpec configure dict to sblite MemberSpec configure dict.
+) -> dict[str, SandtrapMemberSpec]:
+    """Convert agex MemberSpec configure dict to sandtrap MemberSpec configure dict.
 
     Drops agex-only fields (visibility, docstring, constructable) and keeps
     the security-relevant fields (host_fs_access, network_access).
     """
-    result: dict[str, SbliteMemberSpec] = {}
+    result: dict[str, SandtrapMemberSpec] = {}
     for name, spec in agex_configure.items():
-        result[name] = SbliteMemberSpec(
+        result[name] = SandtrapMemberSpec(
             host_fs_access=getattr(spec, "host_fs_access", False),
             network_access=getattr(spec, "network_access", False),
         )
@@ -45,14 +45,14 @@ def _translate_configure(
 
 
 def translate_policy(agent: "BaseAgent", timeout: float | None = None) -> Policy:
-    """Convert an agent's policy registrations into a sblite Policy.
+    """Convert an agent's policy registrations into a sandtrap Policy.
 
     Args:
         agent: The agent whose policy to translate.
         timeout: Execution timeout in seconds. Defaults to agent.eval_timeout_seconds.
 
     Returns:
-        A sblite Policy with equivalent registrations.
+        A sandtrap Policy with equivalent registrations.
     """
     effective_timeout = timeout if timeout is not None else agent.eval_timeout_seconds
     policy = Policy(timeout=effective_timeout)
@@ -93,7 +93,7 @@ def _wrap_sub_agent_task(fn_obj):
         except TaskFail as e:
             raise EvalError(f"Sub-agent failed: {e.message}") from e
 
-    # Preserve function metadata for sblite's introspection
+    # Preserve function metadata for sandtrap's introspection
     wrapper.__name__ = getattr(fn_obj, "__name__", "task")
     wrapper.__doc__ = getattr(fn_obj, "__doc__", None)
     wrapper.__signature__ = getattr(fn_obj, "__signature__", None)
@@ -108,7 +108,7 @@ def _translate_main_namespace(policy: Policy, ns, agent: "BaseAgent") -> None:
 
     # Register functions
     for fn_name, fn_obj in ns.fn_objects.items():
-        # Skip builtin open — sblite handles it via filesystem interception
+        # Skip builtin open — sandtrap handles it via filesystem interception
         if fn_obj is _builtins.open:
             continue
 

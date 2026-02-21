@@ -85,7 +85,7 @@ instance = MyClass(arr[1])
 
 def test_comprehensive_serialization_stress():
     """
-    Multi-phase stress test for the sblite serialization system.
+    Multi-phase stress test for the sandtrap serialization system.
 
     Tests state continuity across 5 phases covering:
     - Top-level function definitions (SbFunction) surviving commits

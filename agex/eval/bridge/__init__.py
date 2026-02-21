@@ -1,8 +1,8 @@
 """
-Bridge layer between agex's registration/state system and sblite's Sandbox.
+Bridge layer between agex's registration/state system and sandtrap's Sandbox.
 
 This package translates agex's AgentPolicy and kvit state into
-sblite's Policy and namespace dict, then processes the ExecResult
+sandtrap's Policy and namespace dict, then processes the ExecResult
 back into agex's state and event system.
 """
 
@@ -10,7 +10,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Callable
 
 from kvit import Store
-from sblite import Sandbox
+from sandtrap import Sandbox
 
 from .namespace import build_namespace, make_print_handler
 from .policy import translate_policy
@@ -71,7 +71,7 @@ def execute_sandboxed(
     on_event: Callable[[Any], None] | None = None,
     file_path: str | None = None,
 ) -> None:
-    """Execute agent code synchronously in the sblite sandbox."""
+    """Execute agent code synchronously in the sandtrap sandbox."""
     from .policy import _current_on_event, _current_session
 
     sandbox, namespace, pre_keys, injected_keys = _prepare_sandbox(
@@ -114,7 +114,7 @@ async def aexecute_sandboxed(
     on_event: Callable[[Any], None] | None = None,
     file_path: str | None = None,
 ) -> None:
-    """Execute agent code asynchronously in the sblite sandbox.
+    """Execute agent code asynchronously in the sandtrap sandbox.
 
     Uses sandbox.aexec() so ``await`` works natively in sandbox code.
     """
