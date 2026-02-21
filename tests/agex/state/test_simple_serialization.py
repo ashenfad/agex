@@ -9,12 +9,12 @@ from agex.state.kv import Memory
 
 def test_class_serialization_with_method_calls():
     """
-    Tests that a sandbox-defined class (SbClass) and its instance (SbInstance)
+    Tests that a sandbox-defined class (StClass) and its instance (StInstance)
     survive a commit and can be used in subsequent phases.
 
     Verifies:
-    - Class definitions persist as SbClass across commits
-    - Instances persist as SbInstance across commits
+    - Class definitions persist as StClass across commits
+    - Instances persist as StInstance across commits
     - Method calls work on rehydrated instances
     - numpy data inside instances survives serialization
     """
@@ -70,8 +70,8 @@ stats = processor.get_stats()
 
 def test_function_and_class_across_phases():
     """
-    Tests that top-level function definitions (SbFunction) and class
-    definitions (SbClass) survive commits and can be used together
+    Tests that top-level function definitions (StFunction) and class
+    definitions (StClass) survive commits and can be used together
     in later phases.
     """
     agent = Agent()

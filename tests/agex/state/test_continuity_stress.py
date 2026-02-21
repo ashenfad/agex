@@ -24,8 +24,8 @@ def _make_versioned(store=None, commit_hash=None):
 def test_multi_step_program_with_snapshots():
     """
     Tests that a series of programs, separated by snapshots, can build upon
-    each other's state, correctly serializing and rehydrating SbFunctions,
-    SbClasses, SbInstances, and numpy arrays.
+    each other's state, correctly serializing and rehydrating StFunctions,
+    StClasses, StInstances, and numpy arrays.
     """
     agent = Agent()
     agent.module(np, name="np")
@@ -88,8 +88,8 @@ def test_comprehensive_serialization_stress():
     Multi-phase stress test for the sandtrap serialization system.
 
     Tests state continuity across 5 phases covering:
-    - Top-level function definitions (SbFunction) surviving commits
-    - Class definitions (SbClass) and instances (SbInstance) surviving commits
+    - Top-level function definitions (StFunction) surviving commits
+    - Class definitions (StClass) and instances (StInstance) surviving commits
     - numpy arrays persisting across phases
     - Cross-phase references (functions using data from earlier phases)
     - Large data structures

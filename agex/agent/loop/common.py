@@ -11,9 +11,9 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any, Callable
 
-from faketerm import ParseError, TerminalError, execute_script, to_script
 from gitkv import Live, Namespaced, Staged, Store
 from pydantic import ValidationError
+from termish import ParseError, TerminalError, execute_script, to_script
 
 from agex.agent.datatypes import (
     EditAction,

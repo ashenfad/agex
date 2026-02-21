@@ -4,7 +4,7 @@ import inspect
 import textwrap
 from typing import Awaitable, Callable, TypeVar
 
-from sandtrap.wrappers import SbFunction
+from sandtrap.wrappers import StFunction
 
 
 def is_function_body_empty(func: Callable) -> bool:
@@ -13,8 +13,8 @@ def is_function_body_empty(func: Callable) -> bool:
 
     Returns True if the function body is effectively empty (suitable for @agent.task).
     """
-    # SbFunction (sandbox-defined): can't inspect source, assume empty-bodied
-    if isinstance(func, SbFunction):
+    # StFunction (sandbox-defined): can't inspect source, assume empty-bodied
+    if isinstance(func, StFunction):
         return True
 
     try:
