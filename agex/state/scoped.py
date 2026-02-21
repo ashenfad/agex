@@ -29,17 +29,6 @@ class Scoped:
         return self._parent_store.get(key, default)
 
     def set(self, key: str, value: Any) -> None:
-        # For closure variables, write through to the underlying state
-        # This allows UserFunction callbacks to modify captured variables
-        from .closure import LiveClosureState
-
-        if isinstance(self._parent_store, LiveClosureState):
-            if (
-                key in self._parent_store._keys
-                and self._parent_store._source is not None
-            ):
-                self._parent_store._source.set(key, value)
-                return
         self._local_store.set(key, value)
 
     def remove(self, key: str) -> bool:

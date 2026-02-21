@@ -24,23 +24,8 @@ from ..agent.datatypes import (
 
 
 def _is_sub_agent_function(fn: Any) -> bool:
-    """Check if a function is a sub-agent function (TaskUserFunction)."""
-    from agex.eval.functions import TaskUserFunction
-
-    # Direct TaskUserFunction
-    if isinstance(fn, TaskUserFunction):
-        return True
-
-    # Check if it's a wrapper around a TaskUserFunction (from registration.py)
-    # When a TaskUserFunction is registered, it creates a wrapper that preserves metadata
-    if hasattr(fn, "__name__") and hasattr(fn, "__doc__"):
-        # The wrapper preserves the original function's docstring or sets it to "User-defined function"
-        # We need to check if the underlying function is a TaskUserFunction
-        # Look for the dual-decorator attributes that indicate a task function
-        if hasattr(fn, "__agex_task_namespace__"):
-            return True
-
-    return False
+    """Check if a function is a sub-agent task function."""
+    return hasattr(fn, "__agex_task_namespace__")
 
 
 def _render_type_annotation(

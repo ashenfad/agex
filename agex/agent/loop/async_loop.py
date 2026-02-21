@@ -383,7 +383,7 @@ class AsyncLoopMixin:
 
                 if isinstance(state, Namespaced):
                     raise EvalError(
-                        f"Sub-agent needs clarification: {task_clarify.message}", None
+                        f"Sub-agent needs clarification: {task_clarify.message}"
                     )
                 else:
                     raise
@@ -403,7 +403,7 @@ class AsyncLoopMixin:
                     yield event
 
                 if isinstance(state, Namespaced):
-                    raise EvalError(f"Sub-agent failed: {task_fail.message}", None)
+                    raise EvalError(f"Sub-agent failed: {task_fail.message}")
                 else:
                     raise
 

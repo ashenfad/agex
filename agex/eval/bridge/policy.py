@@ -89,9 +89,9 @@ def _wrap_sub_agent_task(fn_obj):
         try:
             return fn_obj(*args, **kwargs)
         except TaskClarify as e:
-            raise EvalError(f"Sub-agent needs clarification: {e.message}", None) from e
+            raise EvalError(f"Sub-agent needs clarification: {e.message}") from e
         except TaskFail as e:
-            raise EvalError(f"Sub-agent failed: {e.message}", None) from e
+            raise EvalError(f"Sub-agent failed: {e.message}") from e
 
     # Preserve function metadata for sblite's introspection
     wrapper.__name__ = getattr(fn_obj, "__name__", "task")

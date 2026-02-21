@@ -1,5 +1,3 @@
-from agex.eval.functions import UserFunction
-from agex.eval.objects import AgexDataClass, AgexObject
 from agex.render.value import ValueRenderer
 
 
@@ -34,33 +32,6 @@ def test_render_dict_depth_limit():
     renderer = ValueRenderer(max_depth=1)
     nested_dict = {"a": 1, "b": {"c": 2}}
     assert renderer.render(nested_dict) == "{'a': 1, 'b': {... (1 items)}}"
-
-
-def test_render_agex_objects():
-    renderer = ValueRenderer()
-    # Mock a UserFunction
-    mock_fn = UserFunction(name="my_func", args=None, body=[], closure_state=None)
-    assert renderer.render(mock_fn) == "<function my_func>"
-
-    # Mock a AgexObject
-    mock_cls = AgexDataClass(name="MyData", fields=["x", "y"])
-    mock_obj = AgexObject(cls=mock_cls, attributes={"x": 1, "y": "hello"})
-    assert renderer.render(mock_obj) == "MyData(x=1, y='hello')"
-
-
-def test_render_agex_object_truncation():
-    renderer = ValueRenderer(max_depth=1, max_len=40)
-    inner_cls = AgexDataClass(name="Inner", fields=["val"])
-    inner_obj = AgexObject(cls=inner_cls, attributes={"val": [1, 2, 3]})
-
-    outer_cls = AgexDataClass(name="Outer", fields=["a", "b", "c"])
-    outer_obj = AgexObject(
-        cls=outer_cls,
-        attributes={"a": inner_obj, "b": "a_long_string_value", "c": 3},
-    )
-
-    # Depth truncation on the nested object, length truncation on the second attribute
-    assert renderer.render(outer_obj) == "Outer(a=Inner(val=[... (3 items)]), ...)"
 
 
 def test_render_opaque_objects():

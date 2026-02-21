@@ -85,18 +85,13 @@ def _agex_decoder(raw: bytes) -> Any:
 def get_root(state: Any) -> Any:
     """Get the root store from any state wrapper.
 
-    Navigates through Namespaced, Scoped, and LiveClosureState wrappers
+    Navigates through Namespaced and Scoped wrappers
     to reach the underlying root store (Staged or Live).
     """
     if isinstance(state, Namespaced):
         return state._store  # kvit flattens nested namespaces
-    # agex eval types
-    from agex.state.closure import LiveClosureState
-
     if isinstance(state, Scoped):
         return get_root(state._parent_store)
-    if isinstance(state, LiveClosureState):
-        return get_root(state._source) if state._source else state
     return state  # Staged, Live, or unknown
 
 

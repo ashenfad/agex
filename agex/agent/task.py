@@ -110,7 +110,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
                     sub_agent._host = Local()
 
-            # Re-register in global registry so UserFunctions can resolve it
+            # Re-register in global registry
             # (fingerprint is None after deserialization until registered)
             if sub_agent.fingerprint is None:
                 sub_agent._update_fingerprint()
@@ -130,11 +130,11 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         except TaskClarify as e:
             from agex.eval.error import EvalError
 
-            raise EvalError(f"Sub-agent needs clarification: {e.message}", None) from e
+            raise EvalError(f"Sub-agent needs clarification: {e.message}") from e
         except TaskFail as e:
             from agex.eval.error import EvalError
 
-            raise EvalError(f"Sub-agent failed: {e.message}", None) from e
+            raise EvalError(f"Sub-agent failed: {e.message}") from e
 
     def task(
         self,
@@ -192,66 +192,28 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         """
 
         def decorator(func: Callable) -> Callable:
-            # Check if this is a UserFunction (agent creating task from another agent's function)
-            from agex.eval.functions import TaskUserFunction, UserFunction
+            self._validate_task_decorator(func)
 
-            if isinstance(func, UserFunction):
-                # Special case: creating task from existing UserFunction
-                # Determine the effective primer
-                effective_primer = primer
-                if effective_primer is None and not callable(primer_or_func):
-                    effective_primer = primer_or_func
+            # Determine the effective primer. The keyword 'primer' takes highest precedence.
+            # If not provided, check if a positional primer was passed (in which case
+            # primer_or_func will be a string, not the function being decorated).
+            effective_primer = primer
+            if effective_primer is None and not callable(primer_or_func):
+                effective_primer = primer_or_func
 
-                # Use the UserFunction's docstring
-                if effective_primer is None:
-                    effective_primer = (
-                        func.__doc__ or "Execute the user-defined function as a task."
-                    )
+            wrapper = self._create_task_wrapper(
+                func,
+                primer=effective_primer,
+                setup=setup,
+                on_conflict=on_conflict,
+                max_conflict_retries=max_conflict_retries,
+            )
 
-                # Create TaskUserFunction
-                wrapper = TaskUserFunction(
-                    # Copy UserFunction metadata
-                    name=func.name,
-                    args=func.args,
-                    body=func.body,
-                    closure_state=func.closure_state,
-                    source_text=func.source_text,
-                    agent_fingerprint=func.agent_fingerprint,
-                    agent_name=func.agent_name,
-                    session=func.session,
-                    # Add task-specific metadata
-                    task_agent_fingerprint=self.fingerprint,
-                    task_agent_name=self.name,
-                    task_docstring=effective_primer,
-                    task_return_type=object,  # Generic type since UserFunction loses type hints
-                )
-                # Attach agent instance for @remote decorator access
-                wrapper.__agex_agent__ = self  # type: ignore
-                return wrapper
-            else:
-                # Normal case: real function definition
-                self._validate_task_decorator(func)
+            # Register the task so it can be found remotely
+            if hasattr(self, "_tasks"):
+                self._tasks[func.__name__] = wrapper
 
-                # Determine the effective primer. The keyword 'primer' takes highest precedence.
-                # If not provided, check if a positional primer was passed (in which case
-                # primer_or_func will be a string, not the function being decorated).
-                effective_primer = primer
-                if effective_primer is None and not callable(primer_or_func):
-                    effective_primer = primer_or_func
-
-                wrapper = self._create_task_wrapper(
-                    func,
-                    primer=effective_primer,
-                    setup=setup,
-                    on_conflict=on_conflict,
-                    max_conflict_retries=max_conflict_retries,
-                )
-
-                # Register the task so it can be found remotely
-                if hasattr(self, "_tasks"):
-                    self._tasks[func.__name__] = wrapper
-
-                return wrapper
+            return wrapper
 
         # If the decorator is used without parentheses (@agent.task), the function
         # is passed directly as primer_or_func. In this case, we call the decorator

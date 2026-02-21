@@ -135,7 +135,7 @@ task_success("done")""",
 
 
 def test_helper_recap_skips_unpicklable_markers():
-    """UserFunction recap should skip state entries that raise UnpicklableVariableError."""
+    """Recap should skip state entries that raise UnpicklableVariableError."""
     clear_agent_registry()
 
     llm = Dummy([LLMResponse(thinking="Simple completion.", code='task_success("ok")')])

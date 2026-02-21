@@ -113,11 +113,11 @@ def test_vfs_from_parent_import_submodule_with_function(tmp_path):
     """Test `from parent import submodule` where submodule has a function.
 
     This tests the specific case where:
-    1. A package has a submodule with a UserFunction
+    1. A package has a submodule with a function
     2. Turn 1: Creates the files and imports via `import pkg.sub`
     3. Turn 2: Imports via `from pkg import sub` and calls the function
 
-    The UserFunction can't be pickled, so an UnpicklableMarker is stored.
+    The function can't be pickled, so an UnpicklableMarker is stored.
     On Turn 2, the submodule must be reloaded fresh (not reuse stale reference).
     """
     state_path = str(tmp_path / "state")
@@ -165,7 +165,7 @@ def test_vfs_from_parent_import_submodule_with_function(tmp_path):
         """Import using from...import."""
         pass
 
-    # This was failing with: "Variable 'get_data' (UserFunction) is not available"
+    # This was failing with: "Variable 'get_data' is not available"
     assert task2(on_event=pprint_events) == "hello from providers"
 
 

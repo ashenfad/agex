@@ -82,7 +82,7 @@ def _agex_runner(
             # Use ModalLocal host for execution (handles disk storage → ModalFile)
             agent_instance._host = ModalLocal()
 
-            # Re-register agent for UserFunction resolution
+            # Re-register agent in global registry
             from agex.agent import register_agent
 
             agent_instance.fingerprint = register_agent(agent_instance)

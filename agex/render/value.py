@@ -1,8 +1,7 @@
 from dataclasses import fields, is_dataclass
 from typing import Any
 
-from ..eval.functions import UserFunction
-from ..eval.objects import AgexClass, AgexInstance, AgexObject, PrintAction
+from ..eval.objects import PrintAction
 
 
 class ValueRenderer:
@@ -30,16 +29,8 @@ class ValueRenderer:
             compact: If True, use compact representations suitable for inline display
         """
         # Handle custom types first
-        if isinstance(value, UserFunction):
-            return self._render_user_function(value)
-        if isinstance(value, AgexObject):
-            return self._render_agex_instance_or_object(value, current_depth, compact)
         if isinstance(value, PrintAction):
             return self._render_print_action(value, current_depth, compact)
-        if isinstance(value, AgexInstance):
-            return self._render_agex_instance_or_object(value, current_depth, compact)
-        if isinstance(value, AgexClass):
-            return self._render_agex_class(value)
         if is_dataclass(value) and not isinstance(value, type):
             return self._render_dataclass(value, current_depth)
 
@@ -65,8 +56,6 @@ class ValueRenderer:
                 return f"{{... ({len(value)} items)}}"
             if isinstance(value, set):
                 return f"{{... ({len(value)} items)}}"
-            if isinstance(value, AgexObject):
-                return f"<{value.cls.name} object>"
             return "<...>"
 
         # Then recursively render containers
@@ -131,25 +120,6 @@ class ValueRenderer:
         # Tuples are immutable, but rendering is the same as list
         rendered_list = self._render_list(list(value), depth, compact)
         return f"({rendered_list[1:-1]})"
-
-    def _render_user_function(self, value: UserFunction) -> str:
-        return f"<function {value.name}>"
-
-    def _render_agex_instance_or_object(
-        self, value: Any, depth: int, compact: bool
-    ) -> str:
-        items = []
-        for k, v in value.attributes.items():
-            rendered_value = self.render(v, depth + 1, compact)
-            item_str = f"{k}={rendered_value}"
-            if len(str(items)) + len(item_str) > self.max_len:
-                items.append("...")
-                break
-            items.append(item_str)
-        return f"{value.cls.name}({', '.join(items)})"
-
-    def _render_agex_class(self, value: AgexClass) -> str:
-        return f"<class '{value.name}'>"
 
     def _render_print_action(
         self, value: PrintAction, depth: int, compact: bool
