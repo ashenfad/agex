@@ -211,12 +211,12 @@ class TestGatedSocketOperations:
 
 
 class TestAgentNetworkIntegration:
-    """Tests for Agent integration with network access via sblite bridge."""
+    """Tests for Agent integration with network access via sandtrap bridge."""
 
     def test_execute_sandboxed_installs_sandbox(self):
-        """Test that execute_sandboxed installs the network sandbox via sblite."""
+        """Test that execute_sandboxed installs the network sandbox via sandtrap."""
         from kvit import Live
-        from sblite.net import patch as sblite_net_patch
+        from sandtrap.net import patch as sandtrap_net_patch
 
         from agex.agent import Agent, clear_agent_registry
         from agex.eval.bridge import execute_sandboxed
@@ -227,15 +227,15 @@ class TestAgentNetworkIntegration:
         state = Live()
         state.set("__event_log__", [])
 
-        # Running execute_sandboxed installs sblite's network patches
+        # Running execute_sandboxed installs sandtrap's network patches
         execute_sandboxed("x = 1", agent, state, eval_timeout_seconds=5.0)
 
-        assert sblite_net_patch._installed
+        assert sandtrap_net_patch._installed
 
     def test_registered_fn_with_network_access(self):
         """Test that functions registered with network_access=True can use network."""
         from kvit import Live
-        from sblite.net.context import network_allowed as sblite_network_allowed
+        from sandtrap.net.context import network_allowed as sandtrap_network_allowed
 
         from agex.agent import Agent, clear_agent_registry
         from agex.eval.bridge import execute_sandboxed
@@ -243,13 +243,13 @@ class TestAgentNetworkIntegration:
         clear_agent_registry()
         agent = Agent(name="net_fn_allowed_test")
 
-        # Track whether network was accessible (via sblite's context var)
+        # Track whether network was accessible (via sandtrap's context var)
         network_was_allowed = []
 
         def check_network_access():
             """Check if network is currently allowed."""
-            network_was_allowed.append(sblite_network_allowed.get())
-            return sblite_network_allowed.get()
+            network_was_allowed.append(sandtrap_network_allowed.get())
+            return sandtrap_network_allowed.get()
 
         agent.fn(check_network_access, network_access=True)
 
@@ -269,7 +269,7 @@ class TestAgentNetworkIntegration:
     def test_registered_fn_without_network_access(self):
         """Test that functions without network_access=True cannot use network."""
         from kvit import Live
-        from sblite.net.context import network_allowed as sblite_network_allowed
+        from sandtrap.net.context import network_allowed as sandtrap_network_allowed
 
         from agex.agent import Agent, clear_agent_registry
         from agex.eval.bridge import execute_sandboxed
@@ -280,8 +280,8 @@ class TestAgentNetworkIntegration:
         network_was_allowed = []
 
         def check_network_access():
-            network_was_allowed.append(sblite_network_allowed.get())
-            return sblite_network_allowed.get()
+            network_was_allowed.append(sandtrap_network_allowed.get())
+            return sandtrap_network_allowed.get()
 
         agent.fn(check_network_access)  # No network_access=True
 
@@ -301,7 +301,7 @@ class TestAgentNetworkIntegration:
     def test_registered_cls_with_network_access(self):
         """Test that classes registered with network_access=True have network access."""
         from kvit import Live
-        from sblite.net.context import network_allowed as sblite_network_allowed
+        from sandtrap.net.context import network_allowed as sandtrap_network_allowed
 
         from agex.agent import Agent, clear_agent_registry
         from agex.eval.bridge import execute_sandboxed
@@ -311,7 +311,7 @@ class TestAgentNetworkIntegration:
 
         class NetworkClient:
             def check_access(self):
-                return sblite_network_allowed.get()
+                return sandtrap_network_allowed.get()
 
         agent.cls(NetworkClient, network_access=True)
 
@@ -331,7 +331,7 @@ class TestAgentNetworkIntegration:
         from types import ModuleType
 
         from kvit import Live
-        from sblite.net.context import network_allowed as sblite_network_allowed
+        from sandtrap.net.context import network_allowed as sandtrap_network_allowed
 
         from agex.agent import Agent, clear_agent_registry
         from agex.eval.bridge import execute_sandboxed
@@ -343,7 +343,7 @@ class TestAgentNetworkIntegration:
         test_module = ModuleType("test_net")
 
         def check_access():
-            return sblite_network_allowed.get()
+            return sandtrap_network_allowed.get()
 
         # Set __module__ so the policy lookup finds the namespace
         check_access.__module__ = "test_net"

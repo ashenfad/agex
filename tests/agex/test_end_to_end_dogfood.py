@@ -156,7 +156,7 @@ task_success(new_agent)
     keys = set(desc.keys())
     assert "sin" in keys
     assert "pi" in keys
-    # With sblite, sandbox code receives real Python modules, so the child
+    # With sandtrap, sandbox code receives real Python modules, so the child
     # agent gets the full requested includes.
     assert "tan" in keys
 
@@ -241,7 +241,7 @@ task_success(result)
 
     keys = set(describe_namespace(ns).keys())
     assert {"sin", "cos", "sqrt"}.issubset(keys)
-    # With sblite, sandbox code receives real Python modules, so the
+    # With sandtrap, sandbox code receives real Python modules, so the
     # child agent gets all requested includes.
     assert "tan" in keys
 
@@ -276,7 +276,7 @@ task_success(math)
     # Execute
     math_module = get_math_module()
 
-    # sblite returns the real Python module
+    # sandtrap returns the real Python module
     import types
 
     assert isinstance(math_module, types.ModuleType)

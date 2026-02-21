@@ -382,7 +382,7 @@ class TestAgentIntegration:
         state = Live()
         state.set("__event_log__", [])
 
-        # The allocation should fail - sblite catches the MemoryError and
+        # The allocation should fail - sandtrap catches the MemoryError and
         # handle_result re-raises it directly
         with pytest.raises(MemoryError):
             with apply_resource_limits(agent._resource_limits):

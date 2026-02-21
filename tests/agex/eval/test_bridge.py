@@ -1,15 +1,15 @@
 """
-Tests for the sblite bridge layer.
+Tests for the sandtrap bridge layer.
 
-Verifies that the bridge correctly translates agex policy → sblite policy,
-builds namespaces, handles results, and executes code through sblite's sandbox.
+Verifies that the bridge correctly translates agex policy → sandtrap policy,
+builds namespaces, handles results, and executes code through sandtrap's sandbox.
 """
 
 import math
 
 import pytest
 from kvit import Live
-from sblite import ExecResult
+from sandtrap import ExecResult
 
 from agex.agent import Agent, clear_agent_registry
 from agex.agent.datatypes import TaskFail, TaskSuccess

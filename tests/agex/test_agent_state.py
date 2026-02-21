@@ -279,7 +279,7 @@ def test_session_vfs_isolation():
 def test_vfs_module_rehydration_with_session():
     """Verify that VFS modules work correctly in-memory.
 
-    Note: With sblite, VFS modules are real Python module objects,
+    Note: With sandtrap, VFS modules are real Python module objects,
     so pickle roundtrip is not supported.
     The VFS module cache is also global, not per-session.
     """

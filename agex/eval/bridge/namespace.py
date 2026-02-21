@@ -1,5 +1,5 @@
 """
-Builds the execution namespace dict for sblite's Sandbox.exec().
+Builds the execution namespace dict for sandtrap's Sandbox.exec().
 
 Hydrates kvit state values into a plain dict, then injects
 task control functions and stateful builtins as closures.
@@ -119,9 +119,9 @@ def _validate_task_result(result: Any, state: Store) -> None:
 def make_print_handler(
     state: Store, agent_name: str, on_event: Callable | None
 ) -> Callable:
-    """Create a print handler for sblite's Sandbox.
+    """Create a print handler for sandtrap's Sandbox.
 
-    This is passed as `print_handler` to `Sandbox.__init__`. sblite wraps it
+    This is passed as `print_handler` to `Sandbox.__init__`. sandtrap wraps it
     with checkpoint enforcement, so we only handle output capture here.
 
     Captures real Python objects into OutputEvent.parts for budget-aware

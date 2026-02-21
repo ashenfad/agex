@@ -11,7 +11,7 @@ class _AgentExit(BaseException):
     """Base class for agent exit signals.
 
     Inherits from BaseException (not Exception) so that agent code using
-    ``except Exception`` cannot catch these signals. sblite's sandbox
+    ``except Exception`` cannot catch these signals. sandtrap's sandbox
     excludes BaseException from the namespace, making these uncatchable.
     """
 
