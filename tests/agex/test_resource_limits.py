@@ -365,12 +365,12 @@ class TestAgentIntegration:
         """Test that MemoryError from limit propagates through eval sandbox."""
         from kvit import Live
 
-        from agex import Agent, connect_llm
-        from agex.eval.core import evaluate_program
-        from agex.eval.error import EvalError
+        from agex.agent import Agent, clear_agent_registry
+        from agex.eval.bridge import execute_sandboxed
 
+        clear_agent_registry()
         agent = Agent(
-            llm=connect_llm(provider="dummy"),
+            name="mem_limit_test",
             max_memory_mb=10,
         )
 
@@ -380,27 +380,18 @@ class TestAgentIntegration:
             return bytearray(500 * 1024 * 1024)
 
         state = Live()
+        state.set("__event_log__", [])
 
-        # The allocation should fail - agex wraps the MemoryError in EvalError
-        with pytest.raises(EvalError) as exc_info:
+        # The allocation should fail - sblite catches the MemoryError and
+        # handle_result re-raises it directly
+        with pytest.raises(MemoryError):
             with apply_resource_limits(agent._resource_limits):
-                evaluate_program(
+                execute_sandboxed(
                     "result = allocate_huge()",
                     agent,
                     state,
                     eval_timeout_seconds=5.0,
                 )
-
-        # Verify MemoryError is in the cause chain
-        exc = exc_info.value
-        found_memory_error = False
-        while exc:
-            if isinstance(exc, MemoryError):
-                found_memory_error = True
-                break
-            exc = getattr(exc, "cause", None)
-
-        assert found_memory_error, "MemoryError should be in the EvalError cause chain"
 
 
 @pytest.mark.skipif(not check_platform_support(), reason="Unix only")

@@ -2,14 +2,16 @@ import numpy as np
 from kvit import Staged, Versioned
 
 from agex.agent import Agent
-from agex.eval.core import evaluate_program
+from agex.eval.bridge import execute_sandboxed
 from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Memory
 
 
 def test_minimal_failure_repro():
     """
-    A minimal test that reproduces the serialization failure.
+    Verifies that a sandbox-defined class instance (SbInstance) can be
+    created in one phase, referenced inside a dict in a second phase,
+    and that committing the state succeeds in both cases.
     """
     agent = Agent()
     agent.module(np, name="np")
@@ -28,14 +30,14 @@ class MyProc:
 
 p1 = MyProc([1,2,3])
 """
-    evaluate_program(phase_A, agent, state)
+    execute_sandboxed(phase_A, agent, state)
     state.commit()
 
     # Phase B: Reference the object from the previous phase in a new data structure.
     phase_B = """
 d = {'proc': p1}
 """
-    evaluate_program(phase_B, agent, state)
+    execute_sandboxed(phase_B, agent, state)
 
-    # This snapshot will fail.
+    # This commit should succeed -- the SbInstance inside the dict is pickleable.
     state.commit()

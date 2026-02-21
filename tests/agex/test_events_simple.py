@@ -30,24 +30,6 @@ class TestEventsSimple:
         """Clear agent registry before each test."""
         clear_agent_registry()
 
-    def test_manual_print_creates_output_event(self):
-        """Test that manually calling _print_stateful creates OutputEvent."""
-        from agex.eval.builtins import _print_stateful
-        from agex.state import events
-
-        state = _make_state()
-        state.set("__event_log__", [])
-
-        _print_stateful("Test message", state=state, agent_name="test_agent")
-
-        event_list = events(state)
-        assert len(event_list) == 1
-
-        event = event_list[0]
-        assert isinstance(event, OutputEvent)
-        assert event.agent_name == "test_agent"
-        assert event.parts == ["Test message"]
-
     def test_basic_task_events(self):
         """Test that basic agent task execution generates expected events."""
         clear_agent_registry()

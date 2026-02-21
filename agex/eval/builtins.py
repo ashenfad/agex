@@ -1,78 +1,20 @@
 import copy
 import inspect
-from dataclasses import dataclass
-from typing import Any, Callable, Iterable
+from typing import Any
 
 from kvit import Store
 
 from agex.agent.base import BaseAgent
-from agex.agent.datatypes import TaskClarify, TaskContinue, TaskFail, TaskSuccess
 from agex.agent.events import OutputEvent
 from agex.eval.objects import (
     AgexClass,
-    AgexDataClass,
     AgexInstance,
     AgexModule,
-    AgexObject,
     BoundInstanceObject,
     ImageAction,
 )
-from agex.eval.user_errors import (
-    AgexArithmeticError,
-    AgexAttributeError,
-    AgexError,
-    AgexIndexError,
-    AgexKeyError,
-    AgexTypeError,
-    AgexValueError,
-    AgexZeroDivisionError,
-)
-from agex.eval.utils import get_allowed_attributes_for_instance
+from agex.eval.user_errors import AgexValueError
 from agex.state import is_live_root
-
-
-def _import_stateful(
-    evaluator,
-    name: str,
-    globals_dict=None,
-    locals_dict=None,
-    fromlist: Iterable[str] = (),
-    level: int = 0,
-) -> Any:
-    """
-    Sandbox-aware __import__ replacement that uses the resolver instead of Python's importer.
-    """
-    if level > 0:
-        # Relative import - resolve to absolute module name
-        from agex.eval.statements import resolve_relative_import
-
-        try:
-            name = resolve_relative_import(
-                evaluator.package, level, name if name else None
-            )
-        except ValueError as e:
-            raise AgexError(str(e))
-
-    if not isinstance(name, str) or not name:
-        raise AgexError("__import__() requires a non-empty module name string.")
-
-    resolver = evaluator.resolver
-    module = resolver.resolve_module(name, evaluator.state, None)
-
-    if not fromlist:
-        return module
-
-    # Mimic CPython behavior: import submembers and attach them to the base module
-    fromlist_results = []
-    for item in fromlist:
-        if not isinstance(item, str):
-            raise AgexError("__import__ fromlist items must be strings.")
-        member = resolver.import_from(name, item, evaluator.state, None)
-        setattr(module, item, member)
-        fromlist_results.append(member)
-
-    # Return the module per CPython semantics even when fromlist is provided
-    return module
 
 
 def _smart_render_for_snapshot(value: Any) -> str:
@@ -93,40 +35,6 @@ def _is_bound_instance_object(obj: Any) -> bool:
         and hasattr(obj.reg_object, "methods")
         and hasattr(obj.reg_object, "properties")
     )
-
-
-# A simple placeholder object to act as the @dataclass decorator.
-# Its only purpose is to be recognized by the evaluator.
-class _DataclassDecorator:
-    pass
-
-
-@dataclass
-class StatefulFn:
-    """A wrapper for stateful builtins to declare their dependencies."""
-
-    fn: Callable[..., Any]
-    needs_evaluator: bool = False
-
-
-def _print_stateful(*args: Any, state: Store, agent_name: str, on_event=None):
-    """
-    A custom implementation of 'print' that appends its arguments to the
-    `__event_log__` list in the agent's state as a single `OutputEvent`.
-    This function is "store-aware" to ensure the event log is immutable.
-    """
-    snapped_args: tuple
-    try:
-        snapped_args = copy.deepcopy(args)
-    except Exception:
-        # Fall back to smart rendering for both state types
-        snapped_args = tuple(_smart_render_for_snapshot(arg) for arg in args)
-
-    # Create and add the event using efficient reference-based storage
-    from agex.state.log import add_event_to_log
-
-    event = OutputEvent(agent_name=agent_name, parts=list(snapped_args))
-    add_event_to_log(state, event, on_event=on_event)
 
 
 def _view_image_stateful(
@@ -168,263 +76,11 @@ def _view_image_stateful(
     add_event_to_log(state, event, on_event=on_event)
 
 
-dataclass = _DataclassDecorator()
-
-
-class _AgexTypePlaceholder:
-    """
-    A callable, safe placeholder for native Python types to prevent sandbox escapes.
-    Instead of giving the user access to the raw `type` object, we give them
-    this safe placeholder. It can be called like a constructor, but it doesn't
-    expose dangerous attributes like `__subclasses__`.
-    """
-
-    def __init__(self, wrapped_type: type):
-        self._wrapped_type = wrapped_type
-        # To make it look like a type, we'll copy its name.
-        self.__name__ = wrapped_type.__name__
-
-    def __call__(self, *args, **kwargs):
-        # Delegate the call to the real type constructor.
-        return self._wrapped_type(*args, **kwargs)
-
-    def __repr__(self) -> str:
-        return f"<class '{self.__name__}'>"
-
-
-def _agex_isinstance(obj: Any, class_or_tuple: Any) -> bool:
-    """Custom isinstance function for the tic evaluator."""
-    if isinstance(class_or_tuple, _AgexTypePlaceholder):
-        return isinstance(obj, class_or_tuple._wrapped_type)
-    if isinstance(class_or_tuple, AgexDataClass):
-        if isinstance(obj, AgexObject):
-            return obj.cls is class_or_tuple
-        return False
-    if isinstance(class_or_tuple, AgexClass):
-        # Handle user-defined classes - check MRO for inheritance
-        if isinstance(obj, AgexInstance):
-            # Check if class_or_tuple is in the MRO
-            return class_or_tuple in obj.cls.mro
-        return False
-    if isinstance(class_or_tuple, type):
-        # For host types, check if the instance is an AgexInstance with a host base
-        if isinstance(obj, AgexInstance):
-            # Check if the host type is in the MRO
-            return class_or_tuple in obj.cls.mro
-        return isinstance(obj, class_or_tuple)
-
-    # Handle tuple of types
-    if isinstance(class_or_tuple, (tuple, list)):
-        # Check each type in the tuple/list
-        for single_type in class_or_tuple:
-            if _agex_isinstance(obj, single_type):
-                return True
-        return False
-
-    raise AgexTypeError("isinstance() arg 2 must be a type or a tuple of types")
-
-
-def _agex_type(obj: Any) -> _AgexTypePlaceholder:
-    """
-    Sandboxed version of the `type()` built-in.
-
-    To prevent sandbox escapes, this function returns a `_AgexTypePlaceholder`
-    containing the *name* of the type, rather than the type object itself.
-    """
-    return _AgexTypePlaceholder(type(obj))
-
-
-def _dir(evaluator, *args, **kwargs) -> list[str]:
-    """
-    Implementation of the dir() builtin.
-    NOTE: This is not like Python's dir(). It always prints to stdout and
-    returns the list of attributes.
-    """
-    if kwargs:
-        raise AgexError("dir() does not take keyword arguments.")
-    if len(args) > 1:
-        raise AgexError(f"dir() takes at most 1 argument ({len(args)} given)")
-
-    obj = args[0] if args else None
-
-    attrs: list[str]
-    if obj is None:
-        # If no object, dir() lists names in the current scope.
-        attrs = sorted(evaluator.state.keys())
-    elif isinstance(obj, AgexInstance):
-        # Instance attributes and class methods
-        instance_attrs = set(obj.attributes.keys())
-        class_methods = set(obj.cls.methods.keys())
-        attrs = sorted(list(instance_attrs.union(class_methods)))
-    elif isinstance(obj, AgexClass):
-        # Class methods
-        attrs = sorted(obj.methods.keys())
-    elif isinstance(obj, AgexObject):
-        attrs = sorted(obj.attributes.keys())
-    elif isinstance(obj, AgexModule):
-        # Policy-backed enumeration only
-        ns = evaluator.agent._policy.namespaces.get(obj.name)  # type: ignore[attr-defined]
-        if ns is None:
-            attrs = []
-        else:
-            from agex.agent.policy.describe import describe_namespace
-
-            desc = describe_namespace(ns, include_low=False)
-            attrs = sorted(k for k in desc.keys())
-    elif _is_bound_instance_object(obj):
-        # This is a BoundInstanceObject (registered live object)
-        from ..eval.objects import BoundInstanceObject
-
-        if isinstance(obj, BoundInstanceObject):
-            # Show methods and properties from the registered object
-            methods = list(obj.reg_object.methods.keys())
-            properties = list(obj.reg_object.properties.keys())
-            attrs = sorted(methods + properties)
-        else:
-            attrs = []
-    else:
-        # For all other objects, respect the agent's sandbox rules.
-        allowed = get_allowed_attributes_for_instance(evaluator.agent, obj)
-        attrs = sorted(list(allowed))
-
-    # Scrub any private/protected attributes from the final list
-    final_attrs = [attr for attr in attrs if not attr.startswith("_")]
-
-    # No deepcopy needed here, as `attrs` is a new list of strings, which is immutable.
-    # Create and add the event using efficient reference-based storage
-    from agex.state.log import add_event_to_log
-
-    event = OutputEvent(agent_name=evaluator.agent.name, parts=[final_attrs])
-    add_event_to_log(evaluator.state, event, on_event=evaluator.on_event)
-
-    return final_attrs
-
-
-def _hasattr(evaluator, *args, **kwargs) -> bool:
-    """
-    Implementation of the hasattr() builtin.
-    """
-    if kwargs:
-        raise AgexError("hasattr() does not take keyword arguments.")
-    if len(args) != 2:
-        raise AgexError(f"hasattr() takes exactly 2 arguments ({len(args)} given)")
-
-    obj, name = args
-    if not isinstance(name, str):
-        raise AgexError("hasattr(): attribute name must be a string")
-
-    # Handle AgexObjects first
-    if isinstance(obj, AgexModule):
-        # Policy-backed check for module attributes only
-        res = evaluator.agent._policy.resolve_module_member(obj.name, name)  # type: ignore[attr-defined]
-        return res is not None
-    if isinstance(obj, (AgexObject, AgexInstance, BoundInstanceObject)):
-        try:
-            obj.getattr(name)
-            return True
-        except AgexAttributeError:
-            return False
-
-    # For all other objects, respect the agent's sandbox rules.
-    from agex.eval.resolver import Resolver
-
-    resolver = Resolver(evaluator.agent)
-    try:
-        attr = resolver.resolve_attribute(obj, name, None)
-        return attr is not None
-    except AgexAttributeError:
-        return False
-
-
-def _getattr(evaluator, *args, **kwargs) -> Any:
-    """
-    Implementation of the getattr() builtin.
-    """
-    if kwargs:
-        raise AgexError("getattr() does not take keyword arguments.")
-    if len(args) not in [2, 3]:
-        raise AgexError(f"getattr() takes 2 or 3 arguments ({len(args)} given)")
-
-    obj, name = args[0], args[1]
-    default = args[2] if len(args) == 3 else None
-
-    if not isinstance(name, str):
-        raise AgexTypeError("getattr(): attribute name must be a string")
-
-    # For AgexObjects, use their custom getattr
-    if isinstance(obj, AgexModule):
-        # Policy-backed check for module attributes only
-        res = evaluator.agent._policy.resolve_module_member(obj.name, name)  # type: ignore[attr-defined]
-        if res is not None:
-            if hasattr(res, "fn"):
-                return res.fn
-            return res
-        if len(args) == 3:
-            return default
-        raise AgexAttributeError(f"'{obj.name}' module has no attribute '{name}'")
-    if isinstance(obj, (AgexObject, AgexInstance, BoundInstanceObject)):
-        try:
-            return obj.getattr(name)
-        except AgexAttributeError:
-            if len(args) == 3:
-                return default
-            raise
-
-    # For all other objects, respect the agent's sandbox rules.
-    from agex.eval.resolver import Resolver
-
-    resolver = Resolver(evaluator.agent)
-    try:
-        return resolver.resolve_attribute(obj, name, None)
-    except AgexAttributeError:
-        pass
-
-    if len(args) == 3:
-        return default
-    # If the attribute is not allowed, raise an AttributeError.
-    # This is consistent with how normal attribute access is handled.
-    raise AgexAttributeError(f"'{type(obj).__name__}' object has no attribute '{name}'")
-
-
-def _setattr(evaluator, *args, **kwargs) -> None:
-    """
-    Implementation of the setattr() builtin.
-    """
-    if kwargs:
-        raise AgexError("setattr() does not take keyword arguments.")
-    if len(args) != 3:
-        raise AgexError(f"setattr() takes exactly 3 arguments ({len(args)} given)")
-
-    obj, name, value = args
-
-    if not isinstance(name, str):
-        raise AgexTypeError("setattr(): attribute name must be a string")
-
-    # For AgexModule, don't allow setting - modules are read-only in sandbox
-    if isinstance(obj, AgexModule):
-        raise AgexAttributeError(
-            f"cannot set attribute '{name}' on module '{obj.name}'"
-        )
-
-    # For AgexInstance, use setattr with agent for policy checking
-    if isinstance(obj, AgexInstance):
-        obj.setattr(name, value, agent=evaluator.agent)
-        return
-
-    # For AgexObject and BoundInstanceObject, use their setattr method
-    if isinstance(obj, (AgexObject, BoundInstanceObject)):
-        obj.setattr(name, value)
-        return
-
-    # For all other objects, validate attribute access first via policy
-    allowed_attrs = get_allowed_attributes_for_instance(evaluator.agent, obj)
-    if name not in allowed_attrs:
-        raise AgexAttributeError(
-            f"cannot set attribute '{name}' on '{type(obj).__name__}' object"
-        )
-
-    # Attribute is allowed - set it
-    setattr(obj, name, value)
+def _format_user_function_sig(fn) -> str:
+    """Formats a UserFunction into a signature string."""
+    # This is a simplified formatter. A real one would handle more arg types.
+    arg_names = [arg.arg for arg in fn.args.args]
+    return f"{fn.name}({', '.join(arg_names)})"
 
 
 def _get_general_help_text(agent: "BaseAgent") -> str:
@@ -433,7 +89,7 @@ def _get_general_help_text(agent: "BaseAgent") -> str:
 
     # Functions and classes from policy __main__
     try:
-        main_ns = agent._policy.namespaces.get("__main__")  # type: ignore[attr-defined]
+        main_ns = agent._policy.namespaces.get("__main__")
     except Exception:
         main_ns = None
     if main_ns is not None and main_ns.kind == "virtual":
@@ -450,7 +106,7 @@ def _get_general_help_text(agent: "BaseAgent") -> str:
     mods = []
     objects = []
     try:
-        for name, ns in agent._policy.namespaces.items():  # type: ignore[attr-defined]
+        for name, ns in agent._policy.namespaces.items():
             if name == "__main__":
                 continue
             if getattr(ns, "kind", None) == "module":
@@ -468,13 +124,6 @@ def _get_general_help_text(agent: "BaseAgent") -> str:
         return "No resources registered with the agent."
 
     return "\n".join(parts)
-
-
-def _format_user_function_sig(fn) -> str:
-    """Formats a UserFunction into a signature string."""
-    # This is a simplified formatter. A real one would handle more arg types.
-    arg_names = [arg.arg for arg in fn.args.args]
-    return f"{fn.name}({', '.join(arg_names)})"
 
 
 def _get_help_text(agent: "BaseAgent", item: Any) -> str:
@@ -499,7 +148,7 @@ def _get_help_text(agent: "BaseAgent", item: Any) -> str:
         return "\n".join(parts)
     if isinstance(item, AgexModule):
         parts = ["Help on module " + item.name + ":\n"]
-        ns = agent._policy.namespaces.get(item.name)  # type: ignore[attr-defined]
+        ns = agent._policy.namespaces.get(item.name)
         if ns is not None:
             from agex.agent.policy.describe import describe_namespace
 
@@ -513,8 +162,6 @@ def _get_help_text(agent: "BaseAgent", item: Any) -> str:
                 parts.extend([f"    {x}" for x in contents])
         return "\n".join(parts)
     if _is_bound_instance_object(item):
-        from ..eval.objects import BoundInstanceObject
-
         if isinstance(item, BoundInstanceObject):
             parts = [f"Help on object {item.reg_object.name}:\n"]
             # Methods
@@ -546,136 +193,3 @@ def _is_allowed_for_help(item: Any) -> bool:
         or isinstance(item, (int, float, str, bool, list, dict, tuple, set, type(None)))
         or hasattr(item, "__doc__")  # Any object with documentation
     )
-
-
-def _help(evaluator, *args, **kwargs) -> None:
-    """Implementation of the help() builtin."""
-    if kwargs:
-        raise AgexError("help() does not take keyword arguments.")
-    if len(args) > 1:
-        raise AgexError(f"help() takes at most 1 argument ({len(args)} given)")
-
-    item = args[0] if args else None
-
-    if item is not None and not _is_allowed_for_help(item):
-        raise AgexTypeError("help() is only supported for registered resources.")
-
-    doc = (
-        _get_help_text(evaluator.agent, item)
-        if item
-        else _get_general_help_text(evaluator.agent)
-    )
-    # Print the help text to stdout
-    # No deepcopy needed, `doc` is a string.
-    # Create and add the event using efficient reference-based storage
-    from agex.state.log import add_event_to_log
-
-    event = OutputEvent(agent_name=evaluator.agent.name, parts=[doc])
-    add_event_to_log(evaluator.state, event, on_event=evaluator.on_event)
-
-
-def _task_continue_with_observations(
-    *observations: Any, state: Store, agent_name: str, on_event=None
-) -> None:
-    """
-    Signal to the agent to continue, providing a list of observations.
-    This is effectively a programmatic `print()` that also forces a continue.
-    """
-    # Only print if there are observations to print
-    if observations:
-        _print_stateful(
-            *observations, state=state, agent_name=agent_name, on_event=on_event
-        )
-    raise TaskContinue()
-
-
-def _super(evaluator) -> Any:
-    """Implementation of the super() builtin for navigating the MRO."""
-    from agex.eval.objects import SuperProxy
-
-    if evaluator.current_method_class is None or evaluator.current_self is None:
-        raise AgexError(
-            "super() can only be called from within a method. "
-            "Make sure you're calling super() inside an instance method."
-        )
-
-    # Find the position of current_method_class in the MRO
-    mro = evaluator.current_self.cls.mro
-    try:
-        current_idx = mro.index(evaluator.current_method_class)
-    except ValueError:
-        raise AgexError("super(): current class not found in MRO")
-
-    # Remaining MRO is everything after the current class
-    remaining_mro = mro[current_idx + 1 :]
-
-    return SuperProxy(
-        instance=evaluator.current_self,
-        remaining_mro=remaining_mro,
-        agent=evaluator.agent,
-    )
-
-
-STATEFUL_BUILTINS: dict[str, StatefulFn] = {
-    "print": StatefulFn(_print_stateful),
-    "view_image": StatefulFn(_view_image_stateful),
-    "help": StatefulFn(_help, needs_evaluator=True),
-    "dir": StatefulFn(_dir, needs_evaluator=True),
-    "hasattr": StatefulFn(_hasattr, needs_evaluator=True),
-    "getattr": StatefulFn(_getattr, needs_evaluator=True),
-    "setattr": StatefulFn(_setattr, needs_evaluator=True),
-    "task_continue": StatefulFn(_task_continue_with_observations),
-    "__import__": StatefulFn(_import_stateful, needs_evaluator=True),
-    "super": StatefulFn(_super, needs_evaluator=True),
-}
-
-
-# This is the main registry of built-in functions available in the sandbox.
-BUILTINS = {
-    "abs": abs,
-    "len": len,
-    "max": max,
-    "min": min,
-    "sum": sum,
-    "str": str,
-    "int": int,
-    "float": float,
-    "bool": bool,
-    "bytes": bytes,
-    "bytearray": bytearray,
-    "callable": callable,
-    "dict": _AgexTypePlaceholder(dict),
-    "set": _AgexTypePlaceholder(set),
-    "tuple": _AgexTypePlaceholder(tuple),
-    "list": _AgexTypePlaceholder(list),
-    "round": round,
-    "pow": pow,
-    "all": all,
-    "any": any,
-    "sorted": sorted,
-    "range": range,
-    "reversed": reversed,
-    "zip": zip,
-    "enumerate": enumerate,
-    "iter": iter,
-    "next": next,
-    "map": map,
-    "filter": filter,
-    # Type introspection
-    "isinstance": _agex_isinstance,
-    "type": _agex_type,
-    # Dataclasses
-    "dataclass": dataclass,
-    # User-level exceptions, mapped from Python's names
-    "Exception": AgexError,
-    "ValueError": AgexValueError,
-    "TypeError": AgexTypeError,
-    "KeyError": AgexKeyError,
-    "IndexError": AgexIndexError,
-    "ZeroDivisionError": AgexZeroDivisionError,
-    "ArithmeticError": AgexArithmeticError,
-    # Task control functions
-    "task_success": TaskSuccess,
-    "task_fail": TaskFail,
-    "task_clarify": TaskClarify,
-}
