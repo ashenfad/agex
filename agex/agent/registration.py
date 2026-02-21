@@ -11,7 +11,6 @@ from agex.agent.datatypes import (
 )
 from agex.agent.policy.resolve import make_predicate
 from agex.agent.utils import get_instance_attributes_from_init
-from agex.eval.functions import UserFunction
 from agex.eval.objects import AgexModule
 
 if TYPE_CHECKING:
@@ -158,135 +157,90 @@ class RegistrationMixin(BaseAgent):
         """
 
         def decorator(f: F) -> F:
-            # Check if this is a UserFunction (agent registering function from another agent)
+            final_name = name or f.__name__
 
-            if isinstance(f, UserFunction):
-                # Special case: registering a UserFunction from parent agent
-                final_name = name or f.name
-                if final_name in RESERVED_NAMES:
+            # Check if this function is already a task on THIS agent
+            # This would indicate API confusion - tasks don't need .fn() registration
+            owning_agent = getattr(f, "__agex_agent__", None)
+            if owning_agent is self:
+                raise ValueError(
+                    f"Cannot register '{final_name}' as a capability on the same "
+                    f"agent that owns it as a task. Task functions are automatically "
+                    f"available to their agent—use @agent.fn only when registering "
+                    f"a task from a different agent as a callable capability."
+                )
+
+            # Check for nested Modal hosts - not supported
+            # If this is a task from another agent with a Modal host, reject it
+            if owning_agent is not None:
+                from agex.host.local import Local
+
+                sub_agent_host = getattr(owning_agent, "_host", None)
+                if sub_agent_host is not None and not isinstance(sub_agent_host, Local):
+                    host_type = type(sub_agent_host).__name__
                     raise ValueError(
-                        f"The name '{final_name}' is reserved and cannot be registered."
+                        f"Cannot register task '{final_name}' from a sub-agent with "
+                        f"host={host_type}. When using hierarchical agents with Modal, "
+                        f"sub-agents must use Local host. The parent's Modal container "
+                        f"will execute sub-agent tasks locally."
                     )
 
-                # Create wrapper that preserves UserFunction call semantics
-                def user_function_wrapper(*args, **kwargs):
-                    return f(
-                        *args, **kwargs
-                    )  # UserFunction.__call__ handles agent resolution
+                # Check for sub-agent state when parent uses Modal
+                # Sub-agents with persistent state aren't supported on Modal yet
+                # because Modal Dict/Volume for sub-agents can't be provisioned
+                parent_host = getattr(self, "_host", None)
+                if parent_host is not None and not isinstance(parent_host, Local):
+                    sub_agent_state = getattr(owning_agent, "_state_config", None)
+                    if sub_agent_state is not None:
+                        state_type = getattr(sub_agent_state, "type", "ephemeral")
+                        if state_type != "ephemeral":
+                            parent_host_type = type(parent_host).__name__
+                            raise ValueError(
+                                f"Cannot register task '{final_name}' from a sub-agent "
+                                f"with state=connect_state(type='{state_type}', ...). "
+                                f"When the parent agent uses {parent_host_type} host, "
+                                f"sub-agents cannot have persistent state. "
+                                f"Use state=None (ephemeral) for sub-agents, or run "
+                                f"the parent locally."
+                            )
 
-                # Preserve metadata from UserFunction
-                user_function_wrapper.__name__ = f.name
-                user_function_wrapper.__doc__ = f.source_text or "User-defined function"
-
-                # Use provided docstring or fall back to UserFunction source
-                final_doc = (
-                    docstring
-                    if docstring is not None
-                    else (f.source_text or user_function_wrapper.__doc__)
+            if final_name in RESERVED_NAMES:
+                raise ValueError(
+                    f"The name '{final_name}' is reserved and cannot be registered."
                 )
+            # Track module for lazy dependency resolution
+            if hasattr(f, "__module__"):
+                self._track_module(f.__module__)
 
-                # Register in new policy system
-                self._policy.register_fn(
-                    func=user_function_wrapper,
-                    name=final_name,
-                    visibility=visibility,
-                    docstring=final_doc,
-                    host_fs_access=host_fs_access,
-                    network_access=network_access,
-                )
+            final_doc = docstring if docstring is not None else f.__doc__
+            # Preserve network_access from TaskWrappers (sub-agent tasks need network for LLM calls)
+            effective_network_access = network_access or getattr(
+                f, "network_access", False
+            )
+            self._policy.register_fn(
+                func=f,
+                name=final_name,
+                visibility=visibility,
+                docstring=final_doc,
+                host_fs_access=host_fs_access,
+                network_access=effective_network_access,
+            )
 
-                self._update_fingerprint()
+            self._update_fingerprint()
 
-                # Return the wrapper for consistency
-                return user_function_wrapper
-            else:
-                # Normal case: real Python function
-                final_name = name or f.__name__
+            # Mark as fn-decorated for dual-decorator validation (allow multiple fn decorators)
+            # Only set attributes if the function allows it (built-ins don't)
+            try:
+                if not hasattr(f, "__agent_fn_owners__"):
+                    f.__agent_fn_owners__ = []
+                f.__agent_fn_owners__.append(self)
+                f.__is_agent_fn__ = True  # Keep this for task decorator to detect
+            except (AttributeError, TypeError):
+                # Built-in functions and some other types don't allow setting attributes
+                # This is fine - they can't be task-decorated anyway, so no validation needed
+                pass
 
-                # Check if this function is already a task on THIS agent
-                # This would indicate API confusion - tasks don't need .fn() registration
-                owning_agent = getattr(f, "__agex_agent__", None)
-                if owning_agent is self:
-                    raise ValueError(
-                        f"Cannot register '{final_name}' as a capability on the same "
-                        f"agent that owns it as a task. Task functions are automatically "
-                        f"available to their agent—use @agent.fn only when registering "
-                        f"a task from a different agent as a callable capability."
-                    )
-
-                # Check for nested Modal hosts - not supported
-                # If this is a task from another agent with a Modal host, reject it
-                if owning_agent is not None:
-                    from agex.host.local import Local
-
-                    sub_agent_host = getattr(owning_agent, "_host", None)
-                    if sub_agent_host is not None and not isinstance(
-                        sub_agent_host, Local
-                    ):
-                        host_type = type(sub_agent_host).__name__
-                        raise ValueError(
-                            f"Cannot register task '{final_name}' from a sub-agent with "
-                            f"host={host_type}. When using hierarchical agents with Modal, "
-                            f"sub-agents must use Local host. The parent's Modal container "
-                            f"will execute sub-agent tasks locally."
-                        )
-
-                    # Check for sub-agent state when parent uses Modal
-                    # Sub-agents with persistent state aren't supported on Modal yet
-                    # because Modal Dict/Volume for sub-agents can't be provisioned
-                    parent_host = getattr(self, "_host", None)
-                    if parent_host is not None and not isinstance(parent_host, Local):
-                        sub_agent_state = getattr(owning_agent, "_state_config", None)
-                        if sub_agent_state is not None:
-                            state_type = getattr(sub_agent_state, "type", "ephemeral")
-                            if state_type != "ephemeral":
-                                parent_host_type = type(parent_host).__name__
-                                raise ValueError(
-                                    f"Cannot register task '{final_name}' from a sub-agent "
-                                    f"with state=connect_state(type='{state_type}', ...). "
-                                    f"When the parent agent uses {parent_host_type} host, "
-                                    f"sub-agents cannot have persistent state. "
-                                    f"Use state=None (ephemeral) for sub-agents, or run "
-                                    f"the parent locally."
-                                )
-
-                if final_name in RESERVED_NAMES:
-                    raise ValueError(
-                        f"The name '{final_name}' is reserved and cannot be registered."
-                    )
-                # Track module for lazy dependency resolution
-                if hasattr(f, "__module__"):
-                    self._track_module(f.__module__)
-
-                final_doc = docstring if docstring is not None else f.__doc__
-                # Preserve network_access from TaskWrappers (sub-agent tasks need network for LLM calls)
-                effective_network_access = network_access or getattr(
-                    f, "network_access", False
-                )
-                self._policy.register_fn(
-                    func=f,
-                    name=final_name,
-                    visibility=visibility,
-                    docstring=final_doc,
-                    host_fs_access=host_fs_access,
-                    network_access=effective_network_access,
-                )
-
-                self._update_fingerprint()
-
-                # Mark as fn-decorated for dual-decorator validation (allow multiple fn decorators)
-                # Only set attributes if the function allows it (built-ins don't)
-                try:
-                    if not hasattr(f, "__agent_fn_owners__"):
-                        f.__agent_fn_owners__ = []
-                    f.__agent_fn_owners__.append(self)
-                    f.__is_agent_fn__ = True  # Keep this for task decorator to detect
-                except (AttributeError, TypeError):
-                    # Built-in functions and some other types don't allow setting attributes
-                    # This is fine - they can't be task-decorated anyway, so no validation needed
-                    pass
-
-                return f
+            return f
 
         return decorator(_fn) if _fn else decorator
 

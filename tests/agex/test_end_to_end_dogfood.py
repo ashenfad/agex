@@ -2,7 +2,7 @@
 End-to-end tests for dogfooding functionality (agents creating agents).
 
 These tests verify that agents can create other agents and register functions/modules
-with them, using the TaskUserFunction, enhanced registration, and security inheritance.
+with them, using enhanced registration and security inheritance.
 """
 
 import math
@@ -21,7 +21,7 @@ def clear_registry():
 
 
 def test_basic_agent_creation_in_agent():
-    """Test that an agent can create another agent and return a TaskUserFunction."""
+    """Test that an agent can create another agent and return a task function."""
     # Set up LLM response
     responses = [
         LLMResponse(
@@ -62,7 +62,7 @@ task_success(task_fn)
 
 
 def test_user_function_registration():
-    """Test that an agent can register UserFunctions from another agent."""
+    """Test that an agent can register functions from another agent."""
     # Set up parent agent with a function
     parent = Agent(name="parent")
 

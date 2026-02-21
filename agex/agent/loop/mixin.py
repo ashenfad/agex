@@ -17,7 +17,6 @@ from agex.agent.base import BaseAgent
 from agex.agent.primer_text import BUILTIN_PRIMER
 from agex.agent.utils import call_sync_or_async
 from agex.eval.analysis import get_workspace_recap
-from agex.eval.functions import UserFunction
 from agex.render.definitions import render_definitions
 
 from .async_loop import AsyncLoopMixin
@@ -112,10 +111,10 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
 
             for name in sorted(fn_names):
                 obj = exec_state.get(name)
-                if isinstance(obj, UserFunction):
+                if obj is not None and callable(obj):
                     try:
-                        sig = str(obj.__signature__)
-                    except Exception:
+                        sig = str(inspect.signature(obj))
+                    except (ValueError, TypeError):
                         sig = "(...)"
 
                     doc = inspect.getdoc(obj) or ""

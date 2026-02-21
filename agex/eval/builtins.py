@@ -7,8 +7,6 @@ from kvit import Store
 from agex.agent.base import BaseAgent
 from agex.agent.events import OutputEvent
 from agex.eval.objects import (
-    AgexClass,
-    AgexInstance,
     AgexModule,
     BoundInstanceObject,
     ImageAction,
@@ -76,13 +74,6 @@ def _view_image_stateful(
     add_event_to_log(state, event, on_event=on_event)
 
 
-def _format_user_function_sig(fn) -> str:
-    """Formats a UserFunction into a signature string."""
-    # This is a simplified formatter. A real one would handle more arg types.
-    arg_names = [arg.arg for arg in fn.args.args]
-    return f"{fn.name}({', '.join(arg_names)})"
-
-
 def _get_general_help_text(agent: "BaseAgent") -> str:
     """Returns a string with a summary of all registered items."""
     parts = ["Available items:"]
@@ -128,24 +119,6 @@ def _get_general_help_text(agent: "BaseAgent") -> str:
 
 def _get_help_text(agent: "BaseAgent", item: Any) -> str:
     """Returns a detailed help string for a specific registered item."""
-    if isinstance(item, AgexInstance):
-        # For an instance, show help for its class.
-        return _get_help_text(agent, item.cls)
-    if isinstance(item, AgexClass):
-        parts = [f"Help on class {item.name}:\n"]
-        if "__init__" in item.methods:
-            init_sig = _format_user_function_sig(item.methods["__init__"])
-            parts.append(f"{item.name}{init_sig.replace('__init__', '', 1)}")
-        else:
-            parts.append(f"{item.name}()")
-
-        methods = sorted(item.methods.keys())
-        if methods:
-            parts.append("\nMethods defined here:")
-            for method_name in methods:
-                method_sig = _format_user_function_sig(item.methods[method_name])
-                parts.append(f"  {method_sig}")
-        return "\n".join(parts)
     if isinstance(item, AgexModule):
         parts = ["Help on module " + item.name + ":\n"]
         ns = agent._policy.namespaces.get(item.name)
@@ -188,7 +161,7 @@ def _get_help_text(agent: "BaseAgent", item: Any) -> str:
 def _is_allowed_for_help(item: Any) -> bool:
     """Check if an item is allowed for help() - registered resources or basic Python types."""
     return (
-        isinstance(item, (AgexClass, AgexInstance, AgexModule))
+        isinstance(item, AgexModule)
         or _is_bound_instance_object(item)
         or isinstance(item, (int, float, str, bool, list, dict, tuple, set, type(None)))
         or hasattr(item, "__doc__")  # Any object with documentation

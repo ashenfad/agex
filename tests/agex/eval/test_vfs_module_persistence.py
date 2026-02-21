@@ -53,7 +53,7 @@ def test_vfs_module_persistence_across_turns():
         pass
 
     # This step triggers snapshot() at the end.
-    # If AgexVFSModule is not picklable, this might fail silently (marker created)
+    # If the VFS module is not picklable, this might fail silently (marker created)
     # or raise error depending on where it's caught.
     # In the funcy example, it failed when *using* it next time.
     closure = create_closure_task(on_event=pprint_events)
