@@ -27,6 +27,7 @@ dependencies = [
     "termish",
     "gitkv",
     "sandtrap",
+    "reprobate",
     "tiktoken",
     "xxhash",
     "diskcache",
@@ -107,11 +108,6 @@ all-hosts = [
     "agex[http]",
     "agex[modal]",
 ]
-
-[tool.uv.sources]
-termish = { path = "../faketerm", editable = true }
-gitkv = { path = "../kvit", editable = true }
-sandtrap = { path = "../sblite", editable = true }
 
 [tool.ruff]
 line-length = 88

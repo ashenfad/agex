@@ -123,8 +123,9 @@ def test_low_detail_rendering_with_success():
         low_detail_threshold=now - timedelta(hours=1),
     )
 
-    # Create old success event with nested result that will show depth difference
-    complex_result = {"level1": {"level2": {"level3": {"level4": {"deep": "value"}}}}}
+    # Create a result large enough to exceed the LOW_DETAIL char budget (4096)
+    # but small enough to fit within HI_DETAIL (32768)
+    complex_result = {f"key_{i}": "x" * 200 for i in range(30)}
     old_success = SuccessEvent(
         agent_name="test",
         result=complex_result,
@@ -141,12 +142,11 @@ def test_low_detail_rendering_with_success():
     events = [summary, old_success, new_success]
     messages = render_events_as_markdown(events)
 
-    # Check that low-detail event has truncation markers
     old_msg_content = messages[1]["content"]
+    new_msg_content = messages[2]["content"]
 
-    # Low detail has max_depth=2, high detail has max_depth=4
-    # So low detail should truncate deeper nesting
-    assert "..." in old_msg_content  # Should have truncation marker
+    # Low-detail budget (4096 chars) should truncate, high-detail (32768) should not
+    assert len(old_msg_content) < len(new_msg_content)
 
 
 def test_no_low_detail_without_summary():

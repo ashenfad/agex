@@ -8,7 +8,7 @@ from .primitives import (
     get_image_error_message,
     serialize_image_to_base64,
 )
-from .value import ValueRenderer
+from .value import render_value
 
 
 class StreamRenderer:
@@ -19,7 +19,6 @@ class StreamRenderer:
 
     def __init__(self, model_name: str):
         self.tokenizer: Tokenizer = get_tokenizer(model_name)
-        self.value_renderer = ValueRenderer(max_len=4096, max_depth=4)
 
     def render_state_stream(self, items: dict[str, Any], budget: int) -> str:
         """Renders state changes with degradation logic."""
@@ -65,7 +64,12 @@ class StreamRenderer:
         if not items:
             return []
 
-        render_func = self.value_renderer.render
+        # Cap per-item char budget to fit within the stream's token budget
+        char_budget = min(budget * 4, 4096)
+
+        def render_func(v):
+            return render_value(v, budget=char_budget)
+
         # Store tuples of (ContentPart, cost) to manage budget.
         parts_with_cost: List[tuple[ContentPart, int]] = []
         current_cost = 0
@@ -122,13 +126,8 @@ class StreamRenderer:
         self, key: str, value: Any, budget: int, depth: int
     ) -> tuple[str, int, bool]:
         """Helper to centralize the render -> tokenize -> check loop."""
-        original_max_len = self.value_renderer.max_len
-        if depth == 0:
-            self.value_renderer.max_len = 32  # Force very short strings for summary
-
-        self.value_renderer.max_depth = depth
-        rendered_value = self.value_renderer.render(value)
-        self.value_renderer.max_len = original_max_len  # Restore
+        char_budget = 32 if depth == 0 else 4096
+        rendered_value = render_value(value, budget=char_budget)
 
         line = f"{key} = {rendered_value}"
         # Add a newline for accurate token counting of multi-line context
