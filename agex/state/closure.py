@@ -41,16 +41,6 @@ class LiveClosureState:
         if key in self._keys:
             return self._source.get(key, default)
 
-        # If not a captured variable, check builtins
-        from ..eval.builtins import BUILTINS, STATEFUL_BUILTINS
-
-        if key in BUILTINS:
-            return BUILTINS[key]
-        if key in STATEFUL_BUILTINS:
-            return STATEFUL_BUILTINS[key]
-
-        # If the variable doesn't exist in captured vars or builtins, it's undefined
-
         return default
 
     def set(self, key: str, value: Any) -> None:

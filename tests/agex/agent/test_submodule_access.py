@@ -3,21 +3,6 @@
 import os
 
 from agex.agent.policy.policy import AgentPolicy
-from agex.eval.objects import AgexModule
-from agex.eval.resolver import Resolver
-
-
-class MockAgent:
-    """Minimal mock agent for resolver tests."""
-
-    def __init__(self, policy):
-        self._policy = policy
-        self.fingerprint = "test-agent"
-
-    def fs(self):
-        from unittest.mock import MagicMock
-
-        return MagicMock()
 
 
 def test_submodules_auto_injected_on_registration():
@@ -38,30 +23,6 @@ def test_submodules_auto_injected_on_registration():
     assert os_ns.submodules["path"] in ["posixpath", "ntpath"]
 
 
-def test_submodule_attribute_resolution():
-    """Test that resolver returns AgexModule for registered submodule attributes."""
-    policy = AgentPolicy()
-
-    # Register both modules
-    policy.register_module(module=os, include=["listdir"])
-    policy.register_module(module=os.path, include=["exists"])
-
-    # Create resolver and test attribute access
-    agent = MockAgent(policy)
-    resolver = Resolver(agent)
-
-    # Create AgexModule for 'os'
-    os_module = AgexModule(name="os", agent_fingerprint="test-agent")
-
-    # Resolve os.path attribute
-    result = resolver.resolve_attribute(os_module, "path", node=None)
-
-    # Should return AgexModule for the registered submodule
-    assert isinstance(result, AgexModule)
-    # Name will be posixpath on Unix, ntpath on Windows
-    assert result.name in ["posixpath", "ntpath"]
-
-
 def test_submodule_registration_order_independent():
     """Test that registration order doesn't matter."""
     # Register submodule before parent
@@ -73,25 +34,6 @@ def test_submodule_registration_order_independent():
     os_ns = policy.namespaces.get("os")
     assert os_ns is not None
     assert "path" in os_ns.submodules
-
-
-def test_from_import_still_works():
-    """Test that from os.path import exists still resolves correctly."""
-    policy = AgentPolicy()
-    policy.register_module(module=os, include=["listdir"])
-    policy.register_module(module=os.path, include=["exists"])
-
-    agent = MockAgent(policy)
-    resolver = Resolver(agent)
-
-    from kvit import Live
-
-    # This is how 'from os.path import exists' resolves
-    result = resolver.import_from("os.path", "exists", state=Live(), node=None)
-
-    # Should return the exists function
-    assert callable(result)
-    assert result.__name__ == "exists"
 
 
 def test_external_module_aliasing():
@@ -339,14 +281,8 @@ if __name__ == "__main__":
     test_submodules_auto_injected_on_registration()
     print("✓ test_submodules_auto_injected_on_registration passed")
 
-    test_submodule_attribute_resolution()
-    print("✓ test_submodule_attribute_resolution passed")
-
     test_submodule_registration_order_independent()
     print("✓ test_submodule_registration_order_independent passed")
-
-    test_from_import_still_works()
-    print("✓ test_from_import_still_works passed")
 
     test_external_module_aliasing()
     print("✓ test_external_module_aliasing passed")

@@ -71,8 +71,3 @@ WHITELISTED_METHODS = {
     bytes: {"decode"},
     bytearray: {"decode"},
 }
-
-# Methods that return iterators/views and need to be materialized
-MATERIALIZE_METHODS = {
-    dict: {"keys": list, "values": list, "items": list},
-}

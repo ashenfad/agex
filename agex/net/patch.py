@@ -43,7 +43,7 @@ def install_network_sandbox() -> None:
     is False (during agent code evaluation), operations raise SandboxError.
 
     Note:
-        This is called lazily from evaluate_program. Most major HTTP libraries
+        This is called lazily from the sandbox. Most major HTTP libraries
         (urllib3, requests, httpx, aiohttp) use dynamic lookups and will work
         correctly even with late patching.
     """
