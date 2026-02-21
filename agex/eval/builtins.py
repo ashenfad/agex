@@ -7,7 +7,6 @@ from kvit import Store
 from agex.agent.base import BaseAgent
 from agex.agent.events import OutputEvent
 from agex.eval.objects import (
-    AgexModule,
     BoundInstanceObject,
     ImageAction,
 )
@@ -119,21 +118,6 @@ def _get_general_help_text(agent: "BaseAgent") -> str:
 
 def _get_help_text(agent: "BaseAgent", item: Any) -> str:
     """Returns a detailed help string for a specific registered item."""
-    if isinstance(item, AgexModule):
-        parts = ["Help on module " + item.name + ":\n"]
-        ns = agent._policy.namespaces.get(item.name)
-        if ns is not None:
-            from agex.agent.policy.describe import describe_namespace
-
-            contents = sorted(
-                k
-                for k in describe_namespace(ns, include_low=False).keys()
-                if not k.startswith("_")
-            )
-            if contents:
-                parts.append("CONTENTS")
-                parts.extend([f"    {x}" for x in contents])
-        return "\n".join(parts)
     if _is_bound_instance_object(item):
         if isinstance(item, BoundInstanceObject):
             parts = [f"Help on object {item.reg_object.name}:\n"]
@@ -161,8 +145,7 @@ def _get_help_text(agent: "BaseAgent", item: Any) -> str:
 def _is_allowed_for_help(item: Any) -> bool:
     """Check if an item is allowed for help() - registered resources or basic Python types."""
     return (
-        isinstance(item, AgexModule)
-        or _is_bound_instance_object(item)
+        _is_bound_instance_object(item)
         or isinstance(item, (int, float, str, bool, list, dict, tuple, set, type(None)))
         or hasattr(item, "__doc__")  # Any object with documentation
     )

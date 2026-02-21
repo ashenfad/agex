@@ -82,10 +82,7 @@ def _agex_runner(
             # Use ModalLocal host for execution (handles disk storage → ModalFile)
             agent_instance._host = ModalLocal()
 
-            # Re-register agent in global registry
-            from agex.agent import register_agent
-
-            agent_instance.fingerprint = register_agent(agent_instance)
+            # Fingerprint recomputes lazily on first access
 
             # Find the task function
             task_fn = agent_instance._tasks.get(task_name)

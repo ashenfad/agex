@@ -2,7 +2,7 @@ import inspect
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Callable, TypeVar, overload
 
-from agex.agent.base import BaseAgent, resolve_agent
+from agex.agent.base import BaseAgent
 from agex.agent.datatypes import (
     RESERVED_NAMES,
     MemberSpec,
@@ -11,7 +11,6 @@ from agex.agent.datatypes import (
 )
 from agex.agent.policy.resolve import make_predicate
 from agex.agent.utils import get_instance_attributes_from_init
-from agex.eval.objects import AgexModule
 
 if TYPE_CHECKING:
     from agex.host.dependencies import Dependencies
@@ -452,38 +451,8 @@ class RegistrationMixin(BaseAgent):
             self._update_fingerprint()
             return None
 
-        # Check if this is an AgexModule (agent registering module from another agent)
-
-        if isinstance(obj, AgexModule):
-            # Special case: inherit from parent agent via policy 'inherited' namespace
-            parent_agent = resolve_agent(obj.agent_fingerprint)
-            parent_ns = parent_agent._policy.namespaces.get(obj.name)  # type: ignore[attr-defined]
-            if parent_ns is not None:
-                from agex.agent.policy.datatypes import Namespace
-
-                final_name = name or obj.name
-                if final_name in RESERVED_NAMES:
-                    raise ValueError(
-                        f"The name '{final_name}' is reserved and cannot be registered."
-                    )
-                child_ns = Namespace(
-                    name=final_name,
-                    kind="inherited",
-                    module=parent_ns.module,
-                    visibility=visibility,
-                    include=include,
-                    exclude=tuple(exclude) if isinstance(exclude, list) else exclude,
-                    configure={},
-                    recursive=False,
-                    host_fs_access=host_fs_access,
-                    network_access=network_access,
-                    parent=parent_ns,
-                )
-                self._policy.namespaces[final_name] = child_ns
-            self._update_fingerprint()
-
         # Check if we're dealing with a module or an instance
-        elif isinstance(obj, ModuleType):
+        if isinstance(obj, ModuleType):
             # Validate reserved names
             final_name = name or obj.__name__
             if final_name in RESERVED_NAMES:

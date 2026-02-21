@@ -588,13 +588,8 @@ def test_agent_names_and_uniqueness():
     assert agent2.name == "other_agent"
 
     # Test duplicate name prevention
-
-    # 1. Identical agent (same fingerprint) should NOT raise (simulates deserialization)
-    Agent(name="test_agent")
-
-    # 2. Different agent (different fingerprint) SHOULD raise
     with pytest.raises(ValueError, match="Agent name 'test_agent' already exists"):
-        Agent(name="test_agent", primer="Different instructions")
+        Agent(name="test_agent")
 
 
 def test_dual_decorator_namespace_setting():

@@ -1,6 +1,6 @@
 import threading
 import uuid
-from typing import TYPE_CHECKING, Any, Callable, Dict, Literal
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Literal
 
 from ..llm import LLM, connect_llm
 from ..resource_limits import ResourceLimits
@@ -17,91 +17,16 @@ if TYPE_CHECKING:
     from ..host.dependencies import Dependencies
     from ..state.config import StateConfig
 
-# Global registry mapping fingerprints to agents
-# Using process-global dicts with lock for thread safety
-# (ContextVar doesn't work for callbacks invoked in different async contexts)
-_AGENT_REGISTRY: Dict[str, "BaseAgent"] = {}
-_AGENT_REGISTRY_BY_NAME: Dict[str, "BaseAgent"] = {}
-_AGENT_REGISTRY_LOCK = threading.Lock()
-
 _UNSET = object()
 
 
-def register_agent(agent: "BaseAgent") -> str:
-    """
-    Register an agent in the global registry.
-
-    Returns the agent's fingerprint.
-
-    Note: Allows re-registration of agents with the same fingerprint,
-    which is necessary for handling deserialized agents (e.g., in remote
-    execution where the same agent may be sent multiple times).
-    """
-    # Compute fingerprint first - needed for collision detection
-    fingerprint = compute_agent_fingerprint_from_policy(agent)
-
-    with _AGENT_REGISTRY_LOCK:
-        # Enforce unique agent names if provided
-        if hasattr(agent, "name") and agent.name is not None:
-            if agent.name in _AGENT_REGISTRY_BY_NAME:
-                existing_agent = _AGENT_REGISTRY_BY_NAME[agent.name]
-                # Allow re-registration if:
-                # 1. Same object instance (identity), OR
-                # 2. Same fingerprint (deserialized copy of same agent)
-                # 3. Existing agent has no fingerprint (shouldn't happen but defensive)
-                existing_fingerprint = getattr(existing_agent, "fingerprint", None)
-
-                if existing_agent is not agent:
-                    if (
-                        existing_fingerprint is None
-                        or existing_fingerprint != fingerprint
-                    ):
-                        raise ValueError(f"Agent name '{agent.name}' already exists")
-            _AGENT_REGISTRY_BY_NAME[agent.name] = agent
-
-        _AGENT_REGISTRY[fingerprint] = agent
-
-    return fingerprint
-
-
-def resolve_agent(fingerprint: str) -> "BaseAgent":
-    """
-    Resolve an agent by its fingerprint.
-
-    Raises RuntimeError if no matching agent is found.
-    """
-    with _AGENT_REGISTRY_LOCK:
-        agent = _AGENT_REGISTRY.get(fingerprint)
-        if not agent:
-            available = list(_AGENT_REGISTRY.keys())
-            raise RuntimeError(
-                f"No agent found with fingerprint '{fingerprint[:8]}...'. "
-                f"Available fingerprints: {[fp[:8] + '...' for fp in available]}"
-            )
-        return agent
-
-
 def clear_agent_registry() -> None:
-    """Clear the global registry. Primarily for testing."""
+    """Clear agent name tracking and dynamic dataclass registry. Primarily for testing."""
     from .task import clear_dynamic_dataclass_registry
 
-    with _AGENT_REGISTRY_LOCK:
-        _AGENT_REGISTRY.clear()
-        _AGENT_REGISTRY_BY_NAME.clear()
+    with BaseAgent._used_names_lock:
+        BaseAgent._used_names.clear()
     clear_dynamic_dataclass_registry()
-
-
-def get_agent_by_name(name: str) -> "BaseAgent | None":
-    """Get an agent by its name.
-
-    Used for fallback resolution when an agent's fingerprint has changed
-    (e.g., after config/primer changes) but the agent name is still the same.
-
-    Returns:
-        The agent with the given name, or None if not found.
-    """
-    with _AGENT_REGISTRY_LOCK:
-        return _AGENT_REGISTRY_BY_NAME.get(name)
 
 
 def _random_name() -> str:
@@ -109,6 +34,9 @@ def _random_name() -> str:
 
 
 class BaseAgent:
+    _used_names: ClassVar[dict[str, int]] = {}
+    _used_names_lock: ClassVar[threading.Lock] = threading.Lock()
+
     def __init__(
         self,
         primer: str | None,
@@ -215,13 +143,32 @@ class BaseAgent:
         )  # Module names collected at registration
         self._cached_dependencies: "Dependencies | None" = None  # Computed on access
 
-        # Auto-register this agent
-        self.fingerprint = register_agent(self)
+        # Fingerprint (lazy — computed on first access)
+        self._fingerprint: str | None = None
+
+        # Enforce unique agent names
+        with BaseAgent._used_names_lock:
+            if self.name in BaseAgent._used_names:
+                existing_id = BaseAgent._used_names[self.name]
+                if existing_id != id(self):
+                    raise ValueError(f"Agent name '{self.name}' already exists")
+            BaseAgent._used_names[self.name] = id(self)
+
+    @property
+    def fingerprint(self) -> str:
+        """Agent fingerprint, computed lazily from policy configuration."""
+        if self._fingerprint is None:
+            self._fingerprint = compute_agent_fingerprint_from_policy(self)
+        return self._fingerprint
+
+    @fingerprint.setter
+    def fingerprint(self, value: str | None) -> None:
+        self._fingerprint = value
 
     def _update_fingerprint(self):
-        """Update the fingerprint after registration changes."""
-        self._cached_dependencies = None  # Invalidate dependency cache
-        self.fingerprint = register_agent(self)
+        """Invalidate fingerprint and dependency caches after registration changes."""
+        self._cached_dependencies = None
+        self._fingerprint = None
 
     def __getstate__(self) -> dict[str, Any]:
         """
@@ -231,7 +178,7 @@ class BaseAgent:
         - _host_object_registry: Holds live instances (db connections, etc.)
         - llm: Live LLM has nonserializable state (sockets, SSL context)
         - _host: Host has non-serializable state (HTTP clients, etc.)
-        - fingerprint: Computed from runtime state, might differ on host
+        - _fingerprint: Computed from runtime state, might differ on host
 
         Adds:
         - _llm_config: Reconstructable configuration for the LLM
@@ -251,7 +198,7 @@ class BaseAgent:
         state.pop("llm", None)
         state.pop("_host", None)
         state.pop("_host_object_registry", None)
-        state.pop("fingerprint", None)
+        state.pop("_fingerprint", None)
 
         return state
 
@@ -263,7 +210,6 @@ class BaseAgent:
         which must:
         1. Reconstruct the LLM from _llm_config
         2. Reconstruct the Host from _host_config
-        3. Recompute fingerprint/register
         """
         # Restore configuration
         self.__dict__.update(state)
@@ -274,7 +220,7 @@ class BaseAgent:
         # llm and _host remain None until rehydrated by prepare_agent
         self.llm = None
         self._host = None
-        self.fingerprint = None  # Will be recomputed
+        self._fingerprint = None  # Recomputes lazily on first access
 
     def module(
         self,
