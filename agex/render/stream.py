@@ -1,116 +1,14 @@
-import base64
-import io
 from typing import Any, List, Optional
-
-# Gracefully import optional image libraries
-try:
-    from PIL import Image
-except ImportError:
-    Image = None  # type: ignore
-
-try:
-    import matplotlib.figure
-except ImportError:
-    matplotlib = None  # type: ignore
-
-try:
-    import plotly.graph_objects
-except ImportError:
-    plotly = None  # type: ignore
-
 
 from ..eval.objects import ImageAction, PrintAction
 from ..llm.core import ContentPart, ImagePart, TextPart
 from ..tokenizers import Tokenizer, get_tokenizer
+from .primitives import (
+    estimate_image_cost,
+    get_image_error_message,
+    serialize_image_to_base64,
+)
 from .value import ValueRenderer
-
-
-def _is_plotly_figure(image: Any) -> bool:
-    """Check if an object is a Plotly figure using duck typing."""
-    # Check for to_image method (defining characteristic of Plotly figures)
-    if hasattr(image, "to_image") and callable(getattr(image, "to_image", None)):
-        # Also check for layout attribute (Plotly figures have this)
-        if hasattr(image, "layout"):
-            return True
-    # Fallback: check isinstance if plotly is available
-    if plotly is not None:
-        try:
-            return isinstance(image, plotly.graph_objects.Figure)
-        except Exception:
-            pass
-    return False
-
-
-def _estimate_image_cost(image: Any, detail: str = "high") -> int:
-    """
-    Estimates the token cost for an image.
-
-    This provides a reasonable, model-agnostic estimation for budget management.
-
-    Args:
-        image: The image object (e.g., PIL Image, Matplotlib Figure).
-        detail: The requested detail level ("high" or "low").
-
-    Returns:
-        The estimated token cost.
-    """
-    if detail == "low":
-        return 85  # A common, fixed cost for low-detail/thumbnail images.
-
-    # For high detail, we need the image dimensions.
-    width, height = 0, 0
-    if Image and isinstance(image, Image.Image):
-        width, height = image.size
-    elif matplotlib and isinstance(image, matplotlib.figure.Figure):
-        # Matplotlib figures are in inches; convert to pixels using a common default DPI.
-        dpi = image.get_dpi() if image.get_dpi() else 100.0
-        width, height = (
-            int(image.get_figwidth() * dpi),
-            int(image.get_figheight() * dpi),
-        )
-    elif _is_plotly_figure(image):
-        # Plotly figures often have explicit pixel dimensions.
-        width = image.layout.width if image.layout.width else 500
-        height = image.layout.height if image.layout.height else 400
-    else:
-        # Fallback for unsupported types: a fixed high-cost guess.
-        return 2000
-
-    if width == 0 or height == 0:
-        return 2000  # Avoid division by zero for invalid images
-
-    # Use a simple, linear scaling formula as a general-purpose heuristic.
-    # Anthropic's is (width_px * height_px) / 750, which is a good baseline.
-    return (width * height) // 750
-
-
-def _serialize_image_to_base64(image: Any) -> Optional[str]:
-    """Serializes a supported image type to a PNG base64 string."""
-    buffer = io.BytesIO()
-    try:
-        if Image and isinstance(image, Image.Image):
-            # For security and consistency, convert to a standard format like PNG.
-            image.save(buffer, format="PNG")
-            return base64.b64encode(buffer.getvalue()).decode("utf-8")
-        elif matplotlib and isinstance(image, matplotlib.figure.Figure):
-            image.savefig(buffer, format="png", bbox_inches="tight")
-            return base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-        if _is_plotly_figure(image):
-            # kaleido is used by plotly to export static images
-            # Use duck typing - check for to_image method
-            if hasattr(image, "to_image") and callable(
-                getattr(image, "to_image", None)
-            ):
-                image_bytes = image.to_image(format="png")
-                return base64.b64encode(image_bytes).decode("utf-8")
-    except Exception:
-        # If any error occurs during serialization, fail gracefully.
-        # The caller will generate appropriate error messages
-        return None
-
-    # Unsupported type
-    return None
 
 
 class StreamRenderer:
@@ -184,15 +82,15 @@ class StreamRenderer:
                 part = TextPart(text=rendered_line)
 
             elif isinstance(item, ImageAction):
-                cost = _estimate_image_cost(item.image, item.detail)
+                cost = estimate_image_cost(item.image, item.detail)
                 # Only serialize if it might fit.
                 if current_cost + cost <= budget:
-                    base64_image = _serialize_image_to_base64(item.image)
+                    base64_image = serialize_image_to_base64(item.image)
                     if base64_image:
                         part = ImagePart(image=base64_image)
                     else:
                         # Generate error message based on image type
-                        placeholder = self._get_image_error_message(item.image)
+                        placeholder = get_image_error_message(item.image)
                         cost = len(self.tokenizer.encode(placeholder + "\n"))
                         part = TextPart(text=placeholder)
                 else:
@@ -219,35 +117,6 @@ class StreamRenderer:
                 final_parts.insert(0, TextPart(text=marker))
 
         return final_parts
-
-    def _get_image_error_message(self, image: Any) -> str:
-        """Generate a helpful error message for failed image serialization."""
-        if not _is_plotly_figure(image):
-            return f"<unsupported image type: {type(image).__name__}>"
-
-        # Try to get the actual error from Plotly export
-        error_msg = None
-        try:
-            if hasattr(image, "to_image") and callable(
-                getattr(image, "to_image", None)
-            ):
-                image.to_image(format="png")
-        except Exception as e:
-            error_msg = str(e)
-
-        # Check for kaleido-specific errors
-        if error_msg and ("kaleido" in error_msg.lower()):
-            return (
-                "<Plotly figure export failed: Kaleido package is required. "
-                "Install with: pip install kaleido>"
-            )
-        elif error_msg:
-            return f"<Plotly figure export failed: {error_msg}>"
-        else:
-            return (
-                "<Plotly figure export failed: Kaleido package may be missing. "
-                "Install with: pip install kaleido>"
-            )
 
     def _render_and_check(
         self, key: str, value: Any, budget: int, depth: int
