@@ -11,8 +11,9 @@ from .policy.policy import AgentPolicy
 if TYPE_CHECKING:
     from collections.abc import MutableMapping
 
+    from monkeyfs import FSConfig
+
     from ..fs.aware import AgentAwareFS
-    from ..fs.config import FSConfig
     from ..host import Host
     from ..host.dependencies import Dependencies
     from ..state.config import StateConfig

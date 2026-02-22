@@ -10,7 +10,8 @@ from .base import (
 )
 
 if TYPE_CHECKING:
-    from ..fs.config import FSConfig
+    from monkeyfs import FSConfig
+
     from ..state.config import StateConfig
 
 # Data types and exceptions
