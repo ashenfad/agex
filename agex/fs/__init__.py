@@ -23,7 +23,7 @@ from monkeyfs import (
     connect_fs,
     get_current_fs,
     patch,
-    suspend_fs_interception,
+    suspend,
 )
 
 # agex-specific
@@ -40,7 +40,7 @@ __all__ = [
     "get_current_fs",
     "IsolatedFS",
     "IsolatedFSConfig",
-    "suspend_fs_interception",
+    "suspend",
     "patch",
     "VirtualFile",
     "VirtualFS",

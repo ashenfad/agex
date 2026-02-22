@@ -144,9 +144,9 @@ def safe_commit(
     Returns:
         MergeResult from gitkv's commit.
     """
-    from monkeyfs import suspend_fs_interception
+    from monkeyfs import suspend
 
-    with suspend_fs_interception():
+    with suspend():
         if referenced_keys:
             state_keys = staged.keys()
             for key in referenced_keys & set(state_keys):
