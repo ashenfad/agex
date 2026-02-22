@@ -22,7 +22,6 @@ fs_config = connect_fs(type="virtual", max_size_mb=100)
 fs_config = connect_fs(
     type="isolated",
     root="/path/to/workspace",  # Required: must exist
-    tracking=True,              # Optional: emit FileEvents
     per_session=True,           # Optional: create session subdirectories
 )
 ```
@@ -34,7 +33,6 @@ fs_config = connect_fs(
 | `type` | `str` | `"virtual"` | FileSystem type: `"virtual"` or `"isolated"` |
 | `max_size_mb` | `int \| None` | `None` | (virtual only) Maximum total size in MB. `None` means unlimited. |
 | `root` | `str` | — | (isolated only) Absolute path to root directory. Must exist. |
-| `tracking` | `bool` | `False` | (isolated only) Whether to track file changes for FileEvents |
 | `per_session` | `bool` | `False` | (isolated only) Whether to create session-specific subdirectories |
 
 ## Virtual FileSystem (VFS)
@@ -103,7 +101,6 @@ The Isolated FileSystem provides restricted access to a real directory on the ho
 - **Real Files**: Operates on actual filesystem (not in-memory)
 - **Path Restriction**: All paths validated to stay within root directory
 - **Security**: Prevents path traversal attacks (`../`, symlinks pointing outside)
-- **Optional Tracking**: Enable `tracking=True` to emit `FileEvent` for changes
 - **Standard Library Support**: Same Python file operations as VFS
 
 ### Usage
@@ -115,7 +112,6 @@ agent = Agent(
     fs=connect_fs(
         type="isolated",
         root="/path/to/project",
-        tracking=True,  # Optional: emit FileEvents
     ),
 )
 ```
@@ -238,7 +234,7 @@ Operations are automatically routed to VFS or validated against isolated root.
 File changes emit `FileEvent` to the event log:
 
 - **VFS**: Always emits events
-- **Isolated**: Emits events when `tracking=True`
+- **Isolated**: Emits events via metadata snapshot comparison
 
 ```python
 from agex import events

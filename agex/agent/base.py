@@ -344,7 +344,7 @@ class BaseAgent:
 
             # Isolated filesystem
             agent = Agent(
-                fs=connect_fs(type="isolated", root="/project", tracking=True),
+                fs=connect_fs(type="isolated", root="/project"),
             )
 
             # Upload a file from UI
@@ -385,9 +385,8 @@ class BaseAgent:
             from agex.eval.core import _get_session_root
 
             # Get session-specific root if per_session is enabled
-            root = _get_session_root(
-                self._fs_config.root, session, self._fs_config.per_session
-            )
+            per_session = getattr(self._fs_config, "per_session", False)
+            root = _get_session_root(self._fs_config.root, session, per_session)
 
             return IsolatedFS(root), state
 
