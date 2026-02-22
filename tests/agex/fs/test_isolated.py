@@ -1,17 +1,10 @@
 """Tests for IsolatedFS - secure filesystem with path restriction."""
 
 import pytest
-from gitkv import Live, Staged, Versioned
 
 from agex import Agent, connect_fs, pprint_events
 from agex.fs import IsolatedFS
 from agex.llm import Dummy, LLMResponse
-from agex.state import _agex_decoder, _agex_encoder
-from agex.state.kv import Memory
-
-
-def _make_state():
-    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class TestIsolatedFSPathValidation:
@@ -22,7 +15,7 @@ class TestIsolatedFSPathValidation:
         new_root = tmp_path / "new_dir"
         assert not new_root.exists()
 
-        IsolatedFS(root=str(new_root), state=Live())
+        IsolatedFS(root=str(new_root))
 
         assert new_root.exists()
         assert new_root.is_dir()
@@ -30,7 +23,7 @@ class TestIsolatedFSPathValidation:
     def test_rejects_relative_root(self):
         """Root must be absolute path."""
         with pytest.raises(ValueError, match="absolute path"):
-            IsolatedFS(root="relative/path", state=Live())
+            IsolatedFS(root="relative/path")
 
     def test_rejects_file_as_root(self, tmp_path):
         """Root must be a directory, not a file."""
@@ -38,11 +31,11 @@ class TestIsolatedFSPathValidation:
         file_path.write_text("data")
 
         with pytest.raises(ValueError, match="must be a directory"):
-            IsolatedFS(root=str(file_path), state=Live())
+            IsolatedFS(root=str(file_path))
 
     def test_path_traversal_blocked(self, tmp_path):
         """Path traversal attempts should be blocked."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         # Try various path traversal attacks
         with pytest.raises(PermissionError, match="outside root"):
@@ -56,7 +49,7 @@ class TestIsolatedFSPathValidation:
 
     def test_absolute_paths_are_rerooted(self, tmp_path):
         """Absolute paths are treated as relative to the isolated root."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         # Create a file at $ROOT/foo.txt
         (tmp_path / "foo.txt").write_text("data")
@@ -78,7 +71,7 @@ class TestIsolatedFSPathValidation:
 
     def test_symlink_to_outside_blocked(self, tmp_path):
         """Symlinks pointing outside root should be blocked."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         # Create symlink inside root pointing to outside
         link_path = tmp_path / "evil_link"
@@ -89,7 +82,7 @@ class TestIsolatedFSPathValidation:
 
     def test_symlink_to_inside_allowed(self, tmp_path):
         """Symlinks within root should work."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         # Create file and symlink within root
         (tmp_path / "data.txt").write_text("content")
@@ -106,7 +99,7 @@ class TestIsolatedFSBasicOperations:
 
     def test_write_and_read(self, tmp_path):
         """Write and read files."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         fs.write("test.txt", b"Hello, world!")
         content = fs.read("test.txt")
@@ -115,7 +108,7 @@ class TestIsolatedFSBasicOperations:
 
     def test_open_read_mode(self, tmp_path):
         """Open file in read mode."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         (tmp_path / "data.txt").write_text("test data")
 
@@ -126,7 +119,7 @@ class TestIsolatedFSBasicOperations:
 
     def test_open_write_mode(self, tmp_path):
         """Open file in write mode."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         with fs.open("output.txt", "w") as f:
             f.write("new content")
@@ -135,7 +128,7 @@ class TestIsolatedFSBasicOperations:
 
     def test_exists(self, tmp_path):
         """Check if files exist."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         assert not fs.exists("missing.txt")
 
@@ -144,7 +137,7 @@ class TestIsolatedFSBasicOperations:
 
     def test_isfile_isdir(self, tmp_path):
         """Check file vs directory."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         (tmp_path / "file.txt").write_text("data")
         (tmp_path / "subdir").mkdir()
@@ -157,7 +150,7 @@ class TestIsolatedFSBasicOperations:
 
     def test_listdir(self, tmp_path):
         """List directory contents."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         (tmp_path / "file1.txt").write_text("data")
         (tmp_path / "file2.txt").write_text("data")
@@ -168,7 +161,7 @@ class TestIsolatedFSBasicOperations:
 
     def test_mkdir(self, tmp_path):
         """Create directories."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         fs.mkdir("newdir")
         assert (tmp_path / "newdir").is_dir()
@@ -178,7 +171,7 @@ class TestIsolatedFSBasicOperations:
 
     def test_remove(self, tmp_path):
         """Remove files."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         (tmp_path / "delete_me.txt").write_text("data")
         assert fs.exists("delete_me.txt")
@@ -188,7 +181,7 @@ class TestIsolatedFSBasicOperations:
 
     def test_rename(self, tmp_path):
         """Rename files."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         (tmp_path / "old.txt").write_text("data")
         fs.rename("old.txt", "new.txt")
@@ -199,7 +192,7 @@ class TestIsolatedFSBasicOperations:
 
     def test_stat(self, tmp_path):
         """Get file metadata."""
-        fs = IsolatedFS(root=str(tmp_path), state=Live())
+        fs = IsolatedFS(root=str(tmp_path))
 
         (tmp_path / "file.txt").write_bytes(b"12345")
 
@@ -209,43 +202,28 @@ class TestIsolatedFSBasicOperations:
         assert metadata.modified_at is not None
 
 
-class TestIsolatedFSTracking:
-    """Test metadata tracking."""
+class TestIsolatedFSMetadataSnapshot:
+    """Test metadata snapshot from real filesystem."""
 
-    def test_tracking_disabled_no_state_updates(self, tmp_path):
-        """When tracking=False, no state updates occur."""
-        state = _make_state()
-        fs = IsolatedFS(root=str(tmp_path), state=Live())  # Separate state, no tracking
-
-        fs.write("file.txt", b"data")
-
-        # State should not have metadata (using different state)
-        assert state.get(fs.METADATA_KEY) is None
-
-    def test_tracking_enabled_updates_metadata(self, tmp_path):
-        """When tracking=True, metadata is updated."""
-        state = _make_state()
-        fs = IsolatedFS(root=str(tmp_path), state=state)
+    def test_snapshot_reflects_files(self, tmp_path):
+        """Snapshot returns metadata for all files in root."""
+        fs = IsolatedFS(root=str(tmp_path))
 
         fs.write("file.txt", b"data")
 
-        # Metadata should be stored
         metadata = fs.get_metadata_snapshot()
         assert "file.txt" in metadata
         assert metadata["file.txt"].size == 4
 
-    def test_tracking_detects_file_changes(self, tmp_path):
-        """Tracking detects when files are modified."""
-        state = _make_state()
-        fs = IsolatedFS(root=str(tmp_path), state=state)
+    def test_snapshot_detects_removal(self, tmp_path):
+        """Snapshot reflects file removal."""
+        fs = IsolatedFS(root=str(tmp_path))
 
-        fs.write("file.txt", b"original")
-        snapshot1 = fs.get_metadata_snapshot()
+        fs.write("file.txt", b"data")
+        assert "file.txt" in fs.get_metadata_snapshot()
 
-        fs.write("file.txt", b"modified")
-        snapshot2 = fs.get_metadata_snapshot()
-
-        assert snapshot1["file.txt"].modified_at != snapshot2["file.txt"].modified_at
+        fs.remove("file.txt")
+        assert "file.txt" not in fs.get_metadata_snapshot()
 
 
 class TestIsolatedFSAgentIntegration:
