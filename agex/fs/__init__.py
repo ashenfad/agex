@@ -21,7 +21,6 @@ from monkeyfs import (
     VirtualFS,
     VirtualFSConfig,
     connect_fs,
-    get_current_fs,
     patch,
     suspend,
 )
@@ -37,7 +36,6 @@ __all__ = [
     "FileMetadata",
     "FileSystem",
     "FSConfig",
-    "get_current_fs",
     "IsolatedFS",
     "IsolatedFSConfig",
     "suspend",
