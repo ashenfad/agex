@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from agex.agent.datatypes import EditAction, FileAction
 
 if TYPE_CHECKING:
-    from gitkv import Store
+    from collections.abc import MutableMapping
 
     from agex.agent.events import Event
 
@@ -157,7 +157,7 @@ class ResponseBuilder:
     def __init__(
         self,
         agent_name: str | None = None,
-        exec_state: "Store | None" = None,
+        exec_state: "MutableMapping[str, Any] | None" = None,
     ):
         self.agent_name = agent_name
         self.exec_state = exec_state

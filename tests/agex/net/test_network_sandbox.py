@@ -225,7 +225,7 @@ class TestAgentNetworkIntegration:
         agent = Agent(name="net_install_test")
 
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
 
         # Running execute_sandboxed installs sandtrap's network patches
         execute_sandboxed("x = 1", agent, state, eval_timeout_seconds=5.0)
@@ -254,7 +254,7 @@ class TestAgentNetworkIntegration:
         agent.fn(check_network_access, network_access=True)
 
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed(
             "result = check_network_access()",
             agent,
@@ -286,7 +286,7 @@ class TestAgentNetworkIntegration:
         agent.fn(check_network_access)  # No network_access=True
 
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed(
             "result = check_network_access()",
             agent,
@@ -316,7 +316,7 @@ class TestAgentNetworkIntegration:
         agent.cls(NetworkClient, network_access=True)
 
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed(
             "client = NetworkClient(); result = client.check_access()",
             agent,
@@ -352,7 +352,7 @@ class TestAgentNetworkIntegration:
         agent.module(test_module, name="test_net", network_access=True)
 
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed(
             "import test_net; result = test_net.check_access()",
             agent,

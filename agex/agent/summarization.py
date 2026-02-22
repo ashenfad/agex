@@ -5,9 +5,8 @@ This module provides automatic summarization of older events when the event log
 grows beyond configured token limits, similar to garbage collection for memory.
 """
 
-from typing import TYPE_CHECKING
-
-from gitkv import Store
+from collections.abc import MutableMapping
+from typing import TYPE_CHECKING, Any
 
 from agex.agent.events import SummaryEvent
 from agex.state.log import get_events_from_log, replace_oldest_events_with_summary
@@ -63,7 +62,10 @@ Remember: You are summarizing a COMPLETED interaction, not participating in it."
 
 
 def maybe_summarize_event_log(
-    agent: "BaseAgent", state: Store, system_message: str, on_event=None
+    agent: "BaseAgent",
+    state: MutableMapping[str, Any],
+    system_message: str,
+    on_event=None,
 ) -> None:
     """
     Check if event log needs summarization and perform it if necessary.

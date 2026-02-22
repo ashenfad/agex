@@ -7,15 +7,13 @@ This module provides AgentAwareFS, a wrapper around VirtualFS that:
 
 from __future__ import annotations
 
+from collections.abc import MutableMapping
 from typing import Callable
 
-from gitkv import Store
-
-from agex.fs.base import FileSystem
-from agex.fs.virtual import FileInfo, FileMetadata
+from monkeyfs import FileInfo, FileMetadata, FileSystem
 
 
-class AgentAwareFS(FileSystem):
+class AgentAwareFS:
     """FS wrapper that emits events for agent/user visibility.
 
     Used by agent.fs() to provide file access that automatically
@@ -31,7 +29,7 @@ class AgentAwareFS(FileSystem):
     def __init__(
         self,
         fs: FileSystem,
-        state: Store,
+        state: MutableMapping[str, bytes],
         agent_name: str,
         on_event: Callable | None = None,
     ):

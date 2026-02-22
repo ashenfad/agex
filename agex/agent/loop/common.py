@@ -7,11 +7,12 @@ This module contains shared logic used by both sync and async task loop implemen
 from __future__ import annotations
 
 import re
+from collections.abc import MutableMapping
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, Callable
 
-from gitkv import Live, Namespaced, Staged, Store
+from gitkv import Live, Namespaced, Staged
 from pydantic import ValidationError
 from termish import ParseError, TerminalError, execute_script, to_script
 
@@ -41,7 +42,6 @@ from agex.agent.events import (
 from agex.eval.error import EvalError
 from agex.eval.objects import PrintAction
 from agex.fs.aware import AgentAwareFS
-from agex.fs.virtual import VirtualFS
 from agex.llm.core import LLMResponse, ResponseBuilder, ResponseParseError, StreamToken
 from agex.state import (
     ConcurrencyError,
@@ -118,7 +118,7 @@ __all__ = [
 def check_cancellation(
     task_name: str,
     versioned_state: Staged | None,
-    exec_state: Store,
+    exec_state: MutableMapping[str, Any],
 ) -> bool:
     """
     Check if a cancellation sentinel is present for the given task.
@@ -145,7 +145,7 @@ def check_cancellation(
     else:
         # Live/Namespaced state - check exec_state directly
         if exec_state.get(cancel_key):
-            exec_state.remove(cancel_key)
+            exec_state.pop(cancel_key, None)
             return True
 
     return False
@@ -211,12 +211,12 @@ def initialize_exec_state(
 
     # Add inputs and expected return type to state for agent access
     if inputs_instance is not None:
-        exec_state.set("inputs", inputs_instance)
-    exec_state.set("__expected_return_type__", return_type)
+        exec_state["inputs"] = inputs_instance
+    exec_state["__expected_return_type__"] = return_type
 
     # Initialize the event log if it doesn't exist
     if "__event_log__" not in exec_state:
-        exec_state.set("__event_log__", [])
+        exec_state["__event_log__"] = []
 
     return exec_state, versioned_state
 
@@ -458,7 +458,7 @@ def apply_optimistic_file_actions(
     agent: Any,
     llm_response: LLMResponse,
     fs: Any,
-    exec_state: Store,
+    exec_state: MutableMapping[str, Any],
     on_event: Callable[[BaseEvent], None] | None = None,
 ) -> None:
     """
@@ -471,7 +471,6 @@ def apply_optimistic_file_actions(
         return
 
     # Use underlying FS directly to avoid 'user' source attribution
-    # and handle snapshot parameter for VirtualFS
     target_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
 
     for action in llm_response.file_actions:
@@ -493,12 +492,7 @@ def apply_optimistic_file_actions(
                     )
                     add_event_to_log(exec_state, warning, on_event=on_event)
 
-            if isinstance(target_fs, VirtualFS):
-                target_fs.write(
-                    path, content.encode("utf-8"), snapshot=False, mode=fs_mode
-                )
-            else:
-                target_fs.write(path, content.encode("utf-8"), mode=fs_mode)
+            target_fs.write(path, content.encode("utf-8"), mode=fs_mode)
 
         elif isinstance(action, EditAction):
             path = action.path
@@ -611,12 +605,7 @@ def apply_optimistic_file_actions(
                     )
 
             # Write back
-            if isinstance(target_fs, VirtualFS):
-                target_fs.write(
-                    path, new_content.encode("utf-8"), snapshot=False, mode="w"
-                )
-            else:
-                target_fs.write(path, new_content.encode("utf-8"), mode="w")
+            target_fs.write(path, new_content.encode("utf-8"), mode="w")
 
 
 # =============================================================================
@@ -693,7 +682,7 @@ def execute_terminal(
     agent_name: str,
     terminal_script: str,
     fs: Any,
-    exec_state: Store,
+    exec_state: MutableMapping[str, Any],
     on_event: Callable[[BaseEvent], None] | None = None,
 ) -> str:
     """Execute terminal script and emit output event.

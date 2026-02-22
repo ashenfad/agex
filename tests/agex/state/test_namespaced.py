@@ -16,7 +16,7 @@ def test_namespaced_get_set():
     state = _make_state(store)
     ns1 = Namespaced(state, "ns1")
 
-    ns1.set("a", 1)
+    ns1["a"] = 1
     assert ns1.get("a") == 1
 
 
@@ -25,8 +25,8 @@ def test_namespaced_isolation():
     ns1 = Namespaced(state, "ns1")
     ns2 = Namespaced(state, "ns2")
 
-    ns1.set("a", 1)
-    ns2.set("a", 2)
+    ns1["a"] = 1
+    ns2["a"] = 2
 
     assert ns1.get("a") == 1
     assert ns2.get("a") == 2
@@ -37,8 +37,8 @@ def test_nested_namespaces():
     top = Namespaced(state, "top")
     bottom = Namespaced(top, "bottom")
 
-    top.set("a", 1)
-    bottom.set("a", 2)
+    top["a"] = 1
+    bottom["a"] = 2
 
     assert top.get("a") == 1
     assert bottom.get("a") == 2
@@ -97,8 +97,8 @@ def test_namespace_collision_prevention():
     ns_acb = Namespaced(ns_ac, "b")
 
     # Set values in both "b" namespaces
-    ns_ab.set("data", "from_a_b")
-    ns_acb.set("data", "from_a_c_b")
+    ns_ab["data"] = "from_a_b"
+    ns_acb["data"] = "from_a_c_b"
 
     # Verify isolation - each should only see its own data
     assert ns_ab.get("data") == "from_a_b"
@@ -131,11 +131,11 @@ def test_complex_namespace_isolation():
     worker2 = Namespaced(other_orch, "worker")
 
     # Same immediate namespace name but different full paths
-    worker1.set("task", "task1")
-    worker1.set("status", "running")
+    worker1["task"] = "task1"
+    worker1["status"] = "running"
 
-    worker2.set("task", "task2")
-    worker2.set("status", "idle")
+    worker2["task"] = "task2"
+    worker2["status"] = "idle"
 
     # Verify complete isolation
     assert worker1.get("task") == "task1"
@@ -164,15 +164,15 @@ def test_keys_only_shows_direct_children():
     ns_ab = Namespaced(Namespaced(state, "a"), "b")
 
     # Add direct keys to a/b
-    ns_ab.set("config", "value1")
-    ns_ab.set("data", "value2")
-    ns_ab.set("status", "active")
+    ns_ab["config"] = "value1"
+    ns_ab["data"] = "value2"
+    ns_ab["status"] = "active"
 
     # Add keys in sub-namespaces (should be hidden from a/b keys())
-    state.set("a/b/worker/task", "work1")  # Sub-namespace: a/b/worker/
-    state.set("a/b/worker/status", "running")  # Sub-namespace: a/b/worker/
-    state.set("a/b/cache/item1", "cached")  # Sub-namespace: a/b/cache/
-    state.set("a/b/logs/error.log", "errors")  # Sub-namespace: a/b/logs/
+    state["a/b/worker/task"] = "work1"  # Sub-namespace: a/b/worker/
+    state["a/b/worker/status"] = "running"  # Sub-namespace: a/b/worker/
+    state["a/b/cache/item1"] = "cached"  # Sub-namespace: a/b/cache/
+    state["a/b/logs/error.log"] = "errors"  # Sub-namespace: a/b/logs/
 
     # Get keys from a/b namespace
     ab_keys = set(ns_ab.keys())
@@ -199,20 +199,20 @@ def test_mixed_direct_and_nested_keys():
     ns_root = Namespaced(state, "root")
 
     # Add direct keys to root
-    ns_root.set("app_config", "config_value")
-    ns_root.set("version", "1.0.0")
+    ns_root["app_config"] = "config_value"
+    ns_root["version"] = "1.0.0"
 
     # Create sub-namespaces and add keys
     ns_agents = Namespaced(ns_root, "agents")
-    ns_agents.set("count", 3)
-    ns_agents.set("active", True)
+    ns_agents["count"] = 3
+    ns_agents["active"] = True
 
     ns_worker1 = Namespaced(ns_agents, "worker1")
-    ns_worker1.set("task", "processing")
-    ns_worker1.set("status", "busy")
+    ns_worker1["task"] = "processing"
+    ns_worker1["status"] = "busy"
 
     ns_worker2 = Namespaced(ns_agents, "worker2")
-    ns_worker2.set("task", "idle")
+    ns_worker2["task"] = "idle"
 
     # Test root namespace only sees its direct keys
     root_keys = set(ns_root.keys())
@@ -257,15 +257,15 @@ def test_descendant_keys_hierarchical_traversal():
     ns_ab = Namespaced(Namespaced(state, "a"), "b")
 
     # Add direct keys
-    ns_ab.set("config", "value1")
-    ns_ab.set("data", "value2")
+    ns_ab["config"] = "value1"
+    ns_ab["data"] = "value2"
 
     # Add nested namespace keys (via base store to simulate sub-agents)
-    state.set("a/b/worker/task", "work1")
-    state.set("a/b/worker/status", "running")
-    state.set("a/b/cache/item1", "cached")
-    state.set("a/b/logs/error.log", "errors")
-    state.set("a/b/logs/access.log", "requests")
+    state["a/b/worker/task"] = "work1"
+    state["a/b/worker/status"] = "running"
+    state["a/b/cache/item1"] = "cached"
+    state["a/b/logs/error.log"] = "errors"
+    state["a/b/logs/access.log"] = "requests"
 
     # Test keys() vs descendant_keys()
     direct_keys = set(ns_ab.keys())
@@ -302,14 +302,14 @@ def test_descendant_keys_nested_namespace_isolation():
     ns_a_cache = Namespaced(ns_a, "cache")
 
     # Add keys to 'a' namespace and sub-namespaces
-    ns_a.set("config", "a_config")
-    ns_a_worker.set("task", "a_work")
-    ns_a_worker.set("status", "busy")
-    ns_a_cache.set("item", "cached_data")
+    ns_a["config"] = "a_config"
+    ns_a_worker["task"] = "a_work"
+    ns_a_worker["status"] = "busy"
+    ns_a_cache["item"] = "cached_data"
 
     # Add keys to 'b' namespace (should be isolated)
-    ns_b.set("config", "b_config")
-    ns_b.set("data", "b_data")
+    ns_b["config"] = "b_config"
+    ns_b["data"] = "b_data"
 
     # Test descendant_keys() for 'a' namespace
     a_descendants = set(ns_a.descendant_keys())
@@ -350,8 +350,8 @@ def test_descendant_keys_empty_namespace():
     ), f"Empty namespace should have no descendants, got {descendants}"
 
     # Add some unrelated keys
-    state.set("other/key", "value")
-    state.set("different/namespace/key", "value")
+    state["other/key"] = "value"
+    state["different/namespace/key"] = "value"
 
     # Should still return empty
     descendants = list(ns_empty.descendant_keys())
@@ -364,24 +364,24 @@ def test_descendant_keys_vs_keys_comparison():
 
     # Test 1: Only direct keys
     ns1 = Namespaced(state, "test1")
-    ns1.set("direct1", "value1")
-    ns1.set("direct2", "value2")
+    ns1["direct1"] = "value1"
+    ns1["direct2"] = "value2"
 
     assert set(ns1.keys()) == {"direct1", "direct2"}
     assert set(ns1.descendant_keys()) == {"direct1", "direct2"}
 
     # Test 2: Only nested keys
     ns2 = Namespaced(state, "test2")
-    state.set("test2/sub/nested1", "value1")
-    state.set("test2/sub/nested2", "value2")
+    state["test2/sub/nested1"] = "value1"
+    state["test2/sub/nested2"] = "value2"
 
     assert set(ns2.keys()) == set()  # No direct keys
     assert set(ns2.descendant_keys()) == {"sub/nested1", "sub/nested2"}
 
     # Test 3: Mixed direct and nested keys
     ns3 = Namespaced(state, "test3")
-    ns3.set("direct", "direct_value")
-    state.set("test3/nested/key", "nested_value")
+    ns3["direct"] = "direct_value"
+    state["test3/nested/key"] = "nested_value"
 
     assert set(ns3.keys()) == {"direct"}
     assert set(ns3.descendant_keys()) == {"direct", "nested/key"}

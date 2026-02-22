@@ -11,16 +11,16 @@ Handles:
 from __future__ import annotations
 
 import types
+from collections.abc import MutableMapping
 from typing import Any, Callable
 
-from gitkv import Store
 from sandtrap import ExecResult
 from sandtrap.wrappers import ModuleRef
 
 
 def handle_result(
     result: ExecResult,
-    state: Store,
+    state: MutableMapping[str, Any],
     agent_name: str,
     pre_keys: set[str],
     on_event: Callable[[Any], None] | None = None,
@@ -50,17 +50,15 @@ def handle_result(
             if isinstance(value, types.ModuleType):
                 # Modules can't survive pickle — store a ref that _auto_activate
                 # will resolve via __sb_import__ on the next turn.
-                state.set(
-                    key, ModuleRef(value.__name__, getattr(value, "__file__", None))
-                )
+                state[key] = ModuleRef(value.__name__, getattr(value, "__file__", None))
             else:
-                state.set(key, value)
+                state[key] = value
 
     # 2. Detect deletions (key was in state before exec, not in namespace after)
     post_keys = {k for k in result.namespace if not k.startswith("__")}
     for key in pre_keys - post_keys:
         if key in state:
-            state.remove(key)
+            del state[key]
 
     # 3. Re-raise any error captured by sandtrap
     # sandtrap catches ALL BaseException (except KeyboardInterrupt) and puts it

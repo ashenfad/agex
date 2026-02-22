@@ -16,7 +16,7 @@ def _make_gc_state(store=None, **gc_kwargs):
 def test_rebase_noop_when_below_high_water():
     store = Memory()
     state = _make_gc_state(store, high_water_bytes=10_000, low_water_bytes=8_000)
-    state.set("a", "small")
+    state["a"] = "small"
     state.commit()
 
     gc_result = state.versioned.maybe_rebase()
@@ -31,9 +31,9 @@ def test_rebase_drops_oldest_until_low_water():
     store = Memory()
     state = _make_gc_state(store, high_water_bytes=3_000, low_water_bytes=1_200)
 
-    state.set("a", os.urandom(6000))  # oldest and largest
-    state.set("b", os.urandom(2500))
-    state.set("c", os.urandom(1500))
+    state["a"] = os.urandom(6000)  # oldest and largest
+    state["b"] = os.urandom(2500)
+    state["c"] = os.urandom(1500)
     state.commit()
     result = state.versioned.last_rebase_result
 
@@ -49,8 +49,8 @@ def test_rebase_retains_system_keys():
 
     store = Memory()
     state = _make_gc_state(store, high_water_bytes=3000, low_water_bytes=1200)
-    state.set("__event_log__", ["keep"])
-    state.set("payload", os.urandom(6000))
+    state["__event_log__"] = ["keep"]
+    state["payload"] = os.urandom(6000)
     state.commit()
 
     result = state.versioned.last_rebase_result
@@ -65,7 +65,7 @@ def test_rebase_retains_system_keys():
 def test_rebased_versioned_no_rebase_when_under_high_water():
     store = Memory()
     state = _make_gc_state(store, high_water_bytes=5_000, low_water_bytes=4_000)
-    state.set("x", "small")
+    state["x"] = "small"
     state.commit()
 
     assert state.versioned.last_rebase_result is not None
@@ -78,8 +78,8 @@ def test_rebased_versioned_rebases_after_snapshot():
     store = Memory()
     state = _make_gc_state(store, high_water_bytes=1_200, low_water_bytes=800)
 
-    state.set("a", "a" * 1000)
-    state.set("b", "b" * 500)
+    state["a"] = "a" * 1000
+    state["b"] = "b" * 500
     state.commit()
 
     # Should have rebased (total size > high water)
@@ -104,10 +104,10 @@ def test_rebase_with_namespaced_state_protects_system_keys():
     ns_state = Namespaced(state, "sub_agent")
 
     # Add system keys and user data in the namespace
-    ns_state.set("__event_log__", ["event1", "event2"])
-    ns_state.set("__meta__", {"config": "value"})
-    ns_state.set("large_data", os.urandom(5000))
-    ns_state.set("small_data", "test")
+    ns_state["__event_log__"] = ["event1", "event2"]
+    ns_state["__meta__"] = {"config": "value"}
+    ns_state["large_data"] = os.urandom(5000)
+    ns_state["small_data"] = "test"
 
     state.commit()
 
@@ -137,10 +137,10 @@ def test_rebase_with_nested_namespaces():
     grandchild = Namespaced(child, "grandchild")
 
     # Add system key at deepest level
-    grandchild.set("__event_log__", ["deep_event"])
+    grandchild["__event_log__"] = ["deep_event"]
     # Add large user data that will trigger GC
-    grandchild.set("heavy_data", os.urandom(4000))
-    parent.set("parent_data", "keep")
+    grandchild["heavy_data"] = os.urandom(4000)
+    parent["parent_data"] = "keep"
 
     state.commit()
 
@@ -168,14 +168,14 @@ def test_rebase_preserves_event_log_across_multiple_namespaces():
     agent3 = Namespaced(state, "agent3")
 
     # Each agent has its own event log and user data
-    agent1.set("__event_log__", ["agent1_event"])
-    agent1.set("data", os.urandom(2000))
+    agent1["__event_log__"] = ["agent1_event"]
+    agent1["data"] = os.urandom(2000)
 
-    agent2.set("__event_log__", ["agent2_event"])
-    agent2.set("data", os.urandom(2000))
+    agent2["__event_log__"] = ["agent2_event"]
+    agent2["data"] = os.urandom(2000)
 
-    agent3.set("__event_log__", ["agent3_event"])
-    agent3.set("data", os.urandom(2000))
+    agent3["__event_log__"] = ["agent3_event"]
+    agent3["data"] = os.urandom(2000)
 
     state.commit()
 
@@ -209,10 +209,10 @@ def test_rebase_drops_namespaced_user_vars_not_system_keys():
     ns_state = Namespaced(state, "worker")
 
     # Mix of system keys and user variables with similar naming
-    ns_state.set("__event_log__", ["system_event"])  # System key - should keep
-    ns_state.set("__meta__", {"system": True})  # System key - should keep
-    ns_state.set("event_data", os.urandom(3000))  # User var - can drop
-    ns_state.set("meta_info", os.urandom(2000))  # User var - can drop
+    ns_state["__event_log__"] = ["system_event"]  # System key - should keep
+    ns_state["__meta__"] = {"system": True}  # System key - should keep
+    ns_state["event_data"] = os.urandom(3000)  # User var - can drop
+    ns_state["meta_info"] = os.urandom(2000)  # User var - can drop
 
     state.commit()
 

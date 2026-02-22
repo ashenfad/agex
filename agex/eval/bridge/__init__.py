@@ -7,9 +7,9 @@ back into agex's state and event system.
 """
 
 import asyncio
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from gitkv import Store
 from sandtrap import Sandbox
 
 from .namespace import build_namespace, make_print_handler
@@ -17,14 +17,15 @@ from .policy import translate_policy
 from .result import handle_result
 
 if TYPE_CHECKING:
+    from monkeyfs import FileSystem
+
     from agex.agent.base import BaseAgent
-    from agex.fs.base import FileSystem
 
 
 def _prepare_sandbox(
     program: str,
     agent: "BaseAgent",
-    state: Store,
+    state: MutableMapping[str, Any],
     eval_timeout_seconds: float | None = None,
     *,
     fs: "FileSystem | None" = None,
@@ -63,7 +64,7 @@ def _prepare_sandbox(
 def execute_sandboxed(
     program: str,
     agent: "BaseAgent",
-    state: Store,
+    state: MutableMapping[str, Any],
     eval_timeout_seconds: float | None = None,
     *,
     fs: "FileSystem | None" = None,
@@ -106,7 +107,7 @@ def execute_sandboxed(
 async def aexecute_sandboxed(
     program: str,
     agent: "BaseAgent",
-    state: Store,
+    state: MutableMapping[str, Any],
     eval_timeout_seconds: float | None = None,
     *,
     fs: "FileSystem | None" = None,

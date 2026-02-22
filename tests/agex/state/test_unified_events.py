@@ -238,14 +238,14 @@ class TestUnifiedEventsAPI:
                 agent_name="test", task_name="task", inputs={}, message="test"
             ),
         )
-        ns_test.set("other_data", "not_events")
-        ns_test.set("config", {"setting": "value"})
+        ns_test["other_data"] = "not_events"
+        ns_test["config"] = {"setting": "value"}
 
         # Add nested namespace with mixed keys
         ns_worker = Namespaced(ns_test, "worker")
         add_event_to_log(ns_worker, SuccessEvent(agent_name="worker", result="done"))
-        state.set("test/worker/task_data", "not_events")
-        state.set("test/cache/item", "also_not_events")
+        state["test/worker/task_data"] = "not_events"
+        state["test/cache/item"] = "also_not_events"
 
         # Test: Should only collect from __event_log__ keys
         all_events = events(ns_test)

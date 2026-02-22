@@ -9,7 +9,7 @@ from .fingerprint import compute_agent_fingerprint_from_policy
 from .policy.policy import AgentPolicy
 
 if TYPE_CHECKING:
-    from gitkv import Store
+    from collections.abc import MutableMapping
 
     from ..fs.aware import AgentAwareFS
     from ..fs.config import FSConfig
@@ -280,7 +280,7 @@ class BaseAgent:
 
         self._host.warmup(deps)
 
-    def state(self, session: str = "default") -> "Store":
+    def state(self, session: str = "default") -> "MutableMapping[str, Any]":
         """
         Get the state object for a session.
 
@@ -372,8 +372,9 @@ class BaseAgent:
         if not self._fs_config:
             return None, None
 
+        from monkeyfs import IsolatedFSConfig, VirtualFSConfig
+
         from agex.fs import IsolatedFS, VirtualFS
-        from agex.fs.config import IsolatedFSConfig, VirtualFSConfig
 
         state = self.state(session)
 

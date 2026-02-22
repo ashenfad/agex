@@ -4,7 +4,6 @@ Uses gitkv types directly:
 - Staged — versioned state with commit
 - Live — ephemeral in-memory state
 - Namespaced — key-prefixed view over any store
-- Store — protocol for any state-like object
 """
 
 import pickle
@@ -14,7 +13,6 @@ from gitkv import ConcurrencyError, Live, MergeResult, Namespaced, Staged
 from gitkv.errors import MergeConflict
 from gitkv.gc import GCVersioned
 from gitkv.kv import KVStore
-from gitkv.store import Store
 
 from .config import StateConfig
 
@@ -23,7 +21,6 @@ __all__ = [
     "Staged",
     "Live",
     "Namespaced",
-    "Store",
     "ConcurrencyError",
     "MergeConflict",
     "MergeResult",
@@ -147,7 +144,7 @@ def safe_commit(
     Returns:
         MergeResult from gitkv's commit.
     """
-    from agex.fs.context import suspend_fs_interception
+    from monkeyfs import suspend_fs_interception
 
     with suspend_fs_interception():
         if referenced_keys:
@@ -155,7 +152,7 @@ def safe_commit(
             for key in referenced_keys & set(state_keys):
                 if not staged.is_staged(key):
                     # Re-stage so encoder runs and gitkv detects byte changes
-                    staged.set(key, staged.get(key))
+                    staged[key] = staged.get(key)
 
         return staged.commit(on_conflict=on_conflict)
 

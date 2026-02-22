@@ -5,9 +5,10 @@ Executes agent tasks in the current process using the agent's task loop.
 """
 
 import os
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from gitkv import Live, Staged, Store, Versioned
+from gitkv import Live, Staged, Versioned
 
 from .base import Host
 
@@ -31,7 +32,7 @@ class Local(Host):
     def __init__(self):
         # Per-agent session cache for memory-backed states
         # Key format: "{type}:{session}"
-        self._session_cache: dict[str, Store] = {}
+        self._session_cache: dict[str, MutableMapping[str, Any]] = {}
 
     def dump_config(self) -> dict[str, Any]:
         """Serialize local host configuration."""
@@ -53,7 +54,7 @@ class Local(Host):
 
     def resolve_state(
         self, config: "StateConfig | None", session: str, fingerprint: str = ""
-    ) -> Store:
+    ) -> MutableMapping[str, Any]:
         """Create or retrieve a State instance for this session."""
         from agex.state.kv import Disk, Memory
 
@@ -89,7 +90,9 @@ class Local(Host):
             self._session_cache[cache_key] = self._create_state(config, Memory())
         return self._session_cache[cache_key]
 
-    def _create_state(self, config: "StateConfig", kv: "KVStore") -> Store:
+    def _create_state(
+        self, config: "StateConfig", kv: "KVStore"
+    ) -> MutableMapping[str, Any]:
         """Create a state instance from config and KV store."""
         from gitkv.gc import GCVersioned
 
@@ -180,7 +183,7 @@ class Local(Host):
         config: "StateConfig | None",
         session: str,
         fingerprint: str = "",
-    ) -> Store:
+    ) -> MutableMapping[str, Any]:
         """Get state for client-side access.
 
         For Local host, this is the same as resolve_state since we have

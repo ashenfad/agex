@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import copy
 import inspect
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
-
-from gitkv import Store
 
 from agex.agent.datatypes import TaskClarify, TaskContinue, TaskFail, TaskSuccess
 from agex.agent.events import OutputEvent
@@ -24,7 +23,7 @@ if TYPE_CHECKING:
 
 
 def build_namespace(
-    state: Store,
+    state: MutableMapping[str, Any],
     agent: "BaseAgent",
     agent_name: str,
     on_event: Callable[[Any], None] | None = None,
@@ -91,7 +90,7 @@ def build_namespace(
     return namespace, pre_keys, injected_keys
 
 
-def _validate_task_result(result: Any, state: Store) -> None:
+def _validate_task_result(result: Any, state: MutableMapping[str, Any]) -> None:
     """Validate task_success result against the expected return type."""
     return_type = state.get("__expected_return_type__")
     if not return_type or return_type is inspect.Parameter.empty:
@@ -117,7 +116,7 @@ def _validate_task_result(result: Any, state: Store) -> None:
 
 
 def make_print_handler(
-    state: Store, agent_name: str, on_event: Callable | None
+    state: MutableMapping[str, Any], agent_name: str, on_event: Callable | None
 ) -> Callable:
     """Create a print handler for sandtrap's Sandbox.
 
@@ -136,7 +135,7 @@ def make_print_handler(
 
 
 def _make_task_continue(
-    state: Store, agent_name: str, on_event: Callable | None
+    state: MutableMapping[str, Any], agent_name: str, on_event: Callable | None
 ) -> Callable:
     """Create a task_continue function that optionally prints then raises."""
 
@@ -150,7 +149,7 @@ def _make_task_continue(
 
 def _do_print(
     args: tuple[Any, ...],
-    state: Store,
+    state: MutableMapping[str, Any],
     agent_name: str,
     on_event: Callable | None,
 ) -> None:
@@ -165,7 +164,7 @@ def _do_print(
 
 
 def _make_view_image(
-    state: Store, agent_name: str, on_event: Callable | None
+    state: MutableMapping[str, Any], agent_name: str, on_event: Callable | None
 ) -> Callable:
     """Create a view_image function closure."""
 
@@ -200,7 +199,7 @@ def _make_view_image(
 def _make_help(
     agent: "BaseAgent",
     agent_name: str,
-    state: Store,
+    state: MutableMapping[str, Any],
     on_event: Callable | None,
 ) -> Callable:
     """Create a help function that inspects agent policy."""
@@ -224,7 +223,7 @@ def _make_help(
 def _make_dir(
     agent: "BaseAgent",
     agent_name: str,
-    state: Store,
+    state: MutableMapping[str, Any],
     on_event: Callable | None,
 ) -> Callable:
     """Create a dir function that lists available attributes."""

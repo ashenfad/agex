@@ -127,7 +127,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
 
             if missing_names:
                 new_names = fn_names - missing_names
-                exec_state.set("__sys_user_fn_names__", new_names)
+                exec_state["__sys_user_fn_names__"] = new_names
 
             if user_fns:
                 messages.append(

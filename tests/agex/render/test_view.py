@@ -83,9 +83,9 @@ def _make_state():
 
 def test_view_full():
     store = _make_state()
-    store.set("x", 1)
+    store["x"] = 1
     store.commit()
-    store.set("y", "hello")
+    store["y"] = "hello"
     store.commit()
 
     full_state = view(store, focus="full")
@@ -94,10 +94,10 @@ def test_view_full():
 
 def test_view_recent_shows_last_commit_state_only():
     store = _make_state()
-    store.set("x", 100)
+    store["x"] = 100
     store.commit()
 
-    store.set("y", 200)
+    store["y"] = 200
     store.commit()
 
     recent_view = view(store, focus="recent")
@@ -108,7 +108,7 @@ def test_view_recent_shows_last_commit_state_only():
 
 def test_view_raises_on_hot_storage():
     store = _make_state()
-    store.set("x", 1)
+    store["x"] = 1
 
     with pytest.raises(ValueError, match="uncommitted live changes"):
         view(store, focus="recent")
@@ -116,7 +116,7 @@ def test_view_raises_on_hot_storage():
 
 def test_view_recent_with_token_budgets():
     store = _make_state()
-    store.set("y", "b" * 1000)
+    store["y"] = "b" * 1000
     store.commit()
 
     recent_view_small = view(store, focus="recent", max_tokens=30)
