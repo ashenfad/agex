@@ -25,7 +25,6 @@ import random
 import re
 import statistics
 import string
-import tempfile
 import textwrap
 import time
 import traceback
@@ -111,7 +110,6 @@ def register_io(agent: Agent) -> None:
     )
 
     agent.fn(open, visibility="low")
-    # Note: open() is auto-registered by swap_agent_fs_functions when VFS is configured
 
 
 def register_stdlib(agent: Agent, io_friendly: bool = True) -> None:
@@ -159,8 +157,7 @@ def register_stdlib(agent: Agent, io_friendly: bool = True) -> None:
     agent.module(hashlib, visibility="low")
     agent.module(zoneinfo, visibility="low")
 
-    # IO and temporary file handling
-    agent.module(tempfile, visibility="low")
+    # IO registration
     if io_friendly:
         register_io(agent)
     else:

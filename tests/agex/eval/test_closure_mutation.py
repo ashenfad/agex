@@ -122,8 +122,11 @@ def get_count():
 
         code = """
 import json
+import os
 
 state = {"count": 0}
+
+os.makedirs('debug', exist_ok=True)
 
 def save_state():
     with open('debug/state.json', 'w') as f:
