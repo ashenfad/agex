@@ -156,7 +156,7 @@ class TestIsolatedFSBasicOperations:
         (tmp_path / "file2.txt").write_text("data")
         (tmp_path / "subdir").mkdir()
 
-        contents = fs.listdir(".")
+        contents = fs.list(".")
         assert set(contents) == {"file1.txt", "file2.txt", "subdir"}
 
     def test_mkdir(self, tmp_path):
