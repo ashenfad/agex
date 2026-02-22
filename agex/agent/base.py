@@ -389,7 +389,7 @@ class BaseAgent:
                 self._fs_config.root, session, self._fs_config.per_session
             )
 
-            return IsolatedFS(root, state), state
+            return IsolatedFS(root), state
 
         else:
             raise ValueError(f"Unsupported filesystem config: {type(self._fs_config)}")
