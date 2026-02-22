@@ -155,23 +155,13 @@ class AgentAwareFS:
         # Fallback for FS that don't implement realpath
         return path
 
-    def list(self, path: str = "/", recursive: bool = False) -> list[str]:
+    def list(self, path: str = ".", recursive: bool = False) -> list[str]:
         """List directory (no event)."""
         return self._fs.list(path, recursive=recursive)
 
-    def list_detailed(self, path: str = "/", recursive: bool = False) -> list[FileInfo]:
+    def list_detailed(self, path: str = ".", recursive: bool = False) -> list[FileInfo]:
         """List directory with metadata (no event)."""
         return self._fs.list_detailed(path, recursive=recursive)
-
-    def listdir(self, path: str = "/", recursive: bool = False) -> list[str]:
-        """List directory as paths (no event)."""
-        return self._fs.listdir(path, recursive=recursive)
-
-    def listdir_detailed(
-        self, path: str = "/", recursive: bool = False
-    ) -> list[FileInfo]:
-        """List directory with full metadata (no event)."""
-        return self._fs.listdir_detailed(path, recursive=recursive)
 
     def rmdir(self, path: str) -> None:
         """Remove an empty directory."""
