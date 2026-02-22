@@ -399,7 +399,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     raw_set(state, cancel_key, True)
                 else:
                     # Live state - just set normally
-                    state.set(cancel_key, True)
+                    state[cancel_key] = True
 
         # Helper to bind and validate arguments for both sync and async wrappers
         def _bind_and_validate(*args, **kwargs):

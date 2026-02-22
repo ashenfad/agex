@@ -8,17 +8,17 @@ This module provides utilities for:
 
 import base64
 import json
+from collections.abc import MutableMapping
 from typing import Any
 
 import cloudpickle
-from gitkv import Store
 
 
 def execute_worker(
     task_func: Any,
     args: list[Any],
     kwargs: dict[str, Any],
-    state: Store | None,
+    state: MutableMapping[str, Any] | None,
     queue: Any,
     loop: Any,
     finished_sentinel: Any,

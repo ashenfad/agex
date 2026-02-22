@@ -115,8 +115,8 @@ class TestNamespaceBuilder:
 
     def test_hydrates_state(self):
         state = Live()
-        state.set("x", 42)
-        state.set("name", "alice")
+        state["x"] = 42
+        state["name"] = "alice"
         agent = Agent(name="ns_test")
         ns, pre_keys, _ = build_namespace(state, agent, "ns_test")
         assert ns["x"] == 42
@@ -125,9 +125,9 @@ class TestNamespaceBuilder:
 
     def test_skips_internal_keys(self):
         state = Live()
-        state.set("__event_log__", [])
-        state.set("__expected_return_type__", str)
-        state.set("x", 1)
+        state["__event_log__"] = []
+        state["__expected_return_type__"] = str
+        state["x"] = 1
         agent = Agent(name="ns_test")
         ns, pre_keys, _ = build_namespace(state, agent, "ns_test")
         assert "__event_log__" not in ns
@@ -159,7 +159,7 @@ class TestNamespaceBuilder:
         from agex.eval.bridge.namespace import make_print_handler
 
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         handler = make_print_handler(state, "test_agent", None)
 
         handler("Hello", 42)
@@ -173,7 +173,7 @@ class TestNamespaceBuilder:
         from agex.agent.datatypes import TaskContinue
 
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         agent = Agent(name="ns_test")
         ns, _, _ = build_namespace(state, agent, "ns_test")
 
@@ -200,8 +200,8 @@ class TestResultHandler:
 
     def test_detects_deletions(self):
         state = Live()
-        state.set("x", 42)
-        state.set("y", "keep")
+        state["x"] = 42
+        state["y"] = "keep"
         pre_keys = {"x", "y"}
         # Only y remains in namespace after exec
         result = ExecResult(namespace={"y": "keep"})
@@ -249,21 +249,21 @@ class TestExecuteSandboxed:
     def test_simple_assignment(self):
         agent = Agent(name="exec_test")
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed("x = 42", agent, state)
         assert state.get("x") == 42
 
     def test_arithmetic(self):
         agent = Agent(name="exec_test")
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed("result = 2 + 3 * 4", agent, state)
         assert state.get("result") == 14
 
     def test_task_success_raises(self):
         agent = Agent(name="exec_test")
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         with pytest.raises(TaskSuccess) as exc_info:
             execute_sandboxed('task_success("done")', agent, state)
         assert exc_info.value.result == "done"
@@ -271,14 +271,14 @@ class TestExecuteSandboxed:
     def test_task_fail_raises(self):
         agent = Agent(name="exec_test")
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         with pytest.raises(TaskFail):
             execute_sandboxed('task_fail("oops")', agent, state)
 
     def test_print_creates_event(self):
         agent = Agent(name="exec_test")
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed('print("Hello from sandbox")', agent, state)
         event_list = events(state)
         output_events = [e for e in event_list if isinstance(e, OutputEvent)]
@@ -288,7 +288,7 @@ class TestExecuteSandboxed:
     def test_state_persistence_across_calls(self):
         agent = Agent(name="exec_test")
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed("x = 10", agent, state)
         execute_sandboxed("y = x + 5", agent, state)
         assert state.get("y") == 15
@@ -296,8 +296,8 @@ class TestExecuteSandboxed:
     def test_variable_deletion(self):
         agent = Agent(name="exec_test")
         state = Live()
-        state.set("__event_log__", [])
-        state.set("x", 42)
+        state["__event_log__"] = []
+        state["x"] = 42
         execute_sandboxed("del x", agent, state)
         assert "x" not in state
 
@@ -305,7 +305,7 @@ class TestExecuteSandboxed:
         agent = Agent(name="exec_test")
         agent.module(math)
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed("import math\nresult = math.sqrt(16)", agent, state)
         assert state.get("result") == 4.0
 
@@ -317,7 +317,7 @@ class TestExecuteSandboxed:
 
         agent.fn(double)
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed("result = double(21)", agent, state)
         assert state.get("result") == 42
 
@@ -331,7 +331,7 @@ class TestExecuteSandboxed:
 
         agent.cls(Point)
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed("p = Point(3, 4)", agent, state)
         p = state.get("p")
         assert p.x == 3
@@ -340,21 +340,21 @@ class TestExecuteSandboxed:
     def test_exception_propagates(self):
         agent = Agent(name="exec_test")
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         with pytest.raises(ZeroDivisionError):
             execute_sandboxed("x = 1 / 0", agent, state)
 
     def test_syntax_error(self):
         agent = Agent(name="exec_test")
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         with pytest.raises(SyntaxError):
             execute_sandboxed("def f(:", agent, state)
 
     def test_user_defined_function(self):
         agent = Agent(name="exec_test")
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed(
             "def square(n):\n    return n * n\nresult = square(7)",
             agent,
@@ -366,6 +366,6 @@ class TestExecuteSandboxed:
         agent = Agent(name="exec_test")
         agent.module(math)
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
         execute_sandboxed("from math import pi\nresult = round(pi, 2)", agent, state)
         assert state.get("result") == 3.14

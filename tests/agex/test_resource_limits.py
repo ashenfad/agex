@@ -380,7 +380,7 @@ class TestAgentIntegration:
             return bytearray(500 * 1024 * 1024)
 
         state = Live()
-        state.set("__event_log__", [])
+        state["__event_log__"] = []
 
         # The allocation should fail - sandtrap catches the MemoryError and
         # handle_result re-raises it directly

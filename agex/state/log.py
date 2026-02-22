@@ -50,12 +50,12 @@ def add_event_to_log(
         event_key = f"{base_key}{counter}"
 
     # Store event separately
-    state.set(event_key, event)
+    state[event_key] = event
 
     # Update event log with reference
     event_refs = state.get("__event_log__", [])
     new_refs = event_refs + [event_key]
-    state.set("__event_log__", new_refs)
+    state["__event_log__"] = new_refs
 
 
 def get_events_from_log(state) -> list[Event]:
@@ -125,7 +125,7 @@ def replace_oldest_events_with_summary(
         summary_key = f"{base_key}{counter}"
 
     # Store the summary event
-    state.set(summary_key, summary)
+    state[summary_key] = summary
 
     # Rebuild log: [summary] + [kept newer events]
-    state.set("__event_log__", [summary_key] + kept_refs)
+    state["__event_log__"] = [summary_key] + kept_refs

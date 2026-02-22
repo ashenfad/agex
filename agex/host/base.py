@@ -5,9 +5,10 @@ This module defines the Host ABC that encapsulates where/how agent tasks execute
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from gitkv import Staged, Store
+from gitkv import Staged
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
 
 
 def apply_init_if_fresh(
-    state: Store,
+    state: MutableMapping[str, Any],
     kv: "KVStore",
     init: "Callable[[], dict[str, Any]] | dict[str, Any] | None",
 ) -> None:
@@ -31,8 +32,8 @@ def apply_init_if_fresh(
     if init is not None and "__agex_init__" not in kv:
         init_vars = init() if callable(init) else init
         for key, value in init_vars.items():
-            state.set(key, value)
-        state.set("__agex_init__", True)
+            state[key] = value
+        state["__agex_init__"] = True
         # Commit for versioned state
         from agex.state import safe_commit
 
@@ -114,7 +115,9 @@ class Host(ABC):
         ...
 
     @abstractmethod
-    def resolve_state(self, config: "StateConfig | None", session: str) -> Store:
+    def resolve_state(
+        self, config: "StateConfig | None", session: str
+    ) -> MutableMapping[str, Any]:
         """
         Create or retrieve a State instance for this session.
 
@@ -188,7 +191,7 @@ class Host(ABC):
         config: "StateConfig | None",
         session: str,
         fingerprint: str = "",
-    ) -> Store:
+    ) -> MutableMapping[str, Any]:
         """
         Get state for client-side access.
 

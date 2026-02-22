@@ -13,7 +13,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
-    from agex.fs.base import FileSystem
+    from monkeyfs import FileSystem
 
 from gitkv import Staged
 
@@ -143,8 +143,8 @@ class AsyncLoopMixin:
         cancel_key = f"__agex_cancel__{task_name}"
         if isinstance(versioned_state, Staged):
             raw_remove(versioned_state, cancel_key)
-        elif hasattr(exec_state, "remove"):
-            exec_state.remove(cancel_key)
+        else:
+            exec_state.pop(cancel_key, None)
 
         # Build messages
         system_message = self._build_system_message()

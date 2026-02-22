@@ -32,7 +32,7 @@ def test_single_turn_unpicklable_silent_success():
 
     # Create and use an unpicklable object in one turn
     unpicklable = UnpicklableObject(42)
-    state.set("obj", unpicklable)
+    state["obj"] = unpicklable
     result = state.get("obj").process()
 
     assert result == 43
@@ -49,7 +49,7 @@ def test_multi_turn_unpicklable_raises_clear_error():
 
     # Turn 1: Create unpicklable object
     unpicklable = UnpicklableObject(42)
-    state.set("cursor", unpicklable)
+    state["cursor"] = unpicklable
     state.commit()
 
     # Turn 2: Try to access it — should raise UnpicklableVariableError
@@ -81,7 +81,7 @@ def test_nested_unpicklable_marks_whole_structure():
     # Create a list with an unpicklable element
     unpicklable = UnpicklableObject(42)
     mixed_list = [1, 2, unpicklable, 3]
-    state.set("mixed_list", mixed_list)
+    state["mixed_list"] = mixed_list
     state.commit()
 
     # Try to access the list
@@ -102,8 +102,8 @@ def test_closure_over_unpicklable_marks_function():
     def get_data():
         return unpicklable.process()
 
-    state.set("cursor", unpicklable)
-    state.set("get_data", get_data)
+    state["cursor"] = unpicklable
+    state["get_data"] = get_data
     state.commit()
 
     # Both should be marked as unpicklable
@@ -120,12 +120,12 @@ def test_mutation_to_unpicklable_creates_marker():
 
     # Start with picklable list
     my_list = [1, 2, 3]
-    state.set("my_list", my_list)
+    state["my_list"] = my_list
     state.commit()
 
     # Mutate and explicitly re-set (gitkv requires explicit set for changes)
     my_list.append(UnpicklableObject(42))
-    state.set("my_list", my_list)
+    state["my_list"] = my_list
 
     # Checkpoint should create a marker for the unpicklable value
     commit_result = state.commit()
@@ -141,10 +141,10 @@ def test_multiple_unpicklables_in_same_checkpoint():
     state = _make_versioned()
 
     # Create multiple unpicklable objects
-    state.set("cursor1", UnpicklableObject(1))
-    state.set("cursor2", UnpicklableObject(2))
-    state.set("file_handle", UnpicklableObject(3))
-    state.set("picklable_data", [1, 2, 3])  # This one is fine
+    state["cursor1"] = UnpicklableObject(1)
+    state["cursor2"] = UnpicklableObject(2)
+    state["file_handle"] = UnpicklableObject(3)
+    state["picklable_data"] = [1, 2, 3]  # This one is fine
 
     commit_result = state.commit()
     assert commit_result.merged
@@ -169,15 +169,15 @@ def test_marker_persists_across_multiple_checkpoints():
     state = _make_versioned()
 
     # Turn 1: Create unpicklable
-    state.set("cursor", UnpicklableObject(42))
+    state["cursor"] = UnpicklableObject(42)
     state.commit()
 
     # Turn 2: Create some other data
-    state.set("data", [1, 2, 3])
+    state["data"] = [1, 2, 3]
     state.commit()
 
     # Turn 3: Create more data
-    state.set("more_data", {"key": "value"})
+    state["more_data"] = {"key": "value"}
     state.commit()
 
     # Cursor should still be unavailable
@@ -194,11 +194,11 @@ def test_picklable_data_works_normally():
     state = _make_versioned()
 
     # Set various picklable types
-    state.set("number", 42)
-    state.set("string", "hello")
-    state.set("list", [1, 2, 3])
-    state.set("dict", {"key": "value"})
-    state.set("tuple", (1, 2, 3))
+    state["number"] = 42
+    state["string"] = "hello"
+    state["list"] = [1, 2, 3]
+    state["dict"] = {"key": "value"}
+    state["tuple"] = (1, 2, 3)
 
     state.commit()
 
@@ -215,17 +215,17 @@ def test_checkout_with_unpicklable_markers():
     state = _make_versioned()
 
     # Turn 1: Create mixed data
-    state.set("good_data", [1, 2, 3])
+    state["good_data"] = [1, 2, 3]
     state.commit()
     commit1 = state.current_commit
 
     # Turn 2: Add unpicklable
-    state.set("bad_data", UnpicklableObject(42))
+    state["bad_data"] = UnpicklableObject(42)
     state.commit()
     commit2 = state.current_commit
 
     # Turn 3: Add more good data
-    state.set("more_good", "hello")
+    state["more_good"] = "hello"
     state.commit()
 
     # Checkout commit2 (has the marker)
@@ -253,7 +253,7 @@ def test_dict_with_unpicklable_values():
 
     results = {"count": 42, "data": [1, 2, 3], "cursor": UnpicklableObject(100)}
 
-    state.set("results", results)
+    state["results"] = results
     state.commit()
 
     # Whole dict should be unavailable
@@ -267,7 +267,7 @@ def test_contains_check_with_unpicklable():
     """__contains__ check should work for variables with markers."""
     state = _make_versioned()
 
-    state.set("cursor", UnpicklableObject(42))
+    state["cursor"] = UnpicklableObject(42)
     state.commit()
 
     # Should report that the key exists
@@ -282,8 +282,8 @@ def test_keys_includes_unpicklable_variables():
     """keys() should include variables that have markers."""
     state = _make_versioned()
 
-    state.set("good", 42)
-    state.set("bad", UnpicklableObject(100))
+    state["good"] = 42
+    state["bad"] = UnpicklableObject(100)
     state.commit()
 
     keys = list(state.keys())
@@ -304,7 +304,7 @@ def test_namespaced_key_displays_correctly_in_error():
 
     # Simulate namespaced key (like what Namespaced state would create)
     cursor = UnpicklableObject(42)
-    state.set("my_agent/cursor", cursor)
+    state["my_agent/cursor"] = cursor
     state.commit()
 
     # Should raise UnpicklableVariableError

@@ -13,8 +13,9 @@ try:
     import cloudpickle
 except ImportError:
     cloudpickle = None  # type: ignore
+from collections.abc import MutableMapping
+
 import httpx
-from gitkv import Store
 
 from .base import Host
 
@@ -123,7 +124,9 @@ class HTTP(Host):
                 f"Supported: disk (server resolves state)"
             )
 
-    def resolve_state(self, config: "StateConfig | None", session: str) -> Store:
+    def resolve_state(
+        self, config: "StateConfig | None", session: str
+    ) -> MutableMapping[str, Any]:
         """
         Placeholder for HTTP host - state is resolved server-side.
 

@@ -7,10 +7,11 @@ from the agent's dependencies and host configuration — no pre-deployment requi
 """
 
 import re
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from gitkv import Live, Staged, Store, Versioned
+from gitkv import Live, Staged, Versioned
 
 from agex.host.base import Host, apply_init_if_fresh
 from agex.host.local import Local
@@ -199,7 +200,7 @@ class ModalLocal(Local):
     """
 
     def __init__(self):
-        self._session_cache: dict[str, Store] = {}
+        self._session_cache: dict[str, MutableMapping[str, Any]] = {}
 
     def dump_config(self) -> dict[str, Any]:
         """Not used for ModalLocal (internal only)."""
@@ -211,7 +212,7 @@ class ModalLocal(Local):
 
     def resolve_state(
         self, config: "StateConfig | None", session: str, fingerprint: str = ""
-    ) -> Store:
+    ) -> MutableMapping[str, Any]:
         """
         Resolve state for Modal container execution.
 
@@ -288,7 +289,7 @@ class ModalLocal(Local):
                     source.clear()
                     if cache_dir.exists():
                         shutil.rmtree(cache_dir)
-                    volume.set(sentinel_key, b"1")
+                    volume[sentinel_key] = b"1"
             except Exception:
                 pass
 
@@ -307,7 +308,7 @@ class ModalLocal(Local):
                     # Dict was cleared - clear Disk cache
                     if cache_dir.exists():
                         shutil.rmtree(cache_dir)
-                    source.set(sentinel_key, b"1")
+                    source[sentinel_key] = b"1"
             except Exception:
                 pass
 
@@ -468,7 +469,9 @@ class Modal(Host):
         """Validate state config is compatible with Modal host."""
         _validate_modal_state(config)
 
-    def resolve_state(self, config: "StateConfig | None", session: str) -> Store:
+    def resolve_state(
+        self, config: "StateConfig | None", session: str
+    ) -> MutableMapping[str, Any]:
         """
         Resolve state for Modal execution.
 
@@ -849,7 +852,7 @@ class Modal(Host):
         config: "StateConfig | None",
         session: str,
         fingerprint: str = "",
-    ) -> Store:
+    ) -> MutableMapping[str, Any]:
         """
         Get state for client-side access.
 

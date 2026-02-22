@@ -153,7 +153,7 @@ def test_helper_recap_skips_unpicklable_markers():
         type_name="BadObject",
         original_exception="cannot pickle",
     )
-    state.set("marker_agent/bad", marker)
+    state["marker_agent/bad"] = marker
     state.commit()
 
     assert marker_task(session="test_session") == "ok"
@@ -631,8 +631,8 @@ def test_namespaced_state_isolation():
     namespace_b = Namespaced(main_state, "agent_b")
 
     # Set namespace-specific data
-    namespace_a.set("local_data", "value from A")
-    namespace_b.set("local_data", "value from B")
+    namespace_a["local_data"] = "value from A"
+    namespace_b["local_data"] = "value from B"
 
     # Verify isolation - each namespace only sees its own data
     assert namespace_a.get("local_data") == "value from A"
@@ -736,7 +736,7 @@ def test_unserializable_object_in_state_is_handled_gracefully():
 
     # Pre-populate the state with a serializable object.
     state = agent._host.resolve_state(config, "test_session")
-    state.set("my_object", {"a": 1})  # No longer namespaced
+    state["my_object"] = {"a": 1}  # No longer namespaced
     state.commit()
 
     # Run the task. This will mutate my_object and then try to snapshot.
@@ -826,8 +826,8 @@ def test_shallow_validation_on_agent_output():
 
     # Pre-populate state to avoid parsing large literals in the agent's code
     state = agent._host.resolve_state(config, "test_session")
-    state.set("invalid_dict", large_invalid_dict)  # No longer namespaced
-    state.set("valid_dict", large_valid_dict)  # No longer namespaced
+    state["invalid_dict"] = large_invalid_dict  # No longer namespaced
+    state["valid_dict"] = large_valid_dict  # No longer namespaced
 
     result = produce_large_dict(session="test_session")  # type: ignore
 

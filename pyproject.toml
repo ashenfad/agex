@@ -28,6 +28,7 @@ dependencies = [
     "gitkv",
     "sandtrap",
     "reprobate",
+    "monkeyfs",
     "tiktoken",
     "xxhash",
     "diskcache",
@@ -108,6 +109,13 @@ all-hosts = [
     "agex[http]",
     "agex[modal]",
 ]
+
+[tool.uv.sources]
+termish = { path = "../termish", editable = true }
+gitkv = { path = "../gitkv", editable = true }
+sandtrap = { path = "../sandtrap", editable = true }
+reprobate = { path = "../reprobate", editable = true }
+monkeyfs = { path = "../monkeyfs", editable = true }
 
 [tool.ruff]
 line-length = 88
