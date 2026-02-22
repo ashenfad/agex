@@ -201,9 +201,9 @@ class AgentAwareFS:
         """Open file (no event - writes happen at close)."""
         return self._fs.open(path, mode)
 
-    def mkdir(self, path: str, exist_ok: bool = True) -> None:
+    def mkdir(self, path: str, parents: bool = False, exist_ok: bool = False) -> None:
         """Create directory (no event - directories are implicit)."""
-        self._fs.mkdir(path, exist_ok)
+        self._fs.mkdir(path, parents=parents, exist_ok=exist_ok)
 
     def makedirs(self, path: str, exist_ok: bool = True) -> None:
         """Create directory tree (no event - directories are implicit)."""
