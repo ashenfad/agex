@@ -255,7 +255,7 @@ task_success('done')
 
         agent = Agent(
             llm=llm,
-            fs=connect_fs(type="isolated", root=str(tmp_path), tracking=False),
+            fs=connect_fs(type="isolated", root=str(tmp_path)),
         )
 
         @agent.task
@@ -320,7 +320,7 @@ task_success('done')
         agent = Agent(
             llm=llm,
             state=state_config,
-            fs=connect_fs(type="isolated", root=str(tmp_path), tracking=True),
+            fs=connect_fs(type="isolated", root=str(tmp_path)),
         )
 
         @agent.task
