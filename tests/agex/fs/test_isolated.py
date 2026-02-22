@@ -279,8 +279,6 @@ task_success('done')
             llm=llm,
             fs=connect_fs(type="isolated", root=str(tmp_path), tracking=False),
         )
-        # swap_agent_fs_functions will be called automatically and will call register_io
-        # register_io(agent)
 
         @agent.task
         def process() -> str:
