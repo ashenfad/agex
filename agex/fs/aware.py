@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 from typing import Any, Callable
 
+from monkeyfs import FileSystem
+
 
 class AgentAwareFS:
     """FS wrapper that emits events for agent/user visibility.
@@ -28,7 +30,7 @@ class AgentAwareFS:
 
     def __init__(
         self,
-        fs: Any,
+        fs: FileSystem,
         state: MutableMapping[str, bytes],
         agent_name: str,
         on_event: Callable | None = None,
