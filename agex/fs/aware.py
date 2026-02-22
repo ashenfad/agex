@@ -1,16 +1,13 @@
-"""Agent-aware VFS wrapper that emits events for file changes.
+"""Agent-aware FS wrapper that emits events for file changes.
 
-This module provides AgentAwareFS, a wrapper around VirtualFS that:
-1. Emits FileEvent for external API calls (user uploads/deletions)
-2. Provides the same interface as VirtualFS for seamless use
+Wraps any FileSystem and emits FileEvent on mutating operations
+(write, remove, rename). Read operations delegate transparently.
 """
 
 from __future__ import annotations
 
 from collections.abc import MutableMapping
-from typing import Callable
-
-from monkeyfs import FileInfo, FileMetadata, FileSystem
+from typing import Any, Callable
 
 
 class AgentAwareFS:
@@ -18,6 +15,9 @@ class AgentAwareFS:
 
     Used by agent.fs() to provide file access that automatically
     logs FileEvents when files are modified externally.
+
+    Write operations emit events; everything else delegates to the
+    underlying FS via __getattr__.
 
     Example:
         >>> fs = agent.fs()
@@ -28,23 +28,18 @@ class AgentAwareFS:
 
     def __init__(
         self,
-        fs: FileSystem,
+        fs: Any,
         state: MutableMapping[str, bytes],
         agent_name: str,
         on_event: Callable | None = None,
     ):
-        """Initialize wrapper.
-
-        Args:
-            fs: The underlying FileSystem instance.
-            state: The state to log events to.
-            agent_name: Name of the agent for event attribution.
-            on_event: Optional callback for event notification.
-        """
         self._fs = fs
         self._state = state
         self._agent_name = agent_name
         self._on_event = on_event
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._fs, name)
 
     def _emit_event(
         self,
@@ -56,7 +51,6 @@ class AgentAwareFS:
         from agex.agent.events import FileEvent
         from agex.state.log import add_event_to_log
 
-        # Only emit if there are actual changes
         if not (added or modified or removed):
             return
 
@@ -72,133 +66,39 @@ class AgentAwareFS:
     # Write operations - emit events
 
     def write(self, path: str, content: bytes) -> None:
-        """Write file and emit event atomically."""
+        """Write file and emit event."""
         is_new = not self._fs.exists(path)
         self._emit_event(
             added=[path] if is_new else [],
             modified=[path] if not is_new else [],
         )
-        self._fs.write(path, content)  # Commits file + event together
+        self._fs.write(path, content)
 
     def write_many(self, files: dict[str, bytes]) -> None:
-        """Write multiple files and emit single event atomically."""
+        """Write multiple files and emit single event."""
         added = [p for p in files if not self._fs.exists(p)]
         modified = [p for p in files if self._fs.exists(p)]
         self._emit_event(added=added, modified=modified)
-        self._fs.write_many(files)  # Commits files + event together
+        self._fs.write_many(files)
 
     def remove(self, path: str) -> None:
-        """Remove file and emit event atomically."""
+        """Remove file and emit event."""
         if not self._fs.exists(path):
             raise FileNotFoundError(path)
         self._emit_event(removed=[path])
-        self._fs.remove(path)  # Commits removal + event together
+        self._fs.remove(path)
 
     def remove_many(self, paths: list[str]) -> None:
-        """Remove multiple files and emit single event atomically."""
+        """Remove multiple files and emit single event."""
         missing = [p for p in paths if not self._fs.exists(p)]
         if missing:
             raise FileNotFoundError(f"Files not found: {', '.join(missing)}")
         self._emit_event(removed=paths)
-        self._fs.remove_many(paths)  # Commits removals + event together
+        self._fs.remove_many(paths)
 
     def rename(self, src: str, dst: str) -> None:
-        """Rename file and emit event atomically."""
+        """Rename file and emit event."""
         if not self._fs.exists(src):
             raise FileNotFoundError(src)
         self._emit_event(removed=[src], added=[dst])
-        self._fs.rename(src, dst)  # Commits rename + event together
-
-    # Read-only operations - delegate without events
-
-    def read(self, path: str) -> bytes:
-        """Read file (no event)."""
-        return self._fs.read(path)
-
-    def exists(self, path: str) -> bool:
-        """Check if path exists (no event)."""
-        return self._fs.exists(path)
-
-    def isfile(self, path: str) -> bool:
-        """Check if path is a file (no event)."""
-        return self._fs.isfile(path)
-
-    def isdir(self, path: str) -> bool:
-        """Check if path is a directory (no event)."""
-        return self._fs.isdir(path)
-
-    def islink(self, path: str) -> bool:
-        """Check if path is a symbolic link (no event)."""
-        # Note: Underlying FS may not support islink (like VirtualFS)
-        # but we provide the method for interface consistency.
-        if hasattr(self._fs, "islink"):
-            return self._fs.islink(path)
-        return False
-
-    def lexists(self, path: str) -> bool:
-        """Check if path exists (no event)."""
-        if hasattr(self._fs, "lexists"):
-            return self._fs.lexists(path)
-        return self._fs.exists(path)
-
-    def samefile(self, path1: str, path2: str) -> bool:
-        """Check if two paths refer to the same file (no event)."""
-        if hasattr(self._fs, "samefile"):
-            return self._fs.samefile(path1, path2)
-        # Fallback for FS that don't implement samefile
-        return self._fs.exists(path1) and self._fs.exists(path2) and path1 == path2
-
-    def realpath(self, path: str) -> str:
-        """Return the canonical path (no event)."""
-        if hasattr(self._fs, "realpath"):
-            return self._fs.realpath(path)
-        # Fallback for FS that don't implement realpath
-        return path
-
-    def list(self, path: str = ".", recursive: bool = False) -> list[str]:
-        """List directory (no event)."""
-        return self._fs.list(path, recursive=recursive)
-
-    def list_detailed(self, path: str = ".", recursive: bool = False) -> list[FileInfo]:
-        """List directory with metadata (no event)."""
-        return self._fs.list_detailed(path, recursive=recursive)
-
-    def rmdir(self, path: str) -> None:
-        """Remove an empty directory."""
-        self._fs.rmdir(path)
-
-    def stat(self, path: str) -> FileMetadata:
-        """Get file metadata (no event)."""
-        return self._fs.stat(path)
-
-    def getsize(self, path: str) -> int:
-        """Get file size (no event)."""
-        return self._fs.getsize(path)
-
-    def getcwd(self) -> str:
-        """Get current working directory."""
-        return self._fs.getcwd()
-
-    def chdir(self, path: str) -> None:
-        """Change current working directory."""
-        self._fs.chdir(path)
-
-    def glob(self, pattern: str) -> list[str]:
-        """Return list of paths matching a glob pattern."""
-        return self._fs.glob(pattern)
-
-    def open(self, path: str, mode: str = "r"):
-        """Open file (no event - writes happen at close)."""
-        return self._fs.open(path, mode)
-
-    def mkdir(self, path: str, parents: bool = False, exist_ok: bool = False) -> None:
-        """Create directory (no event - directories are implicit)."""
-        self._fs.mkdir(path, parents=parents, exist_ok=exist_ok)
-
-    def makedirs(self, path: str, exist_ok: bool = True) -> None:
-        """Create directory tree (no event - directories are implicit)."""
-        self._fs.makedirs(path, exist_ok)
-
-    def get_metadata_snapshot(self) -> dict[str, FileMetadata]:
-        """Get snapshot of all file metadata."""
-        return self._fs.get_metadata_snapshot()
+        self._fs.rename(src, dst)
