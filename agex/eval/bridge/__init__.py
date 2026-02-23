@@ -33,11 +33,18 @@ def _prepare_sandbox(
     file_path: str | None = None,
 ):
     """Shared setup for execute_sandboxed and aexecute_sandboxed."""
-    timeout = (
-        eval_timeout_seconds
-        if eval_timeout_seconds is not None
-        else agent.eval_timeout_seconds
-    )
+    tick_limit = getattr(agent, "eval_tick_limit", None)
+
+    if tick_limit is not None:
+        # Tick limit is the primary protection; use a generous wall-clock
+        # safety net so sub-agent LLM calls don't trigger a timeout.
+        timeout = 300.0
+    else:
+        timeout = (
+            eval_timeout_seconds
+            if eval_timeout_seconds is not None
+            else agent.eval_timeout_seconds
+        )
 
     # Ensure IO modules are registered when filesystem is active
     if fs is not None:
@@ -45,7 +52,7 @@ def _prepare_sandbox(
 
         register_io(agent)
 
-    policy = translate_policy(agent, timeout=timeout)
+    policy = translate_policy(agent, timeout=timeout, tick_limit=tick_limit)
     print_handler = make_print_handler(state, agent.name, on_event)
     sandbox = Sandbox(
         policy, mode="wrapped", filesystem=fs, print_handler=print_handler
@@ -70,10 +77,11 @@ def execute_sandboxed(
     fs: "FileSystem | None" = None,
     session: str = "default",
     on_event: Callable[[Any], None] | None = None,
+    on_token: Callable[[Any], None] | None = None,
     file_path: str | None = None,
 ) -> None:
     """Execute agent code synchronously in the sandtrap sandbox."""
-    from .policy import _current_on_event, _current_session
+    from .policy import _current_on_event, _current_on_token, _current_session
 
     sandbox, namespace, pre_keys, injected_keys = _prepare_sandbox(
         program,
@@ -85,14 +93,16 @@ def execute_sandboxed(
         file_path=file_path,
     )
 
-    # Set context vars so sub-agent task calls inherit session/on_event
+    # Set context vars so sub-agent task calls inherit session/on_event/on_token
     session_token = _current_session.set(session)
     event_token = _current_on_event.set(on_event)
+    token_token = _current_on_token.set(on_token)
     try:
         result = sandbox.exec(program, namespace=namespace)
     finally:
         _current_session.reset(session_token)
         _current_on_event.reset(event_token)
+        _current_on_token.reset(token_token)
 
     handle_result(
         result,
@@ -113,13 +123,14 @@ async def aexecute_sandboxed(
     fs: "FileSystem | None" = None,
     session: str = "default",
     on_event: Callable[[Any], None] | None = None,
+    on_token: Callable[[Any], None] | None = None,
     file_path: str | None = None,
 ) -> None:
     """Execute agent code asynchronously in the sandtrap sandbox.
 
     Uses sandbox.aexec() so ``await`` works natively in sandbox code.
     """
-    from .policy import _current_on_event, _current_session
+    from .policy import _current_on_event, _current_on_token, _current_session
 
     # Wrap async on_event into a thread-safe sync wrapper.  Sandbox code
     # (including the print handler) runs in an executor thread, so async
@@ -143,14 +154,16 @@ async def aexecute_sandboxed(
         file_path=file_path,
     )
 
-    # Set context vars so sub-agent task calls inherit session/on_event
+    # Set context vars so sub-agent task calls inherit session/on_event/on_token
     session_token = _current_session.set(session)
     event_token = _current_on_event.set(safe_on_event)
+    token_token = _current_on_token.set(on_token)
     try:
         result = await sandbox.aexec(program, namespace=namespace)
     finally:
         _current_session.reset(session_token)
         _current_on_event.reset(event_token)
+        _current_on_token.reset(token_token)
 
     handle_result(
         result,
