@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
+    from gitkv import Live
     from monkeyfs import FileSystem
 
 from gitkv import Staged
@@ -17,14 +18,12 @@ from agex.agent.events import CancelledEvent
 from agex.agent.summarization import maybe_summarize_event_log
 from agex.eval.bridge import execute_sandboxed
 from agex.resource_limits import apply_resource_limits
-from agex.state import get_root, raw_remove, safe_commit
+from agex.state import safe_commit
 
 from .common import (
-    # Constants
     ActionEvent,
     ConcurrencyError,
     EvalError,
-    Live,
     LLMFail,
     MergeConflict,
     Namespaced,
@@ -32,13 +31,11 @@ from .common import (
     TaskClarify,
     TaskContinue,
     TaskFail,
-    # Re-exports
     TaskSuccess,
     TaskTimeout,
     _AgentExit,
     add_event_to_log,
     apply_optimistic_file_actions,
-    # Helpers
     check_cancellation,
     check_for_task_call,
     create_action_event,
@@ -47,16 +44,15 @@ from .common import (
     create_fail_event,
     create_guidance_output,
     create_success_event,
-    # Event factories
     create_task_start_event,
     events,
-    # Terminal execution
     execute_terminal,
     get_events_from_log,
     initialize_exec_state,
     maybe_add_file_event,
     yield_new_events,
 )
+from .state_helpers import clear_stale_cancel, prepare_task_loop, process_llm_response
 
 
 class SyncLoopMixin:
@@ -113,15 +109,7 @@ class SyncLoopMixin:
             self.name, state, inputs_instance, return_type, session=session
         )
         events_yielded = len(events(exec_state))
-
-        # Clear any stale cancellation signal from a previous run.
-        # This handles the race condition where a cancel arrives just as the previous
-        # task finishes - we don't want it to immediately cancel this fresh task.
-        cancel_key = f"__agex_cancel__{task_name}"
-        if isinstance(versioned_state, Staged):
-            raw_remove(versioned_state, cancel_key)
-        else:
-            exec_state.pop(cancel_key, None)
+        clear_stale_cancel(task_name, versioned_state, exec_state)
 
         # Build system message and initial task message
         system_message = self._build_system_message()
@@ -220,17 +208,12 @@ class SyncLoopMixin:
                 on_token,
                 transient_message=forefront_msg,
             )
-            llm_response.code = self._strip_markdown_code_fence(llm_response.code)
-            code_to_evaluate = llm_response.code
-            if code_to_evaluate:
-                from sandtrap import find_refs
-
-                try:
-                    accumulated_refs |= find_refs(
-                        code_to_evaluate, namespace=exec_state
-                    )
-                except Exception:
-                    pass
+            code_to_evaluate = process_llm_response(
+                llm_response,
+                self._strip_markdown_code_fence,
+                exec_state,
+                accumulated_refs,
+            )
 
             # Create and yield action event
             action_event = create_action_event(self.name, llm_response)
@@ -390,21 +373,9 @@ class SyncLoopMixin:
         """
         Execute the agent task loop with automatic retry on concurrency conflicts.
         """
-        versioned_state: Staged | None = None
-        if isinstance(state, Staged):
-            versioned_state = state
-        elif isinstance(state, Namespaced):
-            base = get_root(state)
-            if isinstance(base, Staged):
-                versioned_state = base
-
-        if self._fs_config:
-            # Use raw VFS for agent execution (not AgentAwareFS which emits per-write events)
-            fs, _ = self._get_fs_backend(session)
-            fs_metadata_before = fs.get_metadata_snapshot()
-        else:
-            fs = None
-            fs_metadata_before = {}
+        versioned_state, fs, fs_metadata_before = prepare_task_loop(
+            self, state, session
+        )
 
         for attempt in range(max_conflict_retries + 1):
             try:
