@@ -17,13 +17,16 @@ if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
     from agex.agent.datatypes import MemberSpec as AgexMemberSpec
 
-# Context variables for propagating session/on_event to sub-agent task calls.
+# Context variables for propagating session/on_event/on_token to sub-agent task calls.
 # Set by execute_sandboxed/aexecute_sandboxed before running sandbox code.
 _current_session: contextvars.ContextVar[str] = contextvars.ContextVar(
     "_current_session", default="default"
 )
 _current_on_event: contextvars.ContextVar[Callable[[Any], None] | None] = (
     contextvars.ContextVar("_current_on_event", default=None)
+)
+_current_on_token: contextvars.ContextVar[Callable[[Any], None] | None] = (
+    contextvars.ContextVar("_current_on_token", default=None)
 )
 
 
@@ -44,18 +47,28 @@ def _translate_configure(
     return result
 
 
-def translate_policy(agent: "BaseAgent", timeout: float | None = None) -> Policy:
+def translate_policy(
+    agent: "BaseAgent",
+    timeout: float | None = None,
+    tick_limit: int | None = None,
+) -> Policy:
     """Convert an agent's policy registrations into a sandtrap Policy.
 
     Args:
         agent: The agent whose policy to translate.
         timeout: Execution timeout in seconds. Defaults to agent.eval_timeout_seconds.
+        tick_limit: Max checkpoint ticks. Defaults to agent.eval_tick_limit.
 
     Returns:
         A sandtrap Policy with equivalent registrations.
     """
     effective_timeout = timeout if timeout is not None else agent.eval_timeout_seconds
-    policy = Policy(timeout=effective_timeout)
+    effective_tick_limit = (
+        tick_limit
+        if tick_limit is not None
+        else getattr(agent, "eval_tick_limit", None)
+    )
+    policy = Policy(timeout=effective_timeout, tick_limit=effective_tick_limit)
 
     for ns_name, ns in agent._policy.namespaces.items():
         if ns_name == "__main__" and ns.kind == "virtual":
@@ -80,11 +93,15 @@ def _wrap_sub_agent_task(fn_obj):
     from agex.eval.error import EvalError
 
     def wrapper(*args, **kwargs):
-        # Inject session and on_event from context if not explicitly provided
+        # Inject session, on_event, on_token from context if not explicitly provided
         if "session" not in kwargs:
             kwargs["session"] = _current_session.get()
         if "on_event" not in kwargs:
             kwargs["on_event"] = _current_on_event.get()
+        if "on_token" not in kwargs:
+            on_token = _current_on_token.get()
+            if on_token is not None:
+                kwargs["on_token"] = on_token
 
         try:
             return fn_obj(*args, **kwargs)

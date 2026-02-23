@@ -206,6 +206,7 @@ class AsyncLoopMixin:
                     fs=fs,
                     session=session,
                     on_event=setup_on_event,
+                    on_token=on_token,
                 )
             except BaseException:
                 pass
@@ -322,6 +323,7 @@ class AsyncLoopMixin:
                         fs=fs,
                         session=session,
                         on_event=on_event,
+                        on_token=on_token,
                     )
 
             except TaskSuccess as task_signal:

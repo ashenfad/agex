@@ -75,6 +75,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         fs: "FSConfig | None" = _UNSET,  # type: ignore
         max_memory_mb: int | None = None,
         max_open_files: int | None = None,
+        eval_tick_limit: int | None = 100_000,
     ) -> "Agent":
         """
         Create a new agent with copied registrations but independent state/fs/host.
@@ -126,6 +127,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             fs=fs,
             max_memory_mb=max_memory_mb,
             max_open_files=max_open_files,
+            eval_tick_limit=eval_tick_limit,
         )
 
         # Copy the policy so modifications don't affect source
@@ -169,6 +171,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         # Resource limits (per-task, Unix only)
         max_memory_mb: int | None = None,
         max_open_files: int | None = None,
+        # Tick-based execution limit (primary runaway-code protection)
+        eval_tick_limit: int | None = 100_000,
         # Advanced: Override the built-in system instructions
         agex_primer_override: str | None = None,
     ):
@@ -178,6 +182,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         Args:
             primer: A string to guide the agent's behavior.
             eval_timeout_seconds: The maximum time in seconds for agent-generated code to run.
+                When eval_tick_limit is set, this is replaced by a generous 300s safety net.
             max_iterations: The maximum number of think-act cycles for a task.
             name: Unique identifier for this agent (for sub-agent namespacing).
             capabilities_primer: Optional curated capabilities primer.
@@ -197,6 +202,10 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             max_memory_mb: Per-task memory limit in megabytes. Each task can allocate
                 up to this much additional memory. Unix only (warns on Windows).
             max_open_files: Maximum file descriptors for the process. Unix only.
+            eval_tick_limit: Maximum number of Python control-flow checkpoints
+                (loop iterations, function entries, comprehensions) per code execution.
+                Defaults to 100,000. Set to None to disable and rely solely on
+                eval_timeout_seconds.
             agex_primer_override: (Advanced) Override the built-in system instructions
                 that define the agent's core behavior and event protocol.
         """
@@ -215,5 +224,6 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             log_low_water_tokens=log_low_water_tokens,
             max_memory_mb=max_memory_mb,
             max_open_files=max_open_files,
+            eval_tick_limit=eval_tick_limit,
             agex_primer_override=agex_primer_override,
         )

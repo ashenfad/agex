@@ -63,6 +63,8 @@ class BaseAgent:
         # Resource limits (per-task, Unix only)
         max_memory_mb: int | None = None,
         max_open_files: int | None = None,
+        # Tick-based execution limit (primary runaway-code protection)
+        eval_tick_limit: int | None = 100_000,
         # Advanced: Override the builtin system instructions
         agex_primer_override: str | None = None,
     ):
@@ -73,6 +75,7 @@ class BaseAgent:
         # Advanced: Override the builtin system instructions
         self.agex_primer_override = agex_primer_override
         self.eval_timeout_seconds = eval_timeout_seconds
+        self.eval_tick_limit = eval_tick_limit
         self.max_iterations = max_iterations
 
         # Create LLM using the resolved configuration
