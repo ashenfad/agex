@@ -329,3 +329,641 @@ def test_dual_decorator_namespace_isolation():
     assert result["agent_a_result"] == "A:shared_data"
     assert result["agent_b_result"] == "B:shared_data"
     assert result["are_different"] is True
+
+
+def test_sub_agent_registered_module_accessible():
+    """Test that a module registered on a sub-agent is accessible in its sandbox.
+
+    Mimics the hierarchical example pattern where a specialist agent has
+    domain modules (e.g. numpy) registered and uses them in its code.
+    """
+    import math
+
+    clear_agent_registry()
+
+    specialist = Agent(name="specialist")
+    specialist.module(math, visibility="low")
+
+    orchestrator = Agent(name="orch")
+
+    @orchestrator.fn()
+    @specialist.task
+    def compute(x: float) -> float:  # type: ignore
+        """Compute sqrt(x) using the math module."""
+        pass
+
+    @orchestrator.task
+    def run(value: float) -> float:  # type: ignore
+        """Call compute on a value."""
+        pass
+
+    # Sub-agent uses `import math` then calls math.sqrt
+    specialist.llm = Dummy(
+        [
+            LLMResponse(
+                thinking="Use math.sqrt",
+                code="import math\nresult = math.sqrt(inputs.x)\ntask_success(result)",
+            )
+        ]
+    )
+    orchestrator.llm = Dummy(
+        [
+            LLMResponse(
+                thinking="Call compute",
+                code="result = compute(inputs.value)\ntask_success(result)",
+            )
+        ]
+    )
+
+    result = run(value=16.0)
+    assert result == 4.0
+
+
+def test_sub_agent_import_alias_works():
+    """Test that 'import X as Y' works for registered modules in sub-agents."""
+    import json
+
+    clear_agent_registry()
+
+    worker = Agent(name="json_worker")
+    worker.module(json, visibility="low")
+
+    boss = Agent(name="boss")
+
+    @boss.fn()
+    @worker.task
+    def encode(data: dict) -> str:  # type: ignore
+        """Encode data as JSON."""
+        pass
+
+    @boss.task
+    def run(payload: dict) -> str:  # type: ignore
+        """Encode a payload via the worker."""
+        pass
+
+    worker.llm = Dummy(
+        [
+            LLMResponse(
+                thinking="Use json.dumps with alias",
+                code="import json as j\nresult = j.dumps(inputs.data, sort_keys=True)\ntask_success(result)",
+            )
+        ]
+    )
+    boss.llm = Dummy(
+        [
+            LLMResponse(
+                thinking="Call encode",
+                code="result = encode(inputs.payload)\ntask_success(result)",
+            )
+        ]
+    )
+
+    result = run(payload={"b": 2, "a": 1})
+    assert result == '{"a": 1, "b": 2}'
+
+
+def test_sub_agent_unregistered_import_blocked():
+    """Test that sub-agents cannot import modules not registered on them."""
+    clear_agent_registry()
+
+    # Disable fs so register_io doesn't auto-register stdlib modules
+    worker = Agent(name="restricted_worker", fs=None)
+
+    boss = Agent(name="boss2")
+
+    @boss.fn()
+    @worker.task
+    def try_import() -> str:  # type: ignore
+        """Try to import an unregistered module."""
+        pass
+
+    @boss.task
+    def run() -> str:  # type: ignore
+        """Call the worker."""
+        pass
+
+    # Worker tries to import subprocess (never auto-registered) - should fail
+    worker.llm = Dummy(
+        [
+            # First attempt: try importing subprocess (blocked)
+            LLMResponse(
+                thinking="Try to import subprocess",
+                code='import subprocess\ntask_success("got subprocess")',
+            ),
+            # Second attempt: succeed without import
+            LLMResponse(
+                thinking="Can't import, just return a string",
+                code='task_success("no import needed")',
+            ),
+        ]
+    )
+    boss.llm = Dummy(
+        [
+            LLMResponse(
+                thinking="Call try_import",
+                code="result = try_import()\ntask_success(result)",
+            )
+        ]
+    )
+
+    result = run()
+    assert result == "no import needed"
+
+
+def test_sub_agent_recursive_module_import():
+    """Test that a sub-agent with recursive=True module can import it.
+
+    Mimics the hierarchical example pattern:
+      data_maker.module(np, recursive=True, visibility="low")
+    where the agent code does 'import numpy as np' and uses np.arange().
+    """
+    import numpy as np
+
+    clear_agent_registry()
+
+    data_maker = Agent(name="data_maker")
+    data_maker.module(np, recursive=True, visibility="low")
+
+    orchestrator = Agent(name="orch2")
+
+    @orchestrator.fn()
+    @data_maker.task
+    def make_data(idea: str) -> list:  # type: ignore
+        """Generate data arrays."""
+        pass
+
+    @orchestrator.task
+    def run(idea: str) -> list:  # type: ignore
+        """Orchestrate data generation."""
+        pass
+
+    # Sub-agent imports numpy as np and uses np.arange
+    data_maker.llm = Dummy(
+        [
+            LLMResponse(
+                thinking="Generate data using numpy",
+                code=(
+                    "import numpy as np\n"
+                    "arr = np.arange(12)\n"
+                    "task_success(arr.tolist())"
+                ),
+            )
+        ]
+    )
+    orchestrator.llm = Dummy(
+        [
+            LLMResponse(
+                thinking="Call make_data",
+                code="result = make_data(inputs.idea)\ntask_success(result)",
+            )
+        ]
+    )
+
+    result = run(idea="test data")
+    assert result == list(range(12))
+
+
+def test_sub_agent_numpy_random_hierarchical():
+    """Reproduce the hierarchical example's data_maker pattern.
+
+    Mimics the exact code from example.log where the data_maker agent
+    uses import numpy as np then calls np.random.seed(), np.random.normal(),
+    np.linspace(), np.sin(), np.maximum(), etc.
+
+    Uses on_event to capture the actual error if it fails.
+    """
+    import random
+
+    import numpy as np
+
+    clear_agent_registry()
+
+    events = []
+
+    def on_event(event):
+        events.append(event)
+
+    # Mirror the hierarchical example setup
+    data_maker = Agent(
+        name="data_maker_h",
+        primer="You excel at generating data via numpy.",
+        max_iterations=3,
+    )
+    data_maker.module(np, recursive=True, visibility="low")
+    data_maker.module(random, visibility="low")
+
+    orchestrator = Agent(
+        name="orch_h",
+        primer="You orchestrate other agents.",
+        max_iterations=2,
+    )
+
+    @orchestrator.fn()
+    @data_maker.task
+    def make_data(prompt: str) -> list:  # type: ignore
+        """Produce numpy arrays given the prompt."""
+        pass
+
+    @orchestrator.task
+    def run(idea: str) -> list:  # type: ignore
+        """Orchestrate data generation."""
+        pass
+
+    # Mimic the exact code from the log's data_maker iteration 1
+    data_maker_code = """\
+import numpy as np
+
+# Access the inputs
+print("Prompt:", inputs.prompt)
+
+# Create seasonal umbrella sales data over 10 years
+years = 10
+months_per_year = 12
+total_months = years * months_per_year
+
+# Time array (in months, 0 to 119)
+time = np.arange(total_months)
+
+# Create base trend (slight upward trend over years)
+trend = np.linspace(1000, 1500, total_months)
+
+# Create strong seasonal pattern
+seasonal = 400 * np.sin(2 * np.pi * time / 12)
+
+# Add random noise for realism
+np.random.seed(42)
+noise = np.random.normal(0, 100, total_months)
+
+# Combine: base + trend + seasonality + noise
+sales = trend + seasonal + noise
+
+# Ensure no negative sales
+sales = np.maximum(sales, 0)
+
+# Round to integers for realistic sales counts
+sales = np.round(sales).astype(int)
+
+# Create additional useful arrays
+months = np.arange(1, total_months + 1)
+years_array = np.repeat(np.arange(2014, 2024), 12)
+month_of_year = np.tile(np.arange(1, 13), 10)
+
+# Create result list with all relevant arrays
+result = [sales, time, seasonal, trend, years_array, month_of_year]
+
+print("Generated arrays:")
+print("Sales array shape:", sales.shape)
+
+task_success(result)
+"""
+
+    data_maker.llm = Dummy(
+        [
+            LLMResponse(
+                thinking="Generate seasonal data using numpy",
+                code=data_maker_code,
+            )
+        ]
+    )
+    orchestrator.llm = Dummy(
+        [
+            LLMResponse(
+                thinking="Call make_data",
+                code="result = make_data(inputs.idea)\ntask_success(result)",
+            )
+        ]
+    )
+
+    result = run(idea="seasonal umbrella sales", on_event=on_event)
+
+    # Print events for debugging if something went wrong
+    for ev in events:
+        print(f"EVENT: {type(ev).__name__}: {ev}")
+
+    assert isinstance(result, list)
+    assert len(result) == 6
+
+
+def test_sub_agent_numpy_second_iteration():
+    """Test what happens when the first data_maker iteration fails and numpy
+    must survive a state round-trip (ModuleRef) for the second iteration.
+
+    This mimics the real failure pattern: iteration 1 fails (e.g. bad inputs
+    access), the namespace (including np=ModuleRef) is synced to state, and
+    iteration 2 tries the same import.
+    """
+    import numpy as np
+
+    clear_agent_registry()
+
+    events = []
+
+    def on_event(event):
+        events.append(event)
+
+    data_maker = Agent(
+        name="dm_retry",
+        primer="You excel at generating data via numpy.",
+        max_iterations=3,
+    )
+    data_maker.module(np, recursive=True, visibility="low")
+
+    orchestrator = Agent(name="orch_retry", max_iterations=2)
+
+    @orchestrator.fn()
+    @data_maker.task
+    def make_data(prompt: str) -> list:  # type: ignore
+        """Produce numpy arrays given the prompt."""
+        pass
+
+    @orchestrator.task
+    def run(idea: str) -> list:  # type: ignore
+        """Orchestrate data generation."""
+        pass
+
+    # Iteration 1: imports numpy, accesses inputs.prompt, then hits
+    # a bad 'from inputs import prompt' which will fail
+    iter1_code = """\
+import numpy as np
+prompt = inputs.prompt
+from inputs import prompt
+task_success([np.arange(5)])
+"""
+
+    # Iteration 2: clean code, should succeed
+    iter2_code = """\
+import numpy as np
+result = [np.arange(10), np.linspace(0, 1, 10)]
+np.random.seed(42)
+noise = np.random.normal(0, 1, 10)
+result.append(noise)
+task_success(result)
+"""
+
+    data_maker.llm = Dummy(
+        [
+            LLMResponse(thinking="Try with inputs import", code=iter1_code),
+            LLMResponse(thinking="Fixed, just numpy", code=iter2_code),
+        ]
+    )
+    orchestrator.llm = Dummy(
+        [
+            LLMResponse(
+                thinking="Call make_data",
+                code="result = make_data(inputs.idea)\ntask_success(result)",
+            )
+        ]
+    )
+
+    result = run(idea="test", on_event=on_event)
+
+    # Print all events for debugging
+    for ev in events:
+        print(f"EVENT: {type(ev).__name__}: {ev}")
+
+    assert isinstance(result, list)
+    assert len(result) == 3
+
+
+def test_data_maker_numpy_fstring_dtype():
+    """Test data_maker with f-string formatting of numpy scalars and dtype.
+
+    This matches the exact code pattern from example.log that triggered
+    C-level __import__ errors in the data_maker's sandbox.
+    """
+    import numpy as np
+
+    clear_agent_registry()
+
+    events = []
+
+    def on_event(event):
+        events.append(event)
+
+    data_maker = Agent(
+        name="dm_fstr",
+        primer="You excel at generating data via numpy.",
+        max_iterations=2,
+    )
+    data_maker.module(np, recursive=True, visibility="low")
+
+    orchestrator = Agent(name="orch_fstr", max_iterations=2)
+
+    @orchestrator.fn()
+    @data_maker.task
+    def make_data(prompt: str) -> list:  # type: ignore
+        """Produce numpy arrays given the prompt."""
+        pass
+
+    @orchestrator.task
+    def run(idea: str) -> list:  # type: ignore
+        """Orchestrate data generation."""
+        pass
+
+    # Data_maker code matching the log — includes f-string with .dtype, .min(), .max()
+    dm_code = """\
+import numpy as np
+
+print("Prompt:", inputs.prompt)
+
+years = 10
+months_per_year = 12
+total_months = years * months_per_year
+
+time = np.arange(total_months)
+trend = np.linspace(1000, 1500, total_months)
+seasonal = 400 * np.sin(2 * np.pi * time / 12)
+
+np.random.seed(42)
+noise = np.random.normal(0, 100, total_months)
+
+sales = trend + seasonal + noise
+sales = np.maximum(sales, 0)
+sales = np.round(sales).astype(int)
+
+years_array = np.repeat(np.arange(2014, 2024), 12)
+month_of_year = np.tile(np.arange(1, 13), 10)
+
+result = [sales, time, seasonal, trend, years_array, month_of_year]
+
+print(f"Sales array shape: {sales.shape}")
+print(f"Sales range: {sales.min()} to {sales.max()}")
+for i, arr in enumerate(result):
+    print(f"  Array {i}: dtype={arr.dtype}, shape={arr.shape}")
+
+task_success(result)
+"""
+
+    data_maker.llm = Dummy([LLMResponse(thinking="Generate data", code=dm_code)])
+    orchestrator.llm = Dummy(
+        [
+            LLMResponse(
+                thinking="Call make_data",
+                code="result = make_data(inputs.idea)\ntask_success(result)",
+            )
+        ]
+    )
+
+    from agex.agent.datatypes import TaskTimeout
+
+    try:
+        result = run(idea="seasonal umbrella sales", on_event=on_event)
+    except (TaskTimeout, Exception) as exc:
+        result = None
+        print(f"\n!!! CAUGHT: {type(exc).__name__}: {exc}")
+
+    print("\n=== EVENTS ===")
+    for ev in events:
+        parts = getattr(ev, "parts", None)
+        print(f"  {type(ev).__name__}[{getattr(ev, 'agent_name', '?')}]: {parts or ''}")
+
+    if result is None:
+        raise AssertionError("Task did not complete — see events above")
+    assert isinstance(result, list)
+    assert len(result) == 6
+
+
+def test_sub_agent_numpy_full_hierarchical():
+    """Reproduce the EXACT hierarchical example interaction from example.log.
+
+    Uses the orchestrator code that inspects returned arrays (arr.shape,
+    arr.dtype) and the data_maker code that uses np.random, np.linspace, etc.
+
+    Captures all events to see actual errors.
+    """
+    import random
+
+    import numpy as np
+    import plotly.graph_objects as go
+
+    from agex.helpers import register_numpy, register_pandas, register_plotly
+
+    clear_agent_registry()
+
+    events = []
+
+    def on_event(event):
+        events.append(event)
+        # Print errors immediately for visibility
+        ev_type = type(event).__name__
+        if "Error" in ev_type or "Fail" in ev_type:
+            print(f"  !!! {ev_type}: {event}")
+
+    # Mirror the hierarchical example exactly
+    data_maker = Agent(
+        name="dm_full",
+        primer="You excel at generating data via numpy.",
+        max_iterations=3,
+    )
+    data_maker.module(np, recursive=True, visibility="low")
+    data_maker.module(random, visibility="low")
+
+    plotty = Agent(
+        name="plotty_full",
+        primer="You excel plotting data via plotly express.",
+        max_iterations=3,
+    )
+    register_plotly(plotty)
+    register_numpy(plotty)
+    register_pandas(plotty)
+
+    orchestrator = Agent(
+        name="orch_full",
+        primer="You orchestrate other agents.",
+        max_iterations=2,
+    )
+
+    @orchestrator.fn()
+    @data_maker.task
+    def make_data(prompt: str) -> list:  # type: ignore
+        """Produce numpy arrays given the prompt."""
+        pass
+
+    @orchestrator.fn()
+    @plotty.task
+    def plot_data(prompt: str, data: list) -> go.Figure:  # type: ignore
+        """Produce a figure from numpy data given the prompt."""
+        pass
+
+    @orchestrator.task
+    def idea_to_plot(idea: str) -> go.Figure:  # type: ignore
+        """Orchestrate data generation and plotting."""
+        pass
+
+    # --- Orchestrator code ---
+    # The orchestrator doesn't have numpy registered, so it shouldn't
+    # inspect numpy-specific attributes like .dtype.  It just delegates.
+    orch_code = """\
+idea = inputs.idea
+print("Idea:", idea)
+
+print("\\nGenerating data...")
+data = make_data(idea)
+print(f"Data generated: {len(data)} arrays")
+
+print("\\nCreating plot...")
+figure = plot_data(idea, data)
+print("Figure created")
+
+task_success(figure)
+"""
+
+    # data_maker iteration 1: the code from the log
+    dm_code = """\
+import numpy as np
+
+print("Prompt:", inputs.prompt)
+
+years = 10
+months_per_year = 12
+total_months = years * months_per_year
+
+time = np.arange(total_months)
+trend = np.linspace(1000, 1500, total_months)
+seasonal = 400 * np.sin(2 * np.pi * time / 12)
+
+np.random.seed(42)
+noise = np.random.normal(0, 100, total_months)
+
+sales = trend + seasonal + noise
+sales = np.maximum(sales, 0)
+sales = np.round(sales).astype(int)
+
+years_array = np.repeat(np.arange(2014, 2024), 12)
+month_of_year = np.tile(np.arange(1, 13), 10)
+
+result = [sales, time, seasonal, trend, years_array, month_of_year]
+print("Generated arrays:")
+print("Sales array shape:", sales.shape)
+task_success(result)
+"""
+
+    # plotty code: simple figure creation
+    plotty_code = """\
+import plotly.graph_objects as go
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=list(range(10)), y=list(range(10))))
+fig.update_layout(title="Test")
+task_success(fig)
+"""
+
+    data_maker.llm = Dummy([LLMResponse(thinking="Generate data", code=dm_code)])
+    plotty.llm = Dummy([LLMResponse(thinking="Plot it", code=plotty_code)])
+    orchestrator.llm = Dummy([LLMResponse(thinking="Orchestrate", code=orch_code)])
+
+    from agex.agent.datatypes import TaskTimeout
+
+    try:
+        result = idea_to_plot(idea="seasonal umbrella sales", on_event=on_event)
+    except (TaskTimeout, Exception) as exc:
+        result = None
+        print(f"\n!!! CAUGHT: {type(exc).__name__}: {exc}")
+
+    # Print all events
+    print("\n=== ALL EVENTS ===")
+    for ev in events:
+        parts = getattr(ev, "parts", None)
+        print(f"  {type(ev).__name__}[{getattr(ev, 'agent_name', '?')}]: {parts or ''}")
+
+    if result is None:
+        raise AssertionError("Task did not complete — see events above")
