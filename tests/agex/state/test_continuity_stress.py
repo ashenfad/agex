@@ -1,5 +1,5 @@
 import numpy as np
-from gitkv import Staged, Versioned
+from kvgit import Staged, Versioned
 
 from agex.agent import Agent
 from agex.eval.bridge import execute_sandboxed
@@ -8,7 +8,7 @@ from agex.state.kv import Memory
 
 
 def _make_versioned(store=None, commit_hash=None):
-    """Create a Staged store wrapping a gitkv Versioned with agex codecs."""
+    """Create a Staged store wrapping a kvgit Versioned with agex codecs."""
     if store is None:
         store = Memory()
     kw = {}

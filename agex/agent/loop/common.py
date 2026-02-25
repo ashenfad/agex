@@ -11,7 +11,7 @@ New code should import directly from the sub-modules:
 from __future__ import annotations
 
 # --- Third-party / internal re-exports used by sync_loop, async_loop, mixin ---
-from gitkv import Live, Namespaced, Staged
+from kvgit import Live, Namespaced, Staged
 from pydantic import ValidationError
 
 from agex.agent.datatypes import (

@@ -3,7 +3,7 @@
 import threading
 
 import pytest
-from gitkv import Staged
+from kvgit import Staged
 
 from agex import Agent, TaskCancelled, connect_state, events
 from agex.llm import Dummy
@@ -285,9 +285,9 @@ class TestTaskCancellation:
 
         # Verify XML tag is present
         expected_tag = f"<{TAG_CANCELLED}>"
-        assert (
-            expected_tag in history_text
-        ), f"Expected {expected_tag} in history, got: {history_text}"
+        assert expected_tag in history_text, (
+            f"Expected {expected_tag} in history, got: {history_text}"
+        )
 
 
 class TestTaskCancellationAsync:

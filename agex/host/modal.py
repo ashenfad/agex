@@ -11,7 +11,7 @@ from collections.abc import MutableMapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from gitkv import Live, Staged, Versioned
+from kvgit import Live, Staged, Versioned
 
 from agex.host.base import Host, apply_init_if_fresh
 from agex.host.local import Local

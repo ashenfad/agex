@@ -8,7 +8,7 @@ Staged state objects.
 import os
 from urllib.parse import urlparse
 
-from gitkv import Staged, Versioned
+from kvgit import Staged, Versioned
 
 from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Disk

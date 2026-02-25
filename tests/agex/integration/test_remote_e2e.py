@@ -153,7 +153,7 @@ class TestClientServerProtocol:
 
     def test_state_uri_schemes(self, tmp_path):
         """Test that disk:// URIs work correctly."""
-        from gitkv import Staged
+        from kvgit import Staged
 
         from agex.server.state import resolve_state_uri
 

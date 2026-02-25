@@ -38,13 +38,13 @@ class TestIsolatedFSPathValidation:
         fs = IsolatedFS(root=str(tmp_path))
 
         # Try various path traversal attacks
-        with pytest.raises(PermissionError, match="outside root"):
+        with pytest.raises(PermissionError, match="escapes sandbox|outside root"):
             fs.open("../../etc/passwd")
 
-        with pytest.raises(PermissionError, match="outside root"):
+        with pytest.raises(PermissionError, match="escapes sandbox|outside root"):
             fs.read("../../../etc/passwd")
 
-        with pytest.raises(PermissionError, match="outside root"):
+        with pytest.raises(PermissionError, match="escapes sandbox|outside root"):
             fs.write("../../../../tmp/evil.txt", b"data")
 
     def test_absolute_paths_are_rerooted(self, tmp_path):
@@ -66,7 +66,7 @@ class TestIsolatedFSPathValidation:
 
         # But path traversal should STILL be blocked
         # /../../etc/passwd -> $ROOT/../etc/passwd -> OUTSIDE
-        with pytest.raises(PermissionError, match="outside root"):
+        with pytest.raises(PermissionError, match="escapes sandbox|outside root"):
             fs.open("/../../etc/passwd")
 
     def test_symlink_to_outside_blocked(self, tmp_path):
@@ -77,7 +77,7 @@ class TestIsolatedFSPathValidation:
         link_path = tmp_path / "evil_link"
         link_path.symlink_to("/etc/passwd")
 
-        with pytest.raises(PermissionError, match="outside root"):
+        with pytest.raises(PermissionError, match="escapes sandbox|outside root"):
             fs.read("evil_link")
 
     def test_symlink_to_inside_allowed(self, tmp_path):

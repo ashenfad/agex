@@ -1,7 +1,7 @@
 """
 Builds the execution namespace dict for sandtrap's Sandbox.exec().
 
-Hydrates gitkv state values into a plain dict, then injects
+Hydrates kvgit state values into a plain dict, then injects
 task control functions and stateful builtins as closures.
 """
 
@@ -31,7 +31,7 @@ def build_namespace(
     """Build the execution namespace from state and builtins.
 
     Args:
-        state: The gitkv state to hydrate from.
+        state: The kvgit state to hydrate from.
         agent: The agent providing policy context.
         agent_name: Name of the agent (for event attribution).
         on_event: Optional event callback.

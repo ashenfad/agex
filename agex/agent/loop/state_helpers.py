@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from gitkv import Live, Namespaced, Staged
+from kvgit import Live, Namespaced, Staged
 
 from agex.state import events, get_root, raw_get, raw_remove
 

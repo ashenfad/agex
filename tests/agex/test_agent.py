@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from types import ModuleType
 
 import pytest
-from gitkv import Live, Namespaced, Staged, Versioned
+from kvgit import Live, Namespaced, Staged, Versioned
 
 from agex import events
 from agex.agent import Agent, MemberSpec
@@ -1123,14 +1123,14 @@ print(f"Setup complete: {setup_var}")
         SuccessEvent,  # Task completion
     ]
 
-    assert len(event_list) == len(
-        expected_sequence
-    ), f"Expected {len(expected_sequence)} events, got {len(event_list)}"
+    assert len(event_list) == len(expected_sequence), (
+        f"Expected {len(expected_sequence)} events, got {len(event_list)}"
+    )
 
     for i, (event, expected_type) in enumerate(zip(event_list, expected_sequence)):
-        assert isinstance(
-            event, expected_type
-        ), f"Event {i} should be {expected_type.__name__}, got {type(event).__name__}"
+        assert isinstance(event, expected_type), (
+            f"Event {i} should be {expected_type.__name__}, got {type(event).__name__}"
+        )
 
     # Verify setup ActionEvent is immediately followed by its OutputEvents
     setup_action = event_list[1]
@@ -1288,9 +1288,9 @@ def test_recursive_module_registration_resolves_dataclass_fields():
     # (policy says it's allowed, even if it doesn't exist - will fail at runtime if accessed)
     result = agent._policy.resolve_class_member(TestInterval, "nonexistent")
     assert result is not None, "nonexistent field passes policy, so should be allowed"
-    assert hasattr(
-        result, "value"
-    ), "result should be ResolvedObj for policy-allowed names"
+    assert hasattr(result, "value"), (
+        "result should be ResolvedObj for policy-allowed names"
+    )
 
 
 def test_vfs_append_integration():
