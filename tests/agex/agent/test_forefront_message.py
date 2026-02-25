@@ -74,7 +74,7 @@ def test_forefront_logic_thresholds():
     """Unit test for the threshold logic."""
     agent = Agent(name="tester", max_iterations=10)
     # Mock state
-    from gitkv import Live, Namespaced
+    from kvgit import Live, Namespaced
 
     state = Namespaced(Live(), "test")
 

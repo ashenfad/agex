@@ -8,7 +8,7 @@ import os
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from gitkv import Live, Staged, Versioned
+from kvgit import Live, Staged, Versioned
 
 from .base import Host
 
@@ -94,7 +94,7 @@ class Local(Host):
         self, config: "StateConfig", kv: "KVStore"
     ) -> MutableMapping[str, Any]:
         """Create a state instance from config and KV store."""
-        from gitkv.gc import GCVersioned
+        from kvgit.gc import GCVersioned
 
         from agex.state import _agex_decoder, _agex_encoder
 

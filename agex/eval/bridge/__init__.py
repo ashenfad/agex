@@ -1,7 +1,7 @@
 """
 Bridge layer between agex's registration/state system and sandtrap's Sandbox.
 
-This package translates agex's AgentPolicy and gitkv state into
+This package translates agex's AgentPolicy and kvgit state into
 sandtrap's Policy and namespace dict, then processes the ExecResult
 back into agex's state and event system.
 """

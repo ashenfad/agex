@@ -14,7 +14,7 @@ state like event logs).
 import time
 from typing import TYPE_CHECKING, Iterable, Mapping
 
-from gitkv.kv import KVStore
+from kvgit.kv import KVStore
 
 if TYPE_CHECKING:
     import modal
@@ -69,7 +69,7 @@ class ModalDict(KVStore):
     def _log(self, op: str, duration: float, extra: str = ""):
         if DEBUG:
             count = self._stats.get(f"{op.split('(')[0]}_count", "?")
-            print(f"[ModalDict] #{count} {op}: {duration*1000:.1f}ms {extra}")
+            print(f"[ModalDict] #{count} {op}: {duration * 1000:.1f}ms {extra}")
 
     def print_stats(self):
         """Print accumulated stats."""

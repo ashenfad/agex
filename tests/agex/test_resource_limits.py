@@ -363,7 +363,7 @@ class TestAgentIntegration:
 
     def test_memory_error_propagates_through_eval(self):
         """Test that MemoryError from limit propagates through eval sandbox."""
-        from gitkv import Live
+        from kvgit import Live
 
         from agex.agent import Agent, clear_agent_registry
         from agex.eval.bridge import execute_sandboxed

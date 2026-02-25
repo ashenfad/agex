@@ -1,5 +1,5 @@
 import numpy as np
-from gitkv import Staged, Versioned
+from kvgit import Staged, Versioned
 
 from agex.agent import Agent
 from agex.eval.bridge import execute_sandboxed

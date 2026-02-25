@@ -20,12 +20,14 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
 requires-python = ">=3.10"
 
 dependencies = [
     "termish",
-    "gitkv",
+    "kvgit",
     "sandtrap",
     "reprobate",
     "monkeyfs",
@@ -60,6 +62,8 @@ test = [
     "google-genai",
     "openai",
     "matplotlib",
+    "plotly",
+    "kaleido",
     "cloudpickle",
     "uvicorn",
     "fastapi",
@@ -110,13 +114,6 @@ all-hosts = [
     "agex[modal]",
 ]
 
-[tool.uv.sources]
-termish = { path = "../termish", editable = true }
-gitkv = { path = "../gitkv", editable = true }
-sandtrap = { path = "../sandtrap", editable = true }
-reprobate = { path = "../reprobate", editable = true }
-monkeyfs = { path = "../monkeyfs", editable = true }
-
 [tool.ruff]
 line-length = 88
 
@@ -125,6 +122,7 @@ select = ["E4", "E7", "E9", "F", "I"]
 ignore = ["E731"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 pythonpath = [
   "."
 ]

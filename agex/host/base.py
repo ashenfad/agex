@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from gitkv import Staged
+from kvgit import Staged
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent

@@ -1,6 +1,6 @@
 """State management for agex agents.
 
-Uses gitkv types directly:
+Uses kvgit types directly:
 - Staged — versioned state with commit
 - Live — ephemeral in-memory state
 - Namespaced — key-prefixed view over any store
@@ -9,15 +9,15 @@ Uses gitkv types directly:
 import pickle
 from typing import Any, Callable, Literal
 
-from gitkv import ConcurrencyError, Live, MergeResult, Namespaced, Staged
-from gitkv.errors import MergeConflict
-from gitkv.gc import GCVersioned
-from gitkv.kv import KVStore
+from kvgit import ConcurrencyError, Live, MergeResult, Namespaced, Staged
+from kvgit.errors import MergeConflict
+from kvgit.gc import GCVersioned
+from kvgit.kv import KVStore
 
 from .config import StateConfig
 
 __all__ = [
-    # gitkv types (direct)
+    # kvgit types (direct)
     "Staged",
     "Live",
     "Namespaced",
@@ -83,7 +83,7 @@ def get_root(state: Any) -> Any:
     root store (Staged or Live).
     """
     if isinstance(state, Namespaced):
-        return state._store  # gitkv flattens nested namespaces
+        return state._store  # kvgit flattens nested namespaces
     return state  # Staged, Live, or unknown
 
 
@@ -138,11 +138,11 @@ def safe_commit(
         staged: The Staged store to commit.
         referenced_keys: State keys referenced in agent code. Keys present
             in state but not explicitly staged are re-staged so the encoder
-            runs and gitkv detects byte-level changes from in-place mutations.
+            runs and kvgit detects byte-level changes from in-place mutations.
         on_conflict: Conflict strategy ('raise' or 'abandon').
 
     Returns:
-        MergeResult from gitkv's commit.
+        MergeResult from kvgit commit.
     """
     from monkeyfs import suspend
 
@@ -151,7 +151,7 @@ def safe_commit(
             state_keys = staged.keys()
             for key in referenced_keys & set(state_keys):
                 if not staged.is_staged(key):
-                    # Re-stage so encoder runs and gitkv detects byte changes
+                    # Re-stage so encoder runs and kvgit detects byte changes
                     staged[key] = staged.get(key)
 
         return staged.commit(on_conflict=on_conflict)
@@ -165,7 +165,7 @@ def safe_commit(
 def state_diffs(staged: Staged, commit_hash: str | None = None) -> dict[str, Any]:
     """Get state changes for a specific commit.
 
-    Uses gitkv's native diff() to compare the commit against its parent
+    Uses kvgit's native diff() to compare the commit against its parent
     and returns the key-value pairs that were added or modified.
     """
     target = commit_hash or staged.current_commit

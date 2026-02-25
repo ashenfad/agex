@@ -13,10 +13,10 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
-    from gitkv import Live
+    from kvgit import Live
     from monkeyfs import FileSystem
 
-from gitkv import Staged
+from kvgit import Staged
 
 from agex.agent.events import CancelledEvent
 from agex.agent.summarization import maybe_summarize_event_log

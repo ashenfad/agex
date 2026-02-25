@@ -28,4 +28,12 @@ jobs:
 
     - name: Run tests
       run: |
-        pytest -v
+        pytest tests/ -v
+
+    - name: Run linter
+      run: |
+        ruff check agex/
+
+    - name: Check formatting
+      run: |
+        ruff format --check agex/

@@ -1,4 +1,4 @@
-from gitkv.kv import Composite, Disk, KVStore, Memory
+from kvgit.kv import Composite, Disk, KVStore, Memory
 
 from agex.state.kv.write_behind import WriteBehind
 

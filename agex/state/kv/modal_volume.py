@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Mapping
 
-from gitkv.kv import KVStore
+from kvgit.kv import KVStore
 
 if TYPE_CHECKING:
     import modal
@@ -76,7 +76,7 @@ class Volume(KVStore):
 
     def _log(self, op: str, duration: float, extra: str = "") -> None:
         if DEBUG:
-            print(f"[Volume] {op}: {duration*1000:.1f}ms {extra}")
+            print(f"[Volume] {op}: {duration * 1000:.1f}ms {extra}")
 
     def _encode_key(self, key: str) -> str:
         """Encode key for safe filesystem use."""
