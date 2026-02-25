@@ -39,7 +39,7 @@ Agent(
 | `fs` | `FSConfig \| None` | `connect_fs(type="virtual")` | FileSystem config from `connect_fs()`. Defaults to an in-memory Virtual Filesystem (VFS). Pass `None` to disable. See [FileSystem Configuration](fs.md). |
 | `log_high_water_tokens` | `int \| None` | `None` | Trigger event log summarization when tokens exceed this threshold |
 | `log_low_water_tokens` | `int \| None` | `None` | Target token count after summarization (defaults to 50% of high water) |
-| `max_memory_mb` | `int \| None` | `None` | Maximum memory headroom per task in MB (Unix only). See [Resource Limits](#resource-limits). |
+| `max_memory_mb` | `int \| None` | `None` | Per-task memory limit in MB. Enforced by sandtrap (kernel on Linux, checkpoint on macOS). See [Resource Limits](#resource-limits). |
 | `max_open_files` | `int \| None` | `None` | Maximum file descriptors per task (Unix only). See [Resource Limits](#resource-limits). |
 
 ### Basic Example
@@ -352,7 +352,7 @@ agent = Agent(
 
 ### Memory Limits
 
-Memory limits use a **delta-based headroom** approach: the limit is set to current process memory + configured headroom. So `max_memory_mb=500` means each task can allocate up to 500MB of *additional* memory beyond what the process was already using.
+Memory limits are enforced by sandtrap's sandbox. `max_memory_mb=500` means each task can allocate up to 500MB of additional memory. On Linux, this is kernel-enforced via `RLIMIT_AS`. On macOS, enforcement is checkpoint-based (loop iterations, function entries). See [sandtrap's security docs](https://github.com/ashenfad/sandtrap) for details.
 
 ```python
 # If agent code tries to allocate too much memory:
@@ -376,22 +376,15 @@ files = [open(f"file{i}.txt", "w") for i in range(200)]
 
 ### Platform Support
 
-| Platform | Support |
-|----------|---------|
-| Linux | Full support via `RLIMIT_AS` and `RLIMIT_NOFILE` |
-| macOS | Full support via `RLIMIT_AS` and `RLIMIT_NOFILE` |
-| Windows | Not supported (warns and continues without limits) |
+| Platform | Memory limits | File descriptor limits |
+|----------|--------------|----------------------|
+| Linux | Kernel-enforced (`RLIMIT_AS`) + checkpoint-based | `RLIMIT_NOFILE` |
+| macOS | Checkpoint-based only | `RLIMIT_NOFILE` |
+| Windows | No-op | No-op |
 
 ### Process-Level Behavior
 
-Resource limits are process-wide on Unix. For concurrent tasks in the same process, the limit applies to all tasks combined. Size your limits according to expected concurrency:
-
-```python
-# Running 4 concurrent tasks, each needs up to 200MB
-agent = Agent(max_memory_mb=800)  # 4 × 200MB headroom
-```
-
-For stronger isolation guarantees with per-task limits, use the Modal integration which provides containerized execution.
+Memory and file descriptor limits are process-wide on Unix. For concurrent tasks in the same process, the limit applies to all tasks combined. For stronger isolation guarantees with per-task limits, use the Modal integration which provides containerized execution.
 
 ### VFS Size Limits
 

@@ -60,8 +60,9 @@ class BaseAgent:
         # Event log summarization (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
-        # Resource limits (per-task, Unix only)
+        # Memory limit (passed to sandtrap)
         max_memory_mb: int | None = None,
+        # File descriptor limit (per-task, Unix only)
         max_open_files: int | None = None,
         # Tick-based execution limit (primary runaway-code protection)
         eval_tick_limit: int | None = 100_000,
@@ -127,9 +128,11 @@ class BaseAgent:
         self.log_high_water_tokens = log_high_water_tokens
         self.log_low_water_tokens = log_low_water_tokens
 
-        # Resource limits (per-task, Unix only)
+        # Memory limit passed through to sandtrap's Policy.memory_limit
+        self.max_memory_mb = max_memory_mb
+
+        # File descriptor limits (per-task, Unix only)
         self._resource_limits = ResourceLimits(
-            max_memory_mb=max_memory_mb,
             max_open_files=max_open_files,
         )
 

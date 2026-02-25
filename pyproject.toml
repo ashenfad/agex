@@ -36,7 +36,6 @@ dependencies = [
     "diskcache",
     "pydantic",
     "pygments",
-    "psutil",
 ]
 
 [project.urls]

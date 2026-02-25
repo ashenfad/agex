@@ -334,15 +334,7 @@ Beyond language restrictions, agex can enforce resource limits to prevent runawa
 agent = Agent(max_memory_mb=500)  # 500MB headroom per task
 ```
 
-If agent code attempts to allocate more memory than allowed:
-
-```python
-# Agent tries to allocate 1GB with 500MB limit
-data = bytearray(1024 * 1024 * 1024)
-# Raises MemoryError (wrapped in EvalError)
-```
-
-The agent receives an error and can adjust its approach—for example, processing data in chunks.
+Memory limits are enforced by sandtrap's sandbox (kernel-enforced on Linux, checkpoint-based on macOS). If agent code attempts to allocate more memory than allowed, it raises `MemoryError` (wrapped in `EvalError`). The agent receives the error and can adjust its approach—for example, processing data in chunks.
 
 ### File Descriptor Limits
 
