@@ -199,8 +199,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
                 exceed this threshold. If None, no summarization is performed.
             log_low_water_tokens: Target token count after summarization. Defaults to
                 50% of log_high_water_tokens if not specified.
-            max_memory_mb: Per-task memory limit in megabytes. Each task can allocate
-                up to this much additional memory. Unix only (warns on Windows).
+            max_memory_mb: Per-task memory limit in megabytes. Passed to sandtrap's
+                Policy.memory_limit. Kernel-enforced on Linux, checkpoint-based on macOS.
             max_open_files: Maximum file descriptors for the process. Unix only.
             eval_tick_limit: Maximum number of Python control-flow checkpoints
                 (loop iterations, function entries, comprehensions) per code execution.

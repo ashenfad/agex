@@ -71,9 +71,7 @@ Beyond code validation, agex provides defense-in-depth resource limiting to prot
 agent = Agent(max_memory_mb=500)  # 500MB headroom per task
 ```
 
-Memory limits use a **delta-based approach**: the limit is set to current process memory + configured headroom. This gives each task a budget for new allocations without counting existing process memory.
-
-When exceeded, Python raises `MemoryError`, which the agent sees as an `EvalError` with the underlying `MemoryError` in the cause chain.
+Memory limits are enforced by sandtrap's sandbox. On Linux, `RLIMIT_AS` provides kernel-enforced virtual address space caps. On macOS, enforcement is checkpoint-based (fires at loop iterations, function entries, and builtin calls). When exceeded, the agent sees a `MemoryError` wrapped in `EvalError`.
 
 ### File Descriptor Limits
 
@@ -81,7 +79,7 @@ When exceeded, Python raises `MemoryError`, which the agent sees as an `EvalErro
 agent = Agent(max_open_files=256)  # Max 256 open files
 ```
 
-Prevents agents from exhausting system file descriptors through excessive file operations.
+Prevents agents from exhausting system file descriptors through excessive file operations. Uses `RLIMIT_NOFILE` on Linux/macOS.
 
 ### VFS Size Limits
 
@@ -95,11 +93,7 @@ Limits the total size of all files in the Virtual FileSystem, preventing unbound
 
 ### Platform Support
 
-Resource limits use Unix `RLIMIT_AS` and `RLIMIT_NOFILE`, supported on Linux and macOS. On Windows, limits are not enforced (a warning is issued).
-
-### Process-Level Limits
-
-Memory and file descriptor limits are process-wide. For concurrent tasks, size limits according to expected concurrency. For per-task isolation, use the Modal integration which provides containerized execution.
+Memory limits are handled by sandtrap (Linux: kernel-enforced, macOS: checkpoint-based, Windows: no-op). File descriptor limits use `RLIMIT_NOFILE` on Linux/macOS. On Windows, resource limits are not enforced (a warning is issued).
 
 See [Agent Resource Limits](../api/agent.md#resource-limits) and [VFS Size Limits](../api/fs.md#size-limits) for configuration details.
 

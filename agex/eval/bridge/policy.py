@@ -68,7 +68,12 @@ def translate_policy(
         if tick_limit is not None
         else getattr(agent, "eval_tick_limit", None)
     )
-    policy = Policy(timeout=effective_timeout, tick_limit=effective_tick_limit)
+    effective_memory_limit = getattr(agent, "max_memory_mb", None)
+    policy = Policy(
+        timeout=effective_timeout,
+        tick_limit=effective_tick_limit,
+        memory_limit=effective_memory_limit,
+    )
 
     for ns_name, ns in agent._policy.namespaces.items():
         if ns_name == "__main__" and ns.kind == "virtual":
