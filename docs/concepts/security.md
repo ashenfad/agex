@@ -2,13 +2,17 @@
 
 `agex` provides a secure Python execution environment for AI agents through a comprehensive multi-layer security strategy.
 
-### Philosophy: A Walled Garden, Not a Fortress
+### Philosophy: Defense in Depth
 
-The security model of `agex` is best understood as a **"walled garden,"** not an impenetrable fortress. Its primary goal is to provide a robust safety net that prevents common and foreseeable errors—both accidental and malicious—within its intended use case. It is designed to stop an agent from inadvertently deleting files, accessing sensitive data, or otherwise impacting the host system in unintended ways.
+The security model of `agex` is **layered**. At the base, AST-level validation and attribute access control provide a robust safety net that prevents common and foreseeable errors—both accidental and malicious. On top of that, **process and kernel isolation** provide stronger guarantees for production and high-security environments.
 
-This approach is a deliberate trade-off. While a fully isolated Virtual Machine (VM) offers a higher degree of theoretical security, it comes at a cost to ease of integration.
+| Isolation Level | What It Adds |
+|----------------|-------------|
+| `"none"` (default) | In-process AST sandbox. Prevents common errors, blocks dangerous builtins and imports. Good for local development and trusted agents. |
+| `"process"` | Subprocess execution. A crash, OOM, or segfault in agent code won't take down the host process. |
+| `"kernel"` | Subprocess + OS-level restrictions (seccomp/Landlock on Linux, Seatbelt on macOS). Filesystem, syscall, and network access are locked down by the kernel. |
 
-`agex` is significantly safer than frameworks that rely on direct `exec()` calls, but is not intended to be a substitute for a VM when running fully untrusted code from unknown sources.
+With `isolation="none"`, agex is significantly safer than frameworks that rely on direct `exec()` calls, but is not intended to be a substitute for a VM when running fully untrusted code. For stronger guarantees, use `isolation="process"` or `"kernel"`.
 
 ## Core Security Strategy
 
@@ -18,7 +22,7 @@ The `agex` sandbox uses a **whitelist-based security model** with these key comp
 - **Attribute access control**: Only explicitly whitelisted attributes and methods are accessible.
 - **Data Isolation**: When using versioned state, all data is serialized at the boundary of an agent task. Agents never get a direct reference to host objects, preventing accidental or malicious mutation.
 - **Dynamic class creation blocked**: Three-argument `type()` is rejected, preventing agents from creating classes that bypass AST-level validation.
-- **Dangerous builtins removed**: `exec`, `eval`, `compile`, `dir`, `help`, `globals`, and control exceptions are not available in agent code.
+- **Dangerous builtins removed**: `exec`, `eval`, `compile`, `globals`, and control exceptions are not available in agent code.
 - **Import restrictions**: Module imports are controlled through explicit registration.
 
 ## Python Language Restrictions
@@ -58,10 +62,10 @@ MyClass = type('MyClass', (object,), {'x': 1})  # TypeError
 The following names are not available in agent code (raise `NameError`):
 
 - **Dangerous builtins**: `exec`, `eval`, `compile`
-- **Introspection**: `dir()`, `help()`, `globals()`
+- **Introspection**: `globals()`
 - **Control exceptions**: `BaseException`, `KeyboardInterrupt`, `GeneratorExit`, `SystemExit`
 
-`locals()` is available but returns a filtered copy (sandbox internals excluded).
+`locals()` is available but returns a filtered copy (sandbox internals excluded). Python's built-in `dir()` and `help()` are available.
 
 For a complete overview of all sandbox limitations, see our [Nearly Python guide](./nearly-python.md).
 
@@ -191,3 +195,43 @@ Register function with network_access=True to allow network operations.
 ```
 
 See [Registration Methods](../api/registration.md) for details on the `network_access` parameter.
+
+## Sandbox Isolation
+
+By default, agent code runs in-process (`isolation="none"`), relying on AST-level validation for security. For stronger guarantees, agex supports subprocess and kernel-level isolation via [sandtrap](https://github.com/ashenfad/sandtrap).
+
+### Process Isolation
+
+```python
+agent = Agent(isolation="process")
+```
+
+Agent code runs in a forked subprocess. If the code crashes, segfaults, or triggers an OOM, the host process is unaffected. The sandbox communicates results back via IPC.
+
+All core functionality works cross-process: `task_success`/`task_fail`/`task_continue`, `print()`, `view_image()`, registered functions/classes/modules, and state synchronization. Values must be picklable to cross the process boundary.
+
+### Kernel Isolation
+
+```python
+agent = Agent(
+    isolation="kernel",
+    fs=connect_fs(type="isolated", root="/tmp/sandbox"),
+)
+```
+
+Adds OS-level restrictions on top of process isolation:
+
+- **Linux**: seccomp (syscall filtering) + Landlock (filesystem restriction)
+- **macOS**: Seatbelt (sandbox profiles)
+
+When paired with an `IsolatedFS`, kernel-level filesystem restriction locks access to the IsolatedFS root directory. With a `VirtualFS` or no filesystem, the kernel blocks all host filesystem access.
+
+### Choosing an Isolation Level
+
+| Scenario | Recommended Level |
+|----------|------------------|
+| Local development, notebooks | `"none"` |
+| Production server, multiple users | `"process"` |
+| Running untrusted code, public-facing | `"kernel"` |
+
+See [Agent - Sandbox Isolation](../api/agent.md#sandbox-isolation) for configuration details.

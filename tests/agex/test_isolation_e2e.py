@@ -329,3 +329,58 @@ class TestIsolationProcess:
         assert len(image_outputs) >= 1
         assert image_outputs[0].parts[0].image == "test_img"
         assert image_outputs[0].parts[0].detail == "low"
+
+
+class TestNestedIsolationValidation:
+    """Validate that nested process isolation is rejected at registration time."""
+
+    def setup_method(self):
+        clear_agent_registry()
+
+    def test_both_process_raises(self):
+        parent = Agent(name="parent", isolation="process")
+        child = Agent(name="child", isolation="process")
+
+        @child.task
+        def sub_task() -> str:
+            """Sub task."""
+            pass
+
+        with pytest.raises(ValueError, match="cannot nest"):
+            parent.fn()(sub_task)
+
+    def test_kernel_parent_process_child_raises(self):
+        parent = Agent(name="parent", isolation="kernel")
+        child = Agent(name="child", isolation="process")
+
+        @child.task
+        def sub_task() -> str:
+            """Sub task."""
+            pass
+
+        with pytest.raises(ValueError, match="cannot nest"):
+            parent.fn()(sub_task)
+
+    def test_process_parent_none_child_ok(self):
+        """Parent isolated, child in-process — allowed."""
+        parent = Agent(name="parent", isolation="process")
+        child = Agent(name="child", isolation="none")
+
+        @child.task
+        def sub_task() -> str:
+            """Sub task."""
+            pass
+
+        parent.fn()(sub_task)  # Should not raise
+
+    def test_none_parent_kernel_child_ok(self):
+        """Parent in-process, child isolated — the recommended pattern."""
+        parent = Agent(name="parent", isolation="none")
+        child = Agent(name="child", isolation="kernel")
+
+        @child.task
+        def sub_task() -> str:
+            """Sub task."""
+            pass
+
+        parent.fn()(sub_task)  # Should not raise

@@ -20,6 +20,8 @@ Agent(
     log_low_water_tokens: int | None = None,
     max_memory_mb: int | None = None,
     max_open_files: int | None = None,
+    eval_tick_limit: int | None = 100_000,
+    isolation: Literal["none", "process", "kernel"] = "none",
 )
 ```
 
@@ -41,6 +43,8 @@ Agent(
 | `log_low_water_tokens` | `int \| None` | `None` | Target token count after summarization (defaults to 50% of high water) |
 | `max_memory_mb` | `int \| None` | `None` | Per-task memory limit in MB. Enforced by sandtrap (kernel on Linux, checkpoint on macOS). See [Resource Limits](#resource-limits). |
 | `max_open_files` | `int \| None` | `None` | Maximum file descriptors per task (Unix only). See [Resource Limits](#resource-limits). |
+| `eval_tick_limit` | `int \| None` | `100_000` | Maximum Python control-flow checkpoints (loop iterations, function entries) per code execution. Set to `None` to disable. |
+| `isolation` | `Literal["none", "process", "kernel"]` | `"none"` | Sandbox isolation level. See [Sandbox Isolation](#sandbox-isolation). |
 
 ### Basic Example
 
@@ -259,6 +263,54 @@ agent = Agent(
 
 Use for A/B testing system prompts or model-specific optimizations.
 
+## Sandbox Isolation
+
+Controls how agent-generated code is executed by [sandtrap](https://github.com/ashenfad/sandtrap):
+
+```python
+agent = Agent(isolation="process")  # Subprocess isolation
+```
+
+| Level | Description | Use Case |
+|-------|-------------|----------|
+| `"none"` | In-process execution. Lowest overhead. | Local notebooks, trusted agent code |
+| `"process"` | Subprocess execution. Crash, OOM, or segfault in agent code won't take down the host. | Production servers, untrusted code |
+| `"kernel"` | Subprocess + kernel-level restrictions (seccomp on Linux, Seatbelt on macOS). Filesystem, syscall, and network access are locked down by the OS. | High-security environments |
+
+### What works across isolation levels
+
+All core agent functionality works regardless of isolation level:
+
+- **Task control**: `task_success()`, `task_fail()`, `task_clarify()`, `task_continue()`
+- **`print()`**: Output is captured via snapshot and returned as events
+- **`view_image()`**: Image actions are collected in-sandbox and processed after execution
+- **Registered functions, classes, and modules**: Survive pickle across the process boundary
+- **State sync**: Namespace changes in the subprocess are synced back to state
+
+### Pairing with filesystem
+
+Isolation level pairs with `fs` configuration:
+
+- `isolation="kernel"` + `connect_fs(type="isolated", root="/path")` — kernel-enforced filesystem lockdown to the IsolatedFS root
+- `isolation="kernel"` + `connect_fs(type="virtual")` — no kernel filesystem lockdown, but seccomp and network isolation still apply
+- `isolation="kernel"` + `fs=None` — no file I/O at all
+
+### Hierarchical agents
+
+When using the dual-decorator pattern (`@orchestrator.fn` + `@specialist.task`), the parent and child agents **cannot both** use process or kernel isolation. The parent's sandbox would need to fork a child for the sub-agent, but daemon processes can't create children.
+
+The recommended pattern is `isolation="none"` on the orchestrator (its code is just function calls) and `isolation="process"` or `"kernel"` on the leaf agents that run generated code:
+
+```python
+orchestrator = Agent(isolation="none", ...)      # Coordinates
+data_maker   = Agent(isolation="kernel", ...)     # Runs generated code
+plotter      = Agent(isolation="kernel", ...)     # Runs generated code
+```
+
+Attempting to register an isolated sub-agent task on an isolated parent raises `ValueError` at registration time.
+
+See **[Security - Sandbox Isolation](../concepts/security.md#sandbox-isolation)** for details.
+
 ## Resource Limits
 
 Protect against runaway agent code with per-task resource limits:
@@ -288,7 +340,7 @@ Limits open file descriptors via `RLIMIT_NOFILE` (Unix). Exceeding raises `OSErr
 
 ### Process-Level Behavior
 
-Memory and file descriptor limits are process-wide on Unix. For concurrent tasks in the same process, the limit applies to all tasks combined. For stronger isolation guarantees with per-task limits, use the Modal integration which provides containerized execution.
+Memory and file descriptor limits are process-wide on Unix. For concurrent tasks in the same process, the limit applies to all tasks combined. For per-task isolation, use `isolation="process"` or `"kernel"` (see [Sandbox Isolation](#sandbox-isolation)), or the Modal integration for containerized execution.
 
 ### VFS Size Limits
 
