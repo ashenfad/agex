@@ -32,43 +32,20 @@ This creates a natural development experience:
 - **Familiar debugging** - `print()` works as expected
 
 
-## The Middle Road: Guidance Through a Curated Environment
+## Registration: Guidance + Security
 
-Agentic frameworks often present a stark choice: provide agents with rigid, pre-defined tools, or grant them access to a full, open-ended compute environment. The former offers guidance at the cost of flexibility, while the latter provides power at the cost of reliability and focus.
+Agentic frameworks often present a stark choice: rigid pre-defined tools, or a full open-ended compute environment. `agex` is the middle road.
 
-`agex` is designed to be the middle road.
+The whitelist registration system serves two roles. First, it's a tool for **guidance** — by selecting which functions, classes, and modules you expose, you provide conceptual guide-rails that steer the agent toward correct solutions. Second, it provides **security** — agents can only access what you explicitly register, with fine-grained visibility controls and type validation at boundaries.
 
-The whitelist registration system is more than just a security feature; it is a tool for **guidance**. By carefully selecting which functions, classes, and modules you expose, you are providing conceptual guide-rails for your agent.
-
-This curated environment helps lead the agent toward a correct solution by limiting its scope of action to only the most relevant capabilities. It prevents the agent from getting lost in the vastness of a full compute environment and encourages it to compose the building blocks you provide.
-
-### Registration, Not Tool-Making
-
-This curated environment is created through **registration**, not by writing tool abstractions. In many frameworks, adapting a library for agent use requires writing wrapper functions or "tools" that handle JSON serialization and provide a simplified interface. `agex` bypasses this entirely.
-
-Instead of writing `tools/my_pandas_tool.py`, you simply register the `pandas` library directly with the agent:
+This environment is created through **registration**, not by writing tool abstractions. Instead of writing `tools/my_pandas_tool.py`, you register `pandas` directly:
 
 ```python
 import pandas as pd
 agent.module(pd)
 ```
 
-Your existing codebase *is* the toolset. The registration system acts as a secure and targeted bridge between your code and the agent, without forcing you to create and maintain a parallel set of tool abstractions.
-
-#### Leveraging the Existing Ecosystem
-
-The premise is simple: a vast ecosystem of Python libraries already exists.
-
-Rather than wrapping logic in new abstractions, `agex` lets agents use existing libraries directly—the same ones you'd use in regular Python code.
-
-## Security Through Design
-
-The registration system provides clean security boundaries:
-
-- **Explicit capability registration** - Agents can only access functions you explicitly expose
-- **Visibility controls** - Fine-grained control over what capabilities are prominent vs. hidden
-- **Namespace isolation** - Multiple agents work with shared state without interference
-- **Type validation** - Automatic validation ensures data integrity at agent boundaries
+Your existing codebase *is* the toolset.
 
 ## Tangibly Different
 
@@ -127,9 +104,7 @@ result = analyze(
 )
 ```
 
-Traditional frameworks would likely require separate tool calls for filtering and various aggregations (mean and median). agex agents compose operations efficiently within single executions.
-
-### 3. Agent Workspace Persistence  
+### 3. Agent Workspace Persistence
 
 Git-like versioning with automatic checkpointing enables detailed debugging:
 
