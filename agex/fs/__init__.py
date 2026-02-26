@@ -42,8 +42,6 @@ def connect_fs(
         per_session (bool): Create session subdirectories (default: False).
     """
     per_session = kwargs.pop("per_session", False)
-    # tracking was removed — accept and ignore for backwards compat
-    kwargs.pop("tracking", None)
 
     config = _monkeyfs_connect_fs(type=type, **kwargs)
 
