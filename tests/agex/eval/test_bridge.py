@@ -144,25 +144,31 @@ class TestNamespaceBuilder:
         assert callable(ns["task_clarify"])
         assert callable(ns["task_continue"])
 
-    def test_stateful_builtins_present(self):
+    def test_view_image_present(self):
         state = Live()
         agent = Agent(name="ns_test")
         ns, _, _ = build_namespace(state, agent, "ns_test")
-        # print is handled via Sandbox print_handler, not in namespace
+        # print is handled via sandtrap's snapshot_prints, not in namespace
         assert "print" not in ns
         assert callable(ns["view_image"])
-        assert callable(ns["help"])
-        assert callable(ns["dir"])
+        # help and dir use Python builtins, not custom injections
+        assert "help" not in ns
+        assert "dir" not in ns
 
-    def test_print_handler_creates_output_event(self):
-        """Test that make_print_handler captures real objects into OutputEvent."""
-        from agex.eval.bridge.namespace import make_print_handler
+    def test_outputs_list_present(self):
+        state = Live()
+        agent = Agent(name="ns_test")
+        ns, _, _ = build_namespace(state, agent, "ns_test")
+        assert isinstance(ns["__outputs__"], list)
+        assert len(ns["__outputs__"]) == 0
 
+    def test_print_snapshot_creates_output_event(self):
+        """Test that result.prints are converted to OutputEvents by handle_result."""
         state = Live()
         state["__event_log__"] = []
-        handler = make_print_handler(state, "test_agent", None)
+        result = ExecResult(prints=[("Hello", 42)])
 
-        handler("Hello", 42)
+        handle_result(result, state, "test_agent", set())
 
         event_list = events(state)
         assert len(event_list) == 1
@@ -238,6 +244,136 @@ class TestResultHandler:
             handle_result(result, state, "test", set())
         # x should still be synced despite the error
         assert state.get("x") == 42
+
+
+class TestTaskControlPicklability:
+    """Tests that task control functions survive pickle roundtrip."""
+
+    def test_task_control_functions_are_picklable(self):
+        import pickle
+
+        from agex.eval.bridge.namespace import (
+            _task_clarify,
+            _task_continue,
+            _task_fail,
+            _task_success,
+        )
+
+        for fn in [_task_success, _task_fail, _task_clarify, _task_continue]:
+            roundtripped = pickle.loads(pickle.dumps(fn))
+            assert callable(roundtripped)
+
+    def test_task_success_validation_in_handle_result(self):
+        """Validation of TaskSuccess result happens in handle_result, not in sandbox."""
+        state = Live()
+        state["__event_log__"] = []
+        state["__expected_return_type__"] = int
+
+        # Valid result — should re-raise TaskSuccess without TypeError
+        result = ExecResult(error=TaskSuccess(result=42))
+        with pytest.raises(TaskSuccess):
+            handle_result(result, state, "test", set())
+
+        # Invalid result — should raise TypeError from validation
+        result = ExecResult(error=TaskSuccess(result="not an int"))
+        with pytest.raises(TypeError, match="Output validation failed"):
+            handle_result(result, state, "test", set())
+
+    def test_task_continue_observations_create_event(self):
+        """task_continue observations are converted to OutputEvent in handle_result."""
+        from agex.agent.datatypes import TaskContinue
+
+        state = Live()
+        state["__event_log__"] = []
+
+        result = ExecResult(error=TaskContinue(observations=("progress", 50)))
+        with pytest.raises(TaskContinue):
+            handle_result(result, state, "test_agent", set())
+
+        event_list = events(state)
+        output_events = [e for e in event_list if isinstance(e, OutputEvent)]
+        assert len(output_events) == 1
+        assert output_events[0].parts == ["progress", 50]
+
+    def test_task_continue_no_observations_no_event(self):
+        """task_continue without observations creates no OutputEvent."""
+        from agex.agent.datatypes import TaskContinue
+
+        state = Live()
+        state["__event_log__"] = []
+
+        result = ExecResult(error=TaskContinue())
+        with pytest.raises(TaskContinue):
+            handle_result(result, state, "test_agent", set())
+
+        event_list = events(state)
+        output_events = [e for e in event_list if isinstance(e, OutputEvent)]
+        assert len(output_events) == 0
+
+
+class TestViewImage:
+    """Tests for the __outputs__-based view_image."""
+
+    def setup_method(self):
+        clear_agent_registry()
+
+    def test_view_image_is_picklable(self):
+        import pickle
+
+        from agex.eval.bridge.namespace import _ViewImage
+
+        outputs = []
+        vi = _ViewImage(outputs)
+        roundtripped = pickle.loads(pickle.dumps(vi))
+        assert callable(roundtripped)
+
+    def test_view_image_appends_to_outputs(self):
+        from agex.eval.bridge.namespace import _ViewImage
+        from agex.eval.objects import ImageAction
+
+        outputs = []
+        vi = _ViewImage(outputs)
+        vi("fake_image", detail="low")
+        assert len(outputs) == 1
+        assert isinstance(outputs[0], ImageAction)
+        assert outputs[0].image == "fake_image"
+        assert outputs[0].detail == "low"
+
+    def test_view_image_invalid_detail(self):
+        from agex.eval.bridge.namespace import _ViewImage
+
+        vi = _ViewImage([])
+        with pytest.raises(ValueError, match="detail must be"):
+            vi("img", detail="medium")
+
+    def test_outputs_converted_to_events_by_handle_result(self):
+        from agex.eval.objects import ImageAction
+
+        state = Live()
+        state["__event_log__"] = []
+        img_action = ImageAction(image="test_img", detail="high")
+        result = ExecResult(namespace={"__outputs__": [img_action]})
+
+        handle_result(result, state, "test_agent", set())
+
+        event_list = events(state)
+        assert len(event_list) == 1
+        assert isinstance(event_list[0], OutputEvent)
+        assert len(event_list[0].parts) == 1
+        assert isinstance(event_list[0].parts[0], ImageAction)
+        assert event_list[0].parts[0].image == "test_img"
+
+    def test_view_image_in_sandbox(self):
+        """view_image works through execute_sandboxed via __outputs__."""
+        agent = Agent(name="vi_test")
+        state = Live()
+        state["__event_log__"] = []
+        execute_sandboxed('view_image("test_img", detail="low")', agent, state)
+        event_list = events(state)
+        output_events = [e for e in event_list if isinstance(e, OutputEvent)]
+        assert len(output_events) == 1
+        assert output_events[0].parts[0].image == "test_img"
+        assert output_events[0].parts[0].detail == "low"
 
 
 class TestExecuteSandboxed:

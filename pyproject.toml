@@ -124,6 +124,9 @@ testpaths = ["tests"]
 pythonpath = [
   "."
 ]
+filterwarnings = [
+  "ignore:This process .* is multi-threaded, use of fork\\(\\) may lead to deadlocks in the child:DeprecationWarning",
+]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

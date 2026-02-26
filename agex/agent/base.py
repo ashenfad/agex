@@ -8,6 +8,9 @@ from .datatypes import MemberSpec, RegisteredClass
 from .fingerprint import compute_agent_fingerprint_from_policy
 from .policy.policy import AgentPolicy
 
+# Valid isolation levels for sandtrap's sandbox() factory
+Isolation = Literal["none", "process", "kernel"]
+
 if TYPE_CHECKING:
     from collections.abc import MutableMapping
 
@@ -66,6 +69,8 @@ class BaseAgent:
         max_open_files: int | None = None,
         # Tick-based execution limit (primary runaway-code protection)
         eval_tick_limit: int | None = 100_000,
+        # Sandbox isolation level (passed to sandtrap)
+        isolation: Isolation = "none",
         # Advanced: Override the builtin system instructions
         agex_primer_override: str | None = None,
     ):
@@ -130,6 +135,9 @@ class BaseAgent:
 
         # Memory limit passed through to sandtrap's Policy.memory_limit
         self.max_memory_mb = max_memory_mb
+
+        # Sandbox isolation level (passed to sandtrap's sandbox() factory)
+        self.isolation: Isolation = isolation
 
         # File descriptor limits (per-task, Unix only)
         self._resource_limits = ResourceLimits(

@@ -10,9 +10,9 @@ import asyncio
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from sandtrap import Sandbox
+from sandtrap import sandbox as create_sandbox
 
-from .namespace import build_namespace, make_print_handler
+from .namespace import build_namespace
 from .policy import translate_policy
 from .result import handle_result
 
@@ -53,9 +53,12 @@ def _prepare_sandbox(
         register_io(agent)
 
     policy = translate_policy(agent, timeout=timeout, tick_limit=tick_limit)
-    print_handler = make_print_handler(state, agent.name, on_event)
-    sandbox = Sandbox(
-        policy, mode="wrapped", filesystem=fs, print_handler=print_handler
+    sb = create_sandbox(
+        policy,
+        isolation=agent.isolation,
+        mode="wrapped",
+        filesystem=fs,
+        snapshot_prints=True,
     )
     namespace, pre_keys, injected_keys = build_namespace(
         state, agent, agent.name, on_event=on_event
@@ -65,7 +68,7 @@ def _prepare_sandbox(
     if file_path is not None:
         namespace["__file__"] = file_path
 
-    return sandbox, namespace, pre_keys, injected_keys
+    return sb, namespace, pre_keys, injected_keys
 
 
 def execute_sandboxed(
@@ -83,7 +86,7 @@ def execute_sandboxed(
     """Execute agent code synchronously in the sandtrap sandbox."""
     from .policy import _current_on_event, _current_on_token, _current_session
 
-    sandbox, namespace, pre_keys, injected_keys = _prepare_sandbox(
+    sb, namespace, pre_keys, injected_keys = _prepare_sandbox(
         program,
         agent,
         state,
@@ -98,7 +101,7 @@ def execute_sandboxed(
     event_token = _current_on_event.set(on_event)
     token_token = _current_on_token.set(on_token)
     try:
-        result = sandbox.exec(program, namespace=namespace)
+        result = sb.exec(program, namespace=namespace)
     finally:
         _current_session.reset(session_token)
         _current_on_event.reset(event_token)
@@ -133,7 +136,7 @@ async def aexecute_sandboxed(
     from .policy import _current_on_event, _current_on_token, _current_session
 
     # Wrap async on_event into a thread-safe sync wrapper.  Sandbox code
-    # (including the print handler) runs in an executor thread, so async
+    # runs in an executor thread, so async
     # callbacks must be dispatched to the event loop.  Fire-and-forget to
     # avoid deadlocks (callback may await things that depend on the sandbox
     # thread continuing).
@@ -144,7 +147,7 @@ async def aexecute_sandboxed(
         def safe_on_event(event: Any) -> None:
             asyncio.run_coroutine_threadsafe(on_event(event), loop)
 
-    sandbox, namespace, pre_keys, injected_keys = _prepare_sandbox(
+    sb, namespace, pre_keys, injected_keys = _prepare_sandbox(
         program,
         agent,
         state,
@@ -159,7 +162,7 @@ async def aexecute_sandboxed(
     event_token = _current_on_event.set(safe_on_event)
     token_token = _current_on_token.set(on_token)
     try:
-        result = await sandbox.aexec(program, namespace=namespace)
+        result = await sb.aexec(program, namespace=namespace)
     finally:
         _current_session.reset(session_token)
         _current_on_event.reset(event_token)

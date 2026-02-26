@@ -98,12 +98,12 @@ class TestEventSystem:
         assert event.code == code_text
 
     def test_output_event_creation(self):
-        """Test that OutputEvent is created for print(), help(), dir() calls."""
+        """Test that OutputEvent is created for print() calls."""
         llm = Dummy(
             [
                 LLMResponse(
-                    thinking="I'll test various output functions and complete.",
-                    code="""```python\nprint("Hello World")\nhelp()\ndir()\ntask_success("done")\n```""",
+                    thinking="I'll test print output and complete.",
+                    code='print("Hello World")\ntask_success("done")',
                 )
             ]
         )
@@ -122,8 +122,7 @@ class TestEventSystem:
         event_list = [e for e in events(state) if e.full_namespace == "output_agent"]
         output_events = [e for e in event_list if isinstance(e, OutputEvent)]
 
-        # Should have events for print(), help(), and dir()
-        assert len(output_events) >= 3
+        assert len(output_events) >= 1
 
         # All should have correct agent name
         for event in output_events:

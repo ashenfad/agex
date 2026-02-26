@@ -6,6 +6,7 @@ from ..llm import LLM
 from .base import (
     _UNSET,
     BaseAgent,
+    Isolation,
     clear_agent_registry,
 )
 
@@ -76,6 +77,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         max_memory_mb: int | None = None,
         max_open_files: int | None = None,
         eval_tick_limit: int | None = 100_000,
+        isolation: "Isolation" = "none",
     ) -> "Agent":
         """
         Create a new agent with copied registrations but independent state/fs/host.
@@ -128,6 +130,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             max_memory_mb=max_memory_mb,
             max_open_files=max_open_files,
             eval_tick_limit=eval_tick_limit,
+            isolation=isolation,
         )
 
         # Copy the policy so modifications don't affect source
@@ -173,6 +176,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         max_open_files: int | None = None,
         # Tick-based execution limit (primary runaway-code protection)
         eval_tick_limit: int | None = 100_000,
+        # Sandbox isolation level (passed to sandtrap)
+        isolation: "Isolation" = "none",
         # Advanced: Override the built-in system instructions
         agex_primer_override: str | None = None,
     ):
@@ -206,6 +211,9 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
                 (loop iterations, function entries, comprehensions) per code execution.
                 Defaults to 100,000. Set to None to disable and rely solely on
                 eval_timeout_seconds.
+            isolation: Sandbox isolation level. "none" (default) runs in-process.
+                "process" runs in a subprocess for crash protection. "kernel" adds
+                kernel-level filesystem, syscall, and network restrictions.
             agex_primer_override: (Advanced) Override the built-in system instructions
                 that define the agent's core behavior and event protocol.
         """
@@ -225,5 +233,6 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             max_memory_mb=max_memory_mb,
             max_open_files=max_open_files,
             eval_tick_limit=eval_tick_limit,
+            isolation=isolation,
             agex_primer_override=agex_primer_override,
         )
