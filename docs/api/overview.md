@@ -47,9 +47,9 @@ Empirical evaluation framework for agent performance testing, A/B testing primer
 Most agex functionality is available at the top level:
 
 ```python
-from agex import Agent, Versioned, view
+from agex import Agent, Staged, view
 from agex import connect_llm, connect_state, connect_host  # Configuration
-from agex import Memory, Disk  # Storage backends
+from agex.state.kv import Memory, Disk  # Storage backends
 from agex import TaskFail  # Error handling
 from agex import clear_agent_registry  # Utilities
 ```

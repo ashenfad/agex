@@ -135,12 +135,17 @@ Traditional frameworks would likely require separate tool calls for filtering an
 Git-like versioning with automatic checkpointing enables detailed debugging:
 
 ```python
-from agex import ActionEvent, Versioned, events
+from agex import Agent, ActionEvent, connect_state, events
 
-state = Versioned()
-result = my_agent_task("complex analysis", state=state)
+agent = Agent(
+    state=connect_state(type="versioned", storage="memory"),
+)
+
+# ... define and run a task ...
+result = my_agent_task("complex analysis")
 
 # Every agent action creates a versioned checkpoint
+state = agent.state()
 all_events = events(state)
 action_event = next(e for e in all_events if isinstance(e, ActionEvent))
 

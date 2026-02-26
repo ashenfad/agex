@@ -50,6 +50,18 @@ pip install "agex[all-providers]"
 
 For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project. `agex` explores a different architectural path, focusing on deep runtime interoperability and a secure, sandboxed environment for direct integration with existing Python libraries.
 
+## Built On
+
+agex is composed of several focused libraries that can also be used independently:
+
+| Library | Purpose |
+|---------|---------|
+| [sandtrap](https://github.com/ashenfad/sandtrap) | In-process Python sandbox via AST rewriting |
+| [kvgit](https://github.com/ashenfad/kvgit) | Versioned key-value store with git-like semantics |
+| [monkeyfs](https://github.com/ashenfad/monkeyfs) | Filesystem interception via monkey-patching |
+| [termish](https://github.com/ashenfad/termish) | Virtual terminal with shell-like commands |
+| [reprobate](https://github.com/ashenfad/reprobrate) | Budget-controlled repr for Python objects |
+
 ## Contributing
 
 We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for details on our development workflow, code style, and how to submit pull requests. For bug reports and feature requests, please use [GitHub Issues](https://github.com/ashenfad/agex/issues).

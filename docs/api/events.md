@@ -31,7 +31,7 @@ agent_events = [e for e in all_events if e.full_namespace == "agent_name"]
 
 **Function Signature:**
 ```python
-def events(state: Versioned | Live) -> list[Event]
+def events(state: Staged | Live) -> list[Event]
 ```
 
 **Parameters:**
@@ -72,6 +72,8 @@ event = ActionEvent(
     code="...",              # str | None - Python code to execute
     terminal="...",          # str | None - Terminal commands to execute
     file_actions=[...],      # list[FileAction | EditAction]
+    input_tokens=...,        # int | None - Actual input tokens from LLM API
+    output_tokens=...,       # int | None - Actual output tokens from LLM API
 )
 ```
 
@@ -233,6 +235,36 @@ When a `SummaryEvent` is present, agex automatically applies tiered rendering to
 
 This approach allows agents to keep significantly more event history in context before needing additional summarization.
 
+#### `ErrorEvent`
+Generated for framework-level errors (e.g., LLM API failures) that agents don't handle directly. Used by the retry system to log each failed attempt.
+
+```python
+from agex.agent.events import ErrorEvent
+
+# Event structure
+event = ErrorEvent(
+    error=...,               # Any - The actual exception object
+    recoverable=True,        # bool - Whether the task can continue
+)
+```
+
+When LLM retries are enabled, each failed attempt emits an `ErrorEvent` with `recoverable=True`. If all retries are exhausted, a final `ErrorEvent` with `recoverable=False` is emitted before raising `LLMFail`. See [Error Handling - LLMFail](errors.md#llmfail-framework) for details.
+
+#### `CancelledEvent`
+Generated when a task is cancelled via an external request (e.g., `my_task.cancel()`).
+
+```python
+from agex.agent.events import CancelledEvent
+
+# Event structure
+event = CancelledEvent(
+    task_name="...",              # str - Name of the cancelled task
+    iterations_completed=3,      # int - How many iterations completed before cancellation
+)
+```
+
+See [Task - Task Cancellation](task.md#task-cancellation) for details on the cancellation mechanism.
+
 ### Event Properties
 
 All events share these common properties from `BaseEvent`:
@@ -257,10 +289,10 @@ This is the ideal tool for analyzing a task **after it has completed**. You pass
 This is the primary method for debugging and detailed inspection of an agent's behavior.
 
 ```python
-from agex import events, Versioned
+from agex import events, Staged
 from agex.agent.events import ActionEvent
 
-state = Versioned()
+state = Staged()
 result = my_task("run analysis", state=state)
 
 # After the task is done, get all events for analysis
@@ -304,6 +336,8 @@ result = my_task("important task", on_event=custom_handler)
 - `type`: one of `"title"`, `"thinking"`, `"file"`, `"edit"`, `"terminal"`, or `"python"`
 - `content`: the text fragment for that section
 - `done`: a boolean that signals the end of the current section
+- `input_tokens`: actual input token count from the LLM API (set on the final chunk only)
+- `output_tokens`: actual output token count from the LLM API (set on the final chunk only)
 
 **Token Types:**
 | Type | Description |

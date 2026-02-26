@@ -1,6 +1,6 @@
 # FileSystem Configuration
 
-The `connect_fs()` factory function configures agent filesystem access. **By default, all agents are configured with a Virtual Filesystem (VFS)**, allowing them to create and manage persistent workspace modules. Use `connect_fs()` to change this configuration to:
+The `connect_fs()` factory function configures agent filesystem access, built on [monkeyfs](https://github.com/ashenfad/monkeyfs). **By default, all agents are configured with a Virtual Filesystem (VFS)**, allowing them to create and manage persistent workspace modules. Use `connect_fs()` to change this configuration to:
 - **Isolated filesystem**: Real filesystem access restricted to a specific directory on the host
 - **Manual/Unrestricted**: Disable automatic sandboxed filesystem configuration by passing `fs=None` to the agent constructor. In this mode, no default IO capabilities are provided, but agents may have unrestricted host access if risky modules (like `os` or `pathlib`) are manually registered.
 

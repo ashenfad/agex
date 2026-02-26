@@ -234,18 +234,20 @@ Versioned state handles unpicklable objects gracefully. Agents can use database 
 > [!NOTE]
 > Most users should use `connect_state()` for configuration. Direct construction is for advanced use cases requiring fine-grained control or custom storage backends.
 
-For advanced use cases, you can construct state objects directly instead of using the factory function:
+For advanced use cases, you can construct state objects directly using types from [kvgit](https://github.com/ashenfad/kvgit):
 
-### Direct Versioned State
+### Direct Construction
 
 ```python
-from agex import Versioned, Live, Disk, Memory
+from agex import Staged, Live
+from agex.state.kv import Disk, Memory
+from kvgit import Versioned
 
 # Equivalent to connect_state(type="versioned", storage="disk", path="/path")
-state = Versioned(Disk("/path/to/storage"))
+state = Staged(Versioned(Disk("/path/to/storage")))
 
 # Equivalent to connect_state(type="versioned", storage="memory")
-state = Versioned(Memory())
+state = Staged(Versioned(Memory()))
 
 # Equivalent to connect_state(type="live")
 state = Live()
@@ -256,7 +258,8 @@ state = Live()
 For agents that accumulate large state histories over many iterations, use `GCVersioned` to automatically prune old commits:
 
 ```python
-from agex import GCVersioned, Disk
+from agex import GCVersioned
+from agex.state.kv import Disk
 
 state = GCVersioned(
     Disk("/path/to/storage"),
@@ -295,9 +298,10 @@ class RedisStore(KVStore):
         """List all keys with optional prefix filter."""
         ...
 
-# Use with Versioned state
-from agex import Versioned
-state = Versioned(RedisStore(host="localhost", port=6379))
+# Use with versioned state
+from agex import Staged
+from kvgit import Versioned
+state = Staged(Versioned(RedisStore(host="localhost", port=6379)))
 ```
 
 ## Quick Reference

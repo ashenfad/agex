@@ -40,10 +40,12 @@ def analyze(data: list) -> float: # type: ignore[return-value]
 
 Registers a curated list of safe and useful modules from the Python standard library.
 
--   **Mathematical**: `math`, `random` (with state-setting functions like `seed()` excluded), `statistics`, `decimal`, `fractions`.
--   **Utilities**: `collections`, `datetime` (including its classes), `uuid`.
+-   **Mathematical**: `math`, `random` (with state-setting functions like `seed()` excluded), `statistics`, `decimal`, `fractions`, `time`.
+-   **Utilities**: `collections`, `itertools`, `datetime` (including its classes), `calendar`, `uuid`.
 -   **Text Processing**: `re`, `string`, `textwrap`.
--   **Data Encoding**: `json`, `base64`, `hashlib`.
+-   **Data Encoding**: `base64`, `hashlib`, `zoneinfo`.
+-   **Debugging**: `traceback` (safe formatting functions only).
+-   **Types**: `typing`.
 -   All modules are registered with `visibility="low"`.
 
 ### `register_numpy(agent)`
@@ -77,7 +79,7 @@ Registers IO-related modules for file operations. Used with VFS and isolated fil
 -   **File objects**: `io.BytesIO`, `io.StringIO`, `io.TextIOWrapper` (plus the internal `_io` types for real file objects)
 -   **OS operations**: `os.listdir`, `os.remove`, `os.mkdir`, `os.makedirs`, `os.rename`, `os.stat`
 -   **Path utilities**: `os.path.exists`, `os.path.isfile`, `os.path.isdir`, `os.path.join`, `os.path.basename`, `os.path.dirname`, `os.path.splitext`
--   **Data formats**: `json`, `csv`, `pathlib`
+-   **Data formats**: `json`, `csv`, `pickle`, `pathlib`
 -   **Built-in**: `open()`
 
 > [!NOTE]

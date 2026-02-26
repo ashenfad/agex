@@ -16,8 +16,9 @@ The `agex` sandbox uses a **whitelist-based security model** with these key comp
 
 - **AST-level validation**: All Python code is parsed and validated by the execution engine to block dangerous language features.
 - **Attribute access control**: Only explicitly whitelisted attributes and methods are accessible.
-- **Data Isolation**: When using `Versioned` state, all data is serialized at the boundary of an agent task. Agents never get a direct reference to host objects, preventing accidental or malicious mutation.
-- **Type system isolation**: Safe type placeholders prevent access to dangerous methods on type objects.
+- **Data Isolation**: When using versioned state, all data is serialized at the boundary of an agent task. Agents never get a direct reference to host objects, preventing accidental or malicious mutation.
+- **Dynamic class creation blocked**: Three-argument `type()` is rejected, preventing agents from creating classes that bypass AST-level validation.
+- **Dangerous builtins removed**: `exec`, `eval`, `compile`, `dir`, `help`, `globals`, and control exceptions are not available in agent code.
 - **Import restrictions**: Module imports are controlled through explicit registration.
 
 ## Python Language Restrictions
@@ -41,23 +42,26 @@ f"{obj.attr}"
 
 ### Type System (`type()` builtin)
 
-The `type()` builtin is overridden to return safe placeholder objects. This blocks access to dangerous, low-level methods on type objects while preserving legitimate functionality like `isinstance()` checks.
-
-The primary goal is to prevent access to `object.__subclasses__()`, which can be used to traverse the entire class hierarchy of a Python application, find sensitive classes (like `os._wrap_close`), and achieve arbitrary code execution.
+Single-argument `type(obj)` works normally for type inspection. Three-argument `type('Name', bases, dict)` — which dynamically creates new classes — is blocked. This prevents agents from creating classes that bypass the AST rewriter's validation of class definitions, which is needed to enforce attribute access control on instances.
 
 ```python
-# ✅ Safe operations:
-type(42)(123)              # Constructor calls
-isinstance(42, type(42))   # Type checking  
+# ✅ Allowed: type inspection
+t = type(42)           # <class 'int'>
+isinstance(42, t)      # True
 
-# ❌ Blocked operations that allow sandbox escapes:
-type(42).__subclasses__    # Class hierarchy introspection
-type(42).__mro__           # Method resolution order
+# ❌ Blocked: dynamic class creation
+MyClass = type('MyClass', (object,), {'x': 1})  # TypeError
 ```
 
-### Introspection Functions
+### Unavailable Builtins
 
-The built-in `dir()` and `help()` functions are overridden to show only the attributes and methods that have been explicitly whitelisted for the agent. This allows for useful introspection without leaking access to sensitive internal methods or private attributes (those prefixed with `_`).
+The following names are not available in agent code (raise `NameError`):
+
+- **Dangerous builtins**: `exec`, `eval`, `compile`
+- **Introspection**: `dir()`, `help()`, `globals()`
+- **Control exceptions**: `BaseException`, `KeyboardInterrupt`, `GeneratorExit`, `SystemExit`
+
+`locals()` is available but returns a filtered copy (sandbox internals excluded).
 
 For a complete overview of all sandbox limitations, see our [Nearly Python guide](./nearly-python.md).
 
@@ -71,7 +75,7 @@ Beyond code validation, agex provides defense-in-depth resource limiting to prot
 agent = Agent(max_memory_mb=500)  # 500MB headroom per task
 ```
 
-Memory limits are enforced by sandtrap's sandbox. On Linux, `RLIMIT_AS` provides kernel-enforced virtual address space caps. On macOS, enforcement is checkpoint-based (fires at loop iterations, function entries, and builtin calls). When exceeded, the agent sees a `MemoryError` wrapped in `EvalError`.
+Memory limits are enforced by [sandtrap](https://github.com/ashenfad/sandtrap)'s sandbox. On Linux, `RLIMIT_AS` provides kernel-enforced virtual address space caps. On macOS, enforcement is checkpoint-based (fires at loop iterations, function entries, and builtin calls). When exceeded, the agent sees a `MemoryError` wrapped in `EvalError`.
 
 ### File Descriptor Limits
 
@@ -93,7 +97,7 @@ Limits the total size of all files in the Virtual FileSystem, preventing unbound
 
 ### Platform Support
 
-Memory limits are handled by sandtrap (Linux: kernel-enforced, macOS: checkpoint-based, Windows: no-op). File descriptor limits use `RLIMIT_NOFILE` on Linux/macOS. On Windows, resource limits are not enforced (a warning is issued).
+Memory limits are handled by [sandtrap](https://github.com/ashenfad/sandtrap) (Linux: kernel-enforced, macOS: checkpoint-based, Windows: no-op). File descriptor limits use `RLIMIT_NOFILE` on Linux/macOS. On Windows, resource limits are not enforced (a warning is issued).
 
 See [Agent Resource Limits](../api/agent.md#resource-limits) and [VFS Size Limits](../api/fs.md#size-limits) for configuration details.
 

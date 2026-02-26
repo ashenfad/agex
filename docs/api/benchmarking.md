@@ -261,26 +261,26 @@ for task, stats in results.items():
 ### State and Context Testing
 
 ```python
-from agex import Versioned
+from agex import connect_state
 
 def create_trials_with_state():
     """Generate trials that test stateful interactions."""
-    base_state = Versioned({"context": "financial_analysis"})
-    
+    state_config = connect_state(type="versioned", storage="memory")
+
     return [
         Trial(
-            params=params("What's the revenue?", state=base_state),
+            params=params("What's the revenue?", state=state_config),
             judge=lambda actual: "revenue_data" in actual,
         ),
         Trial(
-            params=params("Calculate the growth rate", state=base_state),
+            params=params("Calculate the growth rate", state=state_config),
             judge=lambda actual: "growth_calculation" in actual,
         ),
     ]
 ```
 
 !!! warning "Stateful Benchmarks and Concurrency"
-    When designing benchmarks that test stateful interactions (i.e., multiple trials that share the same `Versioned` state object), you **must** use `max_concurrency=1` (the default).
+    When designing benchmarks that test stateful interactions (i.e., multiple trials that share the same versioned state object), you **must** use `max_concurrency=1` (the default).
 
     Using a `max_concurrency` greater than 1 for stateful benchmarks will lead to race conditions and unpredictable results, as concurrent trials will attempt to read from and write to the same state object simultaneously. For stateless trials, concurrency is safe and recommended for performance.
 
