@@ -1,49 +1,18 @@
 # Quick Start
 
-This guide walks you through the core concepts of agex with hands-on examples. By the end, you'll understand how to create agents, register capabilities, and build multi-agent workflows.
-
-## Basic Setup
-
-First, install agex with your preferred LLM provider:
-
-```bash
-# Install with specific provider
-pip install "agex[openai]"      # For OpenAI models
-pip install "agex[anthropic]"   # For Anthropic Claude models
-pip install "agex[gemini]"      # For Google Gemini models
-
-# Or install with all providers
-pip install "agex[all-providers]"
-
-# Or install just the core (dummy provider only)
-pip install agex
-```
-
-Next, configure your LLM client. You can either pass arguments directly to `connect_llm` or set environment variables.
-
-```python
-from agex import connect_llm
-
-# Option 1: Explicitly create a client
-llm = connect_llm(provider="openai", model="gpt-4.1-nano")
-
-# Option 2: Rely on environment variables
-# Set OPENAI_API_KEY, AGEX_LLM_PROVIDER, AGEX_LLM_MODEL, etc.
-# llm = connect_llm()
-```
+This guide walks you through the core concepts of agex with hands-on examples.
 
 ## Your First Agent
 
-Let's start with a simple agent that can do math. We'll pass it the `llm` we just created.
+Install agex with your preferred provider (`pip install "agex[openai]"`, `"agex[anthropic]"`, or `"agex[gemini]"`) and create an agent:
 
 ```python
 import math
 from agex import Agent, connect_llm
 
-# It's best practice to create your LLM client once and reuse it
+# Create an LLM client (or use AGEX_LLM_PROVIDER/AGEX_LLM_MODEL env vars)
 llm = connect_llm(provider="openai", model="gpt-4.1-nano")
 
-# Create an agent
 agent = Agent(
     primer="You are great at solving math problems.",
     llm=llm
@@ -63,14 +32,7 @@ result = solve_equation("What is the square root of 256, multiplied by pi?")
 print(result)  # 50.26548245743669
 ```
 
-> **A Note on `type: ignore`**: You'll notice `# type: ignore[return-value]` on tasks that have a return value. This is because we only define the function's *signature* and the agent provides the implementation (including the `return` statement) at runtime. This comment tells static type checkers like mypy that this is intentional.
-
-**Key concepts:**
-
-- **`connect_llm()`**: Creates a configured client for interacting with an LLM.
-- **`Agent(llm=...)`**: Creates an agent using a specific LLM client.
-- **`agent.module()`**: Exposes existing Python modules to the agent.
-- **`@agent.task`**: Defines what you want accomplished (agent provides implementation).
+> **Note**: `# type: ignore[return-value]` silences type checkers — the agent provides the implementation at runtime.
 
 ## Custom Functions
 
@@ -193,113 +155,60 @@ plot.show()
 
 - **Dual decorators**: `@orchestrator.fn` + `@specialist.task` creates hierarchical agent flows where orchestrator agents can call specialist agents as functions
 
-## Other Agent Collaboration Patterns
+## Peer Collaboration
 
-Beyond hierarchical flows, agents can collaborate as peers. For example, iterative improvement workflows:
+Agents can also collaborate as peers using standard Python control flow:
 
 ```python
-from dataclasses import dataclass
-from typing import Literal
-
-optimizer = Agent(name="optimizer", primer="You create and hone content.")
-evaluator = Agent(name="evaluator", primer="You critique and suggest improvements.")
-
-@dataclass
-class Review:
-    quality: Literal["good", "average", "bad"]
-    feedback: str
-
-# Only the evaluator needs to create Review objects
-evaluator.cls(Review)
-optimizer.cls(Review, constructable=False)
-
-
-@optimizer.task
-def create_content(topic: str) -> str:  # type: ignore[return-value]
-    """Create initial content on the topic."""
-    pass
-
-@optimizer.task
-def improve_content(content: str, feedback: str) -> str:  # type: ignore[return-value]
-    """Improve content based on feedback."""
-    pass
-
-@evaluator.task
-def review_content(content: str) -> Review:  # type: ignore[return-value]
-    """Review content and provide structured feedback."""
-    pass
-
-# Iterative improvement loop with regular Python control flow
+# Iterative improvement between agents
 content = create_content("python decorators")
 while (review := review_content(content)).quality != "good":
     content = improve_content(content, review.feedback)
-
-print(f"Final content: {content}")
 ```
 
-This peer collaboration pattern enables quality improvement, fact-checking, and iterative refinement workflows.
+For a complete example with dataclass-based reviews and structured feedback, see the **[Examples](./examples/overview.md)**.
 
-## Event Monitoring and Debugging
+## Event Monitoring
 
-One of agex's most powerful features is comprehensive event tracking that lets you see exactly what agents are thinking and doing. This is invaluable for debugging, monitoring, and understanding agent behavior.
-
-### Basic Event Monitoring
-
-Every agent action generates events that you can capture in real-time:
+Every task supports an `on_event` callback for real-time visibility into agent reasoning:
 
 ```python
-from agex import Agent, connect_state, ActionEvent
+from agex import pprint_events
 
-# Create agent
-agent = Agent(name="debug_agent")
+# Stream events with built-in formatting
+result = analyze_data([1, 5, 3], on_event=pprint_events)
+```
 
-@agent.task
-def analyze_data(numbers: list[int]) -> dict:  # type: ignore[return-value]
-    """Analyze a list of numbers and return statistics."""
-    pass
+Or write a custom handler to capture specific event types:
 
-# Capture events as they happen
-action_events = []
+```python
+from agex import ActionEvent
 
 def capture_actions(event):
     if isinstance(event, ActionEvent):
-        print(f"Agent thinking: {event.thinking}")
-        print(f"Agent executing: {event.code}")
-        action_events.append(event)
+        print(f"Thinking: {event.thinking}")
+        print(f"Code: {event.code}")
 
-# Execute the task with the handler
 result = analyze_data([1, 5, 3], on_event=capture_actions)
-print(f"Result: {result}")
-print(f"Captured {len(action_events)} actions")
 ```
 
-The events system makes debugging agent behavior straightforward. For comprehensive event monitoring patterns, see the **[Events API](./api/events.md)**.
+See the **[Events API](./api/events.md)** for all event types and patterns.
 
 
 ## Async Tasks
 
-Tasks work seamlessly with Python's `async`/`await`. Simply define the task function as `async def`:
+Define the task as `async def` and `await` the result:
 
 ```python
-import asyncio
-from agex import Agent
-
-agent = Agent()
-
 @agent.task
 async def analyze_data(data: list[int]) -> dict:  # type: ignore[return-value]
     """Analyze a list of numbers."""
     pass
 
-# Use with await
-async def main():
-    result = await analyze_data([1, 2, 3, 4, 5])
-    print(f"Result: {result}")
-
-asyncio.run(main())
+result = await analyze_data([1, 2, 3, 4, 5])
 ```
 
-Async tasks fully support all features: callbacks (`on_event`, `on_token`), and state management.
+All features (`on_event`, `on_token`, state) work with async tasks.
 
 ## Task Errors
 
