@@ -108,7 +108,7 @@ This allows agents to have access to extensive capabilities while keeping their 
 
 ### Async Support
 
-Tasks can be defined as sync or async—agex handles both transparently. Async registered functions are bridged so agents call them synchronously while the framework handles the async execution underneath. For details, see [Async Architecture](../concepts/nearly-python.md#async-architecture).
+Tasks can be defined as sync or async—agex handles both transparently. Async registered functions are bridged so agents call them synchronously while the framework handles the async execution underneath. See [Task - Async Execution](task.md#async-execution) for details.
 
 ## Framework Status
 
