@@ -64,77 +64,7 @@ result = analyze("sales data for Q1")
 
 ## Configuration
 
-### LLM Configuration
-
-Configure how the agent communicates with language models:
-
-```python
-from agex import Agent, connect_llm
-
-# Explicit provider and model
-llm = connect_llm(provider="anthropic", model="claude-haiku-4-5")
-agent = Agent(llm=llm)
-
-# Or use environment defaults
-agent = Agent()  # Uses AGEX_LLM_PROVIDER, AGEX_LLM_MODEL env vars
-```
-
-See **[LLM Configuration](llm.md)** for providers, timeouts, and advanced options.
-
-### State Configuration
-
-Configure agent memory and persistence:
-
-```python
-from agex import Agent, connect_state
-
-# Versioned state with in-memory storage
-agent = Agent(
-    state=connect_state(type="versioned", storage="memory"),
-)
-
-# Persistent disk storage
-agent = Agent(
-    state=connect_state(type="versioned", storage="disk", path="/var/agex/state"),
-)
-```
-
-See **[State Configuration](state.md)** for sessions, storage backends, and advanced options.
-
-### Host Configuration
-
-Configure where agent tasks execute:
-
-```python
-from agex import Agent, connect_host, connect_state
-
-# Local execution (default)
-agent = Agent()
-
-# Remote execution
-agent = Agent(
-    host=connect_host(provider="http", url="http://agent-server:8000"),
-    state=connect_state(type="versioned", storage="disk", path="/shared/state"),
-)
-```
-
-See **[Host Configuration](host.md)** for remote execution and distributed deployments.
-
-### FileSystem Configuration
-
-Configure secure, state-backed filesystem access:
-
-```python
-from agex import Agent, connect_fs
-
-# Enable virtual filesystem
-agent = Agent(
-    state=connect_state(type="versioned", storage="disk", path="/tmp/state"),
-    fs=connect_fs(type="virtual"),
-)
-```
-
-See **[FileSystem Configuration](fs.md)** for virtual filesystems, file uploads, and events.
+Each `connect_*` parameter has its own reference page: **[LLM](llm.md)**, **[State](state.md)**, **[Host](host.md)**, **[FileSystem](fs.md)**.
 
 ## Properties
 
@@ -183,17 +113,7 @@ sandbox = Agent.clone_registrations(
 sandbox.module(ui)  # Doesn't affect main_agent
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `source` | `Agent` | Required | The agent to copy registrations from |
-| `name` | `str \| None` | `None` | Name for the new agent |
-| `primer` | `str \| None` | `None` | Primer string |
-| `eval_timeout_seconds` | `float` | `5.0` | Code execution timeout |
-| `max_iterations` | `int` | `10` | Max think-act cycles |
-| `llm` | `LLM \| None` | `None` | LLM configuration |
-| `host` | `Host \| None` | `None` | Execution host (defaults to Local()) |
-| `state` | `StateConfig \| None` | `None` | State configuration (defaults to ephemeral) |
-| `fs` | `FSConfig \| None` | Default | FileSystem configuration (defaults to VirtualFS) |
+Takes a `source` agent (required) plus any [Agent constructor](#constructor) parameter to override.
 
 **Returns:** A new `Agent` with copied registrations and independent state/fs/host.
 
@@ -352,27 +272,11 @@ agent = Agent(
 
 ### Memory Limits
 
-Memory limits are enforced by sandtrap's sandbox. `max_memory_mb=500` means each task can allocate up to 500MB of additional memory. On Linux, this is kernel-enforced via `RLIMIT_AS`. On macOS, enforcement is checkpoint-based (loop iterations, function entries). See [sandtrap's security docs](https://github.com/ashenfad/sandtrap) for details.
-
-```python
-# If agent code tries to allocate too much memory:
-data = bytearray(1024 * 1024 * 1024)  # 1GB allocation
-
-# With max_memory_mb=500, this raises MemoryError
-# (wrapped in EvalError when running through the sandbox)
-```
+Enforced by [sandtrap](https://github.com/ashenfad/sandtrap). On Linux, kernel-enforced via `RLIMIT_AS`. On macOS, checkpoint-based (loop iterations, function entries). Exceeding the limit raises `MemoryError` (wrapped in `EvalError`).
 
 ### File Descriptor Limits
 
-Limits the number of open file descriptors to prevent resource exhaustion:
-
-```python
-agent = Agent(max_open_files=100)
-
-# If agent opens too many files:
-files = [open(f"file{i}.txt", "w") for i in range(200)]
-# Raises OSError: Too many open files
-```
+Limits open file descriptors via `RLIMIT_NOFILE` (Unix). Exceeding raises `OSError`.
 
 ### Platform Support
 

@@ -177,7 +177,7 @@ event = ClarifyEvent(
 ```
 
 #### `SummaryEvent`
-Generated when the event log is automatically summarized to manage context window size. Represents a condensed version of multiple older events and marks the boundary for low-detail rendering.
+Generated when the event log exceeds the `log_high_water_tokens` threshold (see [Agent - Event Log Summarization](agent.md#event-log-summarization)). The LLM condenses older events into a summary, preserving essential context while reducing tokens.
 
 ```python
 from agex.agent.events import SummaryEvent
@@ -190,6 +190,8 @@ event = SummaryEvent(
     low_detail_threshold=datetime(...),  # datetime | None - Events older than this render at low detail
 )
 ```
+
+When a `SummaryEvent` is present, agex applies 3-tier rendering: **Summarized** (oldest, replaced by compact text), **Low Detail** (compressed images/nesting), **Full Detail** (newest, complete rendering).
 
 #### `FileEvent`
 Generated when files are added, modified, or removed from the workspace.
@@ -207,33 +209,8 @@ event = FileEvent(
 ```
 
 **File Source:**
-- `"agent"`: Files changed during agent execution (Python code or terminal commands). Emitted as a **single aggregated event** at task completion, containing all files added, modified, or removed during the task.
-- `"user"`: Files changed via external API calls through `agent.fs()`. Emitted **per operation** (each `write()`, `remove()`, etc. call generates its own event).
-
-```python
-# Filter events by source
-agent_changes = [e for e in events if isinstance(e, FileEvent) and e.file_source == "agent"]
-user_uploads = [e for e in events if isinstance(e, FileEvent) and e.file_source == "user"]
-```
-
-**When it appears:**
-`SummaryEvent` is automatically generated when an agent's event log exceeds the configured `log_high_water_tokens` threshold (see [Agent Configuration](agent.md#event-log-summarization)). The LLM condenses older events into a concise summary, preserving essential context while reducing token usage.
-
-**Properties:**
-- `summary`: Condensed text capturing key actions, decisions, outcomes, and errors from the summarized events
-- `summarized_event_count`: Number of original events that were replaced by this summary
-- `original_tokens`: Total token cost of the original events before summarization
-- `low_detail_threshold`: Timestamp marking which events should render at low detail (typically 75th percentile by age). Events with `timestamp < low_detail_threshold` automatically use compressed rendering (image placeholders, shallow nesting).
-- `full_detail_tokens`: Token cost of rendering this summary (computed automatically)
-
-**3-Tier Rendering:**
-When a `SummaryEvent` is present, agex automatically applies tiered rendering to maximize context efficiency:
-
-- **Summarized** (oldest): Events replaced by this summary (compact text)
-- **Low Detail** (older than threshold): Images → `[Image]`, depth 4 → 2, fewer list items
-- **Full Detail** (newer than threshold): Complete rendering with all details
-
-This approach allows agents to keep significantly more event history in context before needing additional summarization.
+- `"agent"`: Emitted as a **single aggregated event** at task completion.
+- `"user"`: Emitted **per operation** via `agent.fs()` calls.
 
 #### `ErrorEvent`
 Generated for framework-level errors (e.g., LLM API failures) that agents don't handle directly. Used by the retry system to log each failed attempt.
@@ -368,13 +345,7 @@ from agex.llm.core import TokenChunk
 def render_token(chunk: TokenChunk):
     if chunk.type == "thinking":
         ui.update_thinking(chunk.content)
-    elif chunk.type == "file":
-        ui.update_file_creation(chunk.content)
-    elif chunk.type == "edit":
-        ui.update_file_edit(chunk.content)
-    elif chunk.type == "terminal":
-        ui.update_terminal(chunk.content)
-    elif chunk.type == "python":
+    elif chunk.type in ("python", "terminal"):
         ui.update_code(chunk.content)
     if chunk.done:
         ui.section_complete(chunk.type)
@@ -384,7 +355,7 @@ result = my_task("analyze", on_token=render_token)
 
 Token streaming activates only when an `on_token` handler is provided. When omitted, tasks behave exactly as before.
 
-### 4. Async Handlers
+### 4. Async Handlers (sync handlers also work)
 
 All event consumption patterns work with async tasks. For async-first codebases:
 
@@ -400,7 +371,7 @@ result = await my_async_task("process this", on_event=my_handler)
 
 The `on_event` and `on_token` callbacks can also be async functions—agex will `await` them automatically.
 
-### 6. Console Pretty-Printing Helpers
+### 5. Console Pretty-Printing Helpers
 
 Use the top-level helpers to get colorful terminal output without writing custom handlers.
 
@@ -469,21 +440,13 @@ setup_outputs = [
 
 ### Multi-Agent Event Monitoring
 
-In multi-agent workflows, each agent stores events in its own state. To access events:
+In multi-agent workflows, each agent stores events in its own state:
 
 ```python
-# Get events from orchestrator's state
-orchestrator_state = orchestrator._host.resolve_state(config, session)
-orchestrator_events = events(orchestrator_state)
-
-# Get events from sub-agent's state (if using disk storage for shared state)
-# With memory storage, each agent has isolated state
-worker_state = worker._host.resolve_state(config, session)
-worker_events = events(worker_state)
+# Get events from each agent via agent.state()
+orchestrator_events = events(orchestrator.state())
+worker_events = events(worker.state())
 ```
-
-> [!NOTE]
-> With memory storage, each agent has isolated state. For shared event visibility across agents, use disk storage with a shared path.
 
 ## Related APIs
 

@@ -314,96 +314,12 @@ def wrong_order():
 
 ## Validation Rules
 
-### Empty Function Body
+Task functions must satisfy these requirements:
 
-Task functions must have empty bodies - the agent provides the implementation:
-
-```python
-# ✅ Valid: Empty implementations
-@agent.task
-def valid_function():
-    """Task description."""
-    pass
-
-@agent.task  
-def also_valid():
-    """Another task."""
-    # Comments are allowed
-    pass
-
-# ❌ Invalid: Contains implementation
-@agent.task
-def invalid_function():
-    """This will raise an error.""" 
-    return "actual code"  # Not allowed!
-```
-
-**Why empty bodies?** The decorator completely replaces your function. The agent receives your function signature and instructions, then generates code to fulfill the contract. Your implementation would be ignored anyway.
-
-### Type Checker Compatibility
-
-Type checkers (mypy, pylance) will complain about empty functions that promise to return values:
-
-```python
-# Type checker error: Function doesn't return anything but promises a float
-@agent.task
-def calculate_pi() -> float:
-    """Calculate pi to high precision."""
-    pass  # mypy: error - Missing return statement
-```
-
-**Solution**: Use `# type: ignore[return-value]` to silence this specific warning:
-
-```python
-@agent.task
-def calculate_pi() -> float:  # type: ignore[return-value]
-    """Calculate pi to high precision."""
-    pass
-
-@agent.task
-def process_data(data: list[int]) -> dict:  # type: ignore[return-value]
-    """Process data and return analysis."""
-    pass
-
-@agent.task  
-def update_database(records: list[dict]) -> bool:  # type: ignore[return-value]
-    """Update database with new records."""
-    pass
-```
-
-This tells the type checker: "I know this function doesn't return what it promises, but the agent will handle it at runtime."
-
-### Required Documentation
-```python
-# ✅ Valid: Has primer
-@agent.task("Calculate the result")
-def with_primer():
-    pass
-
-# ✅ Valid: Has docstring  
-@agent.task
-def with_docstring():
-    """Calculate the result."""
-    pass
-
-# ❌ Invalid: No instructions
-@agent.task
-def no_instructions():
-    pass  # Raises ValueError - no primer or docstring
-```
-
-### Single Task Decorator
-```python
-agent1 = Agent(name="agent1")
-agent2 = Agent(name="agent2")
-
-# Raises ValueError
-@agent1.task
-@agent2.task
-def my_task():
-    "Do a thing"
-    pass
-```
+- **Empty body**: Only `pass` and comments allowed — the agent provides the implementation. Code in the body would be ignored.
+- **Instructions**: Must have either a primer (`@agent.task("...")`) or a docstring. Both is fine (primer goes to agent, docstring is for human callers).
+- **Single task**: A function can only have one `@agent.task` decorator.
+- **Type hints**: Use `# type: ignore[return-value]` to silence mypy/pylance warnings about the empty body not returning the promised type.
 
 ## Type Validation
 
@@ -418,46 +334,6 @@ def process_numbers(data: list[int], threshold: float = 0.5) -> dict:  # type: i
 # Validation occurs at call time
 result = process_numbers([1, 2, 3], 0.8)     # ✅ Valid
 result = process_numbers("invalid", 0.8)     # ❌ Raises validation error
-```
-
-## Complete Example
-
-```python
-from agex import Agent, connect_state
-
-# Create agents with shared state configuration
-state_config = connect_state(type="versioned", storage="memory")
-
-researcher = Agent(name="researcher", state=state_config)
-analyst = Agent(name="analyst", state=state_config)
-coordinator = Agent(name="coordinator", state=state_config)
-
-# Register specialist capabilities with coordinator
-@coordinator.fn(docstring="Research a topic online")
-@researcher.task("Search and summarize information about the given topic")
-def research_topic(topic: str, depth: str = "basic") -> dict:  # type: ignore[return-value]
-    """Research information about a topic."""
-    pass
-
-@coordinator.fn(docstring="Analyze research data")  
-@analyst.task("Extract key insights and trends from research data")
-def analyze_research(research_data: dict, focus_areas: list[str]) -> dict:  # type: ignore[return-value]
-    """Analyze research findings."""
-    pass
-
-# Main coordination task
-@coordinator.task("Research and analyze a topic comprehensively")
-def full_research_pipeline(topic: str, focus_areas: list[str]) -> dict:  # type: ignore[return-value]
-    """Complete research and analysis pipeline."""
-    pass
-
-# Execute - state is managed by the agents
-result = full_research_pipeline(
-    topic="renewable energy trends",
-    focus_areas=["cost", "adoption", "technology"],
-)
-
-print(result)  # Comprehensive analysis from both agents
 ```
 
 ## Next Steps
