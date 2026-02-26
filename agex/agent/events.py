@@ -416,6 +416,8 @@ class ActionEvent(BaseEvent):
     code: str | None = None
     terminal: str | None = None
     file_actions: list[FileAction | EditAction] = Field(default_factory=list)
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
     @model_validator(mode="after")
     def _compute_tokens(self):

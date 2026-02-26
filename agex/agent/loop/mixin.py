@@ -31,6 +31,47 @@ from .common import (
 from .sync_loop import SyncLoopMixin
 
 
+def _retryable_exceptions() -> tuple[type[Exception], ...]:
+    """Build tuple of retryable exception types from available SDK packages."""
+    retryable: list[type[Exception]] = [ResponseParseError]
+    try:
+        import anthropic
+
+        retryable.extend(
+            [
+                anthropic.APITimeoutError,
+                anthropic.APIConnectionError,
+                anthropic.RateLimitError,
+                anthropic.InternalServerError,
+            ]
+        )
+    except ImportError:
+        pass
+    try:
+        import openai
+
+        retryable.extend(
+            [
+                openai.APITimeoutError,
+                openai.APIConnectionError,
+                openai.RateLimitError,
+                openai.InternalServerError,
+            ]
+        )
+    except ImportError:
+        pass
+    try:
+        from google.genai import errors as genai_errors
+
+        retryable.append(genai_errors.ServerError)
+    except ImportError:
+        pass
+    return tuple(retryable)
+
+
+_RETRYABLE = _retryable_exceptions()
+
+
 class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
     """
     Mixin that provides the complete task loop implementation.
@@ -218,7 +259,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                 else:
                     return self.llm.complete(system_message, messages_to_send)
 
-            except (ResponseParseError, RuntimeError) as e:
+            except _RETRYABLE as e:
                 is_last = attempt >= max_retries
                 err = ErrorEvent(
                     agent_name=self.name,
@@ -279,7 +320,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                 else:
                     return await self.llm.acomplete(system_message, messages_to_send)
 
-            except (ResponseParseError, RuntimeError) as e:
+            except _RETRYABLE as e:
                 is_last = attempt >= max_retries
                 err = ErrorEvent(
                     agent_name=self.name,

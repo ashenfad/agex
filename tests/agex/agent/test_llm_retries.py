@@ -4,7 +4,7 @@ import pytest
 
 from agex import Agent, clear_agent_registry
 from agex.agent.datatypes import LLMFail
-from agex.llm.core import LLMResponse
+from agex.llm.core import LLMResponse, ResponseParseError
 from agex.llm.dummy_client import Dummy
 
 
@@ -16,8 +16,8 @@ def test_llm_retries_then_success(monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda s: None)
 
     responses = [
-        RuntimeError("network hiccup 1"),
-        RuntimeError("network hiccup 2"),
+        ResponseParseError("network hiccup 1"),
+        ResponseParseError("network hiccup 2"),
         LLMResponse(thinking="ok", code="task_success(42)"),
     ]
     client = Dummy(responses=responses)
@@ -41,7 +41,11 @@ def test_llm_retries_exhaust_and_fail(monkeypatch):
     clear_agent_registry()
     monkeypatch.setattr(time, "sleep", lambda s: None)
 
-    responses = [RuntimeError("down 1"), RuntimeError("down 2"), RuntimeError("down 3")]
+    responses = [
+        ResponseParseError("down 1"),
+        ResponseParseError("down 2"),
+        ResponseParseError("down 3"),
+    ]
     client = Dummy(responses=responses)
 
     agent = Agent(name="retry-fail", llm=client, llm_max_retries=2)
