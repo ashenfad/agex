@@ -11,7 +11,6 @@ Agents don't choose between "using tools" and "writing code." In agex, **everyth
 - Returning a result: `task_success("hello")`
 - Calling a function: just call it
 - Building data structures: native Python syntax
-- Exploring capabilities: `dir()` and `help()`
 - Debugging: `print()` to see output
 - Creating reusable logic: define functions
 
@@ -30,7 +29,7 @@ This creates a natural development experience:
 - **Iterative refinement** - Agents see their output, adjust their approach, and try again
 - **Natural error handling** - Exceptions appear in stdout just like in a real Python environment
 - **Persistent workspace** - With versioned state, agents can define functions, store variables, and build solutions across multiple iterations
-- **Familiar debugging** - `print()`, `dir()`, `help()` work as expected
+- **Familiar debugging** - `print()` works as expected
 
 
 ## The Middle Road: Guidance Through a Curated Environment

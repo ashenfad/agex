@@ -227,7 +227,32 @@ See [Task - Concurrency Control](task.md#concurrency-control) for details.
 
 ### Unpicklable Objects
 
-Versioned state handles unpicklable objects gracefully. Agents can use database cursors, file handles, etc. - they work for single-turn use. Accessing them in later turns shows a clear error with solutions.
+Versioned state handles unpicklable objects gracefully. Agents can use database cursors, file handles, etc. — they work for single-turn use. Accessing them in later turns shows a clear error with solutions. Best practice: recreate resources each turn (`cursor = db.cursor()`) or chain operations (`results = db.cursor().fetchall()`).
+
+## Serialization Behavior
+
+When using versioned state, agent variables are serialized (pickled) between task executions. This creates a few behavioral differences compared to standard Python:
+
+**Object identity is not preserved across tasks.** Objects are reconstructed from serialized data, so `id()` changes and `is` checks between objects from different task runs will fail. Use value-based comparisons (`==`) instead.
+
+**Closures capture "frozen" values.** When a closure is serialized, the variables it captured are frozen at their current values. Changing the captured variable in a later task won't affect the closure:
+
+```python
+# Task 1: define closure
+factor = 2
+def multiplier(x):
+    return x * factor
+# `multiplier` is frozen with factor=2
+
+# Task 2: change factor
+factor = 10
+multiplier(5)  # Still returns 10, not 50
+```
+
+**Unpicklable objects are auto-detected.** Objects like database cursors, file handles, and network connections work within a single task. If referenced in a later task, the agent gets a clear `UnpicklableVariableError` with suggestions for how to proceed.
+
+> [!NOTE]
+> These constraints only apply to versioned state. With `Live` state, objects stay in memory and serialization doesn't occur.
 
 ## Advanced: Direct State Construction
 
