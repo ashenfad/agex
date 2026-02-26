@@ -26,6 +26,7 @@ data_maker = Agent(
     name="data_maker",
     primer="You excel at generating data via numpy.",
     llm=llm,
+    isolation="none",
 )
 
 data_maker.module(np, recursive=True, visibility="low")
@@ -37,6 +38,7 @@ plotty = Agent(
     name="plotty",
     primer="You excel plotting data via plotly express.",
     llm=llm,
+    isolation="none",
 )
 
 # use helpers for our plotting agent
@@ -45,10 +47,12 @@ register_numpy(plotty)
 register_pandas(plotty)
 
 # define the orchestrator agent, no special modules are needed
+# isolation="none" — orchestrator just delegates, sub-agents handle their own isolation
 orchestrator = Agent(
     name="orchestrator",
     primer="You orchestrate other agents to solve a problem. Don't use numpy or plotly directly. Call 'make_data' and 'plot_data' to spawn sub-agent work.",
     llm=llm,
+    isolation="kernel",
 )
 
 
