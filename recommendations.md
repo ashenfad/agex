@@ -16,8 +16,8 @@ LLM API calls are the most common production failure point — transient 429 (ra
 
 ## Low Priority
 
-### 3. Remove Unused xxhash Dependency
-`xxhash` is listed in `pyproject.toml` as a runtime dependency but has no imports anywhere in the agex source. Remove it.
+### ~~3. Remove Unused xxhash Dependency~~
+Done — `xxhash` removed from `pyproject.toml`.
 
 ### ~~4. Replace psutil with resource.getrusage~~
 Done — memory limits are now handled entirely by sandtrap's `Policy.memory_limit`. `psutil` removed.

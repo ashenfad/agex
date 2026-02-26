@@ -32,7 +32,6 @@ dependencies = [
     "reprobate",
     "monkeyfs",
     "tiktoken",
-    "xxhash",
     "diskcache",
     "pydantic",
     "pygments",
