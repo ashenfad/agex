@@ -1,6 +1,6 @@
 # Nearly Python: Sandbox Restrictions
 
-agex agents generate and execute code in a secure sandbox powered by [sandtrap](https://github.com/ashenfad/sandtrap). The sandbox uses AST rewriting to compile agent code into restricted bytecode that runs within your process. The result looks and feels like Python — but with some important differences.
+agex agents generate and execute code in a secure sandbox powered by [sandtrap](https://github.com/ashenfad/sandtrap). The sandbox uses AST rewriting to compile agent code into restricted bytecode. By default this runs in-process, but can be configured for subprocess or kernel-level isolation (see [Sandbox Isolation](#sandbox-isolation)). The result looks and feels like Python — but with some important differences.
 
 !!! important "Imports: Registered or VFS-Resident"
 
@@ -66,9 +66,9 @@ The following names raise `NameError`:
 
 - **Control exceptions**: `BaseException`, `KeyboardInterrupt`, `GeneratorExit`, `SystemExit`
 - **Dangerous builtins**: `exec`, `eval`, `compile`
-- **Introspection**: `dir()`, `help()`, `globals()`
+- **Introspection**: `globals()`
 
-`locals()` is available but returns a filtered copy (sandbox internals excluded).
+`locals()` is available but returns a filtered copy (sandbox internals excluded). Python's built-in `dir()` and `help()` are available.
 
 ### Wildcard Imports
 **Rejected**: `from module import *` is blocked at parse time. Agents must import specific names.
@@ -96,3 +96,7 @@ When using versioned state, agent variables are serialized between task executio
 ## Resource Limits
 
 agex can enforce memory, file descriptor, and VFS size limits via [sandtrap](https://github.com/ashenfad/sandtrap). See [Agent - Resource Limits](../api/agent.md#resource-limits) for configuration.
+
+## Sandbox Isolation
+
+By default, agent code runs in-process. For crash protection or kernel-level security, set the `isolation` parameter. See [Security - Sandbox Isolation](security.md#sandbox-isolation) and [Agent - Sandbox Isolation](../api/agent.md#sandbox-isolation).

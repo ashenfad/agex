@@ -219,6 +219,19 @@ class RegistrationMixin(BaseAgent):
                                 f"the parent locally."
                             )
 
+                # Check for nested process isolation — daemon processes can't fork
+                parent_isolation = getattr(self, "isolation", "none")
+                sub_isolation = getattr(owning_agent, "isolation", "none")
+                if parent_isolation != "none" and sub_isolation != "none":
+                    raise ValueError(
+                        f"Cannot register task '{final_name}' from a sub-agent "
+                        f"with isolation='{sub_isolation}' on a parent agent with "
+                        f"isolation='{parent_isolation}'. Process-isolated agents "
+                        f"cannot nest because daemon processes cannot fork children.\n"
+                        f"Fix: Set isolation='none' on the parent (orchestrator) agent, "
+                        f"or on the sub-agent."
+                    )
+
             if final_name in RESERVED_NAMES:
                 raise ValueError(
                     f"The name '{final_name}' is reserved and cannot be registered."
