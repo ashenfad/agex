@@ -245,8 +245,6 @@ One of agex's most powerful features is comprehensive event tracking that lets y
 
 ### Basic Event Monitoring
 
-### Basic Event Monitoring
-
 Every agent action generates events that you can capture in real-time:
 
 ```python

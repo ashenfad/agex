@@ -116,14 +116,18 @@ agent = Agent(llm=test_llm)
 
 ## Retry and Timeout Behavior
 
-- **`timeout_seconds`**: Per-API-call timeout (default: 90s)
-- **`llm_max_retries`**: Set on Agent, retries failed completions (default: 2)
+- **`timeout_seconds`**: Per-API-call timeout, wired directly to each SDK's client (default: 90s)
+- **`llm_max_retries`**: Set on Agent, retries failed completions with exponential backoff (default: 2)
+
+SDK-level retries are disabled so that agex controls all retry behavior. Only transient errors are retried — rate limits, timeouts, connection errors, and internal server errors. Non-retryable errors (authentication failures, bad requests, etc.) fail immediately without consuming retry attempts.
 
 ```python
 # Fast timeout with more retries
 llm = connect_llm(provider="openai", timeout_seconds=30.0)
 agent = Agent(llm=llm, llm_max_retries=5)
 ```
+
+See [Error Handling - LLMFail](errors.md#llmfail-framework) for details on retry exhaustion behavior.
 
 ## Next Steps
 

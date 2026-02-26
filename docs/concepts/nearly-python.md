@@ -1,8 +1,8 @@
 # Nearly Python: Understanding Agent Code Constraints
 
-agex agents generate and execute code in a secure sandbox that looks and feels like Python—but with some important differences. This guide helps you understand what constraints agents face when writing code, so you can design better integrations and understand agent behavior.
+agex agents generate and execute code in a secure sandbox powered by [sandtrap](https://github.com/ashenfad/sandtrap). The sandbox uses AST rewriting to compile agent code into restricted bytecode that runs within your process. The result looks and feels like Python — but with some important differences.
 
-To that effect, all code samples in this document are for the sandboxed Python-esque DSL that agex agents generate.
+This guide helps you understand what constraints agents face when writing code, so you can design better integrations and understand agent behavior.
 
 **State Choice Affects Constraints**: Some limitations depend on whether you use live state (default, no persistence) or persistent state (remembers variables between task calls). Live state is more flexible but doesn't persist memory; persistent state has more constraints but enables complex multi-step workflows.
 
@@ -26,9 +26,14 @@ To that effect, all code samples in this document are for the sandboxed Python-e
 Most Python features work exactly as you'd expect when agents generate code:
 
 - **Basic operations**: arithmetic, string manipulation, list/dict operations
-- **Control flow**: `if/else`, `for/while` loops, function calls
-- **Built-in functions**: `print()`, `len()`, `range()`, `enumerate()`, etc.
-- **Function decorators**: full support for standard library (e.g., `@functools.lru_cache`) and custom decorators
+- **Control flow**: `if/else`, `for/while` loops, `match/case` (Python 3.10+), function calls
+- **Built-in functions**: `print()`, `len()`, `range()`, `enumerate()`, `sorted()`, etc.
+- **Classes**: full `class` definitions with inheritance, methods, and dunders
+- **Generators**: `yield` and `yield from`
+- **Closures**: nested functions with `nonlocal` and `global`
+- **Exception handling**: `try/except/finally/else` with 50+ built-in exception types
+- **Decorators**: function and class decorators
+- **Comprehensions**: list, dict, set, and generator comprehensions
 - **Registered capabilities**: anything you've exposed via `agent.module()` or `agent.fn()`
 - **Function definitions**: agents can define helper functions within their code
 - **Variable assignment**: storing values in variables works normally
@@ -42,136 +47,83 @@ for i, num in enumerate(numbers):
         print(f"Even number at index {i}: {num}")
 ```
 
-## What's Different (Agent Code Limitations)
+## What's Different (Sandbox Restrictions)
 
-### Class Decorators
-**Not supported**: Agents cannot use decorators on class definitions (except the special `@dataclass` placeholder).
+### Three-Argument `type()`
+**Blocked**: Dynamic class creation via `type('Name', bases, dict)` is rejected. Single-argument `type(obj)` works normally for inspection.
 
 ```python
-# ❌ Agents cannot use class decorators
-def my_decorator(cls):
-    cls.added_method = lambda: "hi"
-    return cls
+# ✅ Allowed: type inspection
+t = type(42)           # <class 'int'>
+isinstance(42, t)      # True
 
-@my_decorator
-class MyClass:
+# ❌ Blocked: dynamic class creation
+MyClass = type('MyClass', (object,), {'x': 1})  # TypeError
+```
+
+**Why?**: Dynamic class creation bypasses the AST rewriter's validation of class definitions, which is needed to enforce attribute access control on instances.
+
+### Format String Traversal
+**Blocked**: `.format()` and `.format_map()` reject attribute and item traversal in field names. F-strings are unaffected (they go through proper AST validation).
+
+```python
+# ✅ Allowed: simple positional/keyword formatting
+"Hello {name}".format(name="World")
+"{0} + {1}".format(1, 2)
+
+# ❌ Blocked: attribute traversal via format string
+"{obj.__class__}".format(obj=x)  # AttributeError
+
+# ✅ Secure alternative: f-strings use AST-level attribute gating
+f"{obj.attr}"
+```
+
+**Why?**: Format string attribute traversal is a classic Python sandbox escape technique.
+
+### Bare `except:` Clause
+**Rewritten**: A bare `except:` is automatically rewritten to `except Exception:`. This prevents agent code from swallowing control exceptions (`KeyboardInterrupt`, sandbox timeout/cancellation signals, etc.).
+
+```python
+# What the agent writes:
+try:
+    risky()
+except:
     pass
 
-# ✅ Exception: @dataclass works (special sandbox implementation)
-@dataclass
-class Point:
-    x: int
-    y: int
-
-# ✅ Function decorators work perfectly
-@functools.lru_cache
-def expensive_function(n):
-    return n * 2
-```
-
-**Why?**: Standard Python class decorators expect real `type` objects, but the sandbox creates `AgexClass` objects (custom data structures). Function decorators work because they operate on callable objects, which the sandbox can provide.
-
-**Impact**: Libraries that require class decorators (like some ORMs or validation frameworks) won't work. Use alternative patterns or provide pre-decorated classes.
-
-**Future**: Would require major refactor to create real Python types instead of `AgexClass` objects.
-
-### Async/Await
-**Not supported**: Agents cannot generate async code; the sandbox is synchronous-only.
-
-```python
-# ❌ Agents cannot generate async code
-async def fetch_data():
-    await some_async_call()
-
-# ✅ Register synchronous equivalents instead
-def fetch_data():
-    return requests.get("https://api.example.com")
-```
-
-**Impact**: Async libraries won't work. Provide synchronous wrappers or use libraries with sync APIs.
-
-> [!TIP]
-> **Registered async functions work transparently.** If you register an async function via `@agent.fn`, the framework automatically bridges async results. Agents call them like regular sync functions and receive resolved values—no special handling needed.
-
-**Future**: Unlikely to change - async support would require major architectural changes.
-
-### Exception Handling
-**Limited**: Agents can only catch specific built-in exceptions (`ValueError`, `TypeError`, `KeyError`, etc.).
-
-```python
-# ✅ Agents can catch built-in exceptions
+# What actually runs:
 try:
-    result = risky_operation()
-except ValueError as e:
-    print(f"Value error: {e}")
-except KeyError as e:
-    print(f"Key error: {e}")
-
-# ❌ Agents cannot catch custom exceptions
-try:
-    result = operation()
-except CustomException:  # Won't catch properly
+    risky()
+except Exception:
     pass
 ```
 
-**Impact**: Libraries that rely on custom exceptions may not handle errors gracefully. Convert custom exceptions to standard ones in wrapper functions.
+### Unavailable Names
+The following names are not available in agent code (raise `NameError`):
 
-**Future**: Likely to be added - registering custom exceptions should be straightforward to implement.
+- **Control exceptions**: `BaseException`, `KeyboardInterrupt`, `GeneratorExit`, `SystemExit`
+- **Dangerous builtins**: `exec`, `eval`, `compile`
+- **Introspection**: `dir()`, `help()`, `globals()`
 
-### Generators and Yield
-**Not supported**: Agents cannot generate code that uses `yield` or `yield from` to create generators.
+`locals()` is available but returns a filtered copy (sandbox internals excluded).
 
-```python
-# ❌ Agents cannot create generators
-def my_generator():
-    yield 1
-    yield 2
-    yield 3
+### Wildcard Imports
+**Rejected**: `from module import *` is blocked at parse time. Agents must import specific names.
 
-def delegating_generator():
-    yield from range(5)
-
-# ✅ Agents can return lists or other data structures instead
-def my_list_function():
-    return [1, 2, 3]
-
-def delegating_list_function():
-    return list(range(5))
-```
-
-**Impact**: Libraries that expect generator objects won't work. Provide list-returning alternatives or materialize generators before registering them.
-
-**Future**: Unlikely to change - would require significant architectural changes.
-
-### Global Variables
-**Not supported**: Agents cannot use the `global` statement to modify global variables.
+### Private Attribute Access
+**Blocked by default**: Attributes starting with `_` are not accessible on registered objects unless explicitly included in the registration's `include` pattern.
 
 ```python
-# ❌ Agents cannot use global statement
-counter = 0
+# ❌ Blocked by default
+obj._internal_method()
+obj.__dict__
 
-def increment():
-    global counter  # Not supported
-    counter += 1
-
-# ✅ Agents can use return values or mutable containers
-def increment_counter(current_count):
-    return current_count + 1
-
-# Or use registered state management
-def increment_with_state():
-    # Assuming you've registered state management functions
-    current = get_counter()
-    set_counter(current + 1)
+# ✅ If explicitly included in registration
+agent.cls(MyClass, include=["_special_method"])
 ```
 
-**Impact**: Functions that modify global state won't work. Use explicit state management or pass state as parameters.
+### Unpicklable Objects — Automatic Handling
 
-**Future**: Unlikely to change - would break the sandbox security model.
-
-### Unpicklable Objects - Automatic Handling
-
-**When using `Versioned` state, unpicklable objects (like database cursors, file handles, network connections) are automatically detected and handled gracefully.**
+**When using versioned state, unpicklable objects (like database cursors, file handles, network connections) are automatically detected and handled gracefully.**
 
 #### It Just Works for Single-Turn Use
 
@@ -214,12 +166,12 @@ cursor.execute("SELECT ...")  # Error on variable reference!
 
 | State Mode | Unpicklable Objects | Memory Between Calls |
 | :--- | :--- | :--- |
-| **Default (No State)** | ✅ Allowed (no persistence) | No |
-| **`Live` State** | ✅ Allowed (in-memory) | Yes (in-process) |
-| **`Versioned` State** | ✅ Auto-handled via markers | Yes (persistent) |
+| **Default (No State)** | Allowed (no persistence) | No |
+| **`Live` State** | Allowed (in-memory) | Yes (in-process) |
+| **Versioned State** | Auto-handled via markers | Yes (persistent) |
 
 ### Object Identity Between Executions
-**Objects are reconstructed**: Between task executions (when using `Versioned` state), objects are serialized and deserialized. This breaks object identity (`id()`) and shared references between separate task runs.
+**Objects are reconstructed**: Between task executions (when using versioned state), objects are serialized and deserialized. This breaks object identity (`id()`) and shared references between separate task runs.
 
 ```python
 # During a single task execution, identity works normally:
@@ -233,41 +185,30 @@ print(my_list)  # [1, 2, 3, 4]
 # Task 2 loads my_list from state. It is now a new object with id=2000.
 ```
 
-**Impact**: Objects that rely on `is` checks or `id()` for identity across multiple task executions may behave unexpectedly. Use explicit state management and value-based comparisons instead.
+**Impact**: Objects that rely on `is` checks or `id()` for identity across multiple task executions may behave unexpectedly. Use value-based comparisons instead.
 
-**Future**: This is an inherent aspect of serialization-based persistence and is unlikely to change.
-
-### Function Closures
-**Captured variables are "frozen" on save**: When using `Versioned` state, closures work and persist, but any variables they capture from their enclosing scope are "frozen" with their current values when the task completes.
+### Function Closures Across Turns
+**Captured variables are "frozen" on save**: When using versioned state, closures work and persist, but any variables they capture from their enclosing scope are "frozen" with their current values when the task completes.
 
 A closure will not see subsequent changes to a captured variable in a later task execution.
 
 ```python
-# This example demonstrates the "freezing" behavior across two task runs.
 # Assume the agent executes this code in its first task run:
 factor = 2
 def multiplier(x):
-    # This closure captures the `factor` variable
     return x * factor
-    
-# The agent saves `multiplier` and `factor` to its state.
+
 # `multiplier` is now "frozen" with `factor=2`.
 
 # --- End of first task ---
 
-# Now, assume the agent executes this code in a second task run:
-# It loads `multiplier` and `factor` from its state.
+# In a second task run, the agent changes factor:
 factor = 10
-# Even though `factor` is now 10 in the agent's state, the
-# `multiplier` function is still using the value it was frozen with.
-result = multiplier(5) # This will return 10, not 50.
+# But `multiplier` still uses the value it was frozen with.
+result = multiplier(5)  # Returns 10, not 50.
 ```
 
-**No `nonlocal` support**: The `nonlocal` statement is not supported. To modify state, use mutable containers (like a single-element list `[0]`) or have functions return the new state.
-
-**Impact**: This can lead to unexpected behavior if you assume closures will always see the latest version of their captured variables across different task runs.
-
-**Future**: The freezing behavior is inherent to the state model and is unlikely to change.
+**Impact**: This can lead to unexpected behavior if you assume closures will always see the latest version of their captured variables across different task runs. This is inherent to the serialization-based state model.
 
 ## Async Architecture
 
@@ -326,7 +267,7 @@ The separation means you get async benefits at the framework level (non-blocking
 
 ## Resource Limits
 
-Beyond language restrictions, agex can enforce resource limits to prevent runaway code from exhausting system resources.
+agex can enforce resource limits via [sandtrap](https://github.com/ashenfad/sandtrap) to prevent runaway code from exhausting system resources.
 
 ### Memory Limits
 
@@ -334,7 +275,7 @@ Beyond language restrictions, agex can enforce resource limits to prevent runawa
 agent = Agent(max_memory_mb=500)  # 500MB headroom per task
 ```
 
-Memory limits are enforced by sandtrap's sandbox (kernel-enforced on Linux, checkpoint-based on macOS). If agent code attempts to allocate more memory than allowed, it raises `MemoryError` (wrapped in `EvalError`). The agent receives the error and can adjust its approach—for example, processing data in chunks.
+Memory limits use two layers: `RLIMIT_AS` (kernel-enforced on Linux) and checkpoint-based detection (Linux + macOS). If agent code exceeds the limit, it raises `MemoryError` (wrapped in `EvalError`). The agent receives the error and can adjust its approach — for example, processing data in chunks.
 
 ### File Descriptor Limits
 
@@ -365,13 +306,13 @@ with open("huge.bin", "wb") as f:
 
 Memory and file descriptor limits require Unix (Linux/macOS). On Windows, these limits are not enforced. VFS size limits work on all platforms.
 
-## Why These Limitations?
+## Why These Restrictions?
 
 These constraints exist for important reasons:
 
-- **Security**: Prevents agents from accessing dangerous Python features
+- **Security**: Prevents agents from accessing dangerous Python features (attribute traversal, dynamic class creation, control exception swallowing)
 - **Serialization**: Enables memory and rollback by ensuring all persistent state can be saved
 - **Sandboxing**: Ensures agent code cannot escape the execution environment
 - **Resource Protection**: Prevents runaway code from exhausting memory, files, or storage
 
-**Note**: With `Live` state, serialization constraints don't apply since no state is persisted between task calls. Choose `Versioned` state when you need agents to remember variables across multiple task executions.
+**Note**: With `Live` state, serialization constraints don't apply since no state is persisted between task calls. Choose versioned state when you need agents to remember variables across multiple task executions.
