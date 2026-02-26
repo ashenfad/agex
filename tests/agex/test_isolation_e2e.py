@@ -58,6 +58,60 @@ class TestIsolationNone:
 
         assert calc(session="s") == 42
 
+    def test_dir_returns_user_names(self):
+        llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="use dir",
+                    code="x = 1\nnames = dir()\ntask_success(names)",
+                )
+            ]
+        )
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="none_dir", llm=llm, state=config, isolation="none")
+
+        @agent.task
+        def check_dir() -> list:
+            """Check dir."""
+            pass
+
+        result = check_dir(session="s")
+        assert "x" in result
+        assert "task_success" in result
+        # Sandbox internals should be filtered
+        assert not any(name.startswith("__st_") for name in result)
+        assert "__builtins__" not in result
+
+    def test_help_output_captured(self):
+        llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="use help",
+                    code='help(int)\ntask_success("ok")',
+                )
+            ]
+        )
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="none_help", llm=llm, state=config, isolation="none")
+
+        @agent.task
+        def check_help():
+            """Check help."""
+            pass
+
+        result = check_help(session="s")
+        assert result == "ok"
+        state = agent._host.resolve_state(config, "s")
+        output = [
+            e
+            for e in events(state)
+            if isinstance(e, OutputEvent) and e.agent_name == "none_help"
+        ]
+        # help() output should be captured and visible
+        assert len(output) >= 1
+        combined = " ".join(str(p) for e in output for p in e.parts)
+        assert "int" in combined
+
     def test_print_creates_output_event(self):
         llm = Dummy(
             [
@@ -384,3 +438,150 @@ class TestNestedIsolationValidation:
             pass
 
         parent.fn()(sub_task)  # Should not raise
+
+
+@_skip_process
+class TestHierarchicalIsolation:
+    """E2E: orchestrator(none) + sub-agent(process) through dual-decorator."""
+
+    def setup_method(self):
+        clear_agent_registry()
+
+    def test_orchestrator_none_specialist_process(self):
+        """Recommended pattern: in-process orchestrator delegates to isolated specialist."""
+        config = connect_state(type="versioned", storage="memory")
+
+        specialist = Agent(
+            name="specialist",
+            state=config,
+            isolation="process",
+            eval_tick_limit=None,
+            eval_timeout_seconds=10.0,
+        )
+        orchestrator = Agent(
+            name="orchestrator",
+            state=config,
+            isolation="none",
+        )
+
+        @orchestrator.fn(docstring="Compute a value")
+        @specialist.task("Compute the requested value")
+        def compute(expression: str) -> float:
+            """Compute a value."""
+            pass
+
+        @orchestrator.task("Solve the problem")
+        def solve(problem: str) -> dict:
+            """Solve problem using specialist."""
+            pass
+
+        specialist.llm = Dummy(
+            [LLMResponse(thinking="compute", code="task_success(42.0)")]
+        )
+        orchestrator.llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="delegate",
+                    code='result = compute("6 * 7")\ntask_success({"answer": result})',
+                )
+            ]
+        )
+
+        result = solve(problem="What is 6 * 7?", session="s")
+        assert result == {"answer": 42.0}
+
+    def test_specialist_with_numpy(self):
+        """Specialist uses numpy in process-isolated sandbox."""
+        import numpy as np
+
+        config = connect_state(type="versioned", storage="memory")
+
+        specialist = Agent(
+            name="np_specialist",
+            state=config,
+            isolation="process",
+            eval_tick_limit=None,
+            eval_timeout_seconds=10.0,
+        )
+        specialist.module(np, recursive=True, visibility="low")
+
+        orchestrator = Agent(
+            name="np_orchestrator",
+            state=config,
+            isolation="none",
+        )
+
+        @orchestrator.fn(docstring="Generate data")
+        @specialist.task("Generate numpy data")
+        def make_data(prompt: str) -> list:
+            """Generate data arrays."""
+            pass
+
+        @orchestrator.task("Orchestrate data generation")
+        def run(prompt: str) -> list:
+            """Run the workflow."""
+            pass
+
+        specialist.llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="generate arrays",
+                    code="import numpy as np\narr = np.arange(10, dtype=float)\ntask_success([arr])",
+                )
+            ]
+        )
+        orchestrator.llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="delegate",
+                    code='data = make_data("test")\ntask_success(data)',
+                )
+            ]
+        )
+
+        result = run(prompt="test data", session="s")
+        assert len(result) == 1
+        assert list(result[0]) == list(range(10))
+
+    def test_orchestrator_none_specialist_kernel(self):
+        """Same pattern but with kernel isolation on the specialist."""
+        config = connect_state(type="versioned", storage="memory")
+
+        specialist = Agent(
+            name="specialist_k",
+            state=config,
+            isolation="kernel",
+            eval_tick_limit=None,
+            eval_timeout_seconds=10.0,
+        )
+        orchestrator = Agent(
+            name="orchestrator_k",
+            state=config,
+            isolation="none",
+        )
+
+        @orchestrator.fn(docstring="Compute a value")
+        @specialist.task("Compute the requested value")
+        def compute(expression: str) -> float:
+            """Compute a value."""
+            pass
+
+        @orchestrator.task("Solve the problem")
+        def solve(problem: str) -> dict:
+            """Solve problem using specialist."""
+            pass
+
+        specialist.llm = Dummy(
+            [LLMResponse(thinking="compute", code="task_success(42.0)")]
+        )
+        orchestrator.llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="delegate",
+                    code='result = compute("6 * 7")\ntask_success({"answer": result})',
+                )
+            ]
+        )
+
+        result = solve(problem="What is 6 * 7?", session="s")
+        assert result == {"answer": 42.0}
