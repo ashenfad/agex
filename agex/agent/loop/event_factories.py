@@ -79,6 +79,8 @@ def create_action_event(
         terminal=llm_response.terminal,
         file_actions=llm_response.file_actions,
         source=source,
+        input_tokens=llm_response.input_tokens,
+        output_tokens=llm_response.output_tokens,
     )
 
 

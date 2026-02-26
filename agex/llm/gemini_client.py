@@ -60,6 +60,11 @@ class Gemini(LLM):
         self._url_context = url_context
         self._timeout_seconds = timeout_seconds
 
+        # Wire timeout and disable SDK retries (agex handles retries)
+        client_kwargs["http_options"] = types.HttpOptions(
+            timeout=int(timeout_seconds * 1000),
+        )
+
         # Initialize the unified Client.
         # Supports both API Key (AI Studio) and Vertex AI via explicit kwargs or environment variables.
         self.client = genai.Client(**client_kwargs)
@@ -110,39 +115,57 @@ class Gemini(LLM):
                 types.Content(role="model", parts=[types.Part(text=prefill_text)])
             )
 
-        try:
-            tools = []
-            if self._google_search:
-                tools.append(types.Tool(google_search=types.GoogleSearch()))
+        tools = []
+        if self._google_search:
+            tools.append(types.Tool(google_search=types.GoogleSearch()))
 
-            if self._url_context:
-                tools.append({"url_context": {}})
+        if self._url_context:
+            tools.append({"url_context": {}})
 
-            config = types.GenerateContentConfig(
-                system_instruction=system_with_format,
-                tools=tools if tools else None,
-                **request_kwargs,
-            )
+        config = types.GenerateContentConfig(
+            system_instruction=system_with_format,
+            tools=tools if tools else None,
+            **request_kwargs,
+        )
 
-            # Streaming call
-            response_stream = self.client.models.generate_content_stream(
-                model=self._model,
-                contents=gemini_contents,
-                config=config,
-            )
+        # Streaming call
+        response_stream = self.client.models.generate_content_stream(
+            model=self._model,
+            contents=gemini_contents,
+            config=config,
+        )
 
-            def raw_chunks() -> Iterator[Any]:
-                if not self._google_search and not self._url_context:
-                    yield prefill_text
+        usage_holder: dict[str, int | None] = {
+            "input_tokens": None,
+            "output_tokens": None,
+        }
 
-                for chunk in response_stream:
-                    text = chunk.text or ""
-                    yield text
+        def raw_chunks() -> Iterator[Any]:
+            if not self._google_search and not self._url_context:
+                yield prefill_text
 
-            yield from tokenize_xml_stream(raw_chunks())
+            for chunk in response_stream:
+                # Capture usage from each chunk (last one wins)
+                if chunk.usage_metadata is not None:
+                    usage_holder["input_tokens"] = (
+                        chunk.usage_metadata.prompt_token_count
+                    )
+                    usage_holder["output_tokens"] = (
+                        chunk.usage_metadata.candidates_token_count
+                    )
+                text = chunk.text or ""
+                yield text
 
-        except Exception as e:
-            raise RuntimeError(f"Gemini streaming completion failed: {e}") from e
+        yield from tokenize_xml_stream(raw_chunks())
+
+        # Yield final usage token
+        yield TokenChunk(
+            type="thinking",
+            content="",
+            done=True,
+            input_tokens=usage_holder["input_tokens"],
+            output_tokens=usage_holder["output_tokens"],
+        )
 
     async def acomplete_stream(
         self, system: str, events: List[Event], **kwargs
@@ -170,37 +193,52 @@ class Gemini(LLM):
                 types.Content(role="model", parts=[types.Part(text=prefill_text)])
             )
 
-        try:
-            tools = []
-            if self._google_search:
-                tools.append(types.Tool(google_search=types.GoogleSearch()))
-            if self._url_context:
-                tools.append({"url_context": {}})
+        tools = []
+        if self._google_search:
+            tools.append(types.Tool(google_search=types.GoogleSearch()))
+        if self._url_context:
+            tools.append({"url_context": {}})
 
-            config = types.GenerateContentConfig(
-                system_instruction=system_with_format,
-                tools=tools if tools else None,
-                **request_kwargs,
-            )
+        config = types.GenerateContentConfig(
+            system_instruction=system_with_format,
+            tools=tools if tools else None,
+            **request_kwargs,
+        )
 
-            # Get stream handle
-            response_stream = await self.client.aio.models.generate_content_stream(
-                model=self._model,
-                contents=gemini_contents,
-                config=config,
-            )
+        response_stream = await self.client.aio.models.generate_content_stream(
+            model=self._model,
+            contents=gemini_contents,
+            config=config,
+        )
 
-            async def raw_chunks():
-                if not self._google_search and not self._url_context:
-                    yield prefill_text
-                async for chunk in response_stream:
-                    yield chunk.text or ""
+        usage_holder: dict[str, int | None] = {
+            "input_tokens": None,
+            "output_tokens": None,
+        }
 
-            async for token in atokenize_xml_stream(raw_chunks()):
-                yield token
+        async def raw_chunks():
+            if not self._google_search and not self._url_context:
+                yield prefill_text
+            async for chunk in response_stream:
+                if chunk.usage_metadata is not None:
+                    usage_holder["input_tokens"] = (
+                        chunk.usage_metadata.prompt_token_count
+                    )
+                    usage_holder["output_tokens"] = (
+                        chunk.usage_metadata.candidates_token_count
+                    )
+                yield chunk.text or ""
 
-        except Exception as e:
-            raise RuntimeError(f"Gemini streaming completion failed: {e}") from e
+        async for token in atokenize_xml_stream(raw_chunks()):
+            yield token
+
+        yield TokenChunk(
+            type="thinking",
+            content="",
+            done=True,
+            input_tokens=usage_holder["input_tokens"],
+            output_tokens=usage_holder["output_tokens"],
+        )
 
     def summarize(self, system: str, content: str | List[Event], **kwargs) -> str:
         """Send a summarization request to Gemini."""
@@ -217,18 +255,15 @@ class Gemini(LLM):
                 types.Content(role="user", parts=[types.Part(text=str(processed))])
             ]
 
-        try:
-            config = types.GenerateContentConfig(
-                system_instruction=system, **request_kwargs
-            )
-            response = self.client.models.generate_content(
-                model=self._model,
-                contents=gemini_contents,
-                config=config,
-            )
-            return response.text or ""
-        except Exception as e:
-            raise RuntimeError(f"Gemini summarization failed: {e}") from e
+        config = types.GenerateContentConfig(
+            system_instruction=system, **request_kwargs
+        )
+        response = self.client.models.generate_content(
+            model=self._model,
+            contents=gemini_contents,
+            config=config,
+        )
+        return response.text or ""
 
     def _convert_messages_to_gemini_format(
         self, messages_dicts: List[dict]

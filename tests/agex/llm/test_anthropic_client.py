@@ -72,20 +72,31 @@ async def test_anthropic_acomplete_stream():
 
     client = Anthropic(api_key="test")
 
-    async def mock_async_iter():
-        chunks = [
-            MagicMock(type="content_block_delta", delta=MagicMock(text="<THINKING>")),
-            MagicMock(
-                type="content_block_delta", delta=MagicMock(text="Thinking</THINKING>")
-            ),
-        ]
-        for chunk in chunks:
-            yield chunk
+    # Build an async context manager that mimics messages.stream()
+    mock_stream = MagicMock()
+
+    # text_stream needs to be an async iterable
+    async def _async_text_stream():
+        for text in [
+            "Test</TITLE><THINKING>Some thinking</THINKING>",
+            "<PYTHON>pass</PYTHON>",
+        ]:
+            yield text
+
+    mock_stream.text_stream = _async_text_stream()
+    mock_stream.get_final_message = AsyncMock(
+        return_value=MagicMock(usage=MagicMock(input_tokens=10, output_tokens=5))
+    )
+
+    # Wrap as async context manager
+    async_cm = AsyncMock()
+    async_cm.__aenter__ = AsyncMock(return_value=mock_stream)
+    async_cm.__aexit__ = AsyncMock(return_value=False)
 
     with patch.object(
         client.async_client.messages,
-        "create",
-        AsyncMock(return_value=mock_async_iter()),
+        "stream",
+        return_value=async_cm,
     ):
         events = [
             TaskStartEvent(
@@ -99,6 +110,9 @@ async def test_anthropic_acomplete_stream():
 
         assert len(tokens) > 0
         assert all(isinstance(t, TokenChunk) for t in tokens)
+        # Should have thinking and python tokens
+        assert any(c.type == "thinking" for c in tokens)
+        assert any(c.type == "python" for c in tokens)
 
 
 @pytest.mark.asyncio

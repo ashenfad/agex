@@ -1,18 +1,13 @@
-import asyncio
 import logging
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import (
     TYPE_CHECKING,
     Any,
     AsyncIterator,
-    Callable,
     Iterator,
     Literal,
-    TypeVar,
     Union,
 )
 
@@ -32,52 +27,6 @@ if TYPE_CHECKING:
 DEFAULT_TIMEOUT_SECONDS = 90.0  # 90 seconds per API call (used by LLM base)
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
-
-
-def with_timeout(fn: Callable[[], T], timeout: float) -> T:
-    """
-    Execute a sync function with timeout.
-
-    Args:
-        fn: Zero-argument callable to execute
-        timeout: Timeout in seconds
-
-    Returns:
-        Result of fn()
-
-    Raises:
-        TimeoutError: If the call times out
-        Exception: Any exception from fn
-    """
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(fn)
-        try:
-            return future.result(timeout=timeout)
-        except FuturesTimeoutError:
-            raise TimeoutError(f"Request timed out after {timeout}s")
-
-
-async def with_timeout_async(coro_fn: Callable[[], Any], timeout: float) -> Any:
-    """
-    Execute an async coroutine with timeout.
-
-    Args:
-        coro_fn: Zero-argument callable that returns a coroutine
-        timeout: Timeout in seconds
-
-    Returns:
-        Result of awaiting coro_fn()
-
-    Raises:
-        TimeoutError: If the call times out
-        Exception: Any exception from coro_fn
-    """
-    try:
-        return await asyncio.wait_for(coro_fn(), timeout=timeout)
-    except asyncio.TimeoutError:
-        raise TimeoutError(f"Request timed out after {timeout}s")
 
 
 # ============================================================================
@@ -113,11 +62,15 @@ class TokenChunk:
         type: Either "title", "thinking", "python", "file", "edit", or "terminal"
         content: The text content (incremental)
         done: True when this section is complete
+        input_tokens: Actual input token count from the API (set on final chunk only)
+        output_tokens: Actual output token count from the API (set on final chunk only)
     """
 
     type: Literal["title", "thinking", "python", "file", "edit", "terminal"]
     content: str
     done: bool = False
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 @dataclass
@@ -138,6 +91,8 @@ class LLMResponse(BaseModel):
     code: str | None = None
     file_actions: list[FileAction | EditAction] = Field(default_factory=list)
     terminal: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 class ResponseParseError(Exception):
@@ -174,6 +129,9 @@ class ResponseBuilder:
         self.current_edit_path: str | None = None
         # Track ordering of file and edit actions
         self.action_order: list[tuple[str, str]] = []  # [(type, path), ...]
+        # Token usage from the API response
+        self.input_tokens: int | None = None
+        self.output_tokens: int | None = None
         self.seen_sections: dict[str, bool] = {
             "title": False,
             "thinking": False,
@@ -193,6 +151,12 @@ class ResponseBuilder:
         if start_flag and token.type in self.seen_sections:
             if token.type not in ("file", "edit"):
                 self.seen_sections[token.type] = True
+
+        # Capture usage data if present on this token
+        if token.input_tokens is not None:
+            self.input_tokens = token.input_tokens
+        if token.output_tokens is not None:
+            self.output_tokens = token.output_tokens
 
         enriched = StreamToken(
             type=token.type,
@@ -357,6 +321,8 @@ class ResponseBuilder:
             code="".join(self.code_parts),
             file_actions=file_actions,
             terminal="".join(self.terminal_parts) if self.terminal_parts else None,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
         )
 
 

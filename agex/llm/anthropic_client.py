@@ -11,7 +11,7 @@ from agex.llm.core import (
 from agex.llm.xml import TAG_TITLE, XML_FORMAT_PRIMER, tokenize_xml_stream
 
 # Define keys for client setup vs. completion
-CLIENT_CONFIG_KEYS = {"api_key", "timeout"}
+CLIENT_CONFIG_KEYS = {"api_key", "timeout", "max_retries"}
 MAX_TOKENS = 2**14
 CACHE_TTL = "1h"
 
@@ -67,13 +67,17 @@ class Anthropic(LLM):
         **kwargs,
     ):
         kwargs.pop("provider", None)
-        client_kwargs = {}
-        completion_kwargs = {}
+        client_kwargs: dict[str, Any] = {}
+        completion_kwargs: dict[str, Any] = {}
         for key, value in kwargs.items():
             if key in CLIENT_CONFIG_KEYS:
                 client_kwargs[key] = value
             else:
                 completion_kwargs[key] = value
+
+        # Wire timeout and disable SDK retries (agex handles retries)
+        client_kwargs.setdefault("timeout", timeout_seconds)
+        client_kwargs.setdefault("max_retries", 0)
 
         self._model = model
         self._kwargs = completion_kwargs
@@ -133,32 +137,33 @@ class Anthropic(LLM):
             }
         )
 
-        try:
-            # Set default max_tokens if not provided
-            if "max_tokens" not in request_kwargs:
-                request_kwargs["max_tokens"] = MAX_TOKENS
+        # Set default max_tokens if not provided
+        if "max_tokens" not in request_kwargs:
+            request_kwargs["max_tokens"] = MAX_TOKENS
 
-            # Use standard streaming API (not tool calling)
-            stream = self.client.messages.stream(
-                model=self._model,
-                system=[system_block],
-                messages=conversation_messages,
-                **request_kwargs,
-            )
+        with self.client.messages.stream(
+            model=self._model,
+            system=[system_block],
+            messages=conversation_messages,
+            **request_kwargs,
+        ) as stream:
 
-            # Generator for raw text chunks from Anthropic
             def raw_chunks() -> Iterator[str]:
-                # Yield the pre-filled text first so the parser sees it
                 yield prefill_text
-                with stream as message_stream:
-                    for text in message_stream.text_stream:
-                        yield text
+                for text in stream.text_stream:
+                    yield text
 
-            # Parse XML stream into TokenChunks
             yield from tokenize_xml_stream(raw_chunks())
 
-        except Exception as e:
-            raise RuntimeError(f"Anthropic streaming completion failed: {e}") from e
+            # Extract usage from the accumulated message
+            message = stream.get_final_message()
+            yield TokenChunk(
+                type="thinking",
+                content="",
+                done=True,
+                input_tokens=message.usage.input_tokens,
+                output_tokens=message.usage.output_tokens,
+            )
 
     async def acomplete_stream(
         self, system: str, events: List[Event], **kwargs
@@ -189,30 +194,32 @@ class Anthropic(LLM):
             }
         )
 
-        try:
-            if "max_tokens" not in request_kwargs:
-                request_kwargs["max_tokens"] = MAX_TOKENS
+        if "max_tokens" not in request_kwargs:
+            request_kwargs["max_tokens"] = MAX_TOKENS
 
-            stream = await self.async_client.messages.create(
-                model=self._model,
-                system=[system_block],
-                messages=conversation_messages,
-                stream=True,
-                **request_kwargs,
-            )
+        async with self.async_client.messages.stream(
+            model=self._model,
+            system=[system_block],
+            messages=conversation_messages,
+            **request_kwargs,
+        ) as stream:
 
             async def raw_chunks():
                 yield prefill_text
-                async for event in stream:
-                    if event.type == "content_block_delta":
-                        if hasattr(event.delta, "text"):
-                            yield event.delta.text
+                async for text in stream.text_stream:
+                    yield text
 
             async for token in atokenize_xml_stream(raw_chunks()):
                 yield token
 
-        except Exception as e:
-            raise RuntimeError(f"Anthropic streaming completion failed: {e}") from e
+            message = await stream.get_final_message()
+            yield TokenChunk(
+                type="thinking",
+                content="",
+                done=True,
+                input_tokens=message.usage.input_tokens,
+                output_tokens=message.usage.output_tokens,
+            )
 
     def summarize(self, system: str, content: str | List[Event], **kwargs) -> str:
         """Send a summarization request to Anthropic (text or events with multimodal)."""
@@ -235,24 +242,21 @@ class Anthropic(LLM):
                 {"role": "user", "content": [{"type": "text", "text": processed}]}
             ]
 
-        try:
-            if "max_tokens" not in request_kwargs:
-                request_kwargs["max_tokens"] = MAX_TOKENS
+        if "max_tokens" not in request_kwargs:
+            request_kwargs["max_tokens"] = MAX_TOKENS
 
-            response = self.client.messages.create(
-                model=self._model,
-                system=system,
-                messages=conversation_messages,
-                **request_kwargs,
-            )
-            # Concatenate text parts from content blocks
-            texts: list[str] = []
-            for block in response.content or []:
-                if getattr(block, "type", None) == "text":
-                    texts.append(getattr(block, "text", ""))
-            return "".join(texts)
-        except Exception as e:
-            raise RuntimeError(f"Anthropic summarization failed: {e}") from e
+        response = self.client.messages.create(
+            model=self._model,
+            system=system,
+            messages=conversation_messages,
+            **request_kwargs,
+        )
+        # Concatenate text parts from content blocks
+        texts: list[str] = []
+        for block in response.content or []:
+            if getattr(block, "type", None) == "text":
+                texts.append(getattr(block, "text", ""))
+        return "".join(texts)
 
     @property
     def model(self) -> str:
