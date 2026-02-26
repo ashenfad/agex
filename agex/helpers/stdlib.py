@@ -46,7 +46,7 @@ RANDOM_EXCLUDE = [
 
 def register_io(agent: Agent) -> None:
     """Register IO related modules with the agent for VFS operations."""
-    # File-like objects needed by VirtualFile and IsolatedFS
+    # File-like objects needed by VFS and IsolatedFS
     agent.module(io, visibility="low", include=["BytesIO", "StringIO", "TextIOWrapper"])
 
     # Register actual file types from _io module (C implementation)
@@ -96,7 +96,7 @@ def register_io(agent: Agent) -> None:
         ],
     )
 
-    # Common serialization formats for file content
+    # Serialization formats for file content
     agent.module(json, visibility="low")
     agent.module(csv, visibility="low")
     agent.module(pickle, visibility="low")
@@ -149,9 +149,7 @@ def register_stdlib(agent: Agent, io_friendly: bool = True) -> None:
         include=["format_exc", "format_exception", "print_exc"],
     )
 
-    # Data encoding/processing
-    agent.module(json, visibility="low")
-    agent.module(csv, visibility="low")
+    # Data encoding/processing (json/csv registered by register_io when io_friendly)
     agent.module(base64, visibility="low")
     agent.module(uuid, visibility="low")
     agent.module(hashlib, visibility="low")
