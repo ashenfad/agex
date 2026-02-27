@@ -60,7 +60,7 @@ agex is composed of several focused libraries that can also be used independentl
 | [kvgit](https://github.com/ashenfad/kvgit) | Versioned key-value store with git-like semantics |
 | [monkeyfs](https://github.com/ashenfad/monkeyfs) | Filesystem interception via monkey-patching |
 | [termish](https://github.com/ashenfad/termish) | Virtual terminal with shell-like commands |
-| [reprobate](https://github.com/ashenfad/reprobrate) | Budget-controlled repr for Python objects |
+| [reprobate](https://github.com/ashenfad/reprobate) | Budget-controlled repr for Python objects |
 
 ## Contributing
 
