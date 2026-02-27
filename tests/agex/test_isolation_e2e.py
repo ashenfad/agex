@@ -625,3 +625,50 @@ class TestAsyncSubAgentTask:
 
         result = await solve(problem="What is 6 * 7?", session="s")
         assert result == {"answer": 42.0}
+
+    async def test_async_hierarchical_multi_specialist(self):
+        """Mirrors hierarchical_async.py: orchestrator delegates to two async specialists."""
+        config = connect_state(type="versioned", storage="memory")
+
+        data_maker = Agent(name="async_data", state=config, isolation="none")
+        plotter = Agent(name="async_plot", state=config, isolation="none")
+        orchestrator = Agent(name="async_orch2", state=config, isolation="none")
+
+        @orchestrator.fn(docstring="Generate data arrays")
+        @data_maker.task("Generate data")
+        async def make_data(prompt: str) -> list:
+            """Generate data."""
+            pass
+
+        @orchestrator.fn(docstring="Plot the data")
+        @plotter.task("Plot data")
+        async def plot_data(prompt: str, data: list) -> str:
+            """Plot data and return path."""
+            pass
+
+        @orchestrator.task("Orchestrate")
+        async def run(idea: str) -> str:
+            """Orchestrate data generation and plotting."""
+            pass
+
+        data_maker.llm = Dummy(
+            [LLMResponse(thinking="gen", code="task_success([1, 2, 3])")]
+        )
+        plotter.llm = Dummy(
+            [LLMResponse(thinking="plot", code='task_success("plot.png")')]
+        )
+        orchestrator.llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="delegate to both",
+                    code=(
+                        'data = make_data("seasonal")\n'
+                        'path = plot_data("umbrella sales", data)\n'
+                        "task_success(path)"
+                    ),
+                )
+            ]
+        )
+
+        result = await run(idea="umbrella sales", session="s")
+        assert result == "plot.png"

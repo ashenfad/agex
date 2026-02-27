@@ -7,8 +7,6 @@ to sandtrap's policy.fn(), policy.cls(), and policy.module() calls.
 
 from __future__ import annotations
 
-import asyncio
-import concurrent.futures
 import contextvars
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -95,13 +93,15 @@ def _wrap_sub_agent_task(fn_obj):
        and event handler propagate to sub-agent calls made from sandbox code).
     2. Convert TaskClarify/TaskFail to EvalError (so the parent sees error
        output rather than a terminal signal).
-    3. Transparently await async tasks so LLM-generated sandbox code doesn't
-       need ``await``.
+    3. Always call the sync task loop so LLM-generated sandbox code doesn't
+       need ``await`` and there are no event-loop conflicts.
     """
     from agex.agent.datatypes import TaskClarify, TaskFail
     from agex.eval.error import EvalError
 
-    is_async = getattr(fn_obj, "__agex_is_async__", False)
+    # Use the sync task func to avoid event-loop conflicts when the
+    # orchestrator's sandbox runs inside aexec.
+    call_fn = getattr(fn_obj, "_sync_task_func", None) or fn_obj
 
     def wrapper(*args, **kwargs):
         # Inject session, on_event, on_token from context if not explicitly provided
@@ -115,20 +115,7 @@ def _wrap_sub_agent_task(fn_obj):
                 kwargs["on_token"] = on_token
 
         try:
-            result = fn_obj(*args, **kwargs)
-            if is_async or asyncio.iscoroutine(result):
-                # Async task — run coroutine to completion so sandbox code
-                # doesn't need ``await``.
-                try:
-                    asyncio.get_running_loop()
-                except RuntimeError:
-                    # No running event loop (sync sandbox) — safe to block.
-                    return asyncio.run(result)
-                # Inside aexec's event loop — run in a dedicated thread
-                # to avoid blocking the loop.
-                with concurrent.futures.ThreadPoolExecutor(1) as pool:
-                    return pool.submit(asyncio.run, result).result()
-            return result
+            return call_fn(*args, **kwargs)
         except TaskClarify as e:
             raise EvalError(f"Sub-agent needs clarification: {e.message}") from e
         except TaskFail as e:
