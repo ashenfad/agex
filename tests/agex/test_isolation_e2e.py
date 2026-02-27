@@ -585,3 +585,43 @@ class TestHierarchicalIsolation:
 
         result = solve(problem="What is 6 * 7?", session="s")
         assert result == {"answer": 42.0}
+
+
+@pytest.mark.asyncio
+class TestAsyncSubAgentTask:
+    """Async sub-agent task calls are transparently awaited from sandbox code."""
+
+    def setup_method(self):
+        clear_agent_registry()
+
+    async def test_async_sub_agent_auto_awaited(self):
+        """Orchestrator calls async specialist — coroutine is auto-awaited."""
+        config = connect_state(type="versioned", storage="memory")
+        specialist = Agent(name="async_spec", state=config, isolation="none")
+        orchestrator = Agent(name="async_orch", state=config, isolation="none")
+
+        @orchestrator.fn(docstring="Compute a value")
+        @specialist.task("Compute the requested value")
+        async def compute(expression: str) -> float:
+            """Compute."""
+            pass
+
+        @orchestrator.task("Solve the problem")
+        async def solve(problem: str) -> dict:
+            """Solve."""
+            pass
+
+        specialist.llm = Dummy(
+            [LLMResponse(thinking="compute", code="task_success(42.0)")]
+        )
+        orchestrator.llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="delegate",
+                    code='result = compute("6 * 7")\ntask_success({"answer": result})',
+                )
+            ]
+        )
+
+        result = await solve(problem="What is 6 * 7?", session="s")
+        assert result == {"answer": 42.0}
