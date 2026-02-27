@@ -24,6 +24,22 @@ if TYPE_CHECKING:
     from agex.state.config import StateConfig
 
 
+# ---- Helpers ----
+
+
+def _read_pyproject_version(repo_path: Path) -> str | None:
+    """Read the version string from a pyproject.toml file."""
+    toml_path = repo_path / "pyproject.toml"
+    if not toml_path.exists():
+        return None
+    try:
+        text = toml_path.read_text()
+        m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
 # ---- Cloudpickle serialization helpers ----
 # Used for streaming results between Modal container and client
 
@@ -512,7 +528,9 @@ class Modal(Host):
             # Check if this is a development install (source directory with pyproject.toml)
             if (repo_path / "pyproject.toml").exists():
                 # Dev mode: copy repo and pip install from it (gets all deps from pyproject.toml)
-                image = image.copy_local_dir(str(repo_path), remote_path="/agex_src")
+                image = image.add_local_dir(
+                    str(repo_path), remote_path="/agex_src", copy=True
+                )
                 image = image.run_commands("pip install /agex_src")
             else:
                 # Production: install from PyPI (handles all deps)
@@ -607,7 +625,13 @@ class Modal(Host):
             import agex
 
             package_loc = Path(agex.__file__).parent
-            if (package_loc.parent / "pyproject.toml").exists():
+            repo_path = package_loc.parent
+            if (repo_path / "pyproject.toml").exists():
+                # Use pyproject.toml version (installed metadata may be stale)
+                pyproject_ver = _read_pyproject_version(repo_path)
+                if pyproject_ver:
+                    agex_version = pyproject_ver
+
                 # Dev mode: compute hash of agex directory to force rebuilds on code changes
                 import hashlib
 
