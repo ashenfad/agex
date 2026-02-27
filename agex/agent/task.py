@@ -431,6 +431,50 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
 
             return inputs_instance, session, on_event, on_token
 
+        # Sync task function — used both as the primary callable for sync tasks
+        # and as _sync_task_func for async tasks (so sub-agent calls from
+        # sandbox code can avoid event-loop conflicts).
+        def sync_task_func(*args, **kwargs):
+            inputs_instance, session, on_event, on_token = _bind_and_validate(
+                *args, **kwargs
+            )
+            # Route through host for non-local execution
+            if not isinstance(self._host, Local):
+                # Extract raw args/kwargs for remote execution
+                bound = new_sig.bind(*args, **kwargs)
+                bound.apply_defaults()
+                raw_kwargs = dict(bound.arguments)
+                raw_kwargs.pop("session", None)
+                raw_kwargs.pop("on_event", None)
+                raw_kwargs.pop("on_token", None)
+                return self._host.execute(
+                    agent=self,
+                    task_name=task_name,
+                    args=(),
+                    kwargs=raw_kwargs,
+                    session=session,
+                    on_event=on_event,
+                    on_token=on_token,
+                )
+            # Resolve state from session using agent's state config
+            state = self._host.resolve_state(
+                self._state_config, session, self.fingerprint or ""
+            )
+            return self._run_task_loop(
+                task_name=task_name,
+                docstring=effective_docstring,
+                inputs_dataclass=inputs_dataclass,
+                inputs_instance=inputs_instance,
+                return_type=return_type,
+                state=state,
+                session=session,
+                on_event=on_event,
+                on_token=on_token,
+                setup=setup,
+                on_conflict=on_conflict,
+                max_conflict_retries=max_conflict_retries,
+            )
+
         # Create the actual task function (async or sync based on original function)
         if inspect.iscoroutinefunction(func):
 
@@ -476,51 +520,13 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 )
 
         else:
-
-            def task_wrapper(*args, **kwargs):
-                inputs_instance, session, on_event, on_token = _bind_and_validate(
-                    *args, **kwargs
-                )
-                # Route through host for non-local execution
-                if not isinstance(self._host, Local):
-                    # Extract raw args/kwargs for remote execution
-                    bound = new_sig.bind(*args, **kwargs)
-                    bound.apply_defaults()
-                    raw_kwargs = dict(bound.arguments)
-                    raw_kwargs.pop("session", None)
-                    raw_kwargs.pop("on_event", None)
-                    raw_kwargs.pop("on_token", None)
-                    return self._host.execute(
-                        agent=self,
-                        task_name=task_name,
-                        args=(),
-                        kwargs=raw_kwargs,
-                        session=session,
-                        on_event=on_event,
-                        on_token=on_token,
-                    )
-                # Resolve state from session using agent's state config
-                state = self._host.resolve_state(
-                    self._state_config, session, self.fingerprint or ""
-                )
-                return self._run_task_loop(
-                    task_name=task_name,
-                    docstring=effective_docstring,
-                    inputs_dataclass=inputs_dataclass,
-                    inputs_instance=inputs_instance,
-                    return_type=return_type,
-                    state=state,
-                    session=session,
-                    on_event=on_event,
-                    on_token=on_token,
-                    setup=setup,
-                    on_conflict=on_conflict,
-                    max_conflict_retries=max_conflict_retries,
-                )
+            task_wrapper = sync_task_func
 
         # Create the custom wrapper with proper __repr__
         agent_name = self.name if self.name is not None else self.__class__.__name__
         wrapper = TaskWrapper(task_wrapper, agent_name, task_name)
+        # Store sync version for sub-agent sandbox calls (avoids event-loop conflicts)
+        wrapper._sync_task_func = sync_task_func
         # Attach agent instance for @remote decorator access
         wrapper.__agex_agent__ = self  # type: ignore
 
