@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.9.0] - 2026-02-27
+
+### Added
+- **Process Isolation**: New `isolation` parameter for agents — run sandboxed code in a forked subprocess with crash protection (`isolation="process"`) or kernel-level restrictions (`isolation="kernel"`)
+- **Sandtrap Integration**: Migrated sandbox execution to [sandtrap](https://github.com/ashenfad/sandtrap) for policy enforcement, AST rewriting, and serializable wrappers
+- **MonkeyFS Integration**: Filesystem interception via [monkeyfs](https://github.com/ashenfad/monkeyfs) — supports `IsolatedFS` and `VirtualFS`
+- **Termish Integration**: Virtual terminal via [termish](https://github.com/ashenfad/termish) with archive commands (tar, gzip, zip, unzip) and grep context flags
+- **KVGit Integration**: Versioned state via [kvgit](https://github.com/ashenfad/kvgit)
+- **Reprobate Integration**: Budget-controlled repr via [reprobate](https://github.com/ashenfad/reprobate)
+- **LLM Client Overhaul**: Idiomatic SDK usage for LLM clients
+- **Hierarchical Isolation**: Sub-agent calls work across process boundaries; nested process isolation rejected at registration time
+- **St\* Reactivation**: `StFunction`/`StClass`/`StInstance` wrappers automatically reactivated after crossing process or remote host boundaries
+
+### Changed
+- **BREAKING**: Sandbox engine replaced — `sblite` removed in favor of `sandtrap`
+- **BREAKING**: Filesystem layer replaced — custom VFS removed in favor of `monkeyfs`
+- **BREAKING**: Terminal replaced — `faketerm` removed in favor of `termish`
+- **BREAKING**: State store replaced — `kvit` removed in favor of `kvgit`
+- **Memory Limits**: Deferred to sandtrap (dropped `psutil` dependency)
+- **Dependencies**: Switched to PyPI packages; removed `xxhash`; added lint CI
+
+### Fixed
+- **Modal Image Build**: Use `add_local_dir` (SDK 1.3 removed `copy_local_dir`)
+- **Sub-Agent Calls**: Auto-await async sub-agent task calls from sandbox code; use sync task loop for sub-agent calls
+- **MacOS Archive Extraction**: Skip AppleDouble files (`._*`)
+
 ## [0.8.6] - 2026-01-02
 
 ### Added
@@ -141,6 +167,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed event token count defaults and detail thresholds
   - Garbage collection restricted to orphaned events only
 
+[0.9.0]: https://github.com/ashenfad/agex/releases/tag/v0.9.0
 [0.8.6]: https://github.com/ashenfad/agex/releases/tag/v0.8.6
 [0.8.5]: https://github.com/ashenfad/agex/releases/tag/v0.8.5
 [0.8.4]: https://github.com/ashenfad/agex/releases/tag/v0.8.4
