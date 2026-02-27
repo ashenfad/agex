@@ -384,6 +384,71 @@ class TestIsolationProcess:
         assert image_outputs[0].parts[0].image == "test_img"
         assert image_outputs[0].parts[0].detail == "low"
 
+    def test_returned_function_callable(self):
+        """Sandbox-defined functions returned via task_success are reactivated."""
+        llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="define and return a function",
+                    code=("def double(n):\n    return n * 2\ntask_success(double)"),
+                )
+            ]
+        )
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(
+            name="proc_fn_ret",
+            llm=llm,
+            state=config,
+            isolation="process",
+            eval_tick_limit=None,
+            eval_timeout_seconds=10.0,
+        )
+
+        @agent.task
+        def build_fn():
+            """Build a function."""
+            pass
+
+        fn = build_fn(session="s")
+        assert callable(fn)
+        assert fn(21) == 42
+
+    def test_returned_function_in_list(self):
+        """Sandbox-defined functions inside a list are also reactivated."""
+        llm = Dummy(
+            [
+                LLMResponse(
+                    thinking="define and return functions in a list",
+                    code=(
+                        "def add1(n):\n"
+                        "    return n + 1\n"
+                        "def add2(n):\n"
+                        "    return n + 2\n"
+                        "task_success([add1, add2])"
+                    ),
+                )
+            ]
+        )
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(
+            name="proc_fn_list",
+            llm=llm,
+            state=config,
+            isolation="process",
+            eval_tick_limit=None,
+            eval_timeout_seconds=10.0,
+        )
+
+        @agent.task
+        def build_fns():
+            """Build functions."""
+            pass
+
+        fns = build_fns(session="s")
+        assert len(fns) == 2
+        assert fns[0](10) == 11
+        assert fns[1](10) == 12
+
 
 class TestNestedIsolationValidation:
     """Validate that nested process isolation is rejected at registration time."""
