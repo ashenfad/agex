@@ -509,22 +509,19 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             state = self._host.resolve_state(
                 self._state_config, session, self.fingerprint or ""
             )
-            return _reactivate_result(
-                self._run_task_loop(
-                    task_name=task_name,
-                    docstring=effective_docstring,
-                    inputs_dataclass=inputs_dataclass,
-                    inputs_instance=inputs_instance,
-                    return_type=return_type,
-                    state=state,
-                    session=session,
-                    on_event=on_event,
-                    on_token=on_token,
-                    setup=setup,
-                    on_conflict=on_conflict,
-                    max_conflict_retries=max_conflict_retries,
-                ),
-                self,
+            return self._run_task_loop(
+                task_name=task_name,
+                docstring=effective_docstring,
+                inputs_dataclass=inputs_dataclass,
+                inputs_instance=inputs_instance,
+                return_type=return_type,
+                state=state,
+                session=session,
+                on_event=on_event,
+                on_token=on_token,
+                setup=setup,
+                on_conflict=on_conflict,
+                max_conflict_retries=max_conflict_retries,
             )
 
         # Create the actual task function (async or sync based on original function)
@@ -559,22 +556,19 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 state = self._host.resolve_state(
                     self._state_config, session, self.fingerprint or ""
                 )
-                return _reactivate_result(
-                    await self._arun_task_loop(
-                        task_name=task_name,
-                        docstring=effective_docstring,
-                        inputs_dataclass=inputs_dataclass,
-                        inputs_instance=inputs_instance,
-                        return_type=return_type,
-                        state=state,
-                        session=session,
-                        on_event=on_event,
-                        on_token=on_token,
-                        setup=setup,
-                        on_conflict=on_conflict,
-                        max_conflict_retries=max_conflict_retries,
-                    ),
-                    self,
+                return await self._arun_task_loop(
+                    task_name=task_name,
+                    docstring=effective_docstring,
+                    inputs_dataclass=inputs_dataclass,
+                    inputs_instance=inputs_instance,
+                    return_type=return_type,
+                    state=state,
+                    session=session,
+                    on_event=on_event,
+                    on_token=on_token,
+                    setup=setup,
+                    on_conflict=on_conflict,
+                    max_conflict_retries=max_conflict_retries,
                 )
 
         else:
