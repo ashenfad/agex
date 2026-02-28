@@ -14,7 +14,7 @@ Isolation = Literal["none", "process", "kernel"]
 if TYPE_CHECKING:
     from collections.abc import MutableMapping
 
-    from monkeyfs import FSConfig
+    from agex.fs import FSConfig
 
     from ..fs.aware import AgentAwareFS
     from ..host import Host
@@ -387,9 +387,7 @@ class BaseAgent:
         if not self._fs_config:
             return None, None
 
-        from monkeyfs import IsolatedFSConfig, VirtualFSConfig
-
-        from agex.fs import IsolatedFS, VirtualFS
+        from agex.fs import IsolatedFS, IsolatedFSConfig, VirtualFS, VirtualFSConfig
 
         state = self.state(session)
 
@@ -400,7 +398,7 @@ class BaseAgent:
             from agex.eval.core import _get_session_root
 
             # Get session-specific root if per_session is enabled
-            per_session = getattr(self._fs_config, "per_session", False)
+            per_session = self._fs_config.per_session
             root = _get_session_root(self._fs_config.root, session, per_session)
 
             return IsolatedFS(root), state
