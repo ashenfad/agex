@@ -1,3 +1,5 @@
+import re
+from pathlib import Path
 from typing import Any, Callable
 
 from agex.agent.base import BaseAgent
@@ -17,7 +19,9 @@ def _get_session_root(root: str, session: str, per_session: bool) -> str:
     if not per_session:
         return root
 
-    from pathlib import Path
+    # Session IDs are identifiers, not paths — constrain to safe characters
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", session):
+        raise ValueError("Invalid session identifier")
 
     session_root = Path(root) / session
     session_root.mkdir(parents=True, exist_ok=True)

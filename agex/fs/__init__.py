@@ -46,13 +46,13 @@ class IsolatedFSConfig:
     """Configuration for isolated (real) filesystem with path restriction.
 
     Attributes:
-        type: Always "isolated".
         root: Absolute path to root directory.
+        type: Always "isolated".
         per_session: Create session subdirectories (default: False).
     """
 
+    root: str
     type: Literal["isolated"] = "isolated"
-    root: str = ""
     per_session: bool = field(default=False)
 
 
