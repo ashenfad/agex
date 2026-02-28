@@ -101,7 +101,11 @@ def execute_sandboxed(
     event_token = _current_on_event.set(on_event)
     token_token = _current_on_token.set(on_token)
     try:
-        result = sb.exec(program, namespace=namespace)
+        if hasattr(sb, "__enter__"):
+            with sb:
+                result = sb.exec(program, namespace=namespace)
+        else:
+            result = sb.exec(program, namespace=namespace)
     finally:
         _current_session.reset(session_token)
         _current_on_event.reset(event_token)
@@ -159,10 +163,14 @@ async def aexecute_sandboxed(
 
     # Set context vars so sub-agent task calls inherit session/on_event/on_token
     session_token = _current_session.set(session)
-    event_token = _current_on_event.set(safe_on_event)
+    event_token = _current_on_event.set(on_event)
     token_token = _current_on_token.set(on_token)
     try:
-        result = await sb.aexec(program, namespace=namespace)
+        if hasattr(sb, "__enter__"):
+            with sb:
+                result = await sb.aexec(program, namespace=namespace)
+        else:
+            result = await sb.aexec(program, namespace=namespace)
     finally:
         _current_session.reset(session_token)
         _current_on_event.reset(event_token)
