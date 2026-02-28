@@ -11,7 +11,7 @@ from .base import (
 )
 
 if TYPE_CHECKING:
-    from monkeyfs import FSConfig
+    from agex.fs import FSConfig
 
     from ..state.config import StateConfig
 
