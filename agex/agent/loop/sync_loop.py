@@ -337,6 +337,13 @@ class SyncLoopMixin:
                 raise
 
             except Exception as e:
+                import sys
+                import traceback
+
+                print(
+                    f"\n[DEBUG] Caught exception in task loop:\n{traceback.format_exc()}",
+                    file=sys.stderr,
+                )
                 error_output = create_error_output(self.name, e)
                 add_event_to_log(exec_state, error_output, on_event=on_event)
                 yield error_output
