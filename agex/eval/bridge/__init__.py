@@ -101,10 +101,7 @@ def execute_sandboxed(
     event_token = _current_on_event.set(on_event)
     token_token = _current_on_token.set(on_token)
     try:
-        if hasattr(sb, "__enter__"):
-            with sb:
-                result = sb.exec(program, namespace=namespace)
-        else:
+        with sb:
             result = sb.exec(program, namespace=namespace)
     finally:
         _current_session.reset(session_token)
@@ -166,10 +163,7 @@ async def aexecute_sandboxed(
     event_token = _current_on_event.set(on_event)
     token_token = _current_on_token.set(on_token)
     try:
-        if hasattr(sb, "__enter__"):
-            with sb:
-                result = await sb.aexec(program, namespace=namespace)
-        else:
+        with sb:
             result = await sb.aexec(program, namespace=namespace)
     finally:
         _current_session.reset(session_token)
