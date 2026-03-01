@@ -146,13 +146,20 @@ def safe_commit(
     """
     from monkeyfs import suspend
 
+    from agex.agent.datatypes import UnpicklableVariableError
+
     with suspend():
         if referenced_keys:
             state_keys = staged.keys()
             for key in referenced_keys & set(state_keys):
                 if not staged.is_staged(key):
-                    # Re-stage so encoder runs and kvgit detects byte changes
-                    staged[key] = staged.get(key)
+                    # Re-stage so encoder runs and kvgit detects byte changes.
+                    # Skip keys that are already UnpicklableMarkers — they can't
+                    # have been mutated in-place since agent code can't access them.
+                    try:
+                        staged[key] = staged.get(key)
+                    except UnpicklableVariableError:
+                        pass
 
         return staged.commit(on_conflict=on_conflict)
 

@@ -6,7 +6,7 @@ import pytest
 from kvgit import Staged, Versioned
 
 from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
-from agex.state import _agex_decoder, _agex_encoder
+from agex.state import _agex_decoder, _agex_encoder, safe_commit
 from agex.state.kv import Memory
 
 
@@ -58,6 +58,33 @@ def test_multi_turn_unpicklable_raises_clear_error():
 
     error_msg = str(exc_info.value)
     assert "UnpicklableObject" in error_msg
+
+
+def test_safe_commit_skips_unpicklable_refs():
+    """safe_commit should not raise when referenced_keys includes an UnpicklableMarker.
+
+    Reproduces the bug where turn 1 creates an unpicklable variable (added to
+    accumulated_refs via find_refs), and turn 2's safe_commit re-stages the
+    key, triggering UnpicklableVariableError outside the sandbox.
+    """
+    state = _make_versioned()
+
+    # Turn 1: create unpicklable and commit (marker stored in state)
+    state["at"] = UnpicklableObject(42)
+    state["good"] = "hello"
+    state.commit()
+
+    # Turn 2: only touch a different key, but accumulated_refs still has "at"
+    state["good"] = "world"
+    result = safe_commit(state, referenced_keys={"at", "good"})
+    assert result.merged
+
+    # "good" should reflect the new value
+    assert state.get("good") == "world"
+
+    # "at" should still be an unpicklable marker (not lost, not raised)
+    with pytest.raises(UnpicklableVariableError):
+        state.get("at")
 
 
 def test_marker_is_picklable():
