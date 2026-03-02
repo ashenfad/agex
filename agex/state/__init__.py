@@ -14,6 +14,8 @@ from kvgit.errors import MergeConflict
 from kvgit.gc import GCVersioned
 from kvgit.kv import KVStore
 
+from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
+
 from .config import StateConfig
 
 __all__ = [
@@ -51,8 +53,6 @@ def _agex_encoder(value: Any) -> bytes:
     try:
         return pickle.dumps(value)
     except Exception as e:
-        from agex.agent.datatypes import UnpicklableMarker
-
         marker = UnpicklableMarker(
             variable_name="<unknown>",
             type_name=type(value).__name__,
@@ -63,8 +63,6 @@ def _agex_encoder(value: Any) -> bytes:
 
 def _agex_decoder(raw: bytes) -> Any:
     """Pickle decoder that raises UnpicklableVariableError on marker values."""
-    from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
-
     value = pickle.loads(raw)
     if isinstance(value, UnpicklableMarker):
         raise UnpicklableVariableError(value)
@@ -145,8 +143,6 @@ def safe_commit(
         MergeResult from kvgit commit.
     """
     from monkeyfs import suspend
-
-    from agex.agent.datatypes import UnpicklableVariableError
 
     with suspend():
         if referenced_keys:
