@@ -7,6 +7,7 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any, Callable
 
+from monkeyfs import MountFS
 from termish import ParseError, TerminalError, execute_script, to_script
 
 from agex.agent.events import (
@@ -272,8 +273,6 @@ def maybe_add_file_event(
 
     if not fs:
         return None
-
-    from monkeyfs import MountFS
 
     base_fs = fs._base if isinstance(fs, MountFS) else fs
     fs_metadata_after = base_fs.get_metadata_snapshot()

@@ -147,7 +147,7 @@ def build_numbered_event_index(events: list[BaseEvent]) -> str:
     """
     lines = []
     for i, event in enumerate(events, 1):
-        summary = _summarize_event(event)
+        summary = _summarize_event(event).replace("\n", " ")
         lines.append(f"[{i}] {summary}")
     return "\n".join(lines)
 
