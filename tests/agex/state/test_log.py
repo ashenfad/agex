@@ -3,12 +3,12 @@
 import pytest
 from kvgit import store as kvgit_store
 
-from agex.agent.events import ActionEvent, SummaryEvent
+from agex.agent.events import ActionEvent, ChapterEvent
 from agex.state import _agex_decoder, _agex_encoder
 from agex.state.log import (
     add_event_to_log,
     get_events_from_log,
-    replace_oldest_events_with_summary,
+    replace_events_with_chapters,
 )
 
 
@@ -33,179 +33,131 @@ def test_add_and_get_events():
     assert events[1].thinking == "thought 2"
 
 
-def test_replace_oldest_events_with_summary():
-    """Test replacing oldest events with a summary."""
+def test_replace_events_with_chapters():
+    """Test replacing a range of events with a chapter."""
     state = _make_state()
 
     # Add 5 events
     for i in range(5):
-        event = ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}")
-        add_event_to_log(state, event)
+        add_event_to_log(
+            state,
+            ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}"),
+        )
 
-    # Verify initial state
-    events = get_events_from_log(state)
-    assert len(events) == 5
-    assert all(isinstance(e, ActionEvent) for e in events)
+    events_before = get_events_from_log(state)
+    assert len(events_before) == 5
 
-    # Create summary for first 3 events
-    summary = SummaryEvent(
+    # Replace events [1, 3) (indices 1 and 2) with a chapter
+    chapter = ChapterEvent(
         agent_name="test",
-        summary="Summary of first 3 events",
-        summarized_event_count=3,
-        original_tokens=100,
+        name="Middle work",
+        message="Did some middle stuff",
+        events=list(events_before[1:3]),
     )
+    replace_events_with_chapters(state, [(1, 3, chapter)])
 
-    # Replace oldest 3 events
-    replace_oldest_events_with_summary(state, 3, summary)
+    events_after = get_events_from_log(state)
+    assert len(events_after) == 4  # 5 - 2 + 1
 
-    # Verify result
-    events = get_events_from_log(state)
-    assert len(events) == 3  # 1 summary + 2 kept events
-    assert isinstance(events[0], SummaryEvent)
-    assert events[0].summary == "Summary of first 3 events"
-    assert events[0].summarized_event_count == 3
+    # First event unchanged
+    assert isinstance(events_after[0], ActionEvent)
+    assert events_after[0].thinking == "thought 0"
 
-    # Verify kept events are the newer ones (indices 3 and 4 from original)
-    assert isinstance(events[1], ActionEvent)
-    assert events[1].thinking == "thought 3"
-    assert isinstance(events[2], ActionEvent)
-    assert events[2].thinking == "thought 4"
+    # Second is the chapter
+    assert isinstance(events_after[1], ChapterEvent)
+    assert events_after[1].name == "Middle work"
+    assert len(events_after[1].events) == 2
+
+    # Remaining events unchanged
+    assert isinstance(events_after[2], ActionEvent)
+    assert events_after[2].thinking == "thought 3"
+    assert isinstance(events_after[3], ActionEvent)
+    assert events_after[3].thinking == "thought 4"
 
 
-def test_replace_oldest_validates_count():
-    """Test that replace_oldest_events_with_summary validates count parameter."""
+def test_replace_events_multiple_chapters():
+    """Test replacing multiple non-overlapping ranges."""
     state = _make_state()
 
-    # Add 3 events
-    for i in range(3):
-        event = ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}")
-        add_event_to_log(state, event)
+    for i in range(6):
+        add_event_to_log(
+            state,
+            ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}"),
+        )
 
-    summary = SummaryEvent(
+    events_before = get_events_from_log(state)
+
+    ch1 = ChapterEvent(
         agent_name="test",
-        summary="Summary",
-        summarized_event_count=2,
-        original_tokens=50,
+        name="First batch",
+        message="Events 0-1",
+        events=list(events_before[0:2]),
+    )
+    ch2 = ChapterEvent(
+        agent_name="test",
+        name="Second batch",
+        message="Events 3-4",
+        events=list(events_before[3:5]),
     )
 
-    # Test count <= 0
-    with pytest.raises(ValueError, match="count must be > 0"):
-        replace_oldest_events_with_summary(state, 0, summary)
+    replace_events_with_chapters(state, [(0, 2, ch1), (3, 5, ch2)])
 
-    with pytest.raises(ValueError, match="count must be > 0"):
-        replace_oldest_events_with_summary(state, -1, summary)
+    events_after = get_events_from_log(state)
+    assert len(events_after) == 4  # 6 - 2 - 2 + 2
 
-    # Test count > log length
-    with pytest.raises(
-        ValueError, match="Cannot replace 5 events, log only has 3 events"
-    ):
-        replace_oldest_events_with_summary(state, 5, summary)
+    assert isinstance(events_after[0], ChapterEvent)
+    assert events_after[0].name == "First batch"
+    assert isinstance(events_after[1], ActionEvent)
+    assert events_after[1].thinking == "thought 2"
+    assert isinstance(events_after[2], ChapterEvent)
+    assert events_after[2].name == "Second batch"
+    assert isinstance(events_after[3], ActionEvent)
+    assert events_after[3].thinking == "thought 5"
 
 
-def test_replace_oldest_edge_cases():
-    """Test edge cases for replace_oldest_events_with_summary."""
+def test_replace_events_overlapping_raises():
+    """Test that overlapping ranges raise ValueError."""
     state = _make_state()
 
-    # Add 3 events
-    for i in range(3):
-        event = ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}")
-        add_event_to_log(state, event)
-
-    # Replace exactly 1 event
-    summary1 = SummaryEvent(
-        agent_name="test",
-        summary="Summary of 1 event",
-        summarized_event_count=1,
-        original_tokens=30,
-    )
-    replace_oldest_events_with_summary(state, 1, summary1)
-
-    events = get_events_from_log(state)
-    assert len(events) == 3  # 1 summary + 2 kept
-    assert isinstance(events[0], SummaryEvent)
-    assert events[1].thinking == "thought 1"
-    assert events[2].thinking == "thought 2"
-
-    # Replace all but one (2 events)
-    summary2 = SummaryEvent(
-        agent_name="test",
-        summary="Summary of 2 events",
-        summarized_event_count=2,
-        original_tokens=60,
-    )
-    replace_oldest_events_with_summary(state, 2, summary2)
-
-    events = get_events_from_log(state)
-    assert len(events) == 2  # 1 summary + 1 kept
-    assert isinstance(events[0], SummaryEvent)
-    assert events[0].summary == "Summary of 2 events"
-    assert events[1].thinking == "thought 2"
-
-
-def test_replace_preserves_event_storage():
-    """Test that replacing events reuses existing event storage (no duplication)."""
-    state = _make_state()
-
-    # Add events
     for i in range(5):
-        event = ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}")
-        add_event_to_log(state, event)
+        add_event_to_log(
+            state,
+            ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}"),
+        )
 
-    # Get all keys before replacement
-    event_refs_before = state.get("__event_log__", [])
-    kept_refs = event_refs_before[3:]  # Events we expect to keep
+    ch1 = ChapterEvent(agent_name="test", name="A", message="a")
+    ch2 = ChapterEvent(agent_name="test", name="B", message="b")
 
-    # Replace first 3
-    summary = SummaryEvent(
-        agent_name="test",
-        summary="Summary",
-        summarized_event_count=3,
-        original_tokens=90,
-    )
-    replace_oldest_events_with_summary(state, 3, summary)
-
-    # Get refs after
-    event_refs_after = state.get("__event_log__", [])
-
-    # Verify that the kept event refs are the same (no duplication)
-    assert event_refs_after[1:] == kept_refs
-
-    # Verify old events are still in storage (just not referenced by log)
-    for old_ref in event_refs_before[:3]:
-        assert old_ref in state  # Old events still exist in storage
+    with pytest.raises(ValueError, match="Overlapping"):
+        replace_events_with_chapters(state, [(0, 3, ch1), (2, 5, ch2)])
 
 
-def test_cascading_summaries():
-    """Test that summaries can themselves be summarized."""
+def test_replace_events_out_of_bounds_raises():
+    """Test that out-of-bounds ranges raise ValueError."""
     state = _make_state()
 
-    # Add 10 events
-    for i in range(10):
-        event = ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}")
-        add_event_to_log(state, event)
+    for i in range(3):
+        add_event_to_log(
+            state,
+            ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}"),
+        )
 
-    # First summarization: replace first 5
-    summary1 = SummaryEvent(
-        agent_name="test",
-        summary="Summary of events 0-4",
-        summarized_event_count=5,
-        original_tokens=200,
+    ch = ChapterEvent(agent_name="test", name="A", message="a")
+
+    with pytest.raises(ValueError, match="Invalid range"):
+        replace_events_with_chapters(state, [(0, 5, ch)])
+
+
+def test_replace_events_empty_list():
+    """Test that empty list is a no-op."""
+    state = _make_state()
+
+    add_event_to_log(
+        state,
+        ActionEvent(agent_name="test", thinking="thought", code="x = 1"),
     )
-    replace_oldest_events_with_summary(state, 5, summary1)
+
+    replace_events_with_chapters(state, [])
 
     events = get_events_from_log(state)
-    assert len(events) == 6  # 1 summary + 5 kept
-
-    # Second summarization: replace first 3 (which includes the summary)
-    summary2 = SummaryEvent(
-        agent_name="test",
-        summary="Summary of summary + 2 more events",
-        summarized_event_count=3,
-        original_tokens=150,  # Original tokens from what we're replacing
-    )
-    replace_oldest_events_with_summary(state, 3, summary2)
-
-    events = get_events_from_log(state)
-    assert len(events) == 4  # 1 new summary + 3 kept
-    assert isinstance(events[0], SummaryEvent)
-    assert events[0].summary == "Summary of summary + 2 more events"
+    assert len(events) == 1

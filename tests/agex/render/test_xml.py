@@ -29,7 +29,7 @@ class TestRenderEventsAsXML:
 
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
-        assert messages[0]["content"] == "Calculate sum of [1, 2, 3]"
+        assert messages[0]["content"] == "[1] Calculate sum of [1, 2, 3]"
 
     def test_action_event(self):
         """Test rendering ActionEvent."""
@@ -142,7 +142,7 @@ class TestRenderEventsAsXML:
 
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
-        assert messages[0]["content"] == "FOREFRONT NOTE"
+        assert messages[0]["content"] == "[1] FOREFRONT NOTE"
 
     def test_file_event(self):
         """Test rendering FileEvent with XML tags."""

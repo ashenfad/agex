@@ -9,6 +9,7 @@ from .base import (
     Isolation,
     clear_agent_registry,
 )
+from .chapter import CHAPTER_TASK, CHAPTER_TASK_PRIMER, Chapter
 
 if TYPE_CHECKING:
     from agex.fs import FSConfig
@@ -33,7 +34,6 @@ from .loop import TaskLoopMixin
 
 # Fingerprinting (usually internal, but exported for testing)
 from .registration import RegistrationMixin
-from .summarization import SummarizationError
 from .task import TaskMixin, clear_dynamic_dataclass_registry
 
 __all__ = [
@@ -54,8 +54,9 @@ __all__ = [
     "Pattern",
     "Visibility",
     "RESERVED_NAMES",
+    # Chapter constants
+    "CHAPTER_TASK",
     # Exceptions
-    "SummarizationError",
     # Fingerprinting
 ]
 
@@ -168,7 +169,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         state: "StateConfig | None" = None,
         # FileSystem configuration (optional, defaults to VirtualFS)
         fs: "FSConfig | None" = _UNSET,  # type: ignore
-        # Event log summarization (optional)
+        # Event log chaptering (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
         # Resource limits (per-task, Unix only)
@@ -200,10 +201,10 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
                 Defaults to ephemeral (fresh state per task call).
             fs: FileSystem configuration (optional). Use connect_fs() to create.
                 Enables virtual filesystem access for agents.
-            log_high_water_tokens: Trigger event log summarization when total tokens
-                exceed this threshold. If None, no summarization is performed.
-            log_low_water_tokens: Target token count after summarization. Defaults to
-                50% of log_high_water_tokens if not specified.
+            log_high_water_tokens: Trigger chaptering when input tokens exceed this
+                threshold. If None, chaptering is disabled.
+            log_low_water_tokens: Stop chaptering once input tokens drop below this
+                threshold. Defaults to 50% of log_high_water_tokens if not specified.
             max_memory_mb: Per-task memory limit in megabytes. Passed to sandtrap's
                 Policy.memory_limit. Kernel-enforced on Linux, checkpoint-based on macOS.
             max_open_files: Maximum file descriptors for the process. Unix only.
@@ -236,3 +237,20 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             isolation=isolation,
             agex_primer_override=agex_primer_override,
         )
+
+        # Register chapter support if water marks are configured
+        self._chapter_task = None
+        if self.log_high_water_tokens is not None:
+            self._register_chapter_task()
+
+    def _register_chapter_task(self):
+        """Register the Chapter class and chapter task for context compaction."""
+        # Register Chapter class so agent can construct instances
+        self.cls(Chapter, constructable=True)
+
+        # Register the chapter task
+        def __chapter__(event_index: str) -> list:
+            pass
+
+        __chapter__.__doc__ = CHAPTER_TASK_PRIMER
+        self._chapter_task = self.task(__chapter__)

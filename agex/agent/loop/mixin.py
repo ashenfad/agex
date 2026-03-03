@@ -216,6 +216,133 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
 
         return "\n\n".join(messages)
 
+    def _maybe_chapter(self, state, session, on_event, on_token):
+        """Run chapter task if context exceeds high water mark.
+
+        Checks the most recent ActionEvent's input_tokens against
+        log_high_water_tokens. If triggered, calls the __chapter__ task
+        which returns Chapter instances. Converts those to ChapterEvents
+        and applies them to the event log.
+
+        Loops up to 3 rounds or until below low water mark.
+        """
+        if self._chapter_task is None:
+            return
+
+        import logging
+
+        from agex.agent.chapter import (
+            Chapter,
+            build_numbered_event_index,
+            get_latest_input_tokens,
+            should_trigger_chaptering,
+        )
+        from agex.agent.events import ChapterEvent
+        from agex.state.log import get_events_from_log, replace_events_with_chapters
+
+        logger = logging.getLogger("agex.chapters")
+
+        for round_num in range(3):  # Max 3 chaptering rounds
+            all_events = get_events_from_log(state)
+            visible_events = [e for e in all_events if not isinstance(e, ErrorEvent)]
+
+            if not should_trigger_chaptering(all_events, self.log_high_water_tokens):
+                return
+
+            # Build event index and call chapter task
+            index_text = build_numbered_event_index(visible_events)
+            try:
+                chapters = self._chapter_task(
+                    event_index=index_text,
+                    session=session,
+                    on_event=on_event,
+                    on_token=on_token,
+                )
+            except Exception:
+                logger.debug(
+                    "Chapter task failed (round %d)", round_num + 1, exc_info=True
+                )
+                return
+
+            if not chapters:
+                logger.debug("Agent returned no chapters (round %d)", round_num + 1)
+                return
+
+            # Validate and convert to ChapterEvents
+            # Build mapping from 1-based visible index to 0-based event log index
+            visible_to_log = []
+            for log_idx, event in enumerate(all_events):
+                if not isinstance(event, ErrorEvent):
+                    visible_to_log.append(log_idx)
+
+            chapters_and_ranges = []
+            for ch in chapters:
+                if not isinstance(ch, Chapter):
+                    logger.debug("Skipping non-Chapter object: %s", type(ch).__name__)
+                    continue
+                # Convert 1-based inclusive to 0-based exclusive using visible mapping
+                if ch.start < 1 or ch.end < ch.start:
+                    logger.debug(
+                        "Skipping invalid range: start=%d end=%d", ch.start, ch.end
+                    )
+                    continue
+                if ch.start > len(visible_to_log) or ch.end > len(visible_to_log):
+                    logger.debug(
+                        "Skipping out-of-bounds range: start=%d end=%d (max=%d)",
+                        ch.start,
+                        ch.end,
+                        len(visible_to_log),
+                    )
+                    continue
+
+                log_start = visible_to_log[ch.start - 1]
+                log_end = visible_to_log[ch.end - 1] + 1  # exclusive
+
+                # Collect the events being chaptered
+                chaptered_events = list(all_events[log_start:log_end])
+
+                chapter_event = ChapterEvent(
+                    agent_name=self.name,
+                    name=ch.name,
+                    message=ch.message,
+                    events=chaptered_events,
+                )
+                chapters_and_ranges.append((log_start, log_end, chapter_event))
+
+            if not chapters_and_ranges:
+                return
+
+            try:
+                replace_events_with_chapters(state, chapters_and_ranges)
+            except ValueError:
+                logger.debug(
+                    "Failed to apply chapters (round %d)",
+                    round_num + 1,
+                    exc_info=True,
+                )
+                return
+
+            logger.debug(
+                "Applied %d chapter(s) in round %d",
+                len(chapters_and_ranges),
+                round_num + 1,
+            )
+
+            # Check low water mark — stop if we've compacted enough
+            if self.log_low_water_tokens is not None:
+                updated_events = get_events_from_log(state)
+                latest_tokens = get_latest_input_tokens(updated_events)
+                if (
+                    latest_tokens is not None
+                    and latest_tokens <= self.log_low_water_tokens
+                ):
+                    logger.debug(
+                        "Below low water mark (%d <= %d), stopping",
+                        latest_tokens,
+                        self.log_low_water_tokens,
+                    )
+                    return
+
     def _get_llm_response(
         self,
         system_message,

@@ -27,6 +27,7 @@ except ImportError:
 
 from ..agent.datatypes import EditAction, FileAction
 from ..eval.objects import ImageAction, PrintAction
+from ..fs.slugify import slugify as _slugify
 from ..llm.core import ContentPart, ImagePart, TextPart
 from ..tokenizers import get_tokenizer
 from .value import render_value
@@ -374,16 +375,16 @@ def render_fail(message: str) -> tuple[str, int]:
     return text, tokens
 
 
-def render_summary(
-    summary: str, event_count: int, original_tokens: int
-) -> tuple[str, int]:
+def render_chapter(name: str, message: str) -> tuple[str, int]:
     """
-    Render a summary event.
+    Render a chapter event.
 
     Returns:
-        (summary_text, token_count)
+        (chapter_text, token_count)
     """
-    text = f"📝 Summary of {event_count} previous events (originally {original_tokens} tokens):\n\n{summary}"
+    path = f"/chapters/{_slugify(name)}/"
+
+    text = f'📖 Chapter: "{name}"\n\n{message}\n\nFull details: {path}'
     tokens = count_tokens(text)
     return text, tokens
 

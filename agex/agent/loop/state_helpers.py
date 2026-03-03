@@ -6,8 +6,11 @@ from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
 from kvgit import Live, Namespaced, Staged
+from monkeyfs import MountFS
 
+from agex.fs.chapters_vfs import create_chapters_fs
 from agex.state import events, get_root, raw_get, raw_remove
+from agex.state.log import get_events_from_log
 
 if TYPE_CHECKING:
     from agex.llm.core import LLMResponse
@@ -130,6 +133,25 @@ def yield_new_events(
     return all_events[events_yielded_count:]
 
 
+def mount_chapters_overlay(fs: Any, state: Any) -> None:
+    """Mount or update the /chapters overlay on a MountFS.
+
+    Reads events from state and builds a read-only VFS from any ChapterEvents.
+    No-op if fs is not a MountFS or if there are no chapters.
+    """
+    if not isinstance(fs, MountFS):
+        return
+
+    all_events = get_events_from_log(state)
+    chapters_overlay = create_chapters_fs(all_events)
+    if chapters_overlay is not None:
+        try:
+            fs.unmount("/chapters")
+        except ValueError:
+            pass
+        fs.mount("/chapters", chapters_overlay)
+
+
 def prepare_task_loop(
     agent: Any,
     state: Staged | Namespaced | None,
@@ -153,6 +175,15 @@ def prepare_task_loop(
     if agent._fs_config:
         fs, _ = agent._get_fs_backend(session)
         fs_metadata_before = fs.get_metadata_snapshot()
+
+        # Wrap in MountFS if chaptering is enabled (for /chapters overlay)
+        if agent.log_high_water_tokens is not None:
+            if not isinstance(fs, MountFS):
+                fs = MountFS(fs)
+
+            # Mount chapters from previous tasks (if any)
+            if state is not None:
+                mount_chapters_overlay(fs, state)
     else:
         fs = None
         fs_metadata_before = {}

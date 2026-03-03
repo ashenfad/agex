@@ -9,7 +9,7 @@ from typing import Callable
 
 from kvgit import Namespaced, Staged
 
-from agex.agent.events import BaseEvent, Event, SummaryEvent
+from agex.agent.events import BaseEvent, ChapterEvent, Event
 from agex.state import get_root
 
 
@@ -66,66 +66,65 @@ def get_events_from_log(state) -> list[Event]:
     return [state.get(ref) for ref in event_refs if ref in state]
 
 
-def replace_oldest_events_with_summary(
+def replace_events_with_chapters(
     state,
-    count: int,
-    summary: SummaryEvent,
+    chapters_and_ranges: list[tuple[int, int, ChapterEvent]],
 ) -> None:
-    """
-    Replace the oldest N events in the log with a summary event.
-
-    This is used for event log compression when the log grows too large.
-    The oldest events (at the start of the log) are removed and replaced
-    with a single SummaryEvent that represents them.
+    """Replace contiguous ranges of events with ChapterEvents.
 
     Args:
-        state: The state containing the event log
-        count: Number of oldest events to replace (must be > 0)
-        summary: SummaryEvent to replace them with
+        state: The kvgit state store.
+        chapters_and_ranges: List of (start_idx, end_idx, chapter_event) tuples.
+            Indices are 0-based into the event refs list. start_idx is inclusive,
+            end_idx is exclusive. Ranges must not overlap and must be within bounds.
 
     Raises:
-        ValueError: If count is <= 0 or greater than log length
+        ValueError: If ranges overlap or are out of bounds.
     """
-    if count <= 0:
-        raise ValueError(f"count must be > 0, got {count}")
-
     event_refs = state.get("__event_log__", [])
+    num_refs = len(event_refs)
 
-    if count > len(event_refs):
-        raise ValueError(
-            f"Cannot replace {count} events, log only has {len(event_refs)} events"
-        )
+    if not chapters_and_ranges:
+        return
 
-    # Keep newer events (everything after the first `count`)
-    kept_refs = event_refs[count:]
+    # Validate ranges
+    sorted_ranges = sorted(chapters_and_ranges, key=lambda x: x[0])
+    for i, (start, end, _) in enumerate(sorted_ranges):
+        if start < 0 or end > num_refs or start >= end:
+            raise ValueError(
+                f"Invalid range [{start}, {end}) for event log of length {num_refs}"
+            )
+        if i > 0:
+            prev_end = sorted_ranges[i - 1][1]
+            if start < prev_end:
+                raise ValueError(
+                    f"Overlapping ranges: previous ends at {prev_end}, "
+                    f"current starts at {start}"
+                )
 
-    # Set commit_hash and full_namespace on summary event (same as add_event_to_log)
-    # If the root state is versioned, stamp the current commit hash on the event
+    # Set commit_hash and full_namespace on chapter events
     root_state = get_root(state)
-    if isinstance(root_state, Staged) and root_state.current_commit:
-        summary.commit_hash = root_state.current_commit
+    for _, _, chapter_event in sorted_ranges:
+        if isinstance(root_state, Staged) and root_state.current_commit:
+            chapter_event.commit_hash = root_state.current_commit
+        if isinstance(state, Namespaced):
+            chapter_event.full_namespace = state.namespace
+        else:
+            chapter_event.full_namespace = chapter_event.agent_name
 
-    # Set the full_namespace based on the state context
-    if isinstance(state, Namespaced):
-        # Use the full namespace path from the Namespaced state
-        summary.full_namespace = state.namespace
-    else:
-        # For root-level states (Staged, Live), full_namespace equals agent_name
-        summary.full_namespace = summary.agent_name
+    # Apply replacements in reverse order to preserve indices
+    new_refs = list(event_refs)
+    for start, end, chapter_event in reversed(sorted_ranges):
+        # Store the chapter event with a unique key
+        timestamp_microseconds = int(chapter_event.timestamp.timestamp() * 1_000_000)
+        event_key = f"_event_{timestamp_microseconds}_"
+        counter = 0
+        base_key = event_key
+        while event_key in state:
+            counter += 1
+            event_key = f"{base_key}{counter}"
 
-    # Generate unique timestamp-based key for summary
-    timestamp_microseconds = int(summary.timestamp.timestamp() * 1_000_000)
-    summary_key = f"_event_{timestamp_microseconds}_"
+        state[event_key] = chapter_event
+        new_refs[start:end] = [event_key]
 
-    # Handle potential timestamp collisions by adding a counter
-    counter = 0
-    base_key = summary_key
-    while summary_key in state:
-        counter += 1
-        summary_key = f"{base_key}{counter}"
-
-    # Store the summary event
-    state[summary_key] = summary
-
-    # Rebuild log: [summary] + [kept newer events]
-    state["__event_log__"] = [summary_key] + kept_refs
+    state["__event_log__"] = new_refs
