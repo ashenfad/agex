@@ -34,10 +34,10 @@ class TestBuildChaptersDict:
         )
         result = build_chapters_dict([ch])
 
-        assert "/data-exploration/summary.md" in result
-        assert "/data-exploration/events/001-action.md" in result
+        assert "data-exploration/summary.md" in result
+        assert "data-exploration/events/001-action.md" in result
 
-        summary = result["/data-exploration/summary.md"].decode()
+        summary = result["data-exploration/summary.md"].decode()
         assert "# Data exploration" in summary
         assert "Found 3 tables" in summary
 
@@ -46,8 +46,8 @@ class TestBuildChaptersDict:
         ch2 = ChapterEvent(agent_name="t", name="Phase Two", message="Analysis done")
         result = build_chapters_dict([ch1, ch2])
 
-        assert "/phase-one/summary.md" in result
-        assert "/phase-two/summary.md" in result
+        assert "phase-one/summary.md" in result
+        assert "phase-two/summary.md" in result
 
     def test_nested_chapters(self):
         inner = ChapterEvent(
@@ -65,10 +65,10 @@ class TestBuildChaptersDict:
         result = build_chapters_dict([outer])
 
         # Outer chapter summary
-        assert "/outer-work/summary.md" in result
+        assert "outer-work/summary.md" in result
         # Inner chapter nested under outer
-        assert "/outer-work/chapters/inner-work/summary.md" in result
-        assert "/outer-work/chapters/inner-work/events/001-action.md" in result
+        assert "outer-work/chapters/inner-work/summary.md" in result
+        assert "outer-work/chapters/inner-work/events/001-action.md" in result
 
     def test_non_chapter_events_ignored(self):
         events = [
@@ -109,11 +109,11 @@ class TestBuildChaptersDict:
             events=events_inside,
         )
         result = build_chapters_dict([ch])
-        assert "/mixed-events/summary.md" in result
-        assert "/mixed-events/events/001-taskstart.md" in result
-        assert "/mixed-events/events/002-action.md" in result
-        assert "/mixed-events/events/003-output.md" in result
-        assert "/mixed-events/events/004-success.md" in result
+        assert "mixed-events/summary.md" in result
+        assert "mixed-events/events/001-taskstart.md" in result
+        assert "mixed-events/events/002-action.md" in result
+        assert "mixed-events/events/003-output.md" in result
+        assert "mixed-events/events/004-success.md" in result
 
 
 class TestCreateChaptersFS:

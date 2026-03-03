@@ -5,6 +5,8 @@ Builds a virtual directory tree from ChapterEvents, allowing agents
 to browse chaptered history using existing file tools (read, grep, ls).
 """
 
+import posixpath
+
 from monkeyfs import ReadOnlyFS, VirtualFS
 
 from agex.agent.events import BaseEvent, ChapterEvent
@@ -24,7 +26,7 @@ def _unique_slug(base_slug: str, path_prefix: str, file_dict: dict[str, bytes]) 
     """Return a slug that doesn't collide with existing entries in file_dict."""
     candidate = base_slug
     counter = 2
-    while f"{path_prefix}/{candidate}/summary.md" in file_dict:
+    while posixpath.join(path_prefix, candidate, "summary.md") in file_dict:
         candidate = f"{base_slug}-{counter}"
         counter += 1
     return candidate
@@ -39,11 +41,13 @@ def _build_chapter_entries(
     for i, event in enumerate(events, 1):
         if isinstance(event, ChapterEvent):
             slug = _unique_slug(_slugify(event.name), path_prefix, file_dict)
-            chapter_path = f"{path_prefix}/{slug}"
+            chapter_path = posixpath.join(path_prefix, slug)
 
             # summary.md
             summary = f"# {event.name}\n\n{event.message}\n"
-            file_dict[f"{chapter_path}/summary.md"] = summary.encode("utf-8")
+            file_dict[posixpath.join(chapter_path, "summary.md")] = summary.encode(
+                "utf-8"
+            )
 
             # Nested events
             if event.events:
@@ -52,12 +56,14 @@ def _build_chapter_entries(
                         # Recurse for nested chapters
                         _build_chapter_entries(
                             [nested],
-                            f"{chapter_path}/chapters",
+                            posixpath.join(chapter_path, "chapters"),
                             file_dict,
                         )
                     else:
                         label = _event_type_label(nested)
-                        event_path = f"{chapter_path}/events/{j:03d}-{label}.md"
+                        event_path = posixpath.join(
+                            chapter_path, "events", f"{j:03d}-{label}.md"
+                        )
                         content = nested._repr_markdown_()
                         file_dict[event_path] = content.encode("utf-8")
 
