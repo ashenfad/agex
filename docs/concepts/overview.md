@@ -5,6 +5,7 @@ High-level ideas that guide agex’s design and usage.
 - [The Big Picture](big-picture.md) - Agents that think in code, curated micro‑DSLs, and sandbox philosophy.
 - [Security](security.md) - Walled‑garden security model, AST validation, safe introspection.
 - [Nearly Python](nearly-python.md) - The Python subset available to agents — what works, what’s different.
+- [Chapters](chapters.md) - Agent-directed context compaction — how agents manage long event histories.
 
 
 Use this section to understand why agex is built the way it is, and which constraints enable safe, powerful runtime interoperability.

@@ -46,6 +46,7 @@ nav:
     - The Big Picture: concepts/big-picture.md
     - Security: concepts/security.md
     - Nearly Python: concepts/nearly-python.md
+    - Chapters: concepts/chapters.md
   - Examples:
     - Overview: examples/overview.md
     - Agex 101 (notebook): examples/agex101.ipynb
