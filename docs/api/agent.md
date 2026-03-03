@@ -39,8 +39,8 @@ Agent(
 | `host` | `Host \| None` | `None` | Execution host from `connect_host()`. If `None`, runs locally. See [Host Configuration](host.md). |
 | `state` | `StateConfig \| None` | `None` | State config from `connect_state()`. If `None`, tasks are stateless. See [State Configuration](state.md). |
 | `fs` | `FSConfig \| None` | `connect_fs(type="virtual")` | FileSystem config from `connect_fs()`. Defaults to an in-memory Virtual Filesystem (VFS). Pass `None` to disable. See [FileSystem Configuration](fs.md). |
-| `log_high_water_tokens` | `int \| None` | `None` | Trigger event log summarization when tokens exceed this threshold |
-| `log_low_water_tokens` | `int \| None` | `None` | Target token count after summarization (defaults to 50% of high water) |
+| `log_high_water_tokens` | `int \| None` | `None` | Trigger [chaptering](../concepts/chapters.md) when input tokens exceed this threshold |
+| `log_low_water_tokens` | `int \| None` | `None` | Stop chaptering once input tokens drop below this (defaults to 50% of high water) |
 | `max_memory_mb` | `int \| None` | `None` | Per-task memory limit in MB. Enforced by sandtrap (kernel on Linux, checkpoint on macOS). See [Resource Limits](#resource-limits). |
 | `max_open_files` | `int \| None` | `None` | Maximum file descriptors per task (Unix only). See [Resource Limits](#resource-limits). |
 | `eval_tick_limit` | `int \| None` | `100_000` | Maximum Python control-flow checkpoints (loop iterations, function entries) per code execution. Set to `None` to disable. |
@@ -217,23 +217,23 @@ def summarize_capabilities(
 
 Generates a concise, guidance-oriented primer from the agent's registrations. Results are cached at `.agex/primer_cache/`.
 
-## Event Log Summarization
+## Chaptering (Context Compaction)
 
-For long-running agents, automatic summarization keeps the context window manageable:
+For long-running agents, chaptering keeps the context window manageable by letting agents close completed work into named chapters:
 
 ```python
 agent = Agent(
-    log_high_water_tokens=20000,  # Trigger at 20k tokens
-    log_low_water_tokens=10000,   # Target 10k after summarization
+    log_high_water_tokens=100_000,  # Trigger chaptering above this
+    log_low_water_tokens=50_000,    # Stop chaptering below this
 )
 ```
 
 **How it works:**
-1. Before each LLM call, checks total event tokens
-2. If exceeding high water, summarizes oldest events
-3. Replaces old events with a `SummaryEvent`
+1. After each task (or `task_continue()` iteration), checks `input_tokens` against the high water mark
+2. If exceeded, triggers the `__chapter__` task — the agent reviews its history and creates `Chapter` instances
+3. The framework converts chapters to `ChapterEvent` instances, preserving originals for VFS browsing
 
-See [Events - SummaryEvent](events.md#summaryevent) for details.
+See [Concepts: Chapters](../concepts/chapters.md) for the full explanation.
 
 ## Agent Registry
 

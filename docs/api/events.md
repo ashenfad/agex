@@ -176,22 +176,19 @@ event = ClarifyEvent(
 )
 ```
 
-#### `SummaryEvent`
-Generated when the event log exceeds the `log_high_water_tokens` threshold (see [Agent - Event Log Summarization](agent.md#event-log-summarization)). The LLM condenses older events into a summary, preserving essential context while reducing tokens.
+#### `ChapterEvent`
+Generated when the agent closes completed work into a named chapter. Original events are preserved inside the chapter and browsable via the `/chapters` VFS overlay. See [Concepts: Chapters](../concepts/chapters.md) for details.
 
 ```python
-from agex.agent.events import SummaryEvent
+from agex.agent.events import ChapterEvent
 
 # Event structure
-event = SummaryEvent(
-    summary="...",                  # str - The condensed summary text
-    summarized_event_count=10,      # int - Number of events summarized
-    original_tokens=5000,           # int - Token cost of original events
-    low_detail_threshold=datetime(...),  # datetime | None - Events older than this render at low detail
+event = ChapterEvent(
+    name="Data exploration",       # str - Short descriptive name
+    message="Found 3 tables...",   # str - Agent's summary/distillation
+    events=[...],                  # list[BaseEvent] - Original events (nested, lossless)
 )
 ```
-
-When a `SummaryEvent` is present, agex applies 3-tier rendering: **Summarized** (oldest, replaced by compact text), **Low Detail** (compressed images/nesting), **Full Detail** (newest, complete rendering).
 
 #### `FileEvent`
 Generated when files are added, modified, or removed from the workspace.
