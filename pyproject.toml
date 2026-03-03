@@ -30,7 +30,7 @@ dependencies = [
     "kvgit<0.2.0",
     "sandtrap>=0.1.5,<0.2.0",
     "reprobate<0.2.0",
-    "monkeyfs>=0.1.1,<0.2.0",
+    "monkeyfs>=0.1.2,<0.2.0",
     "tiktoken",
     "diskcache",
     "pydantic",
