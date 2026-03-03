@@ -20,6 +20,16 @@ def _event_type_label(event: BaseEvent) -> str:
     return class_name.lower()
 
 
+def _unique_slug(base_slug: str, path_prefix: str, file_dict: dict[str, bytes]) -> str:
+    """Return a slug that doesn't collide with existing entries in file_dict."""
+    candidate = base_slug
+    counter = 2
+    while f"{path_prefix}/{candidate}/summary.md" in file_dict:
+        candidate = f"{base_slug}-{counter}"
+        counter += 1
+    return candidate
+
+
 def _build_chapter_entries(
     events: list[BaseEvent],
     path_prefix: str,
@@ -28,7 +38,7 @@ def _build_chapter_entries(
     """Recursively build VFS entries for a list of chaptered events."""
     for i, event in enumerate(events, 1):
         if isinstance(event, ChapterEvent):
-            slug = _slugify(event.name)
+            slug = _unique_slug(_slugify(event.name), path_prefix, file_dict)
             chapter_path = f"{path_prefix}/{slug}"
 
             # summary.md

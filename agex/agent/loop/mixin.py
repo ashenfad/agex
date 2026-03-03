@@ -9,15 +9,24 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import re
 import time
 from typing import Any
 
 from agex.agent.base import BaseAgent
+from agex.agent.chapter import (
+    Chapter,
+    build_numbered_event_index,
+    get_latest_input_tokens,
+    should_trigger_chaptering,
+)
+from agex.agent.events import ChapterEvent
 from agex.agent.primer_text import BUILTIN_PRIMER
 from agex.agent.utils import call_sync_or_async
 from agex.eval.analysis import get_workspace_recap
 from agex.render.definitions import render_definitions
+from agex.state.log import get_events_from_log, replace_events_with_chapters
 
 from .async_loop import AsyncLoopMixin
 from .common import (
@@ -228,17 +237,6 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         """
         if self._chapter_task is None:
             return
-
-        import logging
-
-        from agex.agent.chapter import (
-            Chapter,
-            build_numbered_event_index,
-            get_latest_input_tokens,
-            should_trigger_chaptering,
-        )
-        from agex.agent.events import ChapterEvent
-        from agex.state.log import get_events_from_log, replace_events_with_chapters
 
         logger = logging.getLogger("agex.chapters")
 
