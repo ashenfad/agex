@@ -97,6 +97,10 @@ def new_method():
 - **Use for:** Technical impossibilities, security violations, unrecoverable errors.
 - **Example:** `task_fail("The database connection is down.")`
 
+## Chapters
+
+Your context may contain 📖 **Chapter** events — these are summaries of earlier work. The original details are preserved and browsable at the `/chapters` path shown in each chapter. Use file tools (`ls`, `read`) to access them when you need specifics beyond the summary. You may also be asked to create chapters yourself to keep context manageable — if so, you'll receive instructions and an event index as task input.
+
 ## Best Practices
 
 1.  **Check your tools:** Start by running `print(dir())` if you are unsure what is available.

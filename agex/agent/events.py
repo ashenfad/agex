@@ -11,10 +11,10 @@ from ..render.primitives import (
     LOW_DETAIL_BUDGET,
     count_tokens,
     render_action_markdown,
+    render_chapter,
     render_fail,
     render_output_parts_full,
     render_success,
-    render_summary,
     render_task_start,
 )
 
@@ -304,8 +304,8 @@ class BaseEvent(BaseModel):
             "SuccessEvent": "✅",
             "FailEvent": "❌",
             "ClarifyEvent": "❓",
+            "ChapterEvent": "📖",
             "ErrorEvent": "⚠️",
-            "SummaryEvent": "📝",
         }
         emoji = emoji_map.get(class_name, "📋")
 
@@ -897,68 +897,40 @@ class SystemNoteEvent(BaseEvent):
         )
 
 
-class SummaryEvent(BaseEvent):
-    """Represents a summary of multiple older events."""
+class ChapterEvent(BaseEvent):
+    """A named chapter that replaces a contiguous range of events.
 
-    summary: str  # The summary text
-    summarized_event_count: int  # Number of events summarized
-    original_tokens: int  # Token cost of original events
-    low_detail_threshold: datetime | None = (
-        None  # Events older than this render at low detail
-    )
+    The original events are preserved inside the chapter (lossless).
+    Only the chapter's name and message are rendered in context;
+    the embedded events can be browsed via the /chapters VFS overlay.
+    """
+
+    name: str  # Short descriptive name
+    message: str  # Agent's summary/distillation
+    events: list[BaseEvent] = Field(default_factory=list)  # Original events (nested)
 
     @model_validator(mode="after")
     def _compute_tokens(self):
-        # Summary is rendered with a header indicating compression
-        _, tokens = render_summary(
-            self.summary, self.summarized_event_count, self.original_tokens
-        )
+        _, tokens = render_chapter(self.name, self.message)
         self.full_detail_tokens = tokens
-        self.low_detail_tokens = tokens  # No separate low-detail rendering
+        self.low_detail_tokens = tokens
         return self
 
     def __str__(self) -> str:
-        """Detailed string with summary info."""
         base = super().__str__()
-        compression_ratio = (
-            f"{self.original_tokens} → {self.full_detail_tokens} tokens"
-            if self.full_detail_tokens > 0
-            else f"{self.original_tokens} tokens"
-        )
-        return f"{base}\n  Summarized: {self.summarized_event_count} events ({compression_ratio})"
+        return f'{base}\n  Chapter: "{self.name}" ({len(self.events)} events)'
 
     def _repr_markdown_(self) -> str:
-        """Rich markdown with summary details."""
         base = super()._repr_markdown_()
-        compression_ratio = (
-            f"{self.original_tokens} → {self.full_detail_tokens} tokens"
-            if self.full_detail_tokens > 0
-            else f"{self.original_tokens} tokens"
-        )
-        return f"""{base}  
-**Summary:** {self.summarized_event_count} events ({compression_ratio})
-
-{self.summary}"""
+        return f'{base}\n**Chapter:** "{self.name}" ({len(self.events)} events)\n\n{self.message}'
 
     def _repr_html_(self) -> str:
-        """Rich HTML representation for IPython/Jupyter environments."""
-        compression_ratio = (
-            f"{self.original_tokens} → {self.full_detail_tokens} tokens"
-            if self.full_detail_tokens > 0
-            else f"{self.original_tokens} tokens"
-        )
-        header = (
-            f"📊 Summary of {self.summarized_event_count} events ({compression_ratio})"
-        )
-
-        # Convert markdown summary to HTML for rich display
-        summary_html = _render_markdown_html(self.summary)
-
+        header = f'📖 Chapter: "{self.name}" ({len(self.events)} events)'
+        summary_html = _render_markdown_html(self.message)
         content = _event_section(header, summary_html, "#6a737d")
-
         return _event_html_container(
-            "📝",
-            "SummaryEvent",
+            "📖",
+            "ChapterEvent",
             self.full_namespace,
             self.timestamp,
             content,
@@ -1059,7 +1031,7 @@ Event = (
     | FailEvent
     | CancelledEvent
     | ClarifyEvent
-    | SummaryEvent
+    | ChapterEvent
     | FileEvent
 )
 
@@ -1092,6 +1064,7 @@ def _register_ipython_formatters():
             html_formatter.for_type(ErrorEvent, as_html)  # type: ignore[attr-defined]
             html_formatter.for_type(FailEvent, as_html)  # type: ignore[attr-defined]
             html_formatter.for_type(ClarifyEvent, as_html)  # type: ignore[attr-defined]
+            html_formatter.for_type(ChapterEvent, as_html)  # type: ignore[attr-defined]
 
     except ImportError:
         # IPython not available - that's fine, we'll use the default _repr_markdown_

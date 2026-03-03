@@ -4,13 +4,13 @@ XML rendering utilities for events.
 Converts agex events into XML-formatted messages for LLM consumption.
 """
 
-from datetime import datetime
 from typing import Any, List
 
 from agex.agent.datatypes import EditAction, FileAction
 from agex.agent.events import (
     ActionEvent,
     CancelledEvent,
+    ChapterEvent,
     ClarifyEvent,
     ErrorEvent,
     Event,
@@ -18,7 +18,6 @@ from agex.agent.events import (
     FileEvent,
     OutputEvent,
     SuccessEvent,
-    SummaryEvent,
     SystemNoteEvent,
     TaskStartEvent,
 )
@@ -42,9 +41,8 @@ from agex.llm.xml import (
 )
 from agex.render.primitives import (
     HI_DETAIL_BUDGET,
-    LOW_DETAIL_BUDGET,
+    render_chapter,
     render_output_parts_full,
-    render_summary,
     render_task_start,
 )
 from agex.render.value import render_value
@@ -55,8 +53,6 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
     Render events in XML format for LLM consumption.
 
     Similar to render_events_as_markdown() but uses XML tags.
-    Automatically applies low-detail rendering to old events based on
-    the most recent SummaryEvent's low_detail_threshold.
 
     Args:
         events: List of Event objects to render
@@ -69,26 +65,14 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
     # Filter out ErrorEvents (not shown to agents)
     filtered_events = [e for e in events if not isinstance(e, ErrorEvent)]
 
-    # Find low-detail threshold from most recent SummaryEvent
-    low_detail_threshold: datetime | None = None
-    for event in reversed(filtered_events):
-        if isinstance(event, SummaryEvent) and event.low_detail_threshold:
-            low_detail_threshold = event.low_detail_threshold
-            break
-
-    for event in filtered_events:
-        # Determine if this event should use low-detail rendering
-        use_low_detail = (
-            low_detail_threshold is not None
-            and event.timestamp < low_detail_threshold
-            and isinstance(event, (TaskStartEvent, OutputEvent, SuccessEvent))
-        )
-        budget = LOW_DETAIL_BUDGET if use_low_detail else HI_DETAIL_BUDGET
+    for i, event in enumerate(filtered_events, 1):
+        budget = HI_DETAIL_BUDGET
+        prefix = f"[{i}] "
 
         if isinstance(event, TaskStartEvent):
             # Render task start message with appropriate budget
             text, _ = render_task_start(event.message, budget=budget)
-            messages.append({"role": "user", "content": text})
+            messages.append({"role": "user", "content": prefix + text})
 
         elif isinstance(event, ActionEvent):
             # ActionEvent always renders at full detail (XML format with uppercase tags)
@@ -131,7 +115,7 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                 action_section = f"<{TAG_PYTHON}>{event.code or ''}</{TAG_PYTHON}>"
 
             content = (
-                f"{title_section}<{TAG_THINKING}>{event.thinking}</{TAG_THINKING}>\n"
+                f"{prefix}{title_section}<{TAG_THINKING}>{event.thinking}</{TAG_THINKING}>\n"
                 f"{files_section}"
                 f"{action_section}"
             )
@@ -151,7 +135,10 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                         {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": f"<{TAG_OBSERVATION}>"},
+                                {
+                                    "type": "text",
+                                    "text": f"{prefix}<{TAG_OBSERVATION}>",
+                                },
                                 *[
                                     _content_part_to_dict(part)
                                     for part in content_parts
@@ -165,7 +152,7 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                     text = "\n".join(
                         p.text for p in content_parts if isinstance(p, TextPart)
                     )
-                    content = f"<{TAG_OBSERVATION}>{text}</{TAG_OBSERVATION}>"
+                    content = f"{prefix}<{TAG_OBSERVATION}>{text}</{TAG_OBSERVATION}>"
                     messages.append({"role": "user", "content": content})
 
         elif isinstance(event, SuccessEvent):
@@ -173,31 +160,28 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             estimated_chars = budget * 4
             rendered = render_value(event.result, budget=estimated_chars)
 
-            content = f"<{TAG_SUCCESS}>{rendered}</{TAG_SUCCESS}>"
+            content = f"{prefix}<{TAG_SUCCESS}>{rendered}</{TAG_SUCCESS}>"
             messages.append({"role": "assistant", "content": content})
 
         elif isinstance(event, FailEvent):
-            content = f"<{TAG_FAIL}>{event.message}</{TAG_FAIL}>"
+            content = f"{prefix}<{TAG_FAIL}>{event.message}</{TAG_FAIL}>"
             messages.append({"role": "assistant", "content": content})
 
         elif isinstance(event, ClarifyEvent):
-            content = f"<{TAG_CLARIFY}>{event.message}</{TAG_CLARIFY}>"
+            content = f"{prefix}<{TAG_CLARIFY}>{event.message}</{TAG_CLARIFY}>"
             messages.append({"role": "assistant", "content": content})
 
         elif isinstance(event, CancelledEvent):
-            content = f"<{TAG_CANCELLED}>Task '{event.task_name}' cancelled after {event.iterations_completed} iterations</{TAG_CANCELLED}>"
+            content = f"{prefix}<{TAG_CANCELLED}>Task '{event.task_name}' cancelled after {event.iterations_completed} iterations</{TAG_CANCELLED}>"
             messages.append({"role": "assistant", "content": content})
 
-        elif isinstance(event, SummaryEvent):
-            # Render summary event using primitives
-            text, _ = render_summary(
-                event.summary, event.summarized_event_count, event.original_tokens
-            )
-            messages.append({"role": "user", "content": text})
+        elif isinstance(event, ChapterEvent):
+            text, _ = render_chapter(event.name, event.message)
+            messages.append({"role": "user", "content": prefix + text})
 
         elif isinstance(event, SystemNoteEvent):
             # Render system note as a user message (transient context)
-            messages.append({"role": "user", "content": event.message})
+            messages.append({"role": "user", "content": prefix + event.message})
 
         elif isinstance(event, FileEvent):
             # Render file changes with XML tags
@@ -208,7 +192,7 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                 parts.append(f"Modified: {', '.join(event.modified)}")
             if event.removed:
                 parts.append(f"Removed: {', '.join(event.removed)}")
-            content = f"<FILE_CHANGES source='{event.file_source}'>{'; '.join(parts)}</FILE_CHANGES>"
+            content = f"{prefix}<FILE_CHANGES source='{event.file_source}'>{'; '.join(parts)}</FILE_CHANGES>"
             messages.append({"role": "user", "content": content})
 
     return messages

@@ -14,8 +14,8 @@ if TYPE_CHECKING:
 
 from kvgit import Staged
 
+from agex.agent.chapter import CHAPTER_TASK
 from agex.agent.events import CancelledEvent
-from agex.agent.summarization import maybe_summarize_event_log
 from agex.eval.bridge import execute_sandboxed
 from agex.resource_limits import apply_resource_limits
 from agex.state import safe_commit
@@ -52,7 +52,12 @@ from .common import (
     maybe_add_file_event,
     yield_new_events,
 )
-from .state_helpers import clear_stale_cancel, prepare_task_loop, process_llm_response
+from .state_helpers import (
+    clear_stale_cancel,
+    mount_chapters_overlay,
+    prepare_task_loop,
+    process_llm_response,
+)
 
 
 class SyncLoopMixin:
@@ -196,8 +201,8 @@ class SyncLoopMixin:
                     iterations_completed=iteration,
                 )
 
-            maybe_summarize_event_log(self, exec_state, system_message, on_event)
             all_events = get_events_from_log(exec_state)
+
             forefront_msg = self._get_forefront_message(iteration, exec_state)
 
             # Get LLM response
@@ -286,6 +291,12 @@ class SyncLoopMixin:
                 # Persist changes from this iteration (including <file> writes)
                 if versioned_state is not None:
                     safe_commit(versioned_state, referenced_keys=accumulated_refs)
+
+                # Inline chaptering during long tasks
+                if task_name != CHAPTER_TASK and state is not None:
+                    self._maybe_chapter(state, session, on_event, on_token)
+                    if fs is not None:
+                        mount_chapters_overlay(fs, state)
 
                 continue
 
@@ -412,6 +423,12 @@ class SyncLoopMixin:
                 for file_event in file_events:
                     if on_event:
                         on_event(file_event)
+
+                # Maybe chapter between tasks
+                if task_name != CHAPTER_TASK and state is not None:
+                    self._maybe_chapter(state, session, on_event, on_token)
+                    if fs is not None:
+                        mount_chapters_overlay(fs, state)
 
                 return result
 

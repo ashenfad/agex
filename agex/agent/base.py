@@ -60,7 +60,7 @@ class BaseAgent:
         state: "StateConfig | None" = None,
         # FileSystem configuration (optional, defaults to VirtualFS)
         fs: "FSConfig | None" = _UNSET,  # type: ignore
-        # Event log summarization (optional)
+        # Event log chaptering (optional)
         log_high_water_tokens: int | None = None,
         log_low_water_tokens: int | None = None,
         # Memory limit (passed to sandtrap)

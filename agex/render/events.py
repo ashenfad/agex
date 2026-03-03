@@ -4,30 +4,28 @@ Event rendering utilities for LLM consumption.
 Converts agex events into provider message formats for LLM communication.
 """
 
-from datetime import datetime
 from typing import Any, List
 
 from agex.agent.events import (
     ActionEvent,
+    ChapterEvent,
     ErrorEvent,
     Event,
     FailEvent,
     FileEvent,
     OutputEvent,
     SuccessEvent,
-    SummaryEvent,
     SystemNoteEvent,
     TaskStartEvent,
 )
 from agex.llm.core import ContentPart, ImagePart, TextPart
 from agex.render.primitives import (
     HI_DETAIL_BUDGET,
-    LOW_DETAIL_BUDGET,
     render_action_markdown,
+    render_chapter,
     render_fail,
     render_output_parts_full,
     render_success,
-    render_summary,
     render_task_start,
 )
 
@@ -42,9 +40,6 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
     This is the default rendering strategy. Individual clients can use
     this or implement their own rendering (e.g., XML for streaming).
 
-    Automatically applies low-detail rendering to old events based on
-    the most recent SummaryEvent's low_detail_threshold.
-
     Args:
         events: List of Event objects to render
 
@@ -56,26 +51,13 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
     # Filter out ErrorEvents (not shown to agents)
     filtered_events = [e for e in events if not isinstance(e, ErrorEvent)]
 
-    # Find low-detail threshold from most recent SummaryEvent
-    low_detail_threshold: datetime | None = None
-    for event in reversed(filtered_events):
-        if isinstance(event, SummaryEvent) and event.low_detail_threshold:
-            low_detail_threshold = event.low_detail_threshold
-            break
-
-    for event in filtered_events:
-        # Determine if this event should use low-detail rendering
-        use_low_detail = (
-            low_detail_threshold is not None
-            and event.timestamp < low_detail_threshold
-            and isinstance(event, (TaskStartEvent, OutputEvent, SuccessEvent))
-        )
-        budget = LOW_DETAIL_BUDGET if use_low_detail else HI_DETAIL_BUDGET
+    for i, event in enumerate(filtered_events, 1):
+        budget = HI_DETAIL_BUDGET
+        prefix = f"[{i}] "
 
         if isinstance(event, TaskStartEvent):
-            # Render task start message with appropriate budget
             text, _ = render_task_start(event.message, budget=budget)
-            messages.append({"role": "user", "content": text})
+            messages.append({"role": "user", "content": prefix + text})
 
         elif isinstance(event, ActionEvent):
             # ActionEvent always renders at full detail (code is compact already)
@@ -86,15 +68,15 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
                 event.file_actions,
                 event.terminal,
             )
-            messages.append({"role": "assistant", "content": text})
+            messages.append({"role": "assistant", "content": prefix + text})
 
         elif isinstance(event, OutputEvent):
             # Render OutputEvent parts with budget (low detail replaces images with placeholders)
             content_parts, _ = render_output_parts_full(event.parts, budget=budget)
 
             if content_parts:
-                # Add "Agent stdout:" header
-                header = TextPart(text="Agent stdout:")
+                # Add numbered "Agent stdout:" header
+                header = TextPart(text=prefix + "Agent stdout:")
                 all_parts = [header] + content_parts
 
                 # Check for images
@@ -120,23 +102,20 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
         elif isinstance(event, SuccessEvent):
             # Render success marker with appropriate budget
             text, _ = render_success(event.result, budget=budget)
-            messages.append({"role": "assistant", "content": text})
+            messages.append({"role": "assistant", "content": prefix + text})
 
         elif isinstance(event, FailEvent):
             # Render fail marker using primitives
             text, _ = render_fail(event.message)
-            messages.append({"role": "assistant", "content": text})
+            messages.append({"role": "assistant", "content": prefix + text})
 
-        elif isinstance(event, SummaryEvent):
-            # Render summary event using primitives
-            text, _ = render_summary(
-                event.summary, event.summarized_event_count, event.original_tokens
-            )
-            messages.append({"role": "user", "content": text})
+        elif isinstance(event, ChapterEvent):
+            text, _ = render_chapter(event.name, event.message)
+            messages.append({"role": "user", "content": prefix + text})
 
         elif isinstance(event, SystemNoteEvent):
             # Render system note as a user message (transient context)
-            messages.append({"role": "user", "content": event.message})
+            messages.append({"role": "user", "content": prefix + event.message})
 
         elif isinstance(event, FileEvent):
             # Render file changes compactly
@@ -147,7 +126,9 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
                 parts.append(f"Modified: {', '.join(event.modified)}")
             if event.removed:
                 parts.append(f"Removed: {', '.join(event.removed)}")
-            content = f"[File changes by {event.file_source}] " + "; ".join(parts)
+            content = (
+                prefix + f"[File changes by {event.file_source}] " + "; ".join(parts)
+            )
             messages.append({"role": "user", "content": content})
 
     return messages

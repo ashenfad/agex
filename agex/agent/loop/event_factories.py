@@ -273,7 +273,10 @@ def maybe_add_file_event(
     if not fs:
         return None
 
-    fs_metadata_after = fs.get_metadata_snapshot()
+    from monkeyfs import MountFS
+
+    base_fs = fs._base if isinstance(fs, MountFS) else fs
+    fs_metadata_after = base_fs.get_metadata_snapshot()
     file_event = maybe_file_event(agent_name, fs_metadata_before, fs_metadata_after)
 
     if file_event:

@@ -1,16 +1,17 @@
 from .agent import Agent, MemberSpec, TaskFail, clear_agent_registry
+from .agent.chapter import CHAPTER_TASK
 from .agent.console import pprint_events, pprint_tokens
 from .agent.datatypes import FileAction, TaskCancelled, TaskClarify, TaskTimeout
 from .agent.events import (
     ActionEvent,
     CancelledEvent,
+    ChapterEvent,
     ClarifyEvent,
     ErrorEvent,
     Event,
     FailEvent,
     OutputEvent,
     SuccessEvent,
-    SummaryEvent,
     TaskStartEvent,
 )
 from .eval.core import run_file_in_sandbox
@@ -58,8 +59,10 @@ __all__ = [
     "FailEvent",
     "CancelledEvent",
     "ClarifyEvent",
+    "ChapterEvent",
     "ErrorEvent",
-    "SummaryEvent",
+    # Chapter constants
+    "CHAPTER_TASK",
     # Agent Registry
     "clear_agent_registry",
     # LLM Client Factory
