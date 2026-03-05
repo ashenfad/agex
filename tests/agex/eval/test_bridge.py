@@ -8,7 +8,6 @@ builds namespaces, handles results, and executes code through sandtrap's sandbox
 import math
 
 import pytest
-from kvgit import Live
 from sandtrap import ExecResult
 
 from agex.agent import Agent, clear_agent_registry
@@ -19,6 +18,7 @@ from agex.eval.bridge.namespace import build_namespace
 from agex.eval.bridge.policy import translate_policy
 from agex.eval.bridge.result import handle_result
 from agex.state import events
+from agex.state.live import Live
 
 
 class TestPolicyTranslation:

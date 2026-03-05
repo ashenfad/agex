@@ -136,7 +136,7 @@ class TestAgentState:
 
     def test_state_with_live_type(self):
         """state() works with live state type."""
-        from agex import Live
+        from agex.state.live import Live
 
         llm = Dummy(responses=[LLMResponse(thinking="Working", code="task_success()")])
         agent = Agent(state=connect_state(type="live", storage="memory"), llm=llm)
@@ -155,7 +155,7 @@ class TestAgentState:
 
     def test_state_without_state_config(self):
         """state() works when agent has no state config (ephemeral)."""
-        from agex import Live
+        from agex.state.live import Live
 
         llm = Dummy(
             responses=[LLMResponse(thinking="Working", code='task_success("result")')]

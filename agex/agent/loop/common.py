@@ -11,7 +11,7 @@ New code should import directly from the sub-modules:
 from __future__ import annotations
 
 # --- Third-party / internal re-exports used by sync_loop, async_loop, mixin ---
-from kvgit import Live, Namespaced, Staged
+from kvgit import Namespaced, Staged
 from pydantic import ValidationError
 
 from agex.agent.datatypes import (
@@ -44,6 +44,7 @@ from agex.state import (
     is_live_root,
     safe_commit,
 )
+from agex.state.live import Live
 from agex.state.log import add_event_to_log, get_events_from_log
 
 # --- Re-exports from sub-modules ---

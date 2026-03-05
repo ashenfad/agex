@@ -11,12 +11,13 @@ from collections.abc import MutableMapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from kvgit import Live, Staged, Versioned
+from kvgit import Staged, Versioned
 
 from agex.host.base import Host, apply_init_if_fresh
 from agex.host.local import Local
 from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv.modal_dict import ModalDict
+from agex.state.live import Live
 
 if TYPE_CHECKING:
     from agex.agent.base import BaseAgent

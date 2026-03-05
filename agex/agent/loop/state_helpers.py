@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from kvgit import Live, Namespaced, Staged
+from kvgit import Namespaced, Staged
 from monkeyfs import MountFS
 
 from agex.fs.chapters_vfs import create_chapters_fs
 from agex.state import events, get_root, raw_get, raw_remove
+from agex.state.live import Live
 from agex.state.log import get_events_from_log
 
 if TYPE_CHECKING:

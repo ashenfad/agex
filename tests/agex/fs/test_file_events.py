@@ -1,9 +1,8 @@
 """Tests for FileEvent emission."""
 
-from kvgit import Live
-
 from agex.agent.events import FileEvent
 from agex.fs import VirtualFS
+from agex.state.live import Live
 from agex.state.log import get_events_from_log
 
 
