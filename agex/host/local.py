@@ -8,7 +8,9 @@ import os
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from kvgit import Live, Staged, Versioned
+from kvgit import Staged, Versioned
+
+from agex.state.live import Live
 
 from .base import Host
 

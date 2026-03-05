@@ -135,7 +135,7 @@ class TestUnifiedEventsAPI:
 
     def test_events_versioned_and_live_states(self):
         """Test events() works correctly with Versioned and Live states."""
-        from kvgit import Live
+        from agex.state.live import Live
 
         # Test with Versioned state
         versioned_state = _make_state()

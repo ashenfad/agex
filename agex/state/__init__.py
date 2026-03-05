@@ -9,7 +9,7 @@ Uses kvgit types directly:
 import pickle
 from typing import Any, Callable, Literal
 
-from kvgit import ConcurrencyError, Live, MergeResult, Namespaced, Staged
+from kvgit import ConcurrencyError, MergeResult, Namespaced, Staged
 from kvgit.errors import MergeConflict
 from kvgit.gc import GCVersioned
 from kvgit.kv import KVStore
@@ -17,6 +17,7 @@ from kvgit.kv import KVStore
 from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
 
 from .config import StateConfig
+from .live import Live
 
 __all__ = [
     # kvgit types (direct)

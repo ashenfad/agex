@@ -9,8 +9,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
-    from kvgit import Live
     from monkeyfs import FileSystem
+
+    from agex.state.live import Live
 
 from kvgit import Staged
 

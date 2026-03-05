@@ -74,7 +74,9 @@ def test_forefront_logic_thresholds():
     """Unit test for the threshold logic."""
     agent = Agent(name="tester", max_iterations=10)
     # Mock state
-    from kvgit import Live, Namespaced
+    from kvgit import Namespaced
+
+    from agex.state.live import Live
 
     state = Namespaced(Live(), "test")
 

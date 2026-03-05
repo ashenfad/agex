@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from types import ModuleType
 
 import pytest
-from kvgit import Live, Namespaced, Staged, Versioned
+from kvgit import Namespaced, Staged, Versioned
 
 from agex import events
 from agex.agent import Agent, MemberSpec
@@ -22,6 +22,7 @@ from agex.llm import Dummy
 from agex.llm.core import LLMResponse
 from agex.state import _agex_decoder, _agex_encoder, connect_state
 from agex.state.kv import Memory
+from agex.state.live import Live
 from tests.agex import test_module
 
 
