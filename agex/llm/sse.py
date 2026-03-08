@@ -6,6 +6,8 @@ Used by pyfetch-based LLM clients that don't have SDK-level SSE handling.
 
 from typing import AsyncIterator
 
+_MAX_LINE_LENGTH = 1_048_576  # 1 MB guard against malformed streams
+
 
 async def parse_sse_events(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
     """Parse SSE text stream into data payloads.
@@ -23,6 +25,10 @@ async def parse_sse_events(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
     buffer = ""
     async for chunk in chunks:
         buffer += chunk
+        if "\n" not in buffer and len(buffer) > _MAX_LINE_LENGTH:
+            raise ValueError(
+                f"SSE line exceeded {_MAX_LINE_LENGTH} bytes without a newline"
+            )
         while "\n" in buffer:
             line, buffer = buffer.split("\n", 1)
             line = line.rstrip("\r")

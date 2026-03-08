@@ -5,6 +5,7 @@ Uses pyodide.http.pyfetch for HTTP transport instead of the openai SDK,
 enabling direct browser-to-API calls without a server proxy.
 """
 
+import codecs
 import json
 import sys
 from typing import Any, AsyncIterator, Iterator, List
@@ -245,14 +246,18 @@ class PyfetchOpenAI(LLM):
                 text = text_decoder.decode(result.value, {"stream": True})
                 yield text
         else:
-            # Non-Pyodide fallback (for testing with aiohttp/httpx)
+            # Non-Pyodide fallback (for testing with aiohttp)
             try:
                 import aiohttp
 
+                decoder = codecs.getincrementaldecoder("utf-8")()
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, json=body, headers=headers) as resp:
+                        resp.raise_for_status()
                         async for chunk in resp.content.iter_any():
-                            yield chunk.decode("utf-8")
+                            text = decoder.decode(chunk, False)
+                            if text:
+                                yield text
             except ImportError:
                 raise RuntimeError(
                     "PyfetchOpenAI requires pyodide (emscripten) or aiohttp installed."
@@ -281,6 +286,7 @@ class PyfetchOpenAI(LLM):
 
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, json=body, headers=headers) as resp:
+                        resp.raise_for_status()
                         return await resp.json()
             except ImportError:
                 raise RuntimeError(
