@@ -4,7 +4,7 @@ Simple, focused tests for the core event system.
 Focus on getting basic functionality working before complex scenarios.
 """
 
-from kvgit import Staged, Versioned
+from kvgit import Staged, VersionedKV
 
 from agex import Agent, clear_agent_registry
 from agex.agent.events import (
@@ -20,7 +20,7 @@ from agex.state.kv import Memory
 
 
 def _make_state():
-    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
+    return Staged(VersionedKV(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class TestEventsSimple:

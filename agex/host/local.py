@@ -8,7 +8,7 @@ import os
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from kvgit import Staged, Versioned
+from kvgit import Staged, VersionedKV
 
 from agex.state.live import Live
 
@@ -96,7 +96,7 @@ class Local(Host):
         self, config: "StateConfig", kv: "KVStore"
     ) -> MutableMapping[str, Any]:
         """Create a state instance from config and KV store."""
-        from kvgit.gc import GCVersioned
+        from kvgit.versioned import GCVersionedKV as GCVersioned
 
         from agex.state import _agex_decoder, _agex_encoder
 
@@ -110,7 +110,7 @@ class Local(Host):
                     low_water_bytes=config.low_water_bytes,
                 )
             else:
-                versioned = Versioned(kv)
+                versioned = VersionedKV(kv)
             state = Staged(versioned, encoder=_agex_encoder, decoder=_agex_decoder)
         elif config.type == "live":
             state = Live()

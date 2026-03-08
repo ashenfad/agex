@@ -6,7 +6,7 @@ attribution, and filtering.
 """
 
 import pytest
-from kvgit import Staged, Versioned
+from kvgit import Staged, VersionedKV
 
 from agex import Agent, clear_agent_registry
 from agex.agent.events import (
@@ -289,7 +289,7 @@ class TestEventSystem:
         from agex.state.log import get_events_from_log
 
         state = Staged(
-            Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder
+            VersionedKV(Memory()), encoder=_agex_encoder, decoder=_agex_decoder
         )
 
         # Manually add events including an ErrorEvent

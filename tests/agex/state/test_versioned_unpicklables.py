@@ -3,7 +3,7 @@
 import pickle
 
 import pytest
-from kvgit import Staged, Versioned
+from kvgit import Staged, VersionedKV
 
 from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
 from agex.state import _agex_decoder, _agex_encoder, safe_commit
@@ -11,7 +11,7 @@ from agex.state.kv import Memory
 
 
 def _make_versioned():
-    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
+    return Staged(VersionedKV(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class UnpicklableObject:

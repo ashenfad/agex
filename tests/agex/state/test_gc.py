@@ -1,5 +1,5 @@
 from kvgit import Namespaced, Staged
-from kvgit.gc import GCVersioned
+from kvgit.versioned import GCVersionedKV as GCVersioned
 
 from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Memory

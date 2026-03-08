@@ -5,7 +5,7 @@ These tests verify automatic merge/retry behavior when concurrent tasks
 modify the same Versioned state.
 """
 
-from kvgit import Staged, Versioned
+from kvgit import Staged, VersionedKV
 
 from agex import Agent
 from agex.llm import Dummy
@@ -149,7 +149,9 @@ def test_concurrent_tasks_with_actual_conflict():
     errors = {}
 
     def _make_shared(kv_store):
-        return Staged(Versioned(kv_store), encoder=_agex_encoder, decoder=_agex_decoder)
+        return Staged(
+            VersionedKV(kv_store), encoder=_agex_encoder, decoder=_agex_decoder
+        )
 
     # Create two agents that will run concurrently with shared store
     agent1_responses = [
@@ -238,7 +240,9 @@ def test_concurrent_abandon_strategy():
     results = {}
 
     def _make_shared(kv_store):
-        return Staged(Versioned(kv_store), encoder=_agex_encoder, decoder=_agex_decoder)
+        return Staged(
+            VersionedKV(kv_store), encoder=_agex_encoder, decoder=_agex_decoder
+        )
 
     agent1_responses = [
         LLMResponse(

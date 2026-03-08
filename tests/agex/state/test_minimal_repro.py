@@ -1,5 +1,5 @@
 import numpy as np
-from kvgit import Staged, Versioned
+from kvgit import Staged, VersionedKV
 
 from agex.agent import Agent
 from agex.eval.bridge import execute_sandboxed
@@ -17,7 +17,7 @@ def test_minimal_failure_repro():
     agent.module(np, name="np")
 
     store = Memory()
-    state = Staged(Versioned(store), encoder=_agex_encoder, decoder=_agex_decoder)
+    state = Staged(VersionedKV(store), encoder=_agex_encoder, decoder=_agex_decoder)
 
     # Phase A: Define a class and create an instance.
     phase_A = """

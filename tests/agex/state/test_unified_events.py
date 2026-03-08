@@ -1,4 +1,4 @@
-from kvgit import Namespaced, Staged, Versioned
+from kvgit import Namespaced, Staged, VersionedKV
 
 from agex.agent.events import ActionEvent, OutputEvent, SuccessEvent, TaskStartEvent
 from agex.state import _agex_decoder, _agex_encoder, events
@@ -7,7 +7,7 @@ from agex.state.log import add_event_to_log
 
 
 def _make_state():
-    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
+    return Staged(VersionedKV(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 class TestUnifiedEventsAPI:
