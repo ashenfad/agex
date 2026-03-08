@@ -15,8 +15,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterator
 
-# Unix only
-if sys.platform != "win32":
+# Unix only (not available on Windows or Emscripten/Pyodide)
+if sys.platform not in ("win32", "emscripten"):
     import resource
 else:
     resource = None  # type: ignore

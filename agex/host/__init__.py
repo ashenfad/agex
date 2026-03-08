@@ -7,7 +7,6 @@ Provides a unified interface for executing agent tasks locally or remotely.
 from typing import Literal
 
 from .base import Host
-from .http import HTTP, RemoteExecutionError, RemoteTimeoutError
 from .local import Local
 from .runner import (
     aexecute_task,
@@ -17,6 +16,22 @@ from .runner import (
     run_remote_task,
 )
 from .serialize import deserialize_agent, serialize_agent
+
+
+def __getattr__(name: str):
+    """Lazy imports for HTTP host (avoids requiring httpx at import time)."""
+    if name in ("HTTP", "RemoteExecutionError", "RemoteTimeoutError"):
+        from .http import HTTP, RemoteExecutionError, RemoteTimeoutError
+
+        _lazy = {
+            "HTTP": HTTP,
+            "RemoteExecutionError": RemoteExecutionError,
+            "RemoteTimeoutError": RemoteTimeoutError,
+        }
+        globals().update(_lazy)
+        return _lazy[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     # Host abstraction
@@ -95,6 +110,8 @@ def connect_host(
     if provider == "http":
         if "url" not in kwargs:
             raise ValueError("HTTP host requires 'url' parameter")
+        from .http import HTTP
+
         return HTTP(**kwargs)
 
     if provider == "modal":
