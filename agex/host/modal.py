@@ -11,7 +11,7 @@ from collections.abc import MutableMapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from kvgit import Staged, Versioned
+from kvgit import Staged, VersionedKV
 
 from agex.host.base import Host, apply_init_if_fresh
 from agex.host.local import Local
@@ -312,7 +312,9 @@ class ModalLocal(Local):
 
             cache = Disk(str(cache_dir))
             kv = Composite([cache, source, volume])
-            state = Staged(Versioned(kv), encoder=_agex_encoder, decoder=_agex_decoder)
+            state = Staged(
+                VersionedKV(kv), encoder=_agex_encoder, decoder=_agex_decoder
+            )
             apply_init_if_fresh(state, kv, config.init)
             return state
 
@@ -331,7 +333,9 @@ class ModalLocal(Local):
 
             cache = Disk(str(cache_dir))
             kv = Composite([cache, source])
-            state = Staged(Versioned(kv), encoder=_agex_encoder, decoder=_agex_decoder)
+            state = Staged(
+                VersionedKV(kv), encoder=_agex_encoder, decoder=_agex_decoder
+            )
             apply_init_if_fresh(state, kv, config.init)
             return state
 
@@ -937,7 +941,7 @@ class Modal(Host):
             kv = source
 
         # Create versioned layer and verify state exists
-        v = Versioned(kv)
+        v = VersionedKV(kv)
 
         # Check that state has been initialized (has history)
         try:

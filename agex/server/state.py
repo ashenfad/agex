@@ -8,7 +8,7 @@ Staged state objects.
 import os
 from urllib.parse import urlparse
 
-from kvgit import Staged, Versioned
+from kvgit import Staged, VersionedKV
 
 from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Disk
@@ -92,5 +92,5 @@ def _resolve_disk_uri(parsed, base_path: str) -> Staged:
 
     # Create the Staged state
     return Staged(
-        Versioned(Disk(full_path)), encoder=_agex_encoder, decoder=_agex_decoder
+        VersionedKV(Disk(full_path)), encoder=_agex_encoder, decoder=_agex_decoder
     )

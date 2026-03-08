@@ -11,8 +11,8 @@ from typing import Any, Callable, Literal
 
 from kvgit import ConcurrencyError, MergeResult, Namespaced, Staged
 from kvgit.errors import MergeConflict
-from kvgit.gc import GCVersioned
 from kvgit.kv import KVStore
+from kvgit.versioned import GCVersionedKV as GCVersioned
 
 from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
 

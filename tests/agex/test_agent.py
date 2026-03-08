@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from types import ModuleType
 
 import pytest
-from kvgit import Namespaced, Staged, Versioned
+from kvgit import Namespaced, Staged, VersionedKV
 
 from agex import events
 from agex.agent import Agent, MemberSpec
@@ -624,7 +624,7 @@ def test_namespaced_state_isolation():
     """Test that Namespaced state provides proper isolation."""
     # Create shared state
     main_state = Staged(
-        Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder
+        VersionedKV(Memory()), encoder=_agex_encoder, decoder=_agex_decoder
     )
 
     # Create namespaced views

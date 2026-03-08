@@ -1,5 +1,5 @@
 import pytest
-from kvgit import Staged, Versioned
+from kvgit import Staged, VersionedKV
 
 from agex.agent import Agent, MemberSpec
 from agex.render.view import view
@@ -78,7 +78,7 @@ def test_view_agent_full():
 
 
 def _make_state():
-    return Staged(Versioned(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
+    return Staged(VersionedKV(Memory()), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 def test_view_full():

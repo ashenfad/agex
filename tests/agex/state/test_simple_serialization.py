@@ -1,5 +1,5 @@
 import numpy as np
-from kvgit import Staged, Versioned
+from kvgit import Staged, VersionedKV
 
 from agex.agent import Agent
 from agex.eval.bridge import execute_sandboxed
@@ -22,7 +22,7 @@ def test_class_serialization_with_method_calls():
     agent.module(np, name="np")
 
     store = Memory()
-    state = Staged(Versioned(store), encoder=_agex_encoder, decoder=_agex_decoder)
+    state = Staged(VersionedKV(store), encoder=_agex_encoder, decoder=_agex_decoder)
 
     # Phase 1: Define a class, create an instance, call methods.
     program = """
@@ -78,7 +78,7 @@ def test_function_and_class_across_phases():
     agent.module(np, name="np")
 
     store = Memory()
-    state = Staged(Versioned(store), encoder=_agex_encoder, decoder=_agex_decoder)
+    state = Staged(VersionedKV(store), encoder=_agex_encoder, decoder=_agex_decoder)
 
     # Phase 1: Define a helper function and a class.
     execute_sandboxed(

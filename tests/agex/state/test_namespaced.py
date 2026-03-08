@@ -1,5 +1,5 @@
 import pytest
-from kvgit import Namespaced, Staged, Versioned
+from kvgit import Namespaced, Staged, VersionedKV
 
 from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Memory
@@ -8,7 +8,7 @@ from agex.state.kv import Memory
 def _make_state(store=None):
     if store is None:
         store = Memory()
-    return Staged(Versioned(store), encoder=_agex_encoder, decoder=_agex_decoder)
+    return Staged(VersionedKV(store), encoder=_agex_encoder, decoder=_agex_decoder)
 
 
 def test_namespaced_get_set():

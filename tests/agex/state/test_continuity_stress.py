@@ -1,5 +1,5 @@
 import numpy as np
-from kvgit import Staged, Versioned
+from kvgit import Staged, VersionedKV
 
 from agex.agent import Agent
 from agex.eval.bridge import execute_sandboxed
@@ -15,7 +15,7 @@ def _make_versioned(store=None, commit_hash=None):
     if commit_hash is not None:
         kw["commit_hash"] = commit_hash
     return Staged(
-        Versioned(store, **kw),
+        VersionedKV(store, **kw),
         encoder=_agex_encoder,
         decoder=_agex_decoder,
     )
