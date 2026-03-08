@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- **PyfetchOpenAI Client**: Browser-compatible LLM client using `pyodide.http.pyfetch` for direct browser-to-API calls without a server proxy. Supports OpenRouter, OpenAI, and any OpenAI-compatible endpoint. Async-only with SSE streaming.
+- **SSE Parser**: Standalone Server-Sent Events line parser (`agex.llm.sse`) for streaming LLM responses over pyfetch
+- **Chaptering**: Agent-directed chaptering replaces `SummaryEvent` — agents decide when to chapter based on task progress. Chaptered `OutputEvent` rendering as stdout log with sibling `.png` files.
+
+### Changed
+- **kvgit 0.1.5 Alignment**: Renamed imports to match kvgit API (`VersionedKV`, `GCVersionedKV`)
+- **Live State**: Moved `Live` from kvgit into `agex.state` (no longer imported from kvgit)
+- **Filesystem Config**: Inlined `connect_fs` and config dataclasses from monkeyfs
+- **Dependencies**: bumped kvgit>=0.1.5, monkeyfs>=0.1.2
+
+### Fixed
+- **Pyodide Compatibility**: Platform guard for emscripten (lazy `HTTP` import), `is_function_body_empty` returns `True` when `inspect.getsource` is unavailable (Pyodide `runPythonAsync`)
+- **Sandbox**: Unconditionally use sandbox as context manager; `ProcessSandbox` context manager fix
+- **Session Validation**: Validate session IDs and require `IsolatedFSConfig` root
+- **UnpicklableMarker**: `safe_commit` skips re-staging keys that are `UnpicklableMarker`s
+- **Chaptering**: Delta-based token estimation for low water check; batch print and output events per execution; use `posixpath.join` for VFS path construction
+
 ## [0.9.0] - 2026-02-27
 
 ### Added
