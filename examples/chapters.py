@@ -18,12 +18,13 @@ agent = Agent(
         "tell a vivid, detailed short story (2-3 paragraphs) with "
         "specific character names, places, and events."
     ),
-    llm=connect_llm(provider="anthropic", model="claude-haiku-4-5"),
+    # llm=connect_llm(provider="anthropic", model="claude-haiku-4-5"),
+    llm=connect_llm(provider="gemini", model="gemini-3-flash-preview"),
     state=connect_state(type="versioned", storage="memory"),
     # Low water marks to trigger chaptering quickly
-    log_high_water_tokens=2000,
-    log_low_water_tokens=1000,
-    max_iterations=3,
+    log_high_water_tokens=4000,
+    log_low_water_tokens=2000,
+    max_iterations=10,
 )
 
 
@@ -48,7 +49,6 @@ def main():
         "Tell a story about a lighthouse keeper who discovers a message in a bottle.",
         "Tell a story about a baker who accidentally invents a cake that makes people sing.",
         "Tell a story about an astronaut who finds a garden growing on the moon.",
-        "Tell a story about a librarian whose books start writing themselves.",
     ]
 
     collected = []
@@ -67,7 +67,7 @@ def main():
     print("=" * 60)
     answer = recall(
         "What was the name of the lighthouse keeper from the first story? "
-        "And what did the message in the bottle say?",
+        "And how many paragraphs were in the story?",
         on_event=pprint_events,
         on_token=pprint_tokens,
     )
