@@ -64,9 +64,12 @@ def is_function_body_empty(func: Callable) -> bool:
                 return False
 
         return True
-    except (OSError, TypeError, SyntaxError, IndentationError):
-        # Can't get source (built-in, dynamically created, etc.) or parse issues
-        # Be conservative and assume it's not empty
+    except OSError:
+        # Can't get source (e.g. Pyodide runPythonAsync, dynamically created).
+        # Assume empty-bodied since @task functions have no meaningful body.
+        return True
+    except (TypeError, SyntaxError, IndentationError):
+        # Parse issues — be conservative and assume it's not empty
         return False
 
 
