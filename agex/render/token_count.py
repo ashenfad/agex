@@ -4,11 +4,11 @@ from typing import Any, Dict
 
 from agex.agent.primer_text import BUILTIN_PRIMER
 from agex.render.definitions import render_definitions
-from agex.tokenizers.tiktoken import TiktokenTokenizer
+from agex.tokenizers import get_tokenizer
 
 
 def _count_tokens(text: str, model_name: str) -> int:
-    tokenizer = TiktokenTokenizer(model_name=model_name)
+    tokenizer = get_tokenizer(model_name)
     return len(tokenizer.encode(text))
 
 
