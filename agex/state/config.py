@@ -25,7 +25,7 @@ class StateConfig:
     """
 
     type: Literal["ephemeral", "versioned", "live"]
-    storage: Literal["memory", "disk"] | None = None
+    storage: Literal["memory", "disk", "indexeddb"] | None = None
     path: str | None = None
     high_water_bytes: int | None = None
     low_water_bytes: int | None = None

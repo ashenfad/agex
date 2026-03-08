@@ -45,10 +45,10 @@ class Local(Host):
         if config is None:
             return  # Ephemeral is always valid
 
-        if config.storage not in (None, "memory", "disk"):
+        if config.storage not in (None, "memory", "disk", "indexeddb"):
             raise ValueError(
                 f"Local host does not support storage '{config.storage}'. "
-                f"Supported: memory, disk"
+                f"Supported: memory, disk, indexeddb"
             )
 
         if config.storage == "disk" and not config.path:
@@ -82,6 +82,19 @@ class Local(Host):
                 path = os.path.expanduser(config.path or "")
                 session_path = os.path.join(path, "sessions", session)
                 kv = Disk(session_path)
+                self._session_cache[cache_key] = self._create_state(config, kv)
+
+            return self._session_cache[cache_key]
+
+        # For IndexedDB storage (Pyodide/browser)
+        if config.storage == "indexeddb":
+            db_name = (config.options or {}).get("db_name", "kvgit")
+            cache_key = f"{config.type}:{session}:{db_name}"
+
+            if cache_key not in self._session_cache:
+                from kvgit.kv.indexeddb import IndexedDB
+
+                kv = IndexedDB(db_name=db_name)
                 self._session_cache[cache_key] = self._create_state(config, kv)
 
             return self._session_cache[cache_key]

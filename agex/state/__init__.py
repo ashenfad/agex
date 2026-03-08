@@ -211,13 +211,16 @@ def connect_state(
 
     Args:
         type: State semantics ("ephemeral", "versioned", or "live")
-        storage: Storage backend ("memory" or "disk"). Not required for ephemeral.
+        storage: Storage backend ("memory", "disk", or "indexeddb").
+            Not required for ephemeral.
         init: Callable or dict to initialize state variables on first session creation.
         **kwargs: Type and storage-specific arguments
 
     Storage-specific kwargs:
         disk:
             path: str - Directory path (required for disk storage)
+        indexeddb:
+            db_name: str - IndexedDB database name (default: "kvgit")
 
     Type-specific kwargs (versioned):
         high_water_bytes: int - Trigger GC when total size exceeds this
