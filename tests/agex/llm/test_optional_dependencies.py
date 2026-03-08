@@ -68,6 +68,7 @@ def test_available_providers_in_error_message():
             patch("agex.llm.OpenAI", None),
             patch("agex.llm.Anthropic", None),
             patch("agex.llm.Gemini", None),
+            patch("agex.llm.PyfetchOpenAI", None),
         ):
             try:
                 connect_llm(provider="invalid")  # type: ignore
@@ -83,6 +84,7 @@ def test_available_providers_in_error_message():
         with (
             patch("agex.llm.Anthropic", None),
             patch("agex.llm.Gemini", None),
+            patch("agex.llm.PyfetchOpenAI", None),
         ):
             try:
                 connect_llm(provider="invalid")  # type: ignore
@@ -94,7 +96,11 @@ def test_available_providers_in_error_message():
                 assert "gemini" not in error_str
 
         # Test with Anthropic available
-        with patch("agex.llm.OpenAI", None), patch("agex.llm.Gemini", None):
+        with (
+            patch("agex.llm.OpenAI", None),
+            patch("agex.llm.Gemini", None),
+            patch("agex.llm.PyfetchOpenAI", None),
+        ):
             try:
                 connect_llm(provider="invalid")  # type: ignore
                 assert False, "Expected ValueError to be raised"
@@ -107,6 +113,7 @@ def test_available_providers_in_error_message():
         with (
             patch("agex.llm.OpenAI", None),
             patch("agex.llm.Anthropic", None),
+            patch("agex.llm.PyfetchOpenAI", None),
         ):
             try:
                 connect_llm(provider="invalid")  # type: ignore

@@ -20,6 +20,11 @@ try:
 except ImportError:
     Gemini = None
 
+try:
+    from .pyfetch_openai import PyfetchOpenAI
+except ImportError:
+    PyfetchOpenAI = None
+
 # Build __all__ dynamically based on available providers
 __all__ = ["LLM", "Dummy", "connect_llm", "LLMResponse", "TokenChunk"]
 if OpenAI is not None:
@@ -28,10 +33,13 @@ if Anthropic is not None:
     __all__.append("Anthropic")
 if Gemini is not None:
     __all__.append("Gemini")
+if PyfetchOpenAI is not None:
+    __all__.append("PyfetchOpenAI")
 
 
 def connect_llm(
-    provider: Literal["openai", "anthropic", "gemini", "dummy"] | None = None,
+    provider: Literal["openai", "anthropic", "gemini", "pyfetch_openai", "dummy"]
+    | None = None,
     model: str | None = None,
     timeout_seconds: float = 90.0,
     **kwargs: Any,
@@ -93,6 +101,11 @@ def connect_llm(
             )
         return OpenAI(**config)
 
+    if final_provider == "pyfetch_openai":
+        if PyfetchOpenAI is None:
+            raise ImportError("PyfetchOpenAI provider could not be imported.")
+        return PyfetchOpenAI(**config)
+
     # Build list of available providers for the error message
     available_providers = ["dummy"]
     if OpenAI is not None:
@@ -101,6 +114,8 @@ def connect_llm(
         available_providers.append("anthropic")
     if Gemini is not None:
         available_providers.append("gemini")
+    if PyfetchOpenAI is not None:
+        available_providers.append("pyfetch_openai")
 
     raise ValueError(
         f"Unsupported provider: {final_provider}. Available providers are: {', '.join(available_providers)}"
