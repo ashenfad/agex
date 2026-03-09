@@ -104,13 +104,7 @@ def create_error_output(agent_name: str, exception: Exception) -> OutputEvent:
     """Create an OutputEvent for an evaluation error."""
     return OutputEvent(
         agent_name=agent_name,
-        parts=[
-            PrintAction(
-                [
-                    f"💥 Evaluation error: {exception}\nYou must adjust your code accordingly!"
-                ]
-            )
-        ],
+        parts=[PrintAction([f"💥 {type(exception).__name__}: {exception}"])],
     )
 
 

@@ -63,7 +63,7 @@ def test_error_appears_immediately_in_first_iteration():
                 # PrintAction is iterable, get the first argument
                 part_text = str(part[0])
 
-            if "💥 Evaluation error" in part_text:
+            if "💥" in part_text:
                 error_outputs.append(event)
                 break
 
@@ -76,7 +76,7 @@ def test_error_appears_immediately_in_first_iteration():
         # It's a PrintAction, get the first argument
         error_content = str(error_part[0])
 
-    assert "💥 Evaluation error" in error_content
+    assert "💥" in error_content
     assert "syntax" in error_content.lower()
 
     # Ensure we have at least one action event (the failed one)
