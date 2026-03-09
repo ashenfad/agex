@@ -231,6 +231,15 @@ class PyfetchOpenAI(LLM):
                 headers=headers,
                 body=json.dumps(body),
             )
+            if resp.status >= 400:
+                try:
+                    error_body = await resp.json()
+                    error_msg = error_body.get("error", {}).get(
+                        "message", str(error_body)
+                    )
+                except Exception:
+                    error_msg = f"HTTP {resp.status}"
+                raise RuntimeError(f"API error ({resp.status}): {error_msg}")
             js_response = resp.js_response
             reader = js_response.body.getReader()
 
@@ -279,6 +288,15 @@ class PyfetchOpenAI(LLM):
                 headers=headers,
                 body=json.dumps(body),
             )
+            if resp.status >= 400:
+                try:
+                    error_body = await resp.json()
+                    error_msg = error_body.get("error", {}).get(
+                        "message", str(error_body)
+                    )
+                except Exception:
+                    error_msg = f"HTTP {resp.status}"
+                raise RuntimeError(f"API error ({resp.status}): {error_msg}")
             return await resp.json()
         else:
             try:
