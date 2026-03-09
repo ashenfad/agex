@@ -226,6 +226,7 @@ class AsyncLoopMixin:
         # are unioned so that in-place mutations from earlier iterations are
         # still detected at commit time.
         accumulated_refs: set[str] = set()
+        last_error: Exception | None = None
 
         # Main task loop
         for iteration in range(self.max_iterations):
@@ -420,6 +421,7 @@ class AsyncLoopMixin:
                 raise
 
             except Exception as e:
+                last_error = e
                 error_output = create_error_output(self.name, e)
                 add_event_to_log(exec_state, error_output, on_event=None)
                 if on_event:
@@ -444,9 +446,10 @@ class AsyncLoopMixin:
                     yield guidance_output
                     events_yielded += 1
 
-        raise TaskTimeout(
-            f"Task '{task_name}' exceeded maximum iterations ({self.max_iterations})"
-        )
+        msg = f"Task '{task_name}' exceeded maximum iterations ({self.max_iterations})"
+        if last_error is not None:
+            msg += f"\nLast error: {type(last_error).__name__}: {last_error}"
+        raise TaskTimeout(msg)
 
     async def _arun_task_loop(
         self,
