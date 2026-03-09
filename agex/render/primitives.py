@@ -208,6 +208,10 @@ def estimate_image_cost(image: Any, detail: str = "high") -> int:
 
 def serialize_image_to_base64(image: Any) -> str | None:
     """Serializes a supported image type to a PNG base64 string."""
+    # Pre-rendered base64 string (e.g. from browser-side Plotly.js)
+    if isinstance(image, str):
+        return image
+
     buffer = io.BytesIO()
     try:
         if Image and isinstance(image, Image.Image):
@@ -220,7 +224,6 @@ def serialize_image_to_base64(image: Any) -> str | None:
 
         if _is_plotly_figure(image):
             # kaleido is used by plotly to export static images
-            # Use duck typing - check for to_image method
             if hasattr(image, "to_image") and callable(
                 getattr(image, "to_image", None)
             ):
