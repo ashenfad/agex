@@ -41,6 +41,7 @@ def register_plotly(agent: Agent, io_friendly: bool = True) -> None:
     """Register the entire plotly library recursively."""
     try:
         import plotly
+        import plotly.subplots  # ensure submodule is loaded before recursive crawl
 
         exclude = CORE_EXCLUDE
         if not io_friendly:

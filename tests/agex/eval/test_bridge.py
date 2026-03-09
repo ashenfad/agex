@@ -151,9 +151,9 @@ class TestNamespaceBuilder:
         # print is handled via sandtrap's snapshot_prints, not in namespace
         assert "print" not in ns
         assert callable(ns["view_image"])
-        # help and dir use Python builtins, not custom injections
+        # help uses Python builtins; dir is overridden to filter internals
         assert "help" not in ns
-        assert "dir" not in ns
+        assert callable(ns["dir"])
 
     def test_outputs_list_present(self):
         state = Live()
