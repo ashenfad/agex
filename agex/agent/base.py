@@ -1,3 +1,4 @@
+import os
 import threading
 import uuid
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Literal
@@ -158,6 +159,9 @@ class BaseAgent:
         )  # Module names collected at registration
         self._cached_dependencies: "Dependencies | None" = None  # Computed on access
 
+        # Skill files (raw bytes, collected via agent.skill())
+        self._skills: list[tuple[str, bytes]] = []
+
         # Fingerprint (lazy — computed on first access)
         self._fingerprint: str | None = None
 
@@ -256,6 +260,66 @@ class BaseAgent:
             "This is a stub implementation. Use the Agent class which inherits from "
             "RegistrationMixin for full include/exclude support."
         )
+
+    @staticmethod
+    def _slugify(name: str) -> str:
+        """Coerce a name into a path-safe slug."""
+        import re
+
+        slug = name.lower()
+        slug = re.sub(r"[^a-z0-9]+", "-", slug)
+        return slug.strip("-") or "skill"
+
+    @staticmethod
+    def _parse_skill_name(content: bytes, fallback: str) -> str:
+        """Extract the name from YAML frontmatter, or use fallback."""
+        import re
+
+        text = content.decode("utf-8", errors="replace")
+        fm_match = re.match(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
+        if fm_match:
+            for line in fm_match.group(1).splitlines():
+                line = line.strip()
+                if line.startswith("name:"):
+                    name = line[5:].strip().strip("\"'")
+                    if name:
+                        return name
+        return fallback
+
+    def skill(self, source: Any) -> None:
+        """Register a skill file for the agent.
+
+        Skills are SKILL.md files mounted read-only at /skills/<name>/SKILL.md.
+        The name is taken from YAML frontmatter if present, otherwise derived
+        from the filename or parent directory.
+
+        Args:
+            source: Path-like object (Path, importlib Traversable) or raw bytes.
+
+        Examples:
+            from importlib.resources import files
+            agent.skill(files("calgebra") / "skills" / "calgebra" / "SKILL.md")
+            agent.skill(Path("./my-skill.md"))
+            agent.skill(b"---\\nname: foo\\n---\\n# Foo\\n...")
+        """
+        if isinstance(source, bytes):
+            content = source
+            fallback = "skill"
+        elif hasattr(source, "read_bytes"):
+            content = source.read_bytes()
+            filename = getattr(source, "name", None) or "skill"
+            if filename == "SKILL.md" and hasattr(source, "parent"):
+                parent_name = getattr(source.parent, "name", None)
+                fallback = parent_name or "skill"
+            else:
+                fallback = os.path.splitext(filename)[0]
+        else:
+            raise TypeError(
+                f"skill() expects bytes or a Path-like object, got {type(source).__name__}"
+            )
+
+        name = self._slugify(self._parse_skill_name(content, fallback))
+        self._skills.append((name, content))
 
     def task(self, prompt: str | Callable) -> Callable[..., Any]: ...
 

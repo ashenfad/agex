@@ -1,6 +1,9 @@
-"""Tests for skill discovery in the system message."""
+"""Tests for skill registration and discovery in the system message."""
 
-from agex import Agent, clear_agent_registry, connect_fs, connect_state
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+
+from agex import Agent, clear_agent_registry
 
 _counter = 0
 
@@ -16,18 +19,7 @@ def teardown_module():
 def _make_agent():
     global _counter
     _counter += 1
-    return Agent(
-        name=f"skill_agent_{_counter}",
-        fs=connect_fs(type="virtual"),
-        state=connect_state(type="versioned", storage="memory"),
-    )
-
-
-def _write_skill(agent, path, content):
-    """Write a file to the agent's VFS and commit so discovery can see it."""
-    fs = agent.fs()
-    fs.write(path, content)
-    agent.state().commit()
+    return Agent(name=f"skill_agent_{_counter}")
 
 
 def test_no_skills_no_section():
@@ -37,14 +29,10 @@ def test_no_skills_no_section():
     assert "# Skills" not in msg
 
 
-def test_skill_with_frontmatter():
-    """Skills with YAML frontmatter show name and description."""
+def test_skill_from_bytes():
+    """Skills registered as raw bytes show name and description."""
     agent = _make_agent()
-    _write_skill(
-        agent,
-        "skills/my-lib/SKILL.md",
-        b"---\nname: my-lib\ndescription: A useful library\n---\n\n# my-lib\n",
-    )
+    agent.skill(b"---\nname: my-lib\ndescription: A useful library\n---\n\n# my-lib\n")
 
     msg = agent._build_system_message()
     assert "# Skills" in msg
@@ -52,29 +40,33 @@ def test_skill_with_frontmatter():
     assert "cat /skills/<name>/SKILL.md" in msg
 
 
-def test_skill_without_frontmatter():
-    """Skills without frontmatter fall back to directory name."""
+def test_skill_from_path():
+    """Skills registered from a Path-like object work."""
     agent = _make_agent()
-    _write_skill(agent, "skills/raw-skill/SKILL.md", b"# Just some docs\n")
+    with NamedTemporaryFile(suffix=".md", delete=False) as f:
+        f.write(b"---\nname: from-file\ndescription: File skill\n---\n")
+        f.flush()
+        agent.skill(Path(f.name))
+
+    msg = agent._build_system_message()
+    assert "from-file: File skill" in msg
+
+
+def test_skill_without_frontmatter():
+    """Skills without frontmatter fall back to fallback name."""
+    agent = _make_agent()
+    agent.skill(b"# Just some docs\n")
 
     msg = agent._build_system_message()
     assert "# Skills" in msg
-    assert "- raw-skill" in msg
+    assert "- skill" in msg
 
 
 def test_multiple_skills_sorted():
     """Multiple skills are listed in sorted order."""
     agent = _make_agent()
-    _write_skill(
-        agent,
-        "skills/zeta/SKILL.md",
-        b"---\nname: zeta\ndescription: Last one\n---\n",
-    )
-    _write_skill(
-        agent,
-        "skills/alpha/SKILL.md",
-        b"---\nname: alpha\ndescription: First one\n---\n",
-    )
+    agent.skill(b"---\nname: zeta\ndescription: Last one\n---\n")
+    agent.skill(b"---\nname: alpha\ndescription: First one\n---\n")
 
     msg = agent._build_system_message()
     alpha_pos = msg.index("alpha: First one")
@@ -82,32 +74,55 @@ def test_multiple_skills_sorted():
     assert alpha_pos < zeta_pos
 
 
-def test_skill_name_override():
-    """Frontmatter name overrides directory name in listing."""
+def test_skill_name_from_frontmatter_overrides_fallback():
+    """Frontmatter name overrides the fallback name."""
     agent = _make_agent()
-    _write_skill(
-        agent,
-        "skills/dir-name/SKILL.md",
-        b"---\nname: display-name\ndescription: Overridden\n---\n",
-    )
+    agent.skill(b"---\nname: display-name\ndescription: Overridden\n---\n")
 
     msg = agent._build_system_message()
     assert "display-name: Overridden" in msg
 
 
-def test_no_fs_configured():
-    """Agent without filesystem skips skills gracefully."""
-    global _counter
-    _counter += 1
-    agent = Agent(name=f"no_fs_agent_{_counter}", fs=None)
-    msg = agent._build_system_message()
-    assert "# Skills" not in msg
-
-
-def test_non_skill_files_ignored():
-    """Files outside the SKILL.md convention are ignored."""
+def test_skill_parent_dir_name():
+    """SKILL.md files use parent directory name as fallback."""
     agent = _make_agent()
-    _write_skill(agent, "skills/my-lib/README.md", b"# Not a skill\n")
+    # Simulate importlib.resources Traversable with parent.name
+    with NamedTemporaryFile(prefix="SKILL", suffix=".md", dir=None, delete=False) as f:
+        f.write(b"# No frontmatter\n")
+        f.flush()
+        path = Path(f.name)
+
+    # Rename to SKILL.md in a named directory
+    skill_dir = path.parent / "my-cool-lib"
+    skill_dir.mkdir(exist_ok=True)
+    skill_path = skill_dir / "SKILL.md"
+    path.rename(skill_path)
+
+    try:
+        agent.skill(skill_path)
+        msg = agent._build_system_message()
+        assert "- my-cool-lib" in msg
+    finally:
+        skill_path.unlink(missing_ok=True)
+        skill_dir.rmdir()
+
+
+def test_skill_name_slugified():
+    """Skill names with spaces/special chars are coerced to path-safe slugs."""
+    agent = _make_agent()
+    agent.skill(b"---\nname: My Cool Library!\ndescription: Has spaces\n---\n")
 
     msg = agent._build_system_message()
-    assert "# Skills" not in msg
+    assert "my-cool-library" in msg
+    # Verify no unsafe characters remain
+    assert "My Cool Library!" not in msg
+
+
+def test_skill_rejects_string():
+    """skill() rejects plain strings."""
+    agent = _make_agent()
+    try:
+        agent.skill("not a path")
+        assert False, "Should have raised TypeError"
+    except TypeError:
+        pass

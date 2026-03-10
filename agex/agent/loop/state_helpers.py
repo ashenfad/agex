@@ -9,6 +9,7 @@ from kvgit import Namespaced, Staged
 from monkeyfs import MountFS
 
 from agex.fs.chapters_vfs import create_chapters_fs
+from agex.fs.skills_vfs import create_skills_fs
 from agex.state import events, get_root, raw_get, raw_remove
 from agex.state.live import Live
 from agex.state.log import get_events_from_log
@@ -153,6 +154,23 @@ def mount_chapters_overlay(fs: Any, state: Any) -> None:
         fs.mount("/chapters", chapters_overlay)
 
 
+def mount_skills_overlay(fs: Any, skills: list[tuple[str, bytes]]) -> None:
+    """Mount registered skills as a read-only /skills overlay on a MountFS.
+
+    No-op if fs is not a MountFS or if no skills are registered.
+    """
+    if not isinstance(fs, MountFS) or not skills:
+        return
+
+    skills_overlay = create_skills_fs(skills)
+    if skills_overlay is not None:
+        try:
+            fs.unmount("/skills")
+        except ValueError:
+            pass
+        fs.mount("/skills", skills_overlay)
+
+
 def prepare_task_loop(
     agent: Any,
     state: Staged | Namespaced | None,
@@ -173,18 +191,23 @@ def prepare_task_loop(
         if isinstance(base, Staged):
             versioned_state = base
 
+    needs_mount = agent.log_high_water_tokens is not None or len(agent._skills) > 0
+
     if agent._fs_config:
         fs, _ = agent._get_fs_backend(session)
         fs_metadata_before = fs.get_metadata_snapshot()
 
-        # Wrap in MountFS if chaptering is enabled (for /chapters overlay)
-        if agent.log_high_water_tokens is not None:
+        # Wrap in MountFS if we need overlays (chapters or skills)
+        if needs_mount:
             if not isinstance(fs, MountFS):
                 fs = MountFS(fs)
 
             # Mount chapters from previous tasks (if any)
             if state is not None:
                 mount_chapters_overlay(fs, state)
+
+            # Mount registered skills
+            mount_skills_overlay(fs, agent._skills)
     else:
         fs = None
         fs_metadata_before = {}
