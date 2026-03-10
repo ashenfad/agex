@@ -110,6 +110,51 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             return match.group(1)
         return code
 
+    def _discover_skills(self) -> list[tuple[str, str]]:
+        """Scan /skills/*/SKILL.md in the VFS and return (name, description) pairs."""
+        try:
+            fs = self.fs()
+            if fs is None:
+                return []
+        except Exception:
+            return []
+
+        try:
+            entries = fs.list("skills/", recursive=False)
+        except Exception:
+            return []
+
+        skills = []
+        for entry in entries:
+            path = f"skills/{entry}/SKILL.md"
+            try:
+                if not fs.isfile(path):
+                    continue
+                content = fs.read(path).decode("utf-8", errors="replace")
+            except Exception:
+                continue
+
+            # Parse YAML frontmatter
+            fm_match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
+            if not fm_match:
+                skills.append((entry, ""))
+                continue
+
+            fm_text = fm_match.group(1)
+            name = entry
+            description = ""
+            for line in fm_text.splitlines():
+                line = line.strip()
+                if line.startswith("name:"):
+                    name = line[5:].strip().strip("\"'")
+                elif line.startswith("description:"):
+                    description = line[12:].strip().strip("\"'")
+
+            skills.append((name, description))
+
+        skills.sort()
+        return skills
+
     def _build_system_message(self) -> str:
         """Build the system message with builtin primer, capabilities primer (or registrations), and agent primer."""
         parts = []
@@ -127,6 +172,25 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             registered_definitions = render_definitions(self)
             if registered_definitions.strip():
                 parts.append("# Registered Resources\n\n" + registered_definitions)
+
+        # Discover and list available skills
+        skills = self._discover_skills()
+        if skills:
+            lines = [
+                "# Skills",
+                "",
+                "Skills are available for specialized tasks. "
+                "Read a skill before using it:",
+                "  cat /skills/<name>/SKILL.md",
+                "",
+                "Available skills:",
+            ]
+            for name, desc in skills:
+                if desc:
+                    lines.append(f"- {name}: {desc}")
+                else:
+                    lines.append(f"- {name}")
+            parts.append("\n".join(lines))
 
         if self.primer:
             parts.append(self.primer)

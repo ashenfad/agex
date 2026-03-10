@@ -168,6 +168,12 @@ This enables agents to manage complexity by:
 
 A "Workspace Recap" automatically provides the agent with an inventory of its self-authored modules, including function signatures and class definitions, ensuring it always knows what tools it has built for itself.
 
+### 6. Skills
+
+While registration tells agents *what* they can use, **skills** tell agents *how* to use it effectively. Skills are Markdown documentation files placed in the agent's filesystem under `/skills/<name>/SKILL.md`. They are automatically discovered and listed in the system message, but only read on-demand — keeping the base prompt concise while making expert knowledge available when needed.
+
+Libraries can ship skill files alongside their code, so agents automatically gain domain expertise when a library is registered. See the [FileSystem docs](../api/fs.md#skills) for the full API.
+
 ## The Result
 
 With agex, multi-agent workflows become simple control flow. Complex data handoffs become object passing. Agent capabilities become library registrations.

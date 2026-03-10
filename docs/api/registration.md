@@ -37,6 +37,8 @@ agent.fn(
 | `"medium"` | Function signature only | Familiar APIs where the agent only needs a reminder of the function's name and parameters. |
 | `"low"` | Available for use but not shown in context | Common libraries (e.g., `numpy`, `pandas`) that the LLM is already trained on. Saves context space. |
 
+> **Tip**: For libraries registered with `visibility="low"`, consider pairing them with a [skill](fs.md#skills). Skills are documentation files in the agent's filesystem (`/skills/<name>/SKILL.md`) that the agent reads on-demand. This gives you the best of both worlds: minimal context overhead from low-visibility registration, with detailed usage guidance available when the agent needs it.
+
 ### Usage Patterns
 
 #### As a Decorator
