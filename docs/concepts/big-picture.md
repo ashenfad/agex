@@ -170,7 +170,12 @@ A "Workspace Recap" automatically provides the agent with an inventory of its se
 
 ### 6. Skills
 
-While registration tells agents *what* they can use, **skills** tell agents *how* to use it effectively. Skills are Markdown documentation files placed in the agent's filesystem under `/skills/<name>/SKILL.md`. They are automatically discovered and listed in the system message, but only read on-demand — keeping the base prompt concise while making expert knowledge available when needed.
+While registration tells agents *what* they can use, **skills** tell agents *how* to use it effectively. Register skill files via `agent.skill()` and they are mounted read-only at `/skills/`, listed in the system message, and read on-demand — keeping the base prompt concise while making expert knowledge available when needed.
+
+```python
+from importlib.resources import files
+agent.skill(files("calgebra") / "skills" / "calgebra" / "SKILL.md")
+```
 
 Libraries can ship skill files alongside their code, so agents automatically gain domain expertise when a library is registered. See the [FileSystem docs](../api/fs.md#skills) for the full API.
 

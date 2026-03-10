@@ -111,44 +111,27 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         return code
 
     def _discover_skills(self) -> list[tuple[str, str]]:
-        """Scan /skills/*/SKILL.md in the VFS and return (name, description) pairs."""
-        try:
-            fs = self.fs()
-            if fs is None:
-                return []
-        except Exception:
-            return []
+        """Parse registered skills and return (name, description) pairs.
 
-        try:
-            entries = fs.list("skills/", recursive=False)
-        except Exception:
+        The name is already resolved at registration time (YAML frontmatter
+        takes priority, then filename/dir fallback). Here we only extract
+        the description from frontmatter.
+        """
+        if not self._skills:
             return []
 
         skills = []
-        for entry in entries:
-            path = f"skills/{entry}/SKILL.md"
-            try:
-                if not fs.isfile(path):
-                    continue
-                content = fs.read(path).decode("utf-8", errors="replace")
-            except Exception:
-                continue
-
-            # Parse YAML frontmatter
-            fm_match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
-            if not fm_match:
-                skills.append((entry, ""))
-                continue
-
-            fm_text = fm_match.group(1)
-            name = entry
+        for name, content_bytes in self._skills:
+            content = content_bytes.decode("utf-8", errors="replace")
             description = ""
-            for line in fm_text.splitlines():
-                line = line.strip()
-                if line.startswith("name:"):
-                    name = line[5:].strip().strip("\"'")
-                elif line.startswith("description:"):
-                    description = line[12:].strip().strip("\"'")
+
+            fm_match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
+            if fm_match:
+                for line in fm_match.group(1).splitlines():
+                    line = line.strip()
+                    if line.startswith("description:"):
+                        description = line[12:].strip().strip("\"'")
+                        break
 
             skills.append((name, description))
 

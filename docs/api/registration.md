@@ -37,7 +37,14 @@ agent.fn(
 | `"medium"` | Function signature only | Familiar APIs where the agent only needs a reminder of the function's name and parameters. |
 | `"low"` | Available for use but not shown in context | Common libraries (e.g., `numpy`, `pandas`) that the LLM is already trained on. Saves context space. |
 
-> **Tip**: For libraries registered with `visibility="low"`, consider pairing them with a [skill](fs.md#skills). Skills are documentation files in the agent's filesystem (`/skills/<name>/SKILL.md`) that the agent reads on-demand. This gives you the best of both worlds: minimal context overhead from low-visibility registration, with detailed usage guidance available when the agent needs it.
+> **Tip**: For libraries registered with `visibility="low"`, consider pairing them with a [skill](fs.md#skills). Use `agent.skill()` to register documentation that the agent reads on-demand. This gives you the best of both worlds: minimal context overhead from low-visibility registration, with detailed usage guidance available when the agent needs it.
+>
+> ```python
+> from importlib.resources import files
+>
+> agent.module(my_lib, visibility="low", recursive=True)
+> agent.skill(files("my_lib") / "skills" / "my_lib" / "SKILL.md")
+> ```
 
 ### Usage Patterns
 
@@ -306,9 +313,93 @@ agent.module(db, name="db", include=["execute", "commit", "close"])
 ```
 
 
+## `.skill()` - Skill Registration
+
+Register documentation files that teach agents how to use specific libraries or accomplish specific tasks. Skills are mounted read-only at `/skills/<name>/SKILL.md` and listed in the agent's system message.
+
+```python
+agent.skill(source: bytes | Path-like)
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | `bytes \| Path-like` | Skill content as raw bytes, or a `Path` / `importlib.resources` Traversable to read from |
+
+### How It Works
+
+1. **Registration**: Call `agent.skill()` one or more times to collect skill files
+2. **Mounting**: At task execution, skills are mounted as a read-only overlay at `/skills/` — no VFS writes, no state commits
+3. **System Message**: Skill names and descriptions (from YAML frontmatter) are listed in the system message
+4. **On-Demand**: The agent reads the full skill content via `cat /skills/<name>/SKILL.md` only when needed
+
+### SKILL.md Format
+
+Each skill is a Markdown file with optional YAML frontmatter:
+
+```markdown
+---
+name: my-library
+description: Short description of what this skill covers
+---
+
+# my-library
+
+Detailed instructions, examples, and patterns for the agent...
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | No | Display name (defaults to parent directory name or filename stem) |
+| `description` | No | One-line description shown in the skill listing |
+
+### Usage Examples
+
+```python
+from pathlib import Path
+from importlib.resources import files
+from agex import Agent
+
+agent = Agent()
+
+# From a package resource (recommended for libraries)
+agent.skill(files("calgebra") / "skills" / "calgebra" / "SKILL.md")
+agent.skill(files("calgebra") / "skills" / "gcal" / "SKILL.md")
+
+# From a local file
+agent.skill(Path("./my-custom-skill.md"))
+
+# From raw bytes (useful for dynamic/generated skills)
+agent.skill(b"""---
+name: my-tool
+description: How to use my-tool effectively
+---
+
+# my-tool
+
+Call `my_tool.run()` with a config dict...
+""")
+```
+
+### Pairing Skills with Low-Visibility Modules
+
+Skills work especially well alongside `visibility="low"` registrations. The module is available but hidden from context, while the skill provides detailed guidance on-demand:
+
+```python
+import calgebra
+from importlib.resources import files
+
+# Register with low visibility (agent knows it, but no context overhead)
+agent.module(calgebra, visibility="low", recursive=True)
+
+# Pair with a skill (detailed docs, read on-demand)
+agent.skill(files("calgebra") / "skills" / "calgebra" / "SKILL.md")
+```
+
 ## Next Steps
 
 - **Agent Creation**: See [Agent](agent.md) for Agent class documentation
 - **Task Definition**: See [Task](task.md) for defining agent behavior using `@agent.task`
 - **State Management**: See [State](state.md) for persistent memory in agent tasks
-- **Debugging**: See [View](view.md) for inspecting registered capabilities 
+- **Debugging**: See [View](view.md) for inspecting registered capabilities
