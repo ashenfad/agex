@@ -191,6 +191,84 @@ def run_agent():
 
 **Note**: Both can persist - VFS persists through state (e.g., `storage="disk"`), isolated persists through real filesystem.
 
+## Skills
+
+Skills are documentation files that teach agents how to use specific libraries or accomplish specific tasks. When placed in the filesystem under `/skills/<name>/SKILL.md`, they are automatically discovered and listed in the agent's system message.
+
+### How It Works
+
+1. **Discovery**: At the start of each task, agex scans `/skills/*/SKILL.md` in the agent's filesystem
+2. **Listing**: Found skills are listed in the system message with their name and description
+3. **On-Demand Reading**: The agent reads a skill's full content only when needed (via `cat /skills/<name>/SKILL.md`)
+
+This keeps the system message concise — only skill names and descriptions are included upfront. The full skill content is loaded on-demand, avoiding unnecessary token usage.
+
+### SKILL.md Format
+
+Each skill is a Markdown file with YAML frontmatter:
+
+```markdown
+---
+name: my-library
+description: Short description of what this skill covers
+---
+
+# my-library
+
+Detailed instructions, examples, and patterns for the agent...
+```
+
+The frontmatter fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | No | Display name (defaults to directory name) |
+| `description` | No | One-line description shown in the skill listing |
+
+### Adding Skills
+
+Write skill files to the agent's filesystem before (or during) task execution:
+
+```python
+from agex import Agent, connect_fs
+
+agent = Agent(
+    fs=connect_fs(type="virtual"),
+)
+
+# Write a skill to the VFS
+fs = agent.fs()
+fs.write("skills/my-library/SKILL.md", b"""---
+name: my-library
+description: Data transformation utilities
+---
+
+# my-library
+
+Use `my_library.transform()` to convert between formats...
+""")
+```
+
+### Shipping Skills in Packages
+
+Libraries can bundle skill files and load them into the agent's filesystem at init time using `importlib.resources`:
+
+```python
+from importlib.resources import files as pkg_files
+
+fs = agent.fs()
+skills_path = pkg_files("my_package") / "skills"
+for skill_dir in skills_path.iterdir():
+    if not skill_dir.is_dir():
+        continue
+    skill_file = skill_dir / "SKILL.md"
+    if skill_file.is_file():
+        dest = f"skills/{skill_dir.name}/SKILL.md"
+        fs.write(dest, skill_file.read_bytes())
+```
+
+This pattern lets library authors version their skill documentation alongside their code and automatically make it available to any agex agent that uses the library.
+
 ## External File Access (User Side)
 
 Use `agent.fs(session)` to manage files from outside the agent:
