@@ -14,8 +14,10 @@ from agex.agent.events import Event
 from agex.llm.core import LLM, TokenChunk
 from agex.llm.xml import XML_FORMAT_PRIMER
 
+CACHE_CONTROL = {"type": "ephemeral"}
 
-def _format_message_for_openai(message: dict[str, Any]) -> dict:
+
+def _format_message_for_openai(message: dict[str, Any], *, cache: bool = False) -> dict:
     """Convert generic message dict to OpenAI's format (images as data URIs)."""
     if isinstance(message.get("content"), list):
         content_parts = []
@@ -31,7 +33,20 @@ def _format_message_for_openai(message: dict[str, Any]) -> dict:
                         },
                     }
                 )
+        if cache and content_parts:
+            content_parts[-1]["cache_control"] = CACHE_CONTROL
         return {"role": message["role"], "content": content_parts}
+    if cache:
+        return {
+            "role": message["role"],
+            "content": [
+                {
+                    "type": "text",
+                    "text": message["content"],
+                    "cache_control": CACHE_CONTROL,
+                }
+            ],
+        }
     return message
 
 
@@ -111,13 +126,23 @@ class PyfetchOpenAI(LLM):
 
         messages_dicts = render_events_as_xml(events)
         system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
-        full_messages = [
-            {"role": "system", "content": system_with_format}
-        ] + messages_dicts
+        system_msg = _format_message_for_openai(
+            {"role": "system", "content": system_with_format}, cache=True
+        )
+        # Place cache breakpoint on the second-to-last message (the end of
+        # the previous turn's context).  The last message is always new, so
+        # caching it would never yield a hit.  With the breakpoint one step
+        # back, the entire prefix (system + history) gets cached across turns.
+        cache_idx = len(messages_dicts) - 2
+        conversation = [
+            _format_message_for_openai(m, cache=(i == cache_idx))
+            for i, m in enumerate(messages_dicts)
+        ]
+        full_messages = [system_msg] + conversation
 
         body = {
             "model": self._model,
-            "messages": [_format_message_for_openai(m) for m in full_messages],
+            "messages": full_messages,
             "stream": True,
             "stream_options": {"include_usage": True},
             **request_kwargs,
