@@ -717,9 +717,10 @@ def _render_function(
     except (ValueError, TypeError):
         signature = None  # Fallback for builtins or non-callables with no signature
 
-    # Always show as "def" (not "async def") because agent-generated code
-    # calls functions synchronously - async functions are bridged transparently.
-    prefix += "def "
+    if inspect.iscoroutinefunction(fn):
+        prefix += "async def "
+    else:
+        prefix += "def "
 
     if signature is None:
         # For builtins that fail inspection, provide a fallback

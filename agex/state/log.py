@@ -60,10 +60,21 @@ def add_event_to_log(
 
 def get_events_from_log(state) -> list[Event]:
     """Get events from the state."""
+    from agex.agent.datatypes import UnpicklableVariableError
+
     event_refs = state.get("__event_log__", [])
     # It's possible for events to be added to the log but not yet committed
     # to the state, so we need to handle missing keys gracefully.
-    return [state.get(ref) for ref in event_refs if ref in state]
+    # Also skip events that failed to serialize (e.g. coroutine objects).
+    events = []
+    for ref in event_refs:
+        if ref not in state:
+            continue
+        try:
+            events.append(state.get(ref))
+        except UnpicklableVariableError:
+            continue
+    return events
 
 
 def replace_events_with_chapters(

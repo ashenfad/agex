@@ -66,7 +66,7 @@ def summarize_capabilities(
         "Give actionable guidance and 1-2 canonical usage snippets per cluster.\n"
         "Please only mention modules defined within these capabilities.\n"
         "Do not invent functions or classes that are not present.\n"
-        "Do not suggest decorators, nonlocals, globals, async, or await (not supported in this environment).\n"
+        "Do not suggest decorators, nonlocals, or globals.\n"
         f"Write AT LEAST {target_chars} characters. If needed, expand each section with more detail and examples."
     )
 
