@@ -162,9 +162,10 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             lines = [
                 "# Skills",
                 "",
-                "Skills provide API docs for registered libraries. "
-                "**IMPORTANT**: Always read a skill BEFORE using its library — "
-                "do not guess at function signatures or field names.",
+                "Skills provide API docs for registered libraries whose APIs "
+                "differ from what you may expect. Always read a skill BEFORE "
+                "using its library — do not guess at function signatures or "
+                "field names.",
                 "  cat /skills/<name>/SKILL.md",
                 "",
                 "Available skills:",
