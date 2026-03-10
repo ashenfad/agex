@@ -14,7 +14,7 @@ from agex.agent.events import Event
 from agex.llm.core import LLM, TokenChunk
 from agex.llm.xml import XML_FORMAT_PRIMER
 
-CACHE_CONTROL = {"type": "ephemeral"}
+CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
 
 
 def _format_message_for_openai(message: dict[str, Any], *, cache: bool = False) -> dict:
