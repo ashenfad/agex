@@ -79,7 +79,11 @@ def _render_type_annotation(
     return s
 
 
-def render_definitions(agent: BaseAgent, full: bool = False) -> str:
+def render_definitions(
+    agent: BaseAgent,
+    full: bool = False,
+    module_to_skill: dict[str, str] | None = None,
+) -> str:
     """
     Renders the registered functions, classes, and modules of an agent
     into a Python-like string of signatures and docstrings.
@@ -150,6 +154,7 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
 
     # Render modules with helpful header (adapter: prefer policy; fallback to legacy)
     modules_to_render = []
+    _skill_map = module_to_skill or {}
     # Prefer policy namespaces first
     for ns_name, ns in agent._policy.namespaces.items():  # type: ignore[attr-defined]
         if ns.kind != "module":
@@ -158,6 +163,14 @@ def render_definitions(agent: BaseAgent, full: bool = False) -> str:
         if adapted:
             rendered = _render_module(ns_name, adapted, full=full)
             if rendered:
+                # Annotate module header if a skill covers this module
+                skill_name = _skill_map.get(ns_name)
+                if skill_name:
+                    rendered = rendered.replace(
+                        f"module {ns_name}:",
+                        f"module {ns_name}:  # → read skill '{skill_name}' before use",
+                        1,
+                    )
                 modules_to_render.append(rendered)
     # No legacy fallback: modules are enumerated from policy only
 

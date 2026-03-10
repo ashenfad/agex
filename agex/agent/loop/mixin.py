@@ -110,12 +110,12 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             return match.group(1)
         return code
 
-    def _discover_skills(self) -> list[tuple[str, str]]:
-        """Parse registered skills and return (name, description) pairs.
+    def _discover_skills(self) -> list[tuple[str, str, list[str]]]:
+        """Parse registered skills and return (name, description, modules) tuples.
 
         The name is already resolved at registration time (YAML frontmatter
-        takes priority, then filename/dir fallback). Here we only extract
-        the description from frontmatter.
+        takes priority, then filename/dir fallback). Here we extract
+        description and modules from frontmatter.
         """
         if not self._skills:
             return []
@@ -124,16 +124,24 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         for name, content_bytes in self._skills:
             content = content_bytes.decode("utf-8", errors="replace")
             description = ""
+            modules: list[str] = []
 
             fm_match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
             if fm_match:
+                in_modules = False
                 for line in fm_match.group(1).splitlines():
-                    line = line.strip()
-                    if line.startswith("description:"):
-                        description = line[12:].strip().strip("\"'")
-                        break
+                    stripped = line.strip()
+                    if stripped.startswith("description:"):
+                        description = stripped[12:].strip().strip("\"'")
+                        in_modules = False
+                    elif stripped == "modules:":
+                        in_modules = True
+                    elif in_modules and stripped.startswith("- "):
+                        modules.append(stripped[2:].strip())
+                    elif in_modules and not stripped.startswith("-"):
+                        in_modules = False
 
-            skills.append((name, description))
+            skills.append((name, description, modules))
 
         skills.sort()
         return skills
@@ -147,17 +155,25 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         else:
             parts.append(BUILTIN_PRIMER)
 
+        # Discover skills early so we can pass module→skill mapping to render_definitions
+        skills = self._discover_skills()
+        module_to_skill: dict[str, str] = {}
+        for skill_name, _desc, skill_modules in skills:
+            for mod in skill_modules:
+                module_to_skill[mod] = skill_name
+
         cap_text = self.capabilities_primer
         if cap_text is not None:
             if cap_text.strip():
                 parts.append("# Capabilities Primer\n\n" + cap_text)
         else:
-            registered_definitions = render_definitions(self)
+            registered_definitions = render_definitions(
+                self, module_to_skill=module_to_skill
+            )
             if registered_definitions.strip():
                 parts.append("# Registered Resources\n\n" + registered_definitions)
 
-        # Discover and list available skills
-        skills = self._discover_skills()
+        # List available skills
         if skills:
             lines = [
                 "# Skills",
@@ -170,7 +186,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                 "",
                 "Available skills:",
             ]
-            for name, desc in skills:
+            for name, desc, _mods in skills:
                 if desc:
                     lines.append(f"- {name}: {desc}")
                 else:
