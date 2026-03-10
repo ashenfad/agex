@@ -4,6 +4,8 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from agex import Agent, clear_agent_registry
+from agex.llm.core import LLMResponse
+from agex.llm.dummy_client import Dummy
 
 _counter = 0
 
@@ -116,6 +118,61 @@ def test_skill_name_slugified():
     assert "my-cool-library" in msg
     # Verify no unsafe characters remain
     assert "My Cool Library!" not in msg
+
+
+def test_skill_readable_in_task():
+    """Agent can read a skill file via open() during task execution."""
+    llm = Dummy(
+        responses=[
+            LLMResponse(
+                thinking="Read the skill file.",
+                code=(
+                    'with open("/skills/test-lib/SKILL.md") as f:\n'
+                    "    content = f.read()\n"
+                    "task_success(content)"
+                ),
+            )
+        ]
+    )
+    agent = Agent(name="skill_e2e", llm=llm)
+    agent.skill(
+        b"---\nname: test-lib\ndescription: A test skill\n---\n\n# test-lib\n\nUse it wisely.\n"
+    )
+
+    @agent.task
+    def read_skill() -> str:  # type: ignore[return-value]
+        """Read a skill file and return its content."""
+        pass
+
+    result = read_skill()
+    assert "# test-lib" in result
+    assert "Use it wisely." in result
+
+
+def test_skill_listdir_visible_in_task():
+    """The /skills directory is visible via os.listdir during task execution."""
+    llm = Dummy(
+        responses=[
+            LLMResponse(
+                thinking="List the skills directory.",
+                code=(
+                    "import os\nentries = os.listdir('/skills')\ntask_success(entries)"
+                ),
+            )
+        ]
+    )
+    agent = Agent(name="skill_ls_e2e", llm=llm)
+    agent.skill(b"---\nname: alpha-lib\n---\n# alpha\n")
+    agent.skill(b"---\nname: beta-lib\n---\n# beta\n")
+
+    @agent.task
+    def list_skills() -> list:  # type: ignore[return-value]
+        """List available skill directories."""
+        pass
+
+    result = list_skills()
+    assert "alpha-lib" in result
+    assert "beta-lib" in result
 
 
 def test_skill_rejects_string():
