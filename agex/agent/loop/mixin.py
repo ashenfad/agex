@@ -290,7 +290,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
 
         return "\n\n".join(messages)
 
-    def _maybe_chapter(self, state, session, on_event, on_token):
+    async def _maybe_chapter(self, state, session, on_event, on_token):
         """Run chapter task if context exceeds high water mark.
 
         Checks the most recent ActionEvent's input_tokens against
@@ -315,7 +315,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             # Build event index and call chapter task
             index_text = build_numbered_event_index(visible_events)
             try:
-                chapters = self._chapter_task(
+                chapters = await self._chapter_task(
                     event_index=index_text,
                     session=session,
                     on_event=on_event,

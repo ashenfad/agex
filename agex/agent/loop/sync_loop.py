@@ -6,6 +6,7 @@ Contains the sync versions of the task loop generator and run methods.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
@@ -296,7 +297,7 @@ class SyncLoopMixin:
 
                 # Inline chaptering during long tasks
                 if task_name != CHAPTER_TASK and state is not None:
-                    self._maybe_chapter(state, session, on_event, on_token)
+                    asyncio.run(self._maybe_chapter(state, session, on_event, on_token))
                     if fs is not None:
                         mount_chapters_overlay(fs, state)
 
@@ -430,7 +431,7 @@ class SyncLoopMixin:
 
                 # Maybe chapter between tasks
                 if task_name != CHAPTER_TASK and state is not None:
-                    self._maybe_chapter(state, session, on_event, on_token)
+                    asyncio.run(self._maybe_chapter(state, session, on_event, on_token))
                     if fs is not None:
                         mount_chapters_overlay(fs, state)
 
