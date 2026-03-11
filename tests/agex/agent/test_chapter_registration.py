@@ -15,7 +15,7 @@ def clear_registry():
 
 class TestChapterTaskRegistration:
     def test_registered_when_water_marks_set(self):
-        agent = Agent(name="ch_test1", log_high_water_tokens=100000)
+        agent = Agent(name="ch_test1", chaptering_trigger=100000)
         assert agent._chapter_task is not None
 
     def test_not_registered_without_water_marks(self):
@@ -23,12 +23,12 @@ class TestChapterTaskRegistration:
         assert agent._chapter_task is None
 
     def test_chapter_task_name(self):
-        agent = Agent(name="ch_test3", log_high_water_tokens=100000)
+        agent = Agent(name="ch_test3", chaptering_trigger=100000)
         assert agent._chapter_task._task_name == CHAPTER_TASK
 
     def test_chapter_class_constructable(self):
         """Chapter class should be registered as constructable."""
-        agent = Agent(name="ch_test4", log_high_water_tokens=100000)
+        agent = Agent(name="ch_test4", chaptering_trigger=100000)
         # Check that Chapter is in the policy's registered classes
         found = False
         for ns in agent._policy.namespaces.values():

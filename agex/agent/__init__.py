@@ -170,8 +170,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         # FileSystem configuration (optional, defaults to VirtualFS)
         fs: "FSConfig | None" = _UNSET,  # type: ignore
         # Event log chaptering (optional)
-        log_high_water_tokens: int | None = None,
-        log_low_water_tokens: int | None = None,
+        chaptering_trigger: int | None = None,
         # Resource limits (per-task, Unix only)
         max_memory_mb: int | None = None,
         max_open_files: int | None = None,
@@ -201,10 +200,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
                 Defaults to ephemeral (fresh state per task call).
             fs: FileSystem configuration (optional). Use connect_fs() to create.
                 Enables virtual filesystem access for agents.
-            log_high_water_tokens: Trigger chaptering when input tokens exceed this
+            chaptering_trigger: Trigger chaptering when input tokens exceed this
                 threshold. If None, chaptering is disabled.
-            log_low_water_tokens: Stop chaptering once input tokens drop below this
-                threshold. Defaults to 50% of log_high_water_tokens if not specified.
             max_memory_mb: Per-task memory limit in megabytes. Passed to sandtrap's
                 Policy.memory_limit. Kernel-enforced on Linux, checkpoint-based on macOS.
             max_open_files: Maximum file descriptors for the process. Unix only.
@@ -229,8 +226,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             host=host,
             state=state,
             fs=fs,
-            log_high_water_tokens=log_high_water_tokens,
-            log_low_water_tokens=log_low_water_tokens,
+            chaptering_trigger=chaptering_trigger,
             max_memory_mb=max_memory_mb,
             max_open_files=max_open_files,
             eval_tick_limit=eval_tick_limit,
@@ -238,9 +234,9 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             agex_primer_override=agex_primer_override,
         )
 
-        # Register chapter support if water marks are configured
+        # Register chapter support if chaptering is configured
         self._chapter_task = None
-        if self.log_high_water_tokens is not None:
+        if self.chaptering_trigger is not None:
             self._register_chapter_task()
 
     def _register_chapter_task(self):
