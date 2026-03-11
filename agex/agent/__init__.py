@@ -248,8 +248,9 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         # Register Chapter class so agent can construct instances
         self.cls(Chapter, constructable=True)
 
-        # Register the chapter task
-        def __chapter__(event_index: str) -> list:
+        # Register the chapter task as async so it works with async-only
+        # LLM providers (e.g. PyfetchOpenAI in Pyodide).
+        async def __chapter__(event_index: str) -> list:
             pass
 
         __chapter__.__doc__ = CHAPTER_TASK_PRIMER

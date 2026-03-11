@@ -359,8 +359,7 @@ class AsyncLoopMixin:
 
                 # Inline chaptering during long tasks
                 if task_name != CHAPTER_TASK and state is not None:
-                    await asyncio.to_thread(
-                        self._maybe_chapter,
+                    await self._maybe_chapter(
                         state,
                         session,
                         on_event,
@@ -507,8 +506,7 @@ class AsyncLoopMixin:
 
                 # Maybe chapter between tasks
                 if task_name != CHAPTER_TASK and state is not None:
-                    await asyncio.to_thread(
-                        self._maybe_chapter,
+                    await self._maybe_chapter(
                         state,
                         session,
                         on_event,

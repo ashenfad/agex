@@ -77,9 +77,11 @@ agent = Agent(
 When these are set, the framework automatically:
 
 1. Registers the `Chapter` class so agents can construct instances
-2. Registers the `__chapter__` task with a primer explaining the protocol
+2. Registers the `__chapter__` task (async) with a primer explaining the protocol
 3. Triggers chaptering between tasks and during long-running tasks (after each `task_continue()`)
 4. Mounts the `/chapters` VFS overlay for browsing history
+
+The chapter task is always async, ensuring compatibility with async-only LLM providers (e.g. browser-based environments like Pyodide).
 
 ## Design Principles
 
