@@ -58,19 +58,23 @@ Create Chapter instances to close out completed work:
 
     Chapter(start=1, end=4, name="Data exploration", message="Found 3 tables...")
 
+IMPORTANT: Not everything should be chaptered. Leave recent and ongoing work in \
+full context — you need those details to continue effectively. Only chapter work \
+that is clearly finished and whose full details you no longer need at hand. When \
+in doubt, leave it unchaptered. It is perfectly fine to return an empty list.
+
 Rules:
 - start and end are 1-based inclusive indices from the event index
 - Ranges must be contiguous and non-overlapping
 - The message should distill key details from the full event content, not just \
 restate the index summaries
-- Chapter completed stretches of work; keep active/recent work unchaptered
 - Return task_success([chapter1, chapter2, ...]) with your chapters
 - Return task_success([]) if nothing can be chaptered right now
 
 Good chapters:
 - Capture the key findings, decisions, data, and outcomes from the full context
 - Use descriptive names that serve as a mini table of contents
-- Close out phases of work that are done, not work in progress
+- Close out completed phases — never chapter work in progress or the most recent task
 """
 
 
