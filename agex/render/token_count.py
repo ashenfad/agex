@@ -12,6 +12,48 @@ def _count_tokens(text: str, model_name: str) -> int:
     return len(tokenizer.encode(text))
 
 
+def estimate_log_tokens(agent, state, model_name: str = "gpt-4") -> Dict[str, Any]:
+    """
+    Estimate total token usage for the agent's current context: system prompt + event log.
+
+    Args:
+        agent: The Agent instance (for system prompt estimation).
+        state: The state object containing the event log.
+        model_name: Tokenizer model name (default "gpt-4").
+
+    Returns:
+        Dict with ``system``, ``log``, and ``total`` token counts.
+    """
+    from agex.render.xml import render_events_as_xml
+    from agex.state.log import get_events_from_log
+
+    # System tokens
+    sys_info = system_token_count(agent, model_name)
+    system_tokens = sys_info["total"]
+
+    # Log tokens
+    events = get_events_from_log(state)
+    messages = render_events_as_xml(events)
+
+    tokenizer = get_tokenizer(model_name)
+    log_tokens = 0
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            log_tokens += len(tokenizer.encode(content))
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    log_tokens += len(tokenizer.encode(part["text"]))
+
+    total = system_tokens + log_tokens
+    return {
+        "system": system_tokens,
+        "log": log_tokens,
+        "total": total,
+    }
+
+
 def system_token_count(agent, model_name: str = "gpt-4") -> Dict[str, Any]:
     """
     Estimate token usage for the agent's static system context before a call.
