@@ -8,10 +8,10 @@ Manage growing agent context by letting agents close completed work into named c
 
 agex uses **agent-directed chaptering** for context management:
 
-- When `input_tokens` exceeds `log_high_water_tokens`, the framework triggers a `__chapter__` task
+- When `input_tokens` exceeds `chaptering_trigger`, the framework triggers a `__chapter__` task
 - The agent reviews its event history and creates `Chapter` instances to close out completed work
 - Original events are preserved inside `ChapterEvent` and browsable via a `/chapters` VFS overlay
-- Chaptering runs up to 3 rounds, stopping when `input_tokens` drops below `log_low_water_tokens`
+- If context remains above the trigger after one round, chaptering fires again on the next action
 
 This replaced the earlier automated summarization approach (SummaryEvent + low-detail rendering tiers), which was removed in favor of giving agents direct control over what gets compacted and how.
 

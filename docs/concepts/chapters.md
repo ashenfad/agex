@@ -32,7 +32,7 @@ When the agent sees this in context, it gets the summary plus a path to browse t
 
 ### The Chapter Task
 
-When context exceeds the `log_high_water_tokens` threshold, the framework triggers a special `__chapter__` task. This is a regular agex task — the agent sees its full event history with `[N]` prefixes and a compact index, then creates `Chapter` instances:
+When context exceeds the `chaptering_trigger` threshold, the framework triggers a special `__chapter__` task. This is a regular agex task — the agent sees its full event history with `[N]` prefixes and a compact index, then creates `Chapter` instances:
 
 ```python
 Chapter(start=1, end=4, name="Data exploration", message="Found 3 tables...")
@@ -58,23 +58,21 @@ Agents browse these with standard file tools (`ls`, `read`) — no special API n
 
 ## Configuration
 
-Enable chaptering by setting water marks on the agent:
+Enable chaptering by setting the trigger threshold on the agent:
 
 ```python
 agent = Agent(
     llm=connect_llm(provider="anthropic", model="claude-sonnet-4-5"),
     state=connect_state(type="versioned", storage="memory"),
-    log_high_water_tokens=100_000,   # Trigger chaptering above this
-    log_low_water_tokens=50_000,     # Stop chaptering below this
+    chaptering_trigger=100_000,   # Trigger chaptering above this
 )
 ```
 
 | Parameter | Description |
 |---|---|
-| `log_high_water_tokens` | Chaptering triggers when the most recent LLM call's `input_tokens` exceeds this value. |
-| `log_low_water_tokens` | Chaptering stops when `input_tokens` drops below this. Defaults to 50% of the high water mark. |
+| `chaptering_trigger` | Chaptering triggers when the most recent LLM call's `input_tokens` exceeds this value. |
 
-When these are set, the framework automatically:
+When set, the framework automatically:
 
 1. Registers the `Chapter` class so agents can construct instances
 2. Registers the `__chapter__` task (async) with a primer explaining the protocol
@@ -97,17 +95,16 @@ The agent chooses *what* to chapter and *how* to summarize. The framework only d
 
 Nothing is deleted. `ChapterEvent.events` holds the originals, and the VFS makes them browsable. An agent that needs a specific detail from hours ago can find it.
 
-### Incremental Rounds
+### Single Round
 
-Chaptering runs up to 3 rounds per trigger. Each round:
+When triggered, chaptering runs a single round:
 
-1. Checks if `input_tokens` still exceeds the high water mark
+1. Checks if `input_tokens` exceeds the chaptering trigger
 2. Builds a numbered event index for the agent
 3. Calls the `__chapter__` task
 4. Applies the returned chapters to the event log
-5. Checks if `input_tokens` has dropped below the low water mark
 
-This handles the case where one round of chaptering isn't enough to get below the threshold.
+If context is still above the trigger after one round, chaptering will fire again on the next action.
 
 ## Event Numbering
 

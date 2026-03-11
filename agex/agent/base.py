@@ -62,8 +62,7 @@ class BaseAgent:
         # FileSystem configuration (optional, defaults to VirtualFS)
         fs: "FSConfig | None" = _UNSET,  # type: ignore
         # Event log chaptering (optional)
-        log_high_water_tokens: int | None = None,
-        log_low_water_tokens: int | None = None,
+        chaptering_trigger: int | None = None,
         # Memory limit (passed to sandtrap)
         max_memory_mb: int | None = None,
         # File descriptor limit (per-task, Unix only)
@@ -116,23 +115,8 @@ class BaseAgent:
         if self._state_config is not None:
             self._host.validate_state(self._state_config)
 
-        # Event log summarization settings
-        if log_low_water_tokens is not None and log_high_water_tokens is None:
-            raise ValueError(
-                "log_low_water_tokens requires log_high_water_tokens to be set"
-            )
-
-        if log_high_water_tokens is not None:
-            if log_low_water_tokens is None:
-                log_low_water_tokens = int(log_high_water_tokens * 0.5)
-            elif log_low_water_tokens >= log_high_water_tokens:
-                raise ValueError(
-                    f"log_low_water_tokens ({log_low_water_tokens}) must be < "
-                    f"log_high_water_tokens ({log_high_water_tokens})"
-                )
-
-        self.log_high_water_tokens = log_high_water_tokens
-        self.log_low_water_tokens = log_low_water_tokens
+        # Event log chaptering settings
+        self.chaptering_trigger = chaptering_trigger
 
         # Memory limit passed through to sandtrap's Policy.memory_limit
         self.max_memory_mb = max_memory_mb

@@ -165,22 +165,22 @@ def get_latest_input_tokens(events: list[BaseEvent]) -> int | None:
 
 
 def should_trigger_chaptering(
-    events: list[BaseEvent], high_water_tokens: int | None
+    events: list[BaseEvent], chaptering_trigger: int | None
 ) -> bool:
     """Check whether chaptering should be triggered.
 
     Uses the most recent ActionEvent's input_tokens (actual API token count)
-    to determine if the context has grown past the high water mark.
+    to determine if the context has exceeded the chaptering trigger.
 
     Args:
         events: List of events from the log.
-        high_water_tokens: Token threshold to trigger chaptering.
+        chaptering_trigger: Token threshold to trigger chaptering.
             If None, chaptering is disabled.
 
     Returns:
         True if chaptering should be triggered.
     """
-    if high_water_tokens is None:
+    if chaptering_trigger is None:
         return False
     latest = get_latest_input_tokens(events)
-    return latest is not None and latest > high_water_tokens
+    return latest is not None and latest > chaptering_trigger

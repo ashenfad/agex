@@ -21,9 +21,8 @@ agent = Agent(
     # llm=connect_llm(provider="anthropic", model="claude-haiku-4-5"),
     llm=connect_llm(provider="gemini", model="gemini-3-flash-preview"),
     state=connect_state(type="versioned", storage="memory"),
-    # Low water marks to trigger chaptering quickly
-    log_high_water_tokens=4000,
-    log_low_water_tokens=2000,
+    # Low threshold to trigger chaptering quickly
+    chaptering_trigger=4000,
     max_iterations=10,
 )
 

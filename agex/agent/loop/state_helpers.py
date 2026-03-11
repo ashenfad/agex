@@ -191,7 +191,7 @@ def prepare_task_loop(
         if isinstance(base, Staged):
             versioned_state = base
 
-    needs_mount = agent.log_high_water_tokens is not None or len(agent._skills) > 0
+    needs_mount = agent.chaptering_trigger is not None or len(agent._skills) > 0
 
     if agent._fs_config:
         fs, _ = agent._get_fs_backend(session)
