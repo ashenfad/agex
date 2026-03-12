@@ -350,14 +350,10 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             log_start = visible_to_log[ch.start - 1]
             log_end = visible_to_log[ch.end - 1] + 1  # exclusive
 
-            # Collect the events being chaptered
-            chaptered_events = list(all_events[log_start:log_end])
-
             chapter_event = ChapterEvent(
                 agent_name=self.name,
                 name=ch.name,
                 message=ch.message,
-                events=chaptered_events,
             )
             chapters_and_ranges.append((log_start, log_end, chapter_event))
 

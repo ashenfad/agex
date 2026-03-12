@@ -145,7 +145,7 @@ def mount_chapters_overlay(fs: Any, state: Any) -> None:
         return
 
     all_events = get_events_from_log(state)
-    chapters_overlay = create_chapters_fs(all_events)
+    chapters_overlay = create_chapters_fs(all_events, state)
     if chapters_overlay is not None:
         try:
             fs.unmount("/chapters")

@@ -36,6 +36,7 @@ def _build_chapter_entries(
     events: list[BaseEvent],
     path_prefix: str,
     file_dict: dict[str, bytes],
+    state=None,
 ) -> None:
     """Recursively build VFS entries for a list of chaptered events."""
     for i, event in enumerate(events, 1):
@@ -50,14 +51,16 @@ def _build_chapter_entries(
             )
 
             # Nested events
-            if event.events:
-                for j, nested in enumerate(event.events, 1):
+            nested_events = event.resolve_events(state) if state else []
+            if nested_events:
+                for j, nested in enumerate(nested_events, 1):
                     if isinstance(nested, ChapterEvent):
                         # Recurse for nested chapters
                         _build_chapter_entries(
                             [nested],
                             posixpath.join(chapter_path, "chapters"),
                             file_dict,
+                            state,
                         )
                     else:
                         label = _event_type_label(nested)
@@ -68,11 +71,12 @@ def _build_chapter_entries(
                         file_dict[event_path] = content.encode("utf-8")
 
 
-def build_chapters_dict(events: list[BaseEvent]) -> dict[str, bytes]:
+def build_chapters_dict(events: list[BaseEvent], state=None) -> dict[str, bytes]:
     """Build a dict of path -> content for all ChapterEvents.
 
     Args:
         events: List of events from the log (top level).
+        state: The kvgit state store, needed to resolve event refs.
 
     Returns:
         Dict mapping VFS paths to file content bytes.
@@ -83,22 +87,24 @@ def build_chapters_dict(events: list[BaseEvent]) -> dict[str, bytes]:
     if not chapter_events:
         return file_dict
 
-    _build_chapter_entries(chapter_events, "", file_dict)
+    _build_chapter_entries(chapter_events, "", file_dict, state)
     return file_dict
 
 
 def create_chapters_fs(
     events: list[BaseEvent],
+    state=None,
 ) -> ReadOnlyFS | None:
     """Create a read-only VFS from ChapterEvents.
 
     Args:
         events: List of events from the log.
+        state: The kvgit state store, needed to resolve event refs.
 
     Returns:
         ReadOnlyFS instance, or None if no ChapterEvents exist.
     """
-    file_dict = build_chapters_dict(events)
+    file_dict = build_chapters_dict(events, state)
     if not file_dict:
         return None
 

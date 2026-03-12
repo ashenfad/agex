@@ -1,5 +1,7 @@
 """Tests for ChaptersVFS (agex/fs/chapters_vfs.py)."""
 
+from kvgit import store as kvgit_store
+
 from agex.agent.events import (
     ActionEvent,
     ChapterEvent,
@@ -8,6 +10,29 @@ from agex.agent.events import (
     TaskStartEvent,
 )
 from agex.fs.chapters_vfs import build_chapters_dict, create_chapters_fs
+from agex.state import _agex_decoder, _agex_encoder
+from agex.state.log import add_event_to_log, replace_events_with_chapters
+
+
+def _make_state():
+    return kvgit_store(encoder=_agex_encoder, decoder=_agex_decoder)
+
+
+def _chapter_with_events(state, name, message, events):
+    """Helper: add events to state, create chapter via replace_events_with_chapters, return it."""
+    for e in events:
+        add_event_to_log(state, e)
+    n = len(events)
+    refs = state.get("__event_log__", [])
+    start = len(refs) - n
+    ch = ChapterEvent(agent_name="t", name=name, message=message)
+    replace_events_with_chapters(state, [(start, start + n, ch)])
+    # Return the chapter from the log
+    log_events_after = [state.get(r) for r in state.get("__event_log__", [])]
+    for e in log_events_after:
+        if isinstance(e, ChapterEvent) and e.name == name:
+            return e
+    return ch
 
 
 class TestBuildChaptersDict:
@@ -23,16 +48,12 @@ class TestBuildChaptersDict:
         assert build_chapters_dict([]) == {}
 
     def test_single_chapter(self):
+        state = _make_state()
         e1 = ActionEvent(
             agent_name="t", thinking="explored", code="df.head()", title="Read"
         )
-        ch = ChapterEvent(
-            agent_name="t",
-            name="Data exploration",
-            message="Found 3 tables",
-            events=[e1],
-        )
-        result = build_chapters_dict([ch])
+        ch = _chapter_with_events(state, "Data exploration", "Found 3 tables", [e1])
+        result = build_chapters_dict([ch], state)
 
         assert "data-exploration/summary.md" in result
         assert "data-exploration/events/001-action.md" in result
@@ -50,19 +71,22 @@ class TestBuildChaptersDict:
         assert "phase-two/summary.md" in result
 
     def test_nested_chapters(self):
-        inner = ChapterEvent(
-            agent_name="t",
-            name="Inner Work",
-            message="Details here",
-            events=[ActionEvent(agent_name="t", thinking="t", code="x")],
-        )
-        outer = ChapterEvent(
-            agent_name="t",
-            name="Outer Work",
-            message="Overview",
-            events=[inner],
-        )
-        result = build_chapters_dict([outer])
+        state = _make_state()
+        inner_event = ActionEvent(agent_name="t", thinking="t", code="x")
+        add_event_to_log(state, inner_event)
+
+        # Create inner chapter
+        inner = ChapterEvent(agent_name="t", name="Inner Work", message="Details here")
+        replace_events_with_chapters(state, [(0, 1, inner)])
+
+        # Create outer chapter wrapping the inner
+        outer = ChapterEvent(agent_name="t", name="Outer Work", message="Overview")
+        replace_events_with_chapters(state, [(0, 1, outer)])
+
+        log = [state.get(r) for r in state.get("__event_log__", [])]
+        outer_ch = log[0]
+
+        result = build_chapters_dict([outer_ch], state)
 
         # Outer chapter summary
         assert "outer-work/summary.md" in result
@@ -78,7 +102,7 @@ class TestBuildChaptersDict:
         ]
         result = build_chapters_dict(events)
         # Only the chapter produces entries
-        assert len(result) == 1  # just summary.md (no nested events in this chapter)
+        assert len(result) == 1  # just summary.md (no nested events — no refs)
 
     def test_slugification(self):
         ch = ChapterEvent(
@@ -96,19 +120,17 @@ class TestBuildChaptersDict:
             assert "!" not in path
 
     def test_chapter_with_multiple_event_types(self):
+        state = _make_state()
         events_inside = [
             TaskStartEvent(agent_name="t", task_name="sub", inputs={}, message="msg"),
             ActionEvent(agent_name="t", thinking="t", code="x", title="Step"),
             OutputEvent(agent_name="t", parts=[]),
             SuccessEvent(agent_name="t", result="ok"),
         ]
-        ch = ChapterEvent(
-            agent_name="t",
-            name="Mixed events",
-            message="Various event types",
-            events=events_inside,
+        ch = _chapter_with_events(
+            state, "Mixed events", "Various event types", events_inside
         )
-        result = build_chapters_dict([ch])
+        result = build_chapters_dict([ch], state)
         assert "mixed-events/summary.md" in result
         assert "mixed-events/events/001-taskstart.md" in result
         assert "mixed-events/events/002-action.md" in result
@@ -125,13 +147,10 @@ class TestCreateChaptersFS:
         assert create_chapters_fs([]) is None
 
     def test_creates_readable_fs(self):
-        ch = ChapterEvent(
-            agent_name="t",
-            name="Exploration",
-            message="Found stuff",
-            events=[ActionEvent(agent_name="t", thinking="t", code="x")],
-        )
-        fs = create_chapters_fs([ch])
+        state = _make_state()
+        e1 = ActionEvent(agent_name="t", thinking="t", code="x")
+        ch = _chapter_with_events(state, "Exploration", "Found stuff", [e1])
+        fs = create_chapters_fs([ch], state)
         assert fs is not None
 
         # Can read summary

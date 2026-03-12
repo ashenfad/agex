@@ -52,7 +52,6 @@ def test_replace_events_with_chapters():
         agent_name="test",
         name="Middle work",
         message="Did some middle stuff",
-        events=list(events_before[1:3]),
     )
     replace_events_with_chapters(state, [(1, 3, chapter)])
 
@@ -66,7 +65,13 @@ def test_replace_events_with_chapters():
     # Second is the chapter
     assert isinstance(events_after[1], ChapterEvent)
     assert events_after[1].name == "Middle work"
-    assert len(events_after[1].events) == 2
+    assert len(events_after[1].event_refs) == 2
+
+    # Resolve events and verify contents
+    resolved = events_after[1].resolve_events(state)
+    assert len(resolved) == 2
+    assert resolved[0].thinking == "thought 1"
+    assert resolved[1].thinking == "thought 2"
 
     # Remaining events unchanged
     assert isinstance(events_after[2], ActionEvent)
@@ -85,19 +90,15 @@ def test_replace_events_multiple_chapters():
             ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}"),
         )
 
-    events_before = get_events_from_log(state)
-
     ch1 = ChapterEvent(
         agent_name="test",
         name="First batch",
         message="Events 0-1",
-        events=list(events_before[0:2]),
     )
     ch2 = ChapterEvent(
         agent_name="test",
         name="Second batch",
         message="Events 3-4",
-        events=list(events_before[3:5]),
     )
 
     replace_events_with_chapters(state, [(0, 2, ch1), (3, 5, ch2)])

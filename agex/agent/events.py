@@ -900,14 +900,30 @@ class SystemNoteEvent(BaseEvent):
 class ChapterEvent(BaseEvent):
     """A named chapter that replaces a contiguous range of events.
 
-    The original events are preserved inside the chapter (lossless).
+    The original events are referenced by their state keys (lossless).
     Only the chapter's name and message are rendered in context;
     the embedded events can be browsed via the /chapters VFS overlay.
     """
 
     name: str  # Short descriptive name
     message: str  # Agent's summary/distillation
-    events: list[BaseEvent] = Field(default_factory=list)  # Original events (nested)
+    event_refs: list[str] = Field(
+        default_factory=list
+    )  # State keys for original events
+
+    def resolve_events(self, state) -> list[BaseEvent]:
+        """Resolve event_refs to actual event objects using the given state."""
+        from agex.agent.datatypes import UnpicklableVariableError
+
+        events = []
+        for ref in self.event_refs:
+            if ref not in state:
+                continue
+            try:
+                events.append(state.get(ref))
+            except UnpicklableVariableError:
+                continue
+        return events
 
     @model_validator(mode="after")
     def _compute_tokens(self):
@@ -918,14 +934,14 @@ class ChapterEvent(BaseEvent):
 
     def __str__(self) -> str:
         base = super().__str__()
-        return f'{base}\n  Chapter: "{self.name}" ({len(self.events)} events)'
+        return f'{base}\n  Chapter: "{self.name}" ({len(self.event_refs)} events)'
 
     def _repr_markdown_(self) -> str:
         base = super()._repr_markdown_()
-        return f'{base}\n**Chapter:** "{self.name}" ({len(self.events)} events)\n\n{self.message}'
+        return f'{base}\n**Chapter:** "{self.name}" ({len(self.event_refs)} events)\n\n{self.message}'
 
     def _repr_html_(self) -> str:
-        header = f'📖 Chapter: "{self.name}" ({len(self.events)} events)'
+        header = f'📖 Chapter: "{self.name}" ({len(self.event_refs)} events)'
         summary_html = _render_markdown_html(self.message)
         content = _event_section(header, summary_html, "#6a737d")
         return _event_html_container(
