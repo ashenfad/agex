@@ -4,9 +4,7 @@ import pytest
 
 from agex import clear_agent_registry
 from agex.agent.events import (
-    ActionEvent,
     ChapterEvent,
-    OutputEvent,
 )
 
 
@@ -26,30 +24,25 @@ class TestChapterEventCreation:
         )
         assert ch.name == "Data exploration"
         assert ch.message == "Found 3 tables"
-        assert ch.events == []
+        assert ch.event_refs == []
 
-    def test_creation_with_events(self):
-        e1 = ActionEvent(agent_name="t", thinking="think", code="x = 1")
-        e2 = OutputEvent(agent_name="t", parts=[])
+    def test_creation_with_refs(self):
         ch = ChapterEvent(
             agent_name="test",
             name="Work phase",
             message="Did some work",
-            events=[e1, e2],
+            event_refs=["_event_1_", "_event_2_"],
         )
-        assert len(ch.events) == 2
+        assert len(ch.event_refs) == 2
 
     def test_nested_chapters(self):
-        inner = ChapterEvent(agent_name="t", name="Inner", message="Inner work")
         outer = ChapterEvent(
             agent_name="t",
             name="Outer",
             message="Outer work",
-            events=[inner],
+            event_refs=["ref_to_inner"],
         )
-        assert len(outer.events) == 1
-        assert isinstance(outer.events[0], ChapterEvent)
-        assert outer.events[0].name == "Inner"
+        assert len(outer.event_refs) == 1
 
 
 class TestChapterEventTokenCounting:
@@ -61,12 +54,11 @@ class TestChapterEventTokenCounting:
 
     def test_tokens_based_on_summary_not_events(self):
         """Token count should reflect the summary, not embedded events."""
-        events = [ActionEvent(agent_name="t", thinking="x" * 1000, code="y" * 1000)]
         ch = ChapterEvent(
             agent_name="t",
             name="Test",
             message="Short summary",
-            events=events,
+            event_refs=["ref1", "ref2", "ref3"],
         )
         # Tokens should be small since they're based on the summary
         assert ch.full_detail_tokens < 50
@@ -78,7 +70,7 @@ class TestChapterEventRendering:
             agent_name="t",
             name="Exploration",
             message="Found data",
-            events=[ActionEvent(agent_name="t", thinking="t", code="x")],
+            event_refs=["ref1"],
         )
         s = str(ch)
         assert 'Chapter: "Exploration"' in s
@@ -89,7 +81,7 @@ class TestChapterEventRendering:
             agent_name="t",
             name="Exploration",
             message="Found 3 tables",
-            events=[],
+            event_refs=[],
         )
         md = ch._repr_markdown_()
         assert "📖" in md
