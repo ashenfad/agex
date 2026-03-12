@@ -3,7 +3,7 @@
 import pytest
 from kvgit import store as kvgit_store
 
-from agex.agent.events import ActionEvent, ChapterEvent
+from agex.agent.events import ActionEvent, ChapterEvent, TaskStartEvent
 from agex.state import _agex_decoder, _agex_encoder
 from agex.state.log import (
     add_event_to_log,
@@ -162,3 +162,87 @@ def test_replace_events_empty_list():
 
     events = get_events_from_log(state)
     assert len(events) == 1
+
+
+def test_add_event_returns_key():
+    """Test that add_event_to_log returns the generated state key."""
+    state = _make_state()
+    key = add_event_to_log(
+        state,
+        ActionEvent(agent_name="test", thinking="t", code="x"),
+    )
+    assert key.startswith("_event_")
+    assert key in state
+
+
+def test_parent_ref_set_automatically():
+    """Test that events after a TaskStartEvent get parent_ref set."""
+    state = _make_state()
+
+    task_key = add_event_to_log(
+        state,
+        TaskStartEvent(agent_name="test", task_name="run", inputs={}, message="go"),
+    )
+    add_event_to_log(
+        state,
+        ActionEvent(agent_name="test", thinking="t", code="x"),
+    )
+
+    events = get_events_from_log(state)
+    assert events[0].parent_ref is None  # TaskStartEvent has no parent
+    assert events[1].parent_ref == task_key  # ActionEvent points to TaskStart
+
+
+def test_parent_ref_tracks_latest_task():
+    """Test that parent_ref updates when a new TaskStartEvent is logged."""
+    state = _make_state()
+
+    task1_key = add_event_to_log(
+        state,
+        TaskStartEvent(agent_name="test", task_name="task1", inputs={}, message=""),
+    )
+    add_event_to_log(
+        state,
+        ActionEvent(agent_name="test", thinking="t1", code="x"),
+    )
+    task2_key = add_event_to_log(
+        state,
+        TaskStartEvent(agent_name="test", task_name="task2", inputs={}, message=""),
+    )
+    add_event_to_log(
+        state,
+        ActionEvent(agent_name="test", thinking="t2", code="y"),
+    )
+
+    events = get_events_from_log(state)
+    assert events[1].parent_ref == task1_key
+    assert events[3].parent_ref == task2_key
+
+
+def test_chapter_task_ref_set():
+    """Test that chapter_task_ref is set from current task context."""
+    state = _make_state()
+
+    # Simulate a __chapter__ task in progress
+    add_event_to_log(
+        state,
+        TaskStartEvent(
+            agent_name="test", task_name="__chapter__", inputs={}, message=""
+        ),
+    )
+
+    # Add events to be chaptered
+    for i in range(3):
+        add_event_to_log(
+            state,
+            ActionEvent(agent_name="test", thinking=f"t{i}", code=f"x{i}"),
+        )
+
+    # Now create a chapter — __current_task_ref__ points to the __chapter__ task
+    chapter = ChapterEvent(agent_name="test", name="Work", message="Summary")
+    replace_events_with_chapters(state, [(1, 4, chapter)])
+
+    events = get_events_from_log(state)
+    chapter_evt = [e for e in events if isinstance(e, ChapterEvent)][0]
+    assert chapter_evt.chapter_task_ref is not None
+    assert chapter_evt.chapter_task_ref.startswith("_event_")

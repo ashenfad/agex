@@ -275,6 +275,7 @@ class BaseEvent(BaseModel):
     agent_name: str
     full_namespace: str = ""  # Will be set by add_event_to_log
     commit_hash: str | None = None
+    parent_ref: str | None = None  # State key of this event's TaskStartEvent
     source: Literal["setup", "main"] = "main"  # Execution phase
     full_detail_tokens: int = 0  # Cached token estimate for full render
     low_detail_tokens: int = 0  # Cached token estimate for low-detail render
@@ -910,6 +911,7 @@ class ChapterEvent(BaseEvent):
     event_refs: list[str] = Field(
         default_factory=list
     )  # State keys for original events
+    chapter_task_ref: str | None = None  # TaskStartEvent key of the __chapter__ task
 
     def resolve_events(self, state) -> list[BaseEvent]:
         """Resolve event_refs to actual event objects using the given state."""
