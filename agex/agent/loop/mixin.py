@@ -129,17 +129,34 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             fm_match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
             if fm_match:
                 in_modules = False
+                in_description = False
+                desc_lines: list[str] = []
                 for line in fm_match.group(1).splitlines():
                     stripped = line.strip()
                     if stripped.startswith("description:"):
-                        description = stripped[12:].strip().strip("\"'")
+                        val = stripped[12:].strip().strip("\"'")
+                        # Ignore YAML block scalar indicators (|, >)
+                        if val in ("|", ">", "|+", "|-", ">+", ">-"):
+                            val = ""
+                        desc_lines = [val] if val else []
+                        in_description = True
                         in_modules = False
                     elif stripped == "modules:":
+                        in_description = False
                         in_modules = True
+                    elif (
+                        in_description
+                        and line[0:1] in (" ", "\t")
+                        and ":" not in stripped
+                    ):
+                        desc_lines.append(stripped)
                     elif in_modules and stripped.startswith("- "):
                         modules.append(stripped[2:].strip())
                     elif in_modules and not stripped.startswith("-"):
                         in_modules = False
+                    else:
+                        in_description = False
+                description = " ".join(desc_lines)
 
             skills.append((name, description, modules))
 

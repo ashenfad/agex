@@ -175,6 +175,24 @@ def test_skill_listdir_visible_in_task():
     assert "beta-lib" in result
 
 
+def test_skill_multiline_description():
+    """Multi-line YAML descriptions are joined into a single line."""
+    agent = _make_agent()
+    agent.skill(b"---\nname: multi\ndescription: |\n  Line one\n  line two\n---\n")
+
+    msg = agent._build_system_message()
+    assert "multi: Line one line two" in msg
+
+
+def test_skill_multiline_description_inline():
+    """Multi-line description without block scalar indicator."""
+    agent = _make_agent()
+    agent.skill(b"---\nname: multi2\ndescription: First line\n  continued here\n---\n")
+
+    msg = agent._build_system_message()
+    assert "multi2: First line continued here" in msg
+
+
 def test_skill_rejects_string():
     """skill() rejects plain strings."""
     agent = _make_agent()
