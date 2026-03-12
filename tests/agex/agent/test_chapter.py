@@ -4,24 +4,21 @@ import pytest
 
 from agex import clear_agent_registry
 from agex.agent.chapter import (
+    CHAPTER_TASK,
     CHAPTER_TASK_PRIMER,
     Chapter,
-    build_numbered_event_index,
+    build_numbered_task_index,
+    prepare_tasks_for_chaptering,
     should_trigger_chaptering,
 )
 from agex.agent.events import (
     ActionEvent,
-    CancelledEvent,
-    ChapterEvent,
-    ClarifyEvent,
     ErrorEvent,
     FailEvent,
-    FileEvent,
     OutputEvent,
     SuccessEvent,
     TaskStartEvent,
 )
-from agex.eval.objects import PrintAction
 
 
 @pytest.fixture(autouse=True)
@@ -46,143 +43,140 @@ class TestChapterDataclass:
         assert "task_success" in CHAPTER_TASK_PRIMER
 
 
-class TestBuildNumberedEventIndex:
+class TestPrepareTasksForChaptering:
     def test_empty_events(self):
-        assert build_numbered_event_index([]) == ""
+        tasks, ranges = prepare_tasks_for_chaptering([])
+        assert tasks == []
+        assert ranges == []
 
-    def test_task_start_event(self):
+    def test_single_complete_task(self):
         events = [
             TaskStartEvent(
-                agent_name="t", task_name="analyze", inputs={}, message="msg"
-            )
-        ]
-        result = build_numbered_event_index(events)
-        assert '[1] Task: "analyze"' in result
-
-    def test_action_event_with_code(self):
-        events = [
-            ActionEvent(
                 agent_name="t",
-                thinking="think",
-                code="x = 1\ny = 2",
-                title="Compute values",
-            )
-        ]
-        result = build_numbered_event_index(events)
-        assert "[1] Action: Compute values (2 lines)" in result
-
-    def test_action_event_with_terminal(self):
-        events = [
-            ActionEvent(
-                agent_name="t",
-                thinking="think",
-                code=None,
-                terminal="ls -la",
-                title="List files",
-            )
-        ]
-        result = build_numbered_event_index(events)
-        assert "[1] Action: List files (terminal)" in result
-
-    def test_action_event_no_title(self):
-        events = [ActionEvent(agent_name="t", thinking="think", code="x = 1")]
-        result = build_numbered_event_index(events)
-        assert "[1] Action: untitled (1 lines)" in result
-
-    def test_output_event_empty(self):
-        events = [OutputEvent(agent_name="t", parts=[])]
-        result = build_numbered_event_index(events)
-        assert "[1] Output: (empty)" in result
-
-    def test_output_event_with_print(self):
-        pa = PrintAction(["Hello world"])
-        events = [OutputEvent(agent_name="t", parts=[pa])]
-        result = build_numbered_event_index(events)
-        assert "[1] Output: Hello world" in result
-
-    def test_success_event(self):
-        events = [SuccessEvent(agent_name="t", result=42)]
-        result = build_numbered_event_index(events)
-        assert "[1] Success: 42" in result
-
-    def test_fail_event(self):
-        events = [FailEvent(agent_name="t", message="Something broke")]
-        result = build_numbered_event_index(events)
-        assert "[1] Fail: Something broke" in result
-
-    def test_clarify_event(self):
-        events = [ClarifyEvent(agent_name="t", message="Need more info")]
-        result = build_numbered_event_index(events)
-        assert "[1] Clarify: Need more info" in result
-
-    def test_cancelled_event(self):
-        events = [
-            CancelledEvent(agent_name="t", task_name="analyze", iterations_completed=5)
-        ]
-        result = build_numbered_event_index(events)
-        assert "[1] Cancelled: analyze" in result
-
-    def test_chapter_event(self):
-        events = [
-            ChapterEvent(
-                agent_name="t",
-                name="Data exploration",
-                message="Found 3 tables with nulls",
-            )
-        ]
-        result = build_numbered_event_index(events)
-        assert '[1] Chapter: "Data exploration"' in result
-
-    def test_file_event(self):
-        events = [
-            FileEvent(
-                agent_name="t",
-                file_source="agent",
-                added=["a.py", "b.py"],
-                modified=["c.py"],
-                removed=[],
-            )
-        ]
-        result = build_numbered_event_index(events)
-        assert "[1] Files: +2 ~1" in result
-
-    def test_pre_filtered_input(self):
-        """build_numbered_event_index expects pre-filtered input (no ErrorEvents)."""
-        all_events = [
-            ActionEvent(agent_name="t", thinking="think", code="x = 1"),
-            ErrorEvent(agent_name="t", error=RuntimeError("boom")),
-            SuccessEvent(agent_name="t", result=42),
-        ]
-        # Caller is responsible for filtering
-        visible = [e for e in all_events if not isinstance(e, ErrorEvent)]
-        result = build_numbered_event_index(visible)
-        lines = result.strip().split("\n")
-        # Sequential numbering with no gaps
-        assert len(lines) == 2
-        assert "[1]" in lines[0]
-        assert "[2]" in lines[1]
-
-    def test_numbering_is_positional(self):
-        events = [
-            TaskStartEvent(agent_name="t", task_name="task1", inputs={}, message="msg"),
-            ActionEvent(agent_name="t", thinking="t", code="x = 1", title="Step 1"),
-            OutputEvent(agent_name="t", parts=[]),
+                task_name="analyze",
+                inputs={"message": "do it"},
+                message="do it",
+            ),
+            ActionEvent(agent_name="t", thinking="t", code="x = 1"),
             SuccessEvent(agent_name="t", result="done"),
         ]
-        result = build_numbered_event_index(events)
+        tasks, ranges = prepare_tasks_for_chaptering(events)
+        assert len(tasks) == 1
+        assert tasks[0].name == "analyze"
+        assert tasks[0].complete is True
+        assert "done" in tasks[0].outcome
+        assert ranges == [(0, 3)]
+
+    def test_multiple_tasks(self):
+        events = [
+            TaskStartEvent(agent_name="t", task_name="task1", inputs={}, message=""),
+            ActionEvent(agent_name="t", thinking="t", code="x"),
+            SuccessEvent(agent_name="t", result="r1"),
+            TaskStartEvent(agent_name="t", task_name="task2", inputs={}, message=""),
+            ActionEvent(agent_name="t", thinking="t", code="y"),
+            SuccessEvent(agent_name="t", result="r2"),
+        ]
+        tasks, ranges = prepare_tasks_for_chaptering(events)
+        assert len(tasks) == 2
+        assert tasks[0].name == "task1"
+        assert tasks[1].name == "task2"
+        assert ranges == [(0, 3), (3, 6)]
+
+    def test_incomplete_task(self):
+        events = [
+            TaskStartEvent(agent_name="t", task_name="wip", inputs={}, message=""),
+            ActionEvent(agent_name="t", thinking="t", code="x"),
+        ]
+        tasks, ranges = prepare_tasks_for_chaptering(events)
+        assert len(tasks) == 1
+        assert tasks[0].complete is False
+        assert ranges == [(0, 2)]
+
+    def test_error_events_skipped(self):
+        events = [
+            TaskStartEvent(agent_name="t", task_name="t1", inputs={}, message=""),
+            ErrorEvent(agent_name="t", error=RuntimeError("boom")),
+            SuccessEvent(agent_name="t", result="ok"),
+        ]
+        tasks, ranges = prepare_tasks_for_chaptering(events)
+        assert len(tasks) == 1
+        # Range covers all events including errors
+        assert ranges == [(0, 3)]
+
+    def test_failed_task(self):
+        events = [
+            TaskStartEvent(agent_name="t", task_name="t1", inputs={}, message=""),
+            FailEvent(agent_name="t", message="Something broke"),
+        ]
+        tasks, ranges = prepare_tasks_for_chaptering(events)
+        assert tasks[0].complete is True
+        assert "Failed" in tasks[0].outcome
+
+    def test_chapter_task_included(self):
+        """Prior __chapter__ tasks should appear in the index."""
+        events = [
+            TaskStartEvent(agent_name="t", task_name="t1", inputs={}, message=""),
+            SuccessEvent(agent_name="t", result="r1"),
+            TaskStartEvent(
+                agent_name="t", task_name=CHAPTER_TASK, inputs={}, message=""
+            ),
+            ActionEvent(agent_name="t", thinking="t", code="x"),
+            SuccessEvent(agent_name="t", result=[]),
+            TaskStartEvent(agent_name="t", task_name="t2", inputs={}, message=""),
+            SuccessEvent(agent_name="t", result="r2"),
+        ]
+        tasks, ranges = prepare_tasks_for_chaptering(events)
+        assert len(tasks) == 3
+        assert tasks[0].name == "t1"
+        assert tasks[1].name == CHAPTER_TASK
+        assert tasks[2].name == "t2"
+
+
+class TestBuildNumberedTaskIndex:
+    def test_empty(self):
+        assert build_numbered_task_index([]) == ""
+
+    def test_complete_task(self):
+        tasks, _ = prepare_tasks_for_chaptering(
+            [
+                TaskStartEvent(
+                    agent_name="t",
+                    task_name="analyze",
+                    inputs={"message": "check data"},
+                    message="check data",
+                ),
+                SuccessEvent(agent_name="t", result="Found 3 tables"),
+            ]
+        )
+        result = build_numbered_task_index(tasks)
+        assert "[1]" in result
+        assert '"analyze"' in result
+        assert "Found 3 tables" in result
+
+    def test_incomplete_task(self):
+        tasks, _ = prepare_tasks_for_chaptering(
+            [
+                TaskStartEvent(agent_name="t", task_name="wip", inputs={}, message=""),
+                ActionEvent(agent_name="t", thinking="t", code="x"),
+            ]
+        )
+        result = build_numbered_task_index(tasks)
+        assert "(in progress)" in result
+
+    def test_numbering(self):
+        tasks, _ = prepare_tasks_for_chaptering(
+            [
+                TaskStartEvent(agent_name="t", task_name="t1", inputs={}, message=""),
+                SuccessEvent(agent_name="t", result="r1"),
+                TaskStartEvent(agent_name="t", task_name="t2", inputs={}, message=""),
+                SuccessEvent(agent_name="t", result="r2"),
+            ]
+        )
+        result = build_numbered_task_index(tasks)
         lines = result.strip().split("\n")
-        assert len(lines) == 4
+        assert len(lines) == 2
         assert lines[0].startswith("[1]")
         assert lines[1].startswith("[2]")
-        assert lines[2].startswith("[3]")
-        assert lines[3].startswith("[4]")
-
-    def test_long_text_truncated(self):
-        long_result = "x" * 200
-        events = [SuccessEvent(agent_name="t", result=long_result)]
-        result = build_numbered_event_index(events)
-        assert "..." in result
-        assert len(result) < 200
 
 
 class TestShouldTriggerChaptering:
