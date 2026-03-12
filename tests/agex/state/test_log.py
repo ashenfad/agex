@@ -219,12 +219,12 @@ def test_parent_ref_tracks_latest_task():
     assert events[3].parent_ref == task2_key
 
 
-def test_chapter_task_ref_set():
-    """Test that chapter_task_ref is set from current task context."""
+def test_chapter_parent_ref_set():
+    """Test that chapter's parent_ref is set from current task context."""
     state = _make_state()
 
     # Simulate a __chapter__ task in progress
-    add_event_to_log(
+    chapter_task_key = add_event_to_log(
         state,
         TaskStartEvent(
             agent_name="test", task_name="__chapter__", inputs={}, message=""
@@ -244,5 +244,4 @@ def test_chapter_task_ref_set():
 
     events = get_events_from_log(state)
     chapter_evt = [e for e in events if isinstance(e, ChapterEvent)][0]
-    assert chapter_evt.chapter_task_ref is not None
-    assert chapter_evt.chapter_task_ref.startswith("_event_")
+    assert chapter_evt.parent_ref == chapter_task_key
