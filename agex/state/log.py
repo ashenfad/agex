@@ -9,14 +9,19 @@ from typing import Callable
 
 from kvgit import Namespaced, Staged
 
-from agex.agent.events import BaseEvent, ChapterEvent, Event
+from agex.agent.events import BaseEvent, ChapterEvent, Event, TaskStartEvent
 from agex.state import get_root
+
+_CURRENT_TASK_REF_KEY = "__current_task_ref__"
 
 
 def add_event_to_log(
     state, event: BaseEvent, on_event: Callable[[BaseEvent], None] | None = None
-) -> None:
-    """Add an event to the log using references for O(1) storage per event."""
+) -> str:
+    """Add an event to the log using references for O(1) storage per event.
+
+    Returns the generated state key for the event.
+    """
     # If the root state is versioned, stamp the current commit hash on the event
     root_state = get_root(state)
     if isinstance(root_state, Staged) and root_state.current_commit:
@@ -30,14 +35,6 @@ def add_event_to_log(
         # For root-level states (Staged, Live), full_namespace equals agent_name
         event.full_namespace = event.agent_name
 
-    # Call the event handler first, if provided
-    if on_event:
-        try:
-            on_event(event)
-        except Exception as e:
-            # Log handler error but don't crash the main loop
-            print(f"--- Event handler error: {e} ---")
-
     # Generate unique timestamp-based key
     timestamp_microseconds = int(event.timestamp.timestamp() * 1_000_000)
     event_key = f"_event_{timestamp_microseconds}_"
@@ -49,6 +46,22 @@ def add_event_to_log(
         counter += 1
         event_key = f"{base_key}{counter}"
 
+    # Auto-track task context for parent_ref
+    if isinstance(event, TaskStartEvent):
+        state[_CURRENT_TASK_REF_KEY] = event_key
+    else:
+        task_ref = state.get(_CURRENT_TASK_REF_KEY)
+        if task_ref:
+            event.parent_ref = task_ref
+
+    # Call the event handler, if provided
+    if on_event:
+        try:
+            on_event(event)
+        except Exception as e:
+            # Log handler error but don't crash the main loop
+            print(f"--- Event handler error: {e} ---")
+
     # Store event separately
     state[event_key] = event
 
@@ -56,6 +69,8 @@ def add_event_to_log(
     event_refs = state.get("__event_log__", [])
     new_refs = event_refs + [event_key]
     state["__event_log__"] = new_refs
+
+    return event_key
 
 
 def get_events_from_log(state) -> list[Event]:
@@ -113,8 +128,9 @@ def replace_events_with_chapters(
                     f"current starts at {start}"
                 )
 
-    # Set commit_hash and full_namespace on chapter events
+    # Set commit_hash, full_namespace, and chapter_task_ref on chapter events
     root_state = get_root(state)
+    current_task_ref = state.get(_CURRENT_TASK_REF_KEY)
     for _, _, chapter_event in sorted_ranges:
         if isinstance(root_state, Staged) and root_state.current_commit:
             chapter_event.commit_hash = root_state.current_commit
@@ -122,6 +138,8 @@ def replace_events_with_chapters(
             chapter_event.full_namespace = state.namespace
         else:
             chapter_event.full_namespace = chapter_event.agent_name
+        if current_task_ref:
+            chapter_event.chapter_task_ref = current_task_ref
 
     # Apply replacements in reverse order to preserve indices
     new_refs = list(event_refs)
