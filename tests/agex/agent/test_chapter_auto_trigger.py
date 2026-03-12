@@ -116,3 +116,41 @@ class TestAutoChapterTrigger:
         all_events = events(agent.state())
         chapter_events = [e for e in all_events if isinstance(e, ChapterEvent)]
         assert len(chapter_events) == 0
+
+    def test_on_event_receives_chapter_events(self):
+        """The on_event callback should receive ChapterEvents for live UI updates."""
+        responses = [
+            LLMResponse(
+                thinking="Doing work.",
+                code="task_success('done')",
+                input_tokens=60000,
+            ),
+            LLMResponse(
+                thinking="Chaptering.",
+                code=(
+                    'task_success([Chapter(start=1, end=1, name="Phase 1", '
+                    'message="Completed phase 1.")])'
+                ),
+                input_tokens=60000,
+            ),
+        ]
+        llm = Dummy(responses=responses)
+        agent = Agent(
+            name="live_ch",
+            llm=llm,
+            state=connect_state(type="versioned", storage="memory"),
+            chaptering_trigger=50000,
+        )
+
+        @agent.task
+        def do_work(msg: str) -> str:
+            """Do some work."""
+            pass
+
+        received = []
+        result = do_work("go", on_event=received.append)
+        assert result == "done"
+
+        chapter_events = [e for e in received if isinstance(e, ChapterEvent)]
+        assert len(chapter_events) == 1
+        assert chapter_events[0].name == "Phase 1"
