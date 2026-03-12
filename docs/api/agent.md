@@ -226,7 +226,7 @@ agent = Agent(
 ```
 
 **How it works:**
-1. After each task (or `task_continue()` iteration), checks `input_tokens` against the chaptering trigger
+1. After each task completes, checks `input_tokens` against the chaptering trigger
 2. If exceeded, triggers the `__chapter__` task — the agent reviews its history and creates `Chapter` instances
 3. The framework converts chapters to `ChapterEvent` instances, preserving originals for VFS browsing
 

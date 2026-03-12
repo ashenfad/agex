@@ -357,17 +357,6 @@ class AsyncLoopMixin:
                 if versioned_state is not None:
                     safe_commit(versioned_state, referenced_keys=accumulated_refs)
 
-                # Inline chaptering during long tasks
-                if task_name != CHAPTER_TASK and state is not None:
-                    await self._maybe_chapter(
-                        state,
-                        session,
-                        on_event,
-                        on_token,
-                    )
-                    if fs is not None:
-                        mount_chapters_overlay(fs, state)
-
                 continue
 
             except TaskClarify as task_clarify:
