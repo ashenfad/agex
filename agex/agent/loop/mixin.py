@@ -319,7 +319,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                 on_token=on_token,
             )
         except Exception:
-            logger.debug("Chapter task failed", exc_info=True)
+            logger.warning("Chapter task failed", exc_info=True)
             return
 
         if not chapters:
