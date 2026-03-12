@@ -43,7 +43,7 @@ class Chapter:
 CHAPTER_TASK_PRIMER = """\
 You are being asked to manage your context by closing completed tasks \
 into named chapters. Each chapter replaces a contiguous range of tasks with a \
-concise summary, while preserving the originals for later browsing.
+detailed summary, while preserving the originals for later browsing.
 
 You will receive a task index mapping numbered tasks to your full context above. \
 The numbers in the index correspond to the [N] prefixes on the task starts in your \
@@ -62,13 +62,17 @@ in doubt, leave them unchaptered. It is perfectly fine to return an empty list.
 Rules:
 - start and end are 1-based inclusive task numbers from the task index
 - Ranges must be contiguous and non-overlapping
-- The message should distill key details from the full task content, not just \
-restate the index summaries
+- The message must be a VERBOSE, detailed summary — not a brief one-liner. \
+Include specific findings, data values, variable names, file paths, decisions \
+made, and any other concrete details from the full task content. The chapter \
+message is what you will see in place of the original tasks, so capture \
+everything you might need later.
 - Return task_success([chapter1, chapter2, ...]) with your chapters
 - Return task_success([]) if nothing can be chaptered right now
 
 Good chapters:
-- Capture the key findings, decisions, data, and outcomes from the full context
+- Capture ALL key findings, decisions, data, code, and outcomes from the full context
+- Preserve specific names, numbers, paths, schemas, and configuration details
 - Use descriptive names that serve as a mini table of contents
 - Close out completed phases — never chapter work in progress or the most recent task
 """
