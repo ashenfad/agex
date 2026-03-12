@@ -109,21 +109,12 @@ class Local(Host):
         self, config: "StateConfig", kv: "KVStore"
     ) -> MutableMapping[str, Any]:
         """Create a state instance from config and KV store."""
-        from kvgit.versioned import GCVersionedKV as GCVersioned
-
         from agex.state import _agex_decoder, _agex_encoder
 
         from .base import apply_init_if_fresh
 
         if config.type == "versioned":
-            if config.high_water_bytes is not None:
-                versioned = GCVersioned(
-                    kv,
-                    high_water_bytes=config.high_water_bytes,
-                    low_water_bytes=config.low_water_bytes,
-                )
-            else:
-                versioned = VersionedKV(kv)
+            versioned = VersionedKV(kv)
             state = Staged(versioned, encoder=_agex_encoder, decoder=_agex_decoder)
         elif config.type == "live":
             state = Live()

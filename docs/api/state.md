@@ -197,7 +197,7 @@ print(view(historical, focus="full"))
 ```
 
 **Reverting State (Destructive)**
-Use `reset_to()` to move the agent's HEAD to a specific commit. This can orphan commits that become unreachable from the new HEAD (which can be cleaned up by GC).
+Use `reset_to()` to move the agent's HEAD to a specific commit. This can orphan commits that become unreachable from the new HEAD (which are cleaned up when branches are deleted).
 
 ```python
 # Reset to a previous successful outcome
@@ -277,23 +277,6 @@ state = Staged(Versioned(Memory()))
 # Equivalent to connect_state(type="live")
 state = Live()
 ```
-
-### Garbage Collection for Long-Running Agents
-
-For agents that accumulate large state histories over many iterations, use `GCVersioned` to automatically prune old commits:
-
-```python
-from agex import GCVersioned
-from agex.state.kv import Disk
-
-state = GCVersioned(
-    Disk("/path/to/storage"),
-    high_water_bytes=100 * 1024 * 1024,  # Trigger GC at 100MB
-    low_water_bytes=50 * 1024 * 1024,    # Target 50MB after GC
-)
-```
-
-When state size exceeds `high_water_bytes`, the oldest commits are pruned until size drops below `low_water_bytes`. This prevents unbounded growth in long-running agents.
 
 ### Custom Storage Backends
 
