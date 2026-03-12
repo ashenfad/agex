@@ -6,25 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.9.1] - 2026-03-12
 
 ### Added
 - **PyfetchOpenAI Client**: Browser-compatible LLM client using `pyodide.http.pyfetch` for direct browser-to-API calls without a server proxy. Supports OpenRouter, OpenAI, and any OpenAI-compatible endpoint. Async-only with SSE streaming.
 - **SSE Parser**: Standalone Server-Sent Events line parser (`agex.llm.sse`) for streaming LLM responses over pyfetch
-- **Chaptering**: Agent-directed chaptering replaces `SummaryEvent` — agents decide when to chapter based on task progress. Chaptered `OutputEvent` rendering as stdout log with sibling `.png` files.
+- **Skills system**: `agent.skill()` API for registering skill documentation (YAML frontmatter with name, description, modules). Skills are mounted read-only at `/skills/<name>/SKILL.md` and listed in the system prompt. Module annotations link registered modules to their related skill docs.
+- **Prompt caching**: `cache_control` breakpoints on system message and second-to-last conversation message for OpenRouter (Anthropic, Gemini). Extended cache TTL to 1 hour for `pyfetch_openai`.
+- **Task-level chaptering**: Replaces event-level chaptering — agents chapter entire tasks using task boundaries. `ChapterEvent` stores event refs instead of copies for reversibility. Auto-triggers based on `chaptering_trigger` token threshold. Async chapter task supports async-only LLM providers.
+- **`parent_ref` on `BaseEvent`**: Events automatically track their parent task for grouping.
+- **`estimate_log_tokens`**: Tiktoken-based context size estimation for chaptering decisions.
+- **IndexedDB storage backend**: Persistent versioned state in browser contexts via kvgit's IndexedDB backend.
 
 ### Changed
-- **kvgit 0.1.5 Alignment**: Renamed imports to match kvgit API (`VersionedKV`, `GCVersionedKV`)
+- **kvgit 0.1.5 Alignment**: Renamed imports to match kvgit API (`VersionedKV`)
 - **Live State**: Moved `Live` from kvgit into `agex.state` (no longer imported from kvgit)
 - **Filesystem Config**: Inlined `connect_fs` and config dataclasses from monkeyfs
-- **Dependencies**: bumped kvgit>=0.1.5, monkeyfs>=0.1.2
+- **Dependencies**: bumped kvgit>=0.1.7, monkeyfs>=0.1.2
+
+### Removed
+- **`GCVersionedKV`**: Replaced by kvgit's `clean_orphans()` on `VersionedKV`. Removed `high_water_bytes` and `low_water_bytes` from `StateConfig` and `connect_state`.
 
 ### Fixed
-- **Pyodide Compatibility**: Platform guard for emscripten (lazy `HTTP` import), `is_function_body_empty` returns `True` when `inspect.getsource` is unavailable (Pyodide `runPythonAsync`)
+- **Pyodide Compatibility**: Platform guard for emscripten (lazy `HTTP` import), `is_function_body_empty` returns `True` when `inspect.getsource` is unavailable, tiktoken made optional (CORS-blocked encoding files).
 - **Sandbox**: Unconditionally use sandbox as context manager; `ProcessSandbox` context manager fix
 - **Session Validation**: Validate session IDs and require `IsolatedFSConfig` root
 - **UnpicklableMarker**: `safe_commit` skips re-staging keys that are `UnpicklableMarker`s
-- **Chaptering**: Delta-based token estimation for low water check; batch print and output events per execution; use `posixpath.join` for VFS path construction
+- **Error messages**: Show real exception type instead of generic "Evaluation error"; HTTP status checking in pyfetch; last error surfaced in `TaskTimeout`.
+- **Async rendering**: `async def` shown in capability signatures for coroutine functions so agents know to use `await`.
+- **Chaptering**: Only triggers between tasks (not mid-task); chapter events emitted through `on_event` for live UI updates; correct timestamp ordering; filters `__chapter__` meta-events from index; skips gracefully when nested inside an async event loop.
+- **Skill frontmatter**: Handles multiline YAML descriptions (block scalars, indented continuation).
 
 ## [0.9.0] - 2026-02-27
 
