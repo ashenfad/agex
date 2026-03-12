@@ -65,9 +65,15 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
     # Filter out ErrorEvents (not shown to agents)
     filtered_events = [e for e in events if not isinstance(e, ErrorEvent)]
 
-    for i, event in enumerate(filtered_events, 1):
+    task_number = 0
+    for event in filtered_events:
         budget = HI_DETAIL_BUDGET
-        prefix = f"[{i}] "
+
+        if isinstance(event, TaskStartEvent):
+            task_number += 1
+            prefix = f"[{task_number}] "
+        else:
+            prefix = ""
 
         if isinstance(event, TaskStartEvent):
             # Render task start message with appropriate budget

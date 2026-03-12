@@ -17,8 +17,8 @@ from typing import Any
 from agex.agent.base import BaseAgent
 from agex.agent.chapter import (
     Chapter,
-    build_numbered_event_index,
-    prepare_events_for_chaptering,
+    build_numbered_task_index,
+    prepare_tasks_for_chaptering,
     should_trigger_chaptering,
 )
 from agex.agent.events import ChapterEvent
@@ -308,9 +308,9 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         if not should_trigger_chaptering(all_events, self.chaptering_trigger):
             return
 
-        # Build event index, excluding ErrorEvents and prior __chapter__ tasks
-        visible_events, visible_to_log = prepare_events_for_chaptering(all_events)
-        index_text = build_numbered_event_index(visible_events)
+        # Build task index
+        tasks, task_to_log_range = prepare_tasks_for_chaptering(all_events)
+        index_text = build_numbered_task_index(tasks)
         try:
             chapters = await self._chapter_task(
                 event_index=index_text,
@@ -332,23 +332,24 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             if not isinstance(ch, Chapter):
                 logger.debug("Skipping non-Chapter object: %s", type(ch).__name__)
                 continue
-            # Convert 1-based inclusive to 0-based exclusive using visible mapping
+            # Validate 1-based inclusive task numbers
             if ch.start < 1 or ch.end < ch.start:
                 logger.debug(
                     "Skipping invalid range: start=%d end=%d", ch.start, ch.end
                 )
                 continue
-            if ch.start > len(visible_to_log) or ch.end > len(visible_to_log):
+            if ch.start > len(task_to_log_range) or ch.end > len(task_to_log_range):
                 logger.debug(
                     "Skipping out-of-bounds range: start=%d end=%d (max=%d)",
                     ch.start,
                     ch.end,
-                    len(visible_to_log),
+                    len(task_to_log_range),
                 )
                 continue
 
-            log_start = visible_to_log[ch.start - 1]
-            log_end = visible_to_log[ch.end - 1] + 1  # exclusive
+            # Map task range to log range
+            log_start = task_to_log_range[ch.start - 1][0]
+            log_end = task_to_log_range[ch.end - 1][1]
 
             chapter_event = ChapterEvent(
                 agent_name=self.name,
