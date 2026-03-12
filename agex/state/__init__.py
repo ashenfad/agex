@@ -12,7 +12,6 @@ from typing import Any, Callable, Literal
 from kvgit import ConcurrencyError, MergeResult, Namespaced, Staged
 from kvgit.errors import MergeConflict
 from kvgit.kv import KVStore
-from kvgit.versioned import GCVersionedKV as GCVersioned
 
 from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
 
@@ -27,7 +26,6 @@ __all__ = [
     "ConcurrencyError",
     "MergeConflict",
     "MergeResult",
-    "GCVersioned",
     "KVStore",
     # agex types
     "StateConfig",
@@ -214,17 +212,13 @@ def connect_state(
         storage: Storage backend ("memory", "disk", or "indexeddb").
             Not required for ephemeral.
         init: Callable or dict to initialize state variables on first session creation.
-        **kwargs: Type and storage-specific arguments
+        **kwargs: Storage-specific arguments
 
     Storage-specific kwargs:
         disk:
             path: str - Directory path (required for disk storage)
         indexeddb:
             db_name: str - IndexedDB database name (default: "kvgit")
-
-    Type-specific kwargs (versioned):
-        high_water_bytes: int - Trigger GC when total size exceeds this
-        low_water_bytes: int - Target size after GC (default: 80% of high_water)
 
     Returns:
         A StateConfig instance
@@ -236,27 +230,13 @@ def connect_state(
     if storage == "disk" and "path" not in kwargs:
         raise ValueError("Disk storage requires 'path' parameter")
 
-    # Validate GC params only apply to versioned state
-    gc_params = [k for k in ("high_water_bytes", "low_water_bytes") if k in kwargs]
-    if gc_params and type != "versioned":
-        raise ValueError(
-            f"GC parameters ({', '.join(gc_params)}) only apply to "
-            f"'versioned' state, but got type='{type}'"
-        )
-
     # Collect optional store-specific parameters
-    options = {
-        k: v
-        for k, v in kwargs.items()
-        if k not in ("path", "high_water_bytes", "low_water_bytes")
-    }
+    options = {k: v for k, v in kwargs.items() if k != "path"}
 
     return StateConfig(
         type=type,
         storage=storage,
         path=kwargs.get("path"),
-        high_water_bytes=kwargs.get("high_water_bytes"),
-        low_water_bytes=kwargs.get("low_water_bytes"),
         options=options if options else None,
         init=init,
     )

@@ -21,7 +21,7 @@ from .llm import LLM, connect_llm
 from .render.capabilities import summarize_capabilities
 from .render.token_count import estimate_log_tokens, system_token_count
 from .render.view import view
-from .state import GCVersioned, Live, Namespaced, Staged, connect_state, events
+from .state import Live, Namespaced, Staged, connect_state, events
 
 __all__ = [
     # Core Classes
@@ -33,7 +33,6 @@ __all__ = [
     # State Management
     "connect_state",
     "Staged",
-    "GCVersioned",
     "Live",
     "Namespaced",
     "events",
