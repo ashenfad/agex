@@ -369,6 +369,16 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
 
         logger.debug("Applied %d chapter(s)", len(chapters_and_ranges))
 
+        # Emit ChapterEvents so live UIs can update without a reload
+        if on_event is not None:
+            for _, _, chapter_event in chapters_and_ranges:
+                try:
+                    res = on_event(chapter_event)
+                    if inspect.isawaitable(res):
+                        await res
+                except Exception:
+                    pass
+
     def _get_llm_response(
         self,
         system_message,
