@@ -136,6 +136,39 @@ def _summarize_event(event: BaseEvent) -> str:
     return f"{type(event).__name__}"
 
 
+def prepare_events_for_chaptering(
+    all_events: list[BaseEvent],
+) -> tuple[list[BaseEvent], list[int]]:
+    """Filter events for the chaptering index.
+
+    Excludes ``ErrorEvent`` instances and any events belonging to prior
+    ``__chapter__`` tasks (TaskStart through terminal event) so the
+    chaptering agent only sees substantive work.
+
+    Returns:
+        visible_events: Events suitable for :func:`build_numbered_event_index`.
+        visible_to_log: Mapping from visible index to ``all_events`` index,
+            used to convert the agent's 1-based chapter ranges back to log
+            positions.
+    """
+    from agex.agent.events import ErrorEvent
+
+    visible_events: list[BaseEvent] = []
+    visible_to_log: list[int] = []
+    in_chapter_task = False
+    for log_idx, event in enumerate(all_events):
+        if isinstance(event, TaskStartEvent):
+            in_chapter_task = event.task_name == CHAPTER_TASK
+        if not isinstance(event, ErrorEvent) and not in_chapter_task:
+            visible_events.append(event)
+            visible_to_log.append(log_idx)
+        if in_chapter_task and isinstance(
+            event, (SuccessEvent, FailEvent, CancelledEvent, ClarifyEvent)
+        ):
+            in_chapter_task = False
+    return visible_events, visible_to_log
+
+
 def build_numbered_event_index(events: list[BaseEvent]) -> str:
     """Build a compact numbered index of events for the chapter task.
 

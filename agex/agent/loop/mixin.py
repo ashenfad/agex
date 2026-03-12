@@ -18,6 +18,7 @@ from agex.agent.base import BaseAgent
 from agex.agent.chapter import (
     Chapter,
     build_numbered_event_index,
+    prepare_events_for_chaptering,
     should_trigger_chaptering,
 )
 from agex.agent.events import ChapterEvent
@@ -303,12 +304,12 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         logger = logging.getLogger("agex.chapters")
 
         all_events = get_events_from_log(state)
-        visible_events = [e for e in all_events if not isinstance(e, ErrorEvent)]
 
         if not should_trigger_chaptering(all_events, self.chaptering_trigger):
             return
 
-        # Build event index and call chapter task
+        # Build event index, excluding ErrorEvents and prior __chapter__ tasks
+        visible_events, visible_to_log = prepare_events_for_chaptering(all_events)
         index_text = build_numbered_event_index(visible_events)
         try:
             chapters = await self._chapter_task(
@@ -326,12 +327,6 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             return
 
         # Validate and convert to ChapterEvents
-        # Build mapping from 1-based visible index to 0-based event log index
-        visible_to_log = []
-        for log_idx, event in enumerate(all_events):
-            if not isinstance(event, ErrorEvent):
-                visible_to_log.append(log_idx)
-
         chapters_and_ranges = []
         for ch in chapters:
             if not isinstance(ch, Chapter):

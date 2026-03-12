@@ -126,6 +126,16 @@ def replace_events_with_chapters(
     # Apply replacements in reverse order to preserve indices
     new_refs = list(event_refs)
     for start, end, chapter_event in reversed(sorted_ranges):
+        # Inherit timestamp from the first replaced event so that
+        # timestamp-based sorting preserves the correct log position.
+        first_ref = event_refs[start]
+        if first_ref in state:
+            try:
+                first_event = state.get(first_ref)
+                chapter_event.timestamp = first_event.timestamp
+            except Exception:
+                pass
+
         # Store the chapter event with a unique key
         timestamp_microseconds = int(chapter_event.timestamp.timestamp() * 1_000_000)
         event_key = f"_event_{timestamp_microseconds}_"
