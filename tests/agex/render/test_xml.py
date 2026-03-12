@@ -142,7 +142,7 @@ class TestRenderEventsAsXML:
 
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
-        assert messages[0]["content"] == "[1] FOREFRONT NOTE"
+        assert messages[0]["content"] == "FOREFRONT NOTE"
 
     def test_file_event(self):
         """Test rendering FileEvent with XML tags."""
