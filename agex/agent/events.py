@@ -911,7 +911,6 @@ class ChapterEvent(BaseEvent):
     event_refs: list[str] = Field(
         default_factory=list
     )  # State keys for original events
-    chapter_task_ref: str | None = None  # TaskStartEvent key of the __chapter__ task
 
     def resolve_events(self, state) -> list[BaseEvent]:
         """Resolve event_refs to actual event objects using the given state."""

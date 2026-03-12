@@ -128,7 +128,7 @@ def replace_events_with_chapters(
                     f"current starts at {start}"
                 )
 
-    # Set commit_hash, full_namespace, and chapter_task_ref on chapter events
+    # Set commit_hash, full_namespace, and parent_ref on chapter events
     root_state = get_root(state)
     current_task_ref = state.get(_CURRENT_TASK_REF_KEY)
     for _, _, chapter_event in sorted_ranges:
@@ -139,7 +139,7 @@ def replace_events_with_chapters(
         else:
             chapter_event.full_namespace = chapter_event.agent_name
         if current_task_ref:
-            chapter_event.chapter_task_ref = current_task_ref
+            chapter_event.parent_ref = current_task_ref
 
     # Apply replacements in reverse order to preserve indices
     new_refs = list(event_refs)
