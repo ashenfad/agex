@@ -62,6 +62,24 @@ from .state_helpers import (
 )
 
 
+def _run_coro(coro):
+    """Run a coroutine from sync code, handling nested event loops.
+
+    When no event loop is running, uses ``asyncio.run()``. When already
+    inside an async loop (e.g. a sync sub-agent called from an async
+    orchestrator), skips execution to avoid ``asyncio.run()`` errors.
+    """
+    try:
+        asyncio.get_running_loop()
+        # Already inside an event loop — can't use asyncio.run().
+        # Close the coroutine to avoid "was never awaited" warnings.
+        coro.close()
+        return
+    except RuntimeError:
+        pass
+    asyncio.run(coro)
+
+
 class SyncLoopMixin:
     """Mixin providing synchronous task loop methods."""
 
@@ -297,7 +315,7 @@ class SyncLoopMixin:
 
                 # Inline chaptering during long tasks
                 if task_name != CHAPTER_TASK and state is not None:
-                    asyncio.run(self._maybe_chapter(state, session, on_event, on_token))
+                    _run_coro(self._maybe_chapter(state, session, on_event, on_token))
                     if fs is not None:
                         mount_chapters_overlay(fs, state)
 
@@ -431,7 +449,7 @@ class SyncLoopMixin:
 
                 # Maybe chapter between tasks
                 if task_name != CHAPTER_TASK and state is not None:
-                    asyncio.run(self._maybe_chapter(state, session, on_event, on_token))
+                    _run_coro(self._maybe_chapter(state, session, on_event, on_token))
                     if fs is not None:
                         mount_chapters_overlay(fs, state)
 
