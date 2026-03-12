@@ -32,13 +32,13 @@ When the agent sees this in context, it gets the summary plus a path to browse t
 
 ### The Chapter Task
 
-When context exceeds the `chaptering_trigger` threshold, the framework triggers a special `__chapter__` task. This is a regular agex task — the agent sees its full event history with `[N]` prefixes and a compact index, then creates `Chapter` instances:
+When context exceeds the `chaptering_trigger` threshold, the framework triggers a special `__chapter__` task. This is a regular agex task — the agent sees its full context with task starts numbered `[N]` and a compact task index, then creates `Chapter` instances that close out entire tasks:
 
 ```python
-Chapter(start=1, end=4, name="Data exploration", message="Found 3 tables...")
+Chapter(start=1, end=3, name="Data exploration", message="Found 3 tables...")
 ```
 
-The framework converts these to `ChapterEvent` instances, splicing them into the event log. The agent's own chapter task events stay in the log and may themselves be chaptered in future rounds.
+Here `start` and `end` are 1-based inclusive task numbers from the task index. The framework converts these to `ChapterEvent` instances, splicing them into the event log. The agent's own chapter task events stay in the log and may themselves be chaptered in future rounds.
 
 ### Browsing Chaptered History
 
@@ -93,29 +93,32 @@ The agent chooses *what* to chapter and *how* to summarize. The framework only d
 
 ### Lossless Compaction
 
-Nothing is deleted. `ChapterEvent.events` holds the originals, and the VFS makes them browsable. An agent that needs a specific detail from hours ago can find it.
+Nothing is deleted. `ChapterEvent.event_refs` holds references to the originals in state, and the VFS makes them browsable. An agent that needs a specific detail from hours ago can find it.
 
 ### Single Round
 
 When triggered, chaptering runs a single round:
 
 1. Checks if `input_tokens` exceeds the chaptering trigger
-2. Builds a numbered event index for the agent
+2. Builds a numbered task index for the agent
 3. Calls the `__chapter__` task
 4. Applies the returned chapters to the event log
 
 If context is still above the trigger after one round, chaptering will fire again on the next action.
 
-## Event Numbering
+## Task Numbering
 
-All events in the agent's context carry `[N]` prefixes:
+Task starts in the agent's context carry `[N]` prefixes:
 
 ```
-[1] Task: "Analyze the dataset"
-[2] Action: Load and inspect (8 lines)
-[3] Output: DataFrame with 12,450 rows...
-[4] Chapter: "Data exploration" — Found 3 tables, 3% nulls
-[5] Action: Build pipeline (15 lines)
+[1] Analyze the dataset
+    <THINKING>...</THINKING>
+    <PYTHON>...</PYTHON>
+    <OBSERVATION>DataFrame with 12,450 rows...</OBSERVATION>
+    <TASK_SUCCESS>Found 3 tables</TASK_SUCCESS>
+[2] Build the pipeline
+    <THINKING>...</THINKING>
+    <PYTHON>...</PYTHON>
 ```
 
-These numbers are always visible (not just during chaptering) and correspond to the indices in the chapter task's event index. This gives agents a consistent mental model of their event history.
+These numbers are always visible (not just during chaptering) and correspond to the task numbers in the chapter task's index. Only `TaskStartEvent` boundaries are numbered — individual actions, outputs, and results within a task are unnumbered. This gives agents a consistent, task-oriented mental model of their history and ensures chaptering operates at clean task boundaries.

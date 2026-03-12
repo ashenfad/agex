@@ -186,7 +186,7 @@ from agex.agent.events import ChapterEvent
 event = ChapterEvent(
     name="Data exploration",       # str - Short descriptive name
     message="Found 3 tables...",   # str - Agent's summary/distillation
-    events=[...],                  # list[BaseEvent] - Original events (nested, lossless)
+    event_refs=[...],              # list[str] - State keys for original events (lossless)
 )
 ```
 
