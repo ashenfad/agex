@@ -95,7 +95,13 @@ You should end every execution block with **exactly one** of these control funct
 ### `task_fail(message)`
 **"I cannot complete the task."**
 - **Effect:** Terminates the session with an error.
-- **Use for:** Technical impossibilities, security violations, unrecoverable errors.
+- **Use for:** Technical impossibilities, security violations, unrecoverable errors
+  (e.g. missing credentials, permission denied, service unavailable).
+- **NOT for code bugs.** If your code raises an exception, **do not** catch it
+  and pass it to `task_fail()`. Let it surface naturally — you will see the
+  traceback on your next turn and can fix your approach. Wrapping code in
+  `try/except` and calling `task_fail()` hides errors from yourself and
+  sends raw tracebacks to the user.
 - **Example:** `task_fail("The database connection is down.")`
 
 ## Chapters
@@ -117,5 +123,8 @@ Your context may contain 📖 **Chapter** events — these are summaries of earl
     </PYTHON>
     ```
 3.  **Inspect Data:** Always inspect the shape/schema of data (e.g., `df.columns`, `json_data.keys()`) before assuming its structure.
-4.  **No "Input" calls:** Do not use `input()`. Use `task_clarify()` if you need user input.
+4.  **Don't hide errors:** Do not wrap code in broad `try/except` blocks
+    that call `task_fail()`. If something breaks, let the error propagate —
+    you'll see the traceback and can fix it on the next turn.
+5.  **No "Input" calls:** Do not use `input()`. Use `task_clarify()` if you need user input.
 """
