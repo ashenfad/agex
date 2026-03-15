@@ -75,11 +75,24 @@ class PyfetchOpenAI(LLM):
         **kwargs,
     ):
         kwargs.pop("provider", None)
+        self._app_url = kwargs.pop("app_url", None)
+        self._app_title = kwargs.pop("app_title", None)
         self._model = model
         self._api_key = api_key
         self._base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._kwargs = kwargs
+
+    def _headers(self) -> dict[str, str]:
+        h = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self._api_key}",
+        }
+        if self._app_url:
+            h["HTTP-Referer"] = self._app_url
+        if self._app_title:
+            h["X-Title"] = self._app_title
+        return h
 
     # -- LLM interface -------------------------------------------------------
 
@@ -148,10 +161,7 @@ class PyfetchOpenAI(LLM):
             **request_kwargs,
         }
 
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self._api_key}",
-        }
+        headers = self._headers()
 
         response = self._pyfetch_stream(
             f"{self._base_url}/chat/completions",
@@ -225,10 +235,7 @@ class PyfetchOpenAI(LLM):
             **request_kwargs,
         }
 
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self._api_key}",
-        }
+        headers = self._headers()
 
         response_data = await self._pyfetch_json(
             f"{self._base_url}/chat/completions",
