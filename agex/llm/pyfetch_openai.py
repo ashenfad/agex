@@ -114,6 +114,8 @@ class PyfetchOpenAI(LLM):
             "model": self._model,
             "base_url": self._base_url,
             "timeout_seconds": self._timeout_seconds,
+            "app_url": self._app_url,
+            "app_title": self._app_title,
             **self._kwargs,
         }
 
