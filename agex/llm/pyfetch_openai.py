@@ -17,6 +17,18 @@ from agex.llm.xml import XML_FORMAT_PRIMER
 CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
 
 
+def _is_network_error(exc: Exception) -> bool:
+    """Check if an exception is a transient network error worth retrying."""
+    name = type(exc).__name__
+    # Pyodide wraps JS TypeError("network error") as JsException
+    if name == "JsException" and "network error" in str(exc).lower():
+        return True
+    # aiohttp network errors (non-Pyodide fallback)
+    if name in ("ClientError", "ServerDisconnectedError", "ClientOSError"):
+        return True
+    return False
+
+
 def _format_message_for_openai(message: dict[str, Any], *, cache: bool = False) -> dict:
     """Convert generic message dict to OpenAI's format (images as data URIs)."""
     if isinstance(message.get("content"), list):
@@ -129,12 +141,15 @@ class PyfetchOpenAI(LLM):
             "PyfetchOpenAI requires async. Use acomplete_stream() or acomplete()."
         )
 
+    _STREAM_MAX_RETRIES = 2
+
     async def acomplete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> AsyncIterator[TokenChunk]:
-        """Stream tokens from an OpenAI-compatible endpoint via pyfetch."""
-        from agex.llm.sse import parse_sse_events
-        from agex.llm.xml import atokenize_xml_stream
+        """Stream tokens from an OpenAI-compatible endpoint via pyfetch.
+
+        Retries on network errors (e.g. connection drops on mobile).
+        """
         from agex.render.xml import render_events_as_xml
 
         request_kwargs = {**self._kwargs, **kwargs}
@@ -164,19 +179,39 @@ class PyfetchOpenAI(LLM):
         }
 
         headers = self._headers()
+        url = f"{self._base_url}/chat/completions"
 
-        response = self._pyfetch_stream(
-            f"{self._base_url}/chat/completions",
-            body=body,
-            headers=headers,
-        )
+        for attempt in range(self._STREAM_MAX_RETRIES):
+            try:
+                async for token in self._stream_once(url, body, headers):
+                    yield token
+                return  # success
+            except Exception as exc:
+                is_network = _is_network_error(exc)
+                if not is_network or attempt + 1 >= self._STREAM_MAX_RETRIES:
+                    raise
+                # Brief pause before retry
+                import asyncio
+
+                await asyncio.sleep(1)
+
+    async def _stream_once(
+        self,
+        url: str,
+        body: dict,
+        headers: dict,
+    ) -> AsyncIterator[TokenChunk]:
+        """Single streaming attempt — separated for retry logic."""
+        from agex.llm.sse import parse_sse_events
+        from agex.llm.xml import atokenize_xml_stream
+
+        response = self._pyfetch_stream(url, body=body, headers=headers)
 
         usage_holder: dict[str, int | None] = {
             "input_tokens": None,
             "output_tokens": None,
         }
 
-        # Wrap SSE stream so we can drain remaining events after XML stops
         sse_iter = parse_sse_events(response)
 
         def _update_usage(data: dict) -> None:
