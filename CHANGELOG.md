@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.9.3] - 2026-03-19
+
+### Changed
+- **Compressed image pickling**: `ImageAction` now pickles PIL Images as PNG bytes instead of raw pixel data (~100x smaller storage)
+- **Batch event reads**: `get_events_from_log` uses `get_many()` to fetch all events in a single storage transaction instead of N individual reads
+- **kvgit >=0.1.8**: Required for fast IndexedDB byte conversion
+
 ## [0.9.2] - 2026-03-15
 
 ### Added
