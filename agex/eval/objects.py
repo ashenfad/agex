@@ -53,8 +53,14 @@ class ImageAction:
 
     def png_bytes(self) -> bytes:
         """Return the PNG bytes for this image."""
-        if self._png_bytes is not None:
-            return self._png_bytes
+        cached = getattr(self, "_png_bytes", None)
+        if cached is not None:
+            return cached
+        if _PILImage is None or not isinstance(self.image, _PILImage.Image):
+            raise TypeError(
+                f"Cannot get PNG bytes for non-PIL image of type "
+                f"{type(self.image).__name__}"
+            )
         buf = io.BytesIO()
         self.image.save(buf, format="PNG")
         self._png_bytes = buf.getvalue()
