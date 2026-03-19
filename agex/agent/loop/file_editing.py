@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import MutableMapping
+from difflib import SequenceMatcher
 from typing import Any, Callable
 
 from agex.agent.datatypes import EditAction, FileAction
@@ -15,6 +16,45 @@ from agex.agent.events import BaseEvent, SystemNoteEvent
 from agex.fs.aware import AgentAwareFS
 from agex.llm.core import LLMResponse, ResponseParseError
 from agex.state.log import add_event_to_log
+
+
+def _find_similar_lines(
+    search: str, content: str, threshold: float = 0.6, context: int = 3
+) -> str | None:
+    """Find the most similar chunk in content and return it with context.
+
+    Returns a formatted string showing the best match, or None if nothing
+    is similar enough.
+    """
+    search_lines = search.splitlines()
+    content_lines = content.splitlines()
+    n = len(search_lines)
+
+    if not search_lines or not content_lines:
+        return None
+
+    best_ratio = 0.0
+    best_start = 0
+
+    for i in range(len(content_lines) - n + 1):
+        candidate = "\n".join(content_lines[i : i + n])
+        ratio = SequenceMatcher(None, search, candidate).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_start = i
+
+    if best_ratio < threshold:
+        return None
+
+    # Show the best match with context lines
+    ctx_start = max(0, best_start - context)
+    ctx_end = min(len(content_lines), best_start + n + context)
+    snippet_lines = []
+    for i in range(ctx_start, ctx_end):
+        marker = ">" if best_start <= i < best_start + n else " "
+        snippet_lines.append(f"{marker} {i + 1:4d} | {content_lines[i]}")
+
+    return "\n".join(snippet_lines)
 
 
 def _build_trailing_ws_pattern(search: str) -> re.Pattern:
@@ -230,6 +270,8 @@ def apply_optimistic_file_actions(
     # Use underlying FS directly to avoid 'user' source attribution
     target_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
 
+    applied: list[str] = []  # track successful actions for error context
+
     for action in llm_response.file_actions:
         if isinstance(action, FileAction):
             path, content, mode = action.path, action.content, action.mode
@@ -250,6 +292,7 @@ def apply_optimistic_file_actions(
                     add_event_to_log(exec_state, warning, on_event=on_event)
 
             target_fs.write(path, content.encode("utf-8"), mode=fs_mode)
+            applied.append(f"{'append' if fs_mode == 'a' else 'write'} {path}")
 
         elif isinstance(action, EditAction):
             path = action.path
@@ -285,14 +328,35 @@ def apply_optimistic_file_actions(
                     match_mode = "indent_flexible"
 
                     if count == 0:
-                        search_preview = (
-                            action.search[:100] + "..."
-                            if len(action.search) > 100
-                            else action.search
-                        )
-                        raise ResponseParseError(
-                            f"Search string not found in {path}:\n{search_preview}"
-                        )
+                        # Check if replacement is already in the file
+                        if action.content in existing_content:
+                            applied.append(f"edit {path} (already applied)")
+                            continue
+
+                        # Build actionable error with closest match
+                        parts = [f"Search string not found in {path}."]
+
+                        similar = _find_similar_lines(action.search, existing_content)
+                        if similar:
+                            parts.append(
+                                "Did you mean to match these lines?\n" + similar
+                            )
+                        else:
+                            search_preview = (
+                                action.search[:200] + "..."
+                                if len(action.search) > 200
+                                else action.search
+                            )
+                            parts.append(f"Search was:\n{search_preview}")
+
+                        if applied:
+                            parts.append(
+                                f"Note: {len(applied)} earlier action(s) already "
+                                f"applied successfully: {', '.join(applied)}. "
+                                f"Do not re-send those."
+                            )
+
+                        raise ResponseParseError("\n\n".join(parts))
 
             if count > 1 and not action.match_all:
                 raise ResponseParseError(
@@ -363,3 +427,4 @@ def apply_optimistic_file_actions(
 
             # Write back
             target_fs.write(path, new_content.encode("utf-8"), mode="w")
+            applied.append(f"edit {path}")

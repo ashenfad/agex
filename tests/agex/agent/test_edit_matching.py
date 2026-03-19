@@ -7,6 +7,7 @@ from agex.agent.loop.common import (
     _build_trailing_ws_pattern,
     _find_indent_flexible_match,
 )
+from agex.agent.loop.file_editing import _find_similar_lines
 
 
 class TestBuildTrailingWsPattern:
@@ -707,3 +708,86 @@ class TestApplyOptimisticFileActionsIntegration:
         assert lines[2] == "        if False:"
         assert lines[3] == "            x = 1"
         assert lines[4] == "            return x"
+
+    def test_already_applied_skipped(self, mock_fs, mock_agent, mock_llm_response):
+        """Edit where replacement already exists should be silently skipped."""
+        from agex.agent.loop.common import apply_optimistic_file_actions
+
+        mock_fs.files["test.py"] = b"def bar():\n    return 1"
+        response = mock_llm_response(
+            search="def foo():\n    pass",
+            content="def bar():\n    return 1",
+        )
+
+        # Should not raise — replacement is already in the file
+        apply_optimistic_file_actions(mock_agent, response, mock_fs, {})
+
+        # File should be unchanged
+        assert mock_fs.files["test.py"] == b"def bar():\n    return 1"
+
+    def test_error_shows_similar_lines(self, mock_fs, mock_agent, mock_llm_response):
+        """Error message should show most similar lines when match fails."""
+        from agex.agent.loop.common import apply_optimistic_file_actions
+        from agex.llm.core import ResponseParseError
+
+        mock_fs.files["test.py"] = b"def foo():\n    return 1\n    # done"
+        response = mock_llm_response(
+            search="def foo():\n    return 2\n    # done",  # "2" vs "1"
+            content="replacement",
+        )
+
+        with pytest.raises(ResponseParseError, match="Did you mean to match"):
+            apply_optimistic_file_actions(mock_agent, response, mock_fs, {})
+
+    def test_error_shows_batch_status(self, mock_fs, mock_agent):
+        """Error should report which earlier actions succeeded."""
+        from agex.agent.datatypes import EditAction
+        from agex.agent.loop.common import apply_optimistic_file_actions
+        from agex.llm.core import ResponseParseError
+
+        mock_fs.files["test.py"] = b"aaa\nbbb\nccc"
+
+        class MockResponse:
+            file_actions = [
+                EditAction(path="test.py", search="aaa", content="AAA"),
+                EditAction(path="test.py", search="nonexistent", content="XXX"),
+            ]
+
+        with pytest.raises(ResponseParseError, match="already applied successfully"):
+            apply_optimistic_file_actions(mock_agent, MockResponse(), mock_fs, {})
+
+        # First edit should have been applied
+        assert b"AAA" in mock_fs.files["test.py"]
+
+
+class TestFindSimilarLines:
+    """Tests for _find_similar_lines helper."""
+
+    def test_finds_similar_chunk(self):
+        content = "def foo():\n    return 1\n    # done"
+        search = "def foo():\n    return 2\n    # done"  # minor diff
+        result = _find_similar_lines(search, content)
+        assert result is not None
+        assert "return 1" in result
+
+    def test_returns_none_below_threshold(self):
+        content = "completely unrelated content here"
+        search = "def foo():\n    pass"
+        result = _find_similar_lines(search, content)
+        assert result is None
+
+    def test_shows_line_numbers(self):
+        content = "# header\n\ndef foo():\n    pass\n\n# footer"
+        search = "def foo():\n    pss"  # typo
+        result = _find_similar_lines(search, content)
+        assert result is not None
+        # Should contain line numbers
+        assert "|" in result
+
+    def test_marks_matching_lines(self):
+        content = "aaa\nbbb\nccc\nddd"
+        search = "bbb\nccc"
+        result = _find_similar_lines(search, content)
+        assert result is not None
+        # Matching lines should be marked with >
+        assert ">" in result
