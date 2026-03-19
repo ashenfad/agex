@@ -2,8 +2,14 @@
 Internal representation of objects used by the bridge and render layers.
 """
 
+import io
 from dataclasses import dataclass
 from typing import Any, Literal
+
+try:
+    from PIL import Image as _PILImage
+except ImportError:
+    _PILImage = None  # type: ignore[assignment, misc]
 
 
 class PrintAction(tuple):
@@ -14,10 +20,45 @@ class PrintAction(tuple):
 
 @dataclass
 class ImageAction:
-    """Represents an un-rendered image from a view_image() call."""
+    """Represents an un-rendered image from a view_image() call.
+
+    PIL Images are pickled as compressed PNG bytes to avoid storing
+    raw pixel data (~100x smaller).
+    """
 
     image: Any
     detail: Literal["low", "high"] = "high"
+
+    def __getstate__(self) -> dict:
+        state = {"detail": self.detail}
+        img = self.image
+        if _PILImage is not None and isinstance(img, _PILImage.Image):
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            state["_png_bytes"] = buf.getvalue()
+        else:
+            state["image"] = img
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.detail = state["detail"]
+        if "_png_bytes" in state:
+            from PIL import Image
+
+            self._png_bytes = state["_png_bytes"]
+            self.image = Image.open(io.BytesIO(self._png_bytes))
+        else:
+            self._png_bytes = None
+            self.image = state["image"]
+
+    def png_bytes(self) -> bytes:
+        """Return the PNG bytes for this image."""
+        if self._png_bytes is not None:
+            return self._png_bytes
+        buf = io.BytesIO()
+        self.image.save(buf, format="PNG")
+        self._png_bytes = buf.getvalue()
+        return self._png_bytes
 
     def _repr_html_(self) -> str:
         """Rich HTML representation for notebook display."""
