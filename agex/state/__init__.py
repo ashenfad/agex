@@ -62,7 +62,16 @@ def _agex_encoder(value: Any) -> bytes:
 
 def _agex_decoder(raw: bytes) -> Any:
     """Pickle decoder that raises UnpicklableVariableError on marker values."""
-    value = pickle.loads(raw)
+    try:
+        value = pickle.loads(raw)
+    except RecursionError:
+        raise UnpicklableVariableError(
+            UnpicklableMarker(
+                variable_name="<unknown>",
+                type_name="<recursive>",
+                original_exception="RecursionError during unpickling",
+            )
+        )
     if isinstance(value, UnpicklableMarker):
         raise UnpicklableVariableError(value)
     return value

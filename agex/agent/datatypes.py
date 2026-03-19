@@ -102,20 +102,66 @@ class EditAction:
 class UnpicklableVariableError(Exception):
     """Raised when attempting to access a variable that was not persisted due to being unpicklable."""
 
-    pass
+    def __init__(self, marker: "UnpicklableMarker | str"):
+        if isinstance(marker, str):
+            super().__init__(marker)
+            self.marker = None
+        else:
+            super().__init__(str(marker))
+            self.marker = marker
 
 
-@dataclass
 class UnpicklableMarker:
     """Marker for variables that couldn't be persisted due to being unpicklable.
 
-    This marker is stored in place of the actual unpicklable object. When an agent
-    tries to access this variable in a future turn, we raise an informative error.
+    Stored in the namespace in place of the original object. Any access
+    (attribute, call, iteration, comparison, etc.) raises a descriptive
+    UnpicklableVariableError so the agent knows what happened.
     """
 
-    variable_name: str
-    type_name: str
-    original_exception: str
+    def __init__(self, variable_name: str, type_name: str, original_exception: str):
+        # Use object.__setattr__ to bypass our __getattr__
+        object.__setattr__(self, "variable_name", variable_name)
+        object.__setattr__(self, "type_name", type_name)
+        object.__setattr__(self, "original_exception", original_exception)
+
+    def _raise(self):
+        raise UnpicklableVariableError(
+            f"Variable '{self.variable_name}' (type: {self.type_name}) was not "
+            f"persisted because it could not be saved between turns. "
+            f"Re-create it. Original error: {self.original_exception}"
+        )
+
+    def __getattr__(self, name):
+        # Allow pickle and introspection protocols to work normally
+        if name.startswith("__"):
+            raise AttributeError(name)
+        self._raise()
+
+    def __reduce__(self):
+        return (
+            UnpicklableMarker,
+            (self.variable_name, self.type_name, self.original_exception),
+        )
+
+    def __call__(self, *args, **kwargs):
+        self._raise()
+
+    def __iter__(self):
+        self._raise()
+
+    def __bool__(self):
+        self._raise()
+
+    def __str__(self):
+        return (
+            f"<UnpicklableMarker: '{self.variable_name}' ({self.type_name}) "
+            f"was not persisted — re-create it. "
+            f"Original error: {self.original_exception}>"
+        )
+
+    def __repr__(self):
+        return self.__str__()
 
 
 @dataclass
