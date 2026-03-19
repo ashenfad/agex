@@ -340,3 +340,39 @@ def test_namespaced_key_displays_correctly_in_error():
 
     error_msg = str(exc_info.value)
     assert "UnpicklableObject" in error_msg
+
+
+def test_namespace_hydration_places_marker_instead_of_dropping():
+    """Unpicklable variables should appear as markers in the namespace,
+    not be silently dropped (which would cause NameError)."""
+    from unittest.mock import MagicMock
+
+    from agex.eval.bridge.namespace import build_namespace
+
+    state = _make_versioned()
+
+    # Store a picklable and an unpicklable variable
+    state["good"] = 42
+    state["bad"] = UnpicklableObject(99)
+    state.commit()
+
+    # Build namespace as the agent loop would
+    agent = MagicMock()
+    agent.policy = MagicMock()
+    agent.policy.namespaces = []
+    namespace, pre_keys, _ = build_namespace(state, agent, "test_agent")
+
+    # Picklable variable is in the namespace normally
+    assert namespace["good"] == 42
+    assert "good" in pre_keys
+
+    # Unpicklable variable is in the namespace as a marker (not dropped)
+    assert "bad" in namespace
+    assert "bad" in pre_keys
+    assert isinstance(namespace["bad"], UnpicklableMarker)
+
+    # Accessing any attribute on the marker raises a descriptive error
+    with pytest.raises(UnpicklableVariableError) as exc_info:
+        namespace["bad"].data
+    assert "bad" in str(exc_info.value)
+    assert "Re-create it" in str(exc_info.value)

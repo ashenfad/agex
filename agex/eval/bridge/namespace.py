@@ -42,12 +42,26 @@ def build_namespace(
     pre_keys: set[str] = set()
 
     # 1. Hydrate from state (skip internal keys)
+    from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
+
     for key in state.keys():
         if not key.startswith("__"):
             try:
                 namespace[key] = state.get(key)
+            except UnpicklableVariableError as exc:
+                # Place marker in namespace so the agent gets a descriptive
+                # error on access rather than a bare NameError.
+                if exc.marker is not None:
+                    exc.marker.variable_name = key
+                    namespace[key] = exc.marker
+                else:
+                    namespace[key] = UnpicklableMarker(
+                        variable_name=key,
+                        type_name="<unknown>",
+                        original_exception=str(exc),
+                    )
             except Exception:
-                continue  # Skip unpicklable or corrupt values
+                continue  # Skip corrupt values
             pre_keys.add(key)
 
     # 2. Inject task control functions — module-level so they're picklable
