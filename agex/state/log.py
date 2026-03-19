@@ -78,9 +78,19 @@ def get_events_from_log(state) -> list[Event]:
     from agex.agent.datatypes import UnpicklableVariableError
 
     event_refs = state.get("__event_log__", [])
-    # It's possible for events to be added to the log but not yet committed
-    # to the state, so we need to handle missing keys gracefully.
-    # Also skip events that failed to serialize (e.g. coroutine objects).
+    if not event_refs:
+        return []
+
+    # Batch-fetch all event keys in a single storage transaction
+    # rather than individual gets (avoids N separate IDB roundtrips).
+    if hasattr(state, "get_many"):
+        try:
+            batch = state.get_many(*event_refs)
+            return [batch[ref] for ref in event_refs if ref in batch]
+        except (UnpicklableVariableError, Exception):
+            pass  # fall back to individual gets below
+
+    # Fallback: individual gets (for plain dicts or when batch fails)
     events = []
     for ref in event_refs:
         if ref not in state:
