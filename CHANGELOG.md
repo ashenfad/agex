@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.9.4] - 2026-03-19
+
+### Fixed
+- **Unpicklable variables surface as errors**: `UnpicklableMarker` now raises a descriptive `UnpicklableVariableError` on any access (attribute, call, comparison, iteration, indexing) instead of silently disappearing from the namespace as a `NameError`. Catches `RecursionError` during unpickling (e.g. pypdf objects).
+- **Actionable file edit errors**: When a search/replace edit fails, the error now shows the most similar lines in the file via `difflib.SequenceMatcher`, reports which earlier edits in a batch already succeeded, and skips edits where the replacement is already present.
+
 ## [0.9.3] - 2026-03-19
 
 ### Changed
