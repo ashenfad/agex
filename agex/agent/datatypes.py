@@ -153,6 +153,33 @@ class UnpicklableMarker:
     def __bool__(self):
         self._raise()
 
+    def __eq__(self, other):
+        self._raise()
+
+    def __ne__(self, other):
+        self._raise()
+
+    def __lt__(self, other):
+        self._raise()
+
+    def __le__(self, other):
+        self._raise()
+
+    def __gt__(self, other):
+        self._raise()
+
+    def __ge__(self, other):
+        self._raise()
+
+    def __len__(self):
+        self._raise()
+
+    def __getitem__(self, key):
+        self._raise()
+
+    def __contains__(self, item):
+        self._raise()
+
     def __str__(self):
         return (
             f"<UnpicklableMarker: '{self.variable_name}' ({self.type_name}) "
