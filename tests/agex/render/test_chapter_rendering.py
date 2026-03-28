@@ -54,8 +54,8 @@ class TestChapterEventMarkdownRendering:
             SuccessEvent(agent_name="t", result=42),
         ]
         messages = render_events_as_markdown(events)
-        # Consecutive same-role messages are collapsed:
-        # user(TaskStart) + user(Chapter) → 1 user, asst(Action) + asst(Success) → 1 asst
+        # TaskStart+Chapter collapsed into 1 user; Action is 1 assistant;
+        # SuccessEvent not rendered (intent already in ActionEvent code)
         assert len(messages) == 2
         assert messages[0]["role"] == "user"
         assert "Go" in messages[0]["content"]
@@ -95,8 +95,7 @@ class TestChapterEventXMLRendering:
             FailEvent(agent_name="t", message="oops"),
         ]
         messages = render_events_as_xml(events)
-        # Chapter(user), then Action+Fail(assistant) collapsed
+        # Chapter(user), Action(assistant); FailEvent not rendered
         assert len(messages) == 2
         assert messages[0]["role"] == "user"
         assert messages[1]["role"] == "assistant"
-        assert "oops" in messages[1]["content"]
