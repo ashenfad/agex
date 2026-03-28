@@ -180,7 +180,7 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
 
         elif isinstance(event, CancelledEvent):
             content = f"{prefix}<{TAG_CANCELLED}>Task '{event.task_name}' cancelled after {event.iterations_completed} iterations</{TAG_CANCELLED}>"
-            messages.append({"role": "assistant", "content": content})
+            messages.append({"role": "user", "content": content})
 
         elif isinstance(event, ChapterEvent):
             text, _ = render_chapter(event.name, event.message)
