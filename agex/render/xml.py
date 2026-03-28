@@ -170,7 +170,7 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
 
         elif isinstance(event, ChapterEvent):
             text, _ = render_chapter(event.name, event.message)
-            messages.append({"role": "user", "content": prefix + text})
+            messages.append({"role": "assistant", "content": prefix + text})
 
         elif isinstance(event, SystemNoteEvent):
             # Render system note as a user message (transient context)
