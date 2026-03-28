@@ -97,7 +97,8 @@ def get_events_from_log(state) -> list[Event]:
             continue
         try:
             events.append(state.get(ref))
-        except UnpicklableVariableError:
+        except (UnpicklableVariableError, Exception):
+            # Skip corrupted events rather than crashing the session
             continue
     return events
 
