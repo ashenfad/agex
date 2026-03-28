@@ -54,12 +54,13 @@ class TestChapterEventMarkdownRendering:
             SuccessEvent(agent_name="t", result=42),
         ]
         messages = render_events_as_markdown(events)
-        assert len(messages) == 4
-        # TaskStart -> user, Chapter -> user, Action -> assistant, Success -> assistant
+        # Consecutive same-role messages are collapsed:
+        # user(TaskStart) + user(Chapter) → 1 user, asst(Action) + asst(Success) → 1 asst
+        assert len(messages) == 2
         assert messages[0]["role"] == "user"
-        assert messages[1]["role"] == "user"
-        assert messages[2]["role"] == "assistant"
-        assert messages[3]["role"] == "assistant"
+        assert "Go" in messages[0]["content"]
+        assert "Early work" in messages[0]["content"]
+        assert messages[1]["role"] == "assistant"
 
     def test_multiple_chapters(self):
         events = [
@@ -67,9 +68,10 @@ class TestChapterEventMarkdownRendering:
             ChapterEvent(agent_name="t", name="Phase 2", message="Analysis"),
         ]
         messages = render_events_as_markdown(events)
-        assert len(messages) == 2
+        # Two consecutive user messages collapsed into one
+        assert len(messages) == 1
         assert "Phase 1" in messages[0]["content"]
-        assert "Phase 2" in messages[1]["content"]
+        assert "Phase 2" in messages[0]["content"]
 
 
 class TestChapterEventXMLRendering:
@@ -93,7 +95,8 @@ class TestChapterEventXMLRendering:
             FailEvent(agent_name="t", message="oops"),
         ]
         messages = render_events_as_xml(events)
-        assert len(messages) == 3
+        # Chapter(user), then Action+Fail(assistant) collapsed
+        assert len(messages) == 2
         assert messages[0]["role"] == "user"
         assert messages[1]["role"] == "assistant"
-        assert messages[2]["role"] == "assistant"
+        assert "oops" in messages[1]["content"]

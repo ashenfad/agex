@@ -520,3 +520,36 @@ def render_output_parts_full(
             current_cost += marker_cost
 
     return final_parts, current_cost
+
+
+# ============================================================================
+# Message collapsing
+# ============================================================================
+
+
+def _merge_content(a, b):
+    """Merge two message content values (str or list-of-content-part dicts)."""
+    if isinstance(a, str) and isinstance(b, str):
+        return a + "\n" + b
+    # Normalize to list form then concatenate
+    if isinstance(a, str):
+        a = [{"type": "text", "text": a}]
+    if isinstance(b, str):
+        b = [{"type": "text", "text": b}]
+    return a + b
+
+
+def collapse_same_role_messages(messages: list[dict]) -> list[dict]:
+    """Merge consecutive same-role messages into single messages."""
+    if not messages:
+        return []
+    collapsed: list[dict] = []
+    for msg in messages:
+        if collapsed and collapsed[-1]["role"] == msg["role"]:
+            collapsed[-1] = {
+                "role": msg["role"],
+                "content": _merge_content(collapsed[-1]["content"], msg["content"]),
+            }
+        else:
+            collapsed.append(dict(msg))
+    return collapsed
