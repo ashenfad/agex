@@ -20,6 +20,7 @@ from sandtrap.wrappers import ModuleRef
 
 from agex.agent.datatypes import TaskContinue, TaskSuccess
 from agex.agent.events import OutputEvent
+from agex.eval.objects import ImageAction
 from agex.state.log import add_event_to_log
 
 
@@ -66,8 +67,30 @@ def handle_result(
             del state[key]
 
     # 3. Convert print snapshots into OutputEvents
+    #    Intercept __AGEX_IMAGE__: prefixed prints and convert to ImageAction
+    _IMG_PREFIX = "__AGEX_IMAGE__:"
     for args in result.prints:
-        event = OutputEvent(agent_name=agent_name, parts=list(args))
+        parts = list(args)
+        if (
+            len(parts) == 1
+            and isinstance(parts[0], str)
+            and parts[0].startswith(_IMG_PREFIX)
+        ):
+            try:
+                import base64
+                import io
+
+                from PIL import Image
+
+                b64 = parts[0][len(_IMG_PREFIX) :]
+                img = Image.open(io.BytesIO(base64.b64decode(b64)))
+                event = OutputEvent(
+                    agent_name=agent_name, parts=[ImageAction(image=img)]
+                )
+            except Exception:
+                event = OutputEvent(agent_name=agent_name, parts=parts)
+        else:
+            event = OutputEvent(agent_name=agent_name, parts=parts)
         add_event_to_log(state, event, on_event=on_event)
 
     # 4. Convert __outputs__ entries (e.g. view_image) into OutputEvents
