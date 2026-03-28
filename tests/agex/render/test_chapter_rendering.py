@@ -26,7 +26,7 @@ class TestRenderChapter:
 
 
 class TestChapterEventMarkdownRendering:
-    def test_chapter_rendered_as_user_message(self):
+    def test_chapter_rendered_as_assistant_message(self):
         events = [
             ChapterEvent(
                 agent_name="t",
@@ -36,7 +36,7 @@ class TestChapterEventMarkdownRendering:
         ]
         messages = render_events_as_markdown(events)
         assert len(messages) == 1
-        assert messages[0]["role"] == "user"
+        assert messages[0]["role"] == "assistant"
         assert "Exploration" in messages[0]["content"]
         assert "Found stuff" in messages[0]["content"]
 
@@ -54,13 +54,13 @@ class TestChapterEventMarkdownRendering:
             SuccessEvent(agent_name="t", result=42),
         ]
         messages = render_events_as_markdown(events)
-        # TaskStart+Chapter collapsed into 1 user; Action is 1 assistant;
-        # SuccessEvent not rendered (intent already in ActionEvent code)
+        # TaskStart(user), Chapter+Action collapsed(assistant);
+        # SuccessEvent not rendered
         assert len(messages) == 2
         assert messages[0]["role"] == "user"
         assert "Go" in messages[0]["content"]
-        assert "Early work" in messages[0]["content"]
         assert messages[1]["role"] == "assistant"
+        assert "Early work" in messages[1]["content"]
 
     def test_multiple_chapters(self):
         events = [
@@ -68,14 +68,15 @@ class TestChapterEventMarkdownRendering:
             ChapterEvent(agent_name="t", name="Phase 2", message="Analysis"),
         ]
         messages = render_events_as_markdown(events)
-        # Two consecutive user messages collapsed into one
+        # Two consecutive assistant messages collapsed into one
         assert len(messages) == 1
+        assert messages[0]["role"] == "assistant"
         assert "Phase 1" in messages[0]["content"]
         assert "Phase 2" in messages[0]["content"]
 
 
 class TestChapterEventXMLRendering:
-    def test_chapter_rendered_as_user_message(self):
+    def test_chapter_rendered_as_assistant_message(self):
         events = [
             ChapterEvent(
                 agent_name="t",
@@ -85,7 +86,7 @@ class TestChapterEventXMLRendering:
         ]
         messages = render_events_as_xml(events)
         assert len(messages) == 1
-        assert messages[0]["role"] == "user"
+        assert messages[0]["role"] == "assistant"
         assert "Exploration" in messages[0]["content"]
 
     def test_chapter_in_xml_sequence(self):
@@ -95,7 +96,7 @@ class TestChapterEventXMLRendering:
             FailEvent(agent_name="t", message="oops"),
         ]
         messages = render_events_as_xml(events)
-        # Chapter(user), Action(assistant); FailEvent not rendered
-        assert len(messages) == 2
-        assert messages[0]["role"] == "user"
-        assert messages[1]["role"] == "assistant"
+        # Chapter+Action collapsed(assistant); FailEvent not rendered
+        assert len(messages) == 1
+        assert messages[0]["role"] == "assistant"
+        assert "Setup" in messages[0]["content"]
