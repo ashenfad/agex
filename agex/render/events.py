@@ -21,6 +21,7 @@ from agex.agent.events import (
 from agex.llm.core import ContentPart, ImagePart, TextPart
 from agex.render.primitives import (
     HI_DETAIL_BUDGET,
+    collapse_same_role_messages,
     render_action_markdown,
     render_chapter,
     render_fail,
@@ -131,7 +132,7 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
             )
             messages.append({"role": "user", "content": content})
 
-    return messages
+    return collapse_same_role_messages(messages)
 
 
 def _content_part_to_dict(part: ContentPart) -> dict:

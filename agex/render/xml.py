@@ -41,6 +41,7 @@ from agex.llm.xml import (
 )
 from agex.render.primitives import (
     HI_DETAIL_BUDGET,
+    collapse_same_role_messages,
     render_chapter,
     render_output_parts_full,
     render_task_start,
@@ -201,7 +202,7 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             content = f"{prefix}<FILE_CHANGES source='{event.file_source}'>{'; '.join(parts)}</FILE_CHANGES>"
             messages.append({"role": "user", "content": content})
 
-    return messages
+    return collapse_same_role_messages(messages)
 
 
 def _content_part_to_dict(part: ContentPart) -> dict:
