@@ -85,27 +85,17 @@ class TestRenderEventsAsXML:
         assert messages[0]["role"] == "user"
         assert "6" in messages[0]["content"]
 
-    def test_success_event(self):
-        """Test rendering SuccessEvent with XML tag."""
+    def test_success_event_not_rendered(self):
+        """SuccessEvent is not rendered — intent is already in ActionEvent code."""
         events = [SuccessEvent(agent_name="test_agent", result=6)]
         messages = render_events_as_xml(events)
+        assert len(messages) == 0
 
-        assert len(messages) == 1
-        assert messages[0]["role"] == "assistant"
-        assert "<TASK_SUCCESS>" in messages[0]["content"]
-        assert "</TASK_SUCCESS>" in messages[0]["content"]
-        assert "6" in messages[0]["content"]
-
-    def test_fail_event(self):
-        """Test rendering FailEvent with XML tag."""
+    def test_fail_event_not_rendered(self):
+        """FailEvent is not rendered — intent is already in ActionEvent code."""
         events = [FailEvent(agent_name="test_agent", message="Invalid input")]
         messages = render_events_as_xml(events)
-
-        assert len(messages) == 1
-        assert messages[0]["role"] == "assistant"
-        assert "<TASK_FAIL>" in messages[0]["content"]
-        assert "</TASK_FAIL>" in messages[0]["content"]
-        assert "Invalid input" in messages[0]["content"]
+        assert len(messages) == 0
 
     def test_multiple_events(self):
         """Test rendering multiple events in sequence."""
@@ -127,11 +117,11 @@ class TestRenderEventsAsXML:
         ]
         messages = render_events_as_xml(events)
 
-        assert len(messages) == 4
+        # SuccessEvent is not rendered, so: user, assistant, user
+        assert len(messages) == 3
         assert messages[0]["role"] == "user"
         assert messages[1]["role"] == "assistant"
         assert messages[2]["role"] == "user"
-        assert messages[3]["role"] == "assistant"
 
     def test_system_note_event(self):
         """Test rendering SystemNoteEvent (regression test)."""

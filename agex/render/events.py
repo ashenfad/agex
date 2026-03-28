@@ -24,9 +24,7 @@ from agex.render.primitives import (
     collapse_same_role_messages,
     render_action_markdown,
     render_chapter,
-    render_fail,
     render_output_parts_full,
-    render_success,
     render_task_start,
 )
 
@@ -100,15 +98,11 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
                     )
                     messages.append({"role": "user", "content": text})
 
-        elif isinstance(event, SuccessEvent):
-            # Render success marker with appropriate budget
-            text, _ = render_success(event.result, budget=budget)
-            messages.append({"role": "assistant", "content": prefix + text})
-
-        elif isinstance(event, FailEvent):
-            # Render fail marker using primitives
-            text, _ = render_fail(event.message)
-            messages.append({"role": "assistant", "content": prefix + text})
+        elif isinstance(event, (SuccessEvent, FailEvent)):
+            # Terminal events are not rendered — the LLM already expressed
+            # its intent via task_success/task_fail in the preceding
+            # ActionEvent's code.
+            pass
 
         elif isinstance(event, ChapterEvent):
             text, _ = render_chapter(event.name, event.message)

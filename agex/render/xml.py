@@ -24,9 +24,7 @@ from agex.agent.events import (
 from agex.llm.core import ContentPart, ImagePart, TextPart
 from agex.llm.xml import (
     TAG_CANCELLED,
-    TAG_CLARIFY,
     TAG_EDIT,
-    TAG_FAIL,
     TAG_FILE,
     TAG_INSERT_AFTER,
     TAG_INSERT_BEFORE,
@@ -34,7 +32,6 @@ from agex.llm.xml import (
     TAG_PYTHON,
     TAG_REPLACE,
     TAG_SEARCH,
-    TAG_SUCCESS,
     TAG_TERMINAL,
     TAG_THINKING,
     TAG_TITLE,
@@ -46,7 +43,6 @@ from agex.render.primitives import (
     render_output_parts_full,
     render_task_start,
 )
-from agex.render.value import render_value
 
 
 def render_events_as_xml(events: List[Event]) -> List[dict]:
@@ -162,21 +158,11 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                     content = f"{prefix}<{TAG_OBSERVATION}>{text}</{TAG_OBSERVATION}>"
                     messages.append({"role": "user", "content": content})
 
-        elif isinstance(event, SuccessEvent):
-            # Render result and wrap in TASK_SUCCESS tag
-            estimated_chars = budget * 4
-            rendered = render_value(event.result, budget=estimated_chars)
-
-            content = f"{prefix}<{TAG_SUCCESS}>{rendered}</{TAG_SUCCESS}>"
-            messages.append({"role": "assistant", "content": content})
-
-        elif isinstance(event, FailEvent):
-            content = f"{prefix}<{TAG_FAIL}>{event.message}</{TAG_FAIL}>"
-            messages.append({"role": "assistant", "content": content})
-
-        elif isinstance(event, ClarifyEvent):
-            content = f"{prefix}<{TAG_CLARIFY}>{event.message}</{TAG_CLARIFY}>"
-            messages.append({"role": "assistant", "content": content})
+        elif isinstance(event, (SuccessEvent, FailEvent, ClarifyEvent)):
+            # Terminal events are not rendered — the LLM already expressed
+            # its intent via task_success/task_fail/task_clarify in the
+            # preceding ActionEvent's code.
+            pass
 
         elif isinstance(event, CancelledEvent):
             content = f"{prefix}<{TAG_CANCELLED}>Task '{event.task_name}' cancelled after {event.iterations_completed} iterations</{TAG_CANCELLED}>"
