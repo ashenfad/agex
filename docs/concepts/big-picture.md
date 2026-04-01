@@ -170,14 +170,19 @@ A "Workspace Recap" automatically provides the agent with an inventory of its se
 
 ### 6. Skills
 
-While registration tells agents *what* they can use, **skills** tell agents *how* to use it effectively. Register skill files via `agent.skill()` and they are mounted read-only at `/skills/`, listed in the system message, and read on-demand — keeping the base prompt concise while making expert knowledge available when needed.
+While registration tells agents *what* they can use, **skills** tell agents *how* to use it effectively. Register skill files or directories via `agent.skill()` and they are mounted read-only at `/skills/`, listed in the system message, and read on-demand — keeping the base prompt concise while making expert knowledge available when needed.
 
 ```python
 from importlib.resources import files
+
+# Single file skill
 agent.skill(files("calgebra") / "skills" / "calgebra" / "SKILL.md")
+
+# Directory skill — SKILL.md + sibling docs mounted together
+agent.skill(files("my_dsl") / "skills" / "my-dsl")
 ```
 
-Libraries can ship skill files alongside their code, so agents automatically gain domain expertise when a library is registered. See the [FileSystem docs](../api/fs.md#skills) for the full API.
+Libraries can ship skill files alongside their code, so agents automatically gain domain expertise when a library is registered. See the [Registration docs](../api/registration.md#skill---skill-registration) for the full API.
 
 ## The Result
 
