@@ -32,6 +32,7 @@ from agex.llm.xml import (
     TAG_PYTHON,
     TAG_REPLACE,
     TAG_SEARCH,
+    TAG_SUCCESS,
     TAG_TERMINAL,
     TAG_THINKING,
     TAG_TITLE,
@@ -43,6 +44,7 @@ from agex.render.primitives import (
     render_output_parts_full,
     render_task_start,
 )
+from agex.render.value import render_value
 
 
 def render_events_as_xml(events: List[Event]) -> List[dict]:
@@ -158,10 +160,18 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                     content = f"{prefix}<{TAG_OBSERVATION}>{text}</{TAG_OBSERVATION}>"
                     messages.append({"role": "user", "content": content})
 
-        elif isinstance(event, (SuccessEvent, FailEvent, ClarifyEvent)):
-            # Terminal events are not rendered — the LLM already expressed
-            # its intent via task_success/task_fail/task_clarify in the
-            # preceding ActionEvent's code.
+        elif isinstance(event, SuccessEvent):
+            # Render result repr — the value may not be apparent from the
+            # preceding task_success(var) call in the ActionEvent.
+            estimated_chars = budget * 4
+            rendered = render_value(event.result, budget=estimated_chars)
+            content = f"{prefix}<{TAG_SUCCESS}>{rendered}</{TAG_SUCCESS}>"
+            messages.append({"role": "assistant", "content": content})
+
+        elif isinstance(event, (FailEvent, ClarifyEvent)):
+            # Not rendered — the LLM already expressed its intent via
+            # task_fail/task_clarify string literals in the preceding
+            # ActionEvent's code.
             pass
 
         elif isinstance(event, CancelledEvent):

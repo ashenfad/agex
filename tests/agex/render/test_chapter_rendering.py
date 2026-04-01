@@ -54,13 +54,13 @@ class TestChapterEventMarkdownRendering:
             SuccessEvent(agent_name="t", result=42),
         ]
         messages = render_events_as_markdown(events)
-        # TaskStart(user), Chapter+Action collapsed(assistant);
-        # SuccessEvent not rendered
+        # TaskStart(user), Chapter+Action+Success collapsed(assistant)
         assert len(messages) == 2
         assert messages[0]["role"] == "user"
         assert "Go" in messages[0]["content"]
         assert messages[1]["role"] == "assistant"
         assert "Early work" in messages[1]["content"]
+        assert "42" in messages[1]["content"]
 
     def test_multiple_chapters(self):
         events = [
