@@ -27,6 +27,7 @@ from agex.render.primitives import (
     render_action_markdown,
     render_chapter,
     render_output_parts_full,
+    render_success,
     render_task_start,
 )
 
@@ -100,10 +101,16 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
                     )
                     messages.append({"role": "user", "content": text})
 
-        elif isinstance(event, (SuccessEvent, FailEvent, ClarifyEvent)):
-            # Terminal events are not rendered — the LLM already expressed
-            # its intent via task_success/task_fail/task_clarify in the
-            # preceding ActionEvent's code.
+        elif isinstance(event, SuccessEvent):
+            # Render success result repr — the value may not be apparent
+            # from the preceding task_success(var) call in the ActionEvent.
+            text, _ = render_success(event.result, budget=budget)
+            messages.append({"role": "assistant", "content": prefix + text})
+
+        elif isinstance(event, (FailEvent, ClarifyEvent)):
+            # Not rendered — the LLM already expressed its intent via
+            # task_fail/task_clarify string literals in the preceding
+            # ActionEvent's code.
             pass
 
         elif isinstance(event, CancelledEvent):
