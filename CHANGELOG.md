@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.9.6] - 2026-04-01
+
+### Fixed
+- **Instance `network_access` / `host_fs_access`**: These parameters were silently dropped when registering live object instances via `agent.module(obj, name=..., network_access=True)`. Now correctly propagated to the namespace.
+- **SuccessEvent rendering restored**: `SuccessEvent` is rendered again (as a user-role observation) so agents can see the repr of programmatically constructed results like DataFrames. `FailEvent` and `ClarifyEvent` remain skipped since they contain literal strings already visible in the preceding code.
+- **SuccessEvent token budget**: `render_value` now receives `token_budget` when rendering task results, enabling iterative token-counted DataFrame display (matching how `OutputEvent` already handled it).
+
+### Changed
+- **sandtrap >=0.1.11**: Fixes `ContextVar` propagation to `ThreadPoolExecutor` threads, so `network_access=True` works correctly in libraries that use thread pools.
+
 ## [0.9.5] - 2026-04-01
 
 ### Added
@@ -19,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Resilient deserialization**: State decoder catches all unpickling exceptions (not just `RecursionError`), and `get_events_from_log` skips corrupted events instead of crashing.
 
 ### Changed
-- **Terminal events not rendered**: `SuccessEvent`, `FailEvent`, and `ClarifyEvent` are no longer sent to the LLM — the agent already expressed its intent via `task_success()`/`task_fail()`/`task_clarify()` in the preceding `ActionEvent`.
+- **Terminal events not rendered**: `FailEvent` and `ClarifyEvent` are no longer sent to the LLM — the agent already expressed its intent via `task_fail()`/`task_clarify()` string literals in the preceding `ActionEvent`.
 - **Top-level PIL import**: `PIL.Image`, `base64`, and `io` are now imported at module level in `result.py` with graceful fallback when PIL is unavailable.
 
 ## [0.9.4] - 2026-03-19
