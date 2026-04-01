@@ -315,7 +315,9 @@ agent.module(db, name="db", include=["execute", "commit", "close"])
 
 ## `.skill()` - Skill Registration
 
-Register documentation files that teach agents how to use specific libraries or accomplish specific tasks. Skills are mounted read-only at `/skills/<name>/SKILL.md` and listed in the agent's system message.
+Register documentation that teaches agents how to use specific libraries or accomplish specific tasks. Skills are mounted read-only at `/skills/<name>/` and listed in the agent's system message.
+
+A skill can be a single file or a directory containing `SKILL.md` and any number of sibling documents (e.g. type references, examples, tutorials).
 
 ```python
 agent.skill(source: bytes | Path-like)
@@ -325,18 +327,18 @@ agent.skill(source: bytes | Path-like)
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `source` | `bytes \| Path-like` | Skill content as raw bytes, or a `Path` / `importlib.resources` Traversable to read from |
+| `source` | `bytes \| Path-like` | Skill content as raw bytes, a file path (`Path` / `importlib.resources` Traversable), or a directory path containing `SKILL.md` |
 
 ### How It Works
 
-1. **Registration**: Call `agent.skill()` one or more times to collect skill files
+1. **Registration**: Call `agent.skill()` one or more times to collect skills
 2. **Mounting**: At task execution, skills are mounted as a read-only overlay at `/skills/` — no VFS writes, no state commits
-3. **System Message**: Skill names and descriptions (from YAML frontmatter) are listed in the system message
-4. **On-Demand**: The agent reads the full skill content via `cat /skills/<name>/SKILL.md` only when needed
+3. **System Message**: Skill names and descriptions (from YAML frontmatter in `SKILL.md`) are listed in the system message
+4. **On-Demand**: The agent reads skill content via `cat /skills/<name>/SKILL.md` (or any sibling file) only when needed
 
 ### SKILL.md Format
 
-Each skill is a Markdown file with optional YAML frontmatter:
+Each skill requires a `SKILL.md` file with optional YAML frontmatter:
 
 ```markdown
 ---
@@ -363,11 +365,12 @@ from agex import Agent
 
 agent = Agent()
 
-# From a package resource (recommended for libraries)
-agent.skill(files("calgebra") / "skills" / "calgebra" / "SKILL.md")
-agent.skill(files("calgebra") / "skills" / "gcal" / "SKILL.md")
+# Directory skill — SKILL.md + sibling docs all mounted together
+agent.skill(files("my_dsl") / "skills" / "my-dsl")
+agent.skill(Path("./skills/my-dsl/"))
 
-# From a local file
+# Single file (mounted as SKILL.md)
+agent.skill(files("calgebra") / "skills" / "calgebra" / "SKILL.md")
 agent.skill(Path("./my-custom-skill.md"))
 
 # From raw bytes (useful for dynamic/generated skills)
@@ -381,6 +384,17 @@ description: How to use my-tool effectively
 Call `my_tool.run()` with a config dict...
 """)
 ```
+
+When registering a directory, all files are mounted under `/skills/<name>/`. For example, a directory containing `SKILL.md`, `types.md`, and `examples.md` becomes:
+
+```
+/skills/my-dsl/
+├── SKILL.md
+├── types.md
+└── examples.md
+```
+
+The directory must contain a `SKILL.md` at its root. Dotfiles and dotdirectories (e.g. `.git`, `.DS_Store`) are automatically excluded.
 
 ### Pairing Skills with Low-Visibility Modules
 
