@@ -86,11 +86,11 @@ class TestRenderEventsAsXML:
         assert "6" in messages[0]["content"]
 
     def test_success_event(self):
-        """SuccessEvent renders the result repr in a TASK_SUCCESS tag."""
+        """SuccessEvent renders the result repr as a user observation."""
         events = [SuccessEvent(agent_name="test_agent", result=6)]
         messages = render_events_as_xml(events)
         assert len(messages) == 1
-        assert messages[0]["role"] == "assistant"
+        assert messages[0]["role"] == "user"
         assert "<TASK_SUCCESS>" in messages[0]["content"]
         assert "6" in messages[0]["content"]
 
@@ -120,13 +120,12 @@ class TestRenderEventsAsXML:
         ]
         messages = render_events_as_xml(events)
 
-        # user(TaskStart), assistant(Action), user(Output), assistant(Success)
-        assert len(messages) == 4
+        # user(TaskStart), assistant(Action), user(Output+Success collapsed)
+        assert len(messages) == 3
         assert messages[0]["role"] == "user"
         assert messages[1]["role"] == "assistant"
         assert messages[2]["role"] == "user"
-        assert messages[3]["role"] == "assistant"
-        assert "<TASK_SUCCESS>" in messages[3]["content"]
+        assert "<TASK_SUCCESS>" in messages[2]["content"]
 
     def test_system_note_event(self):
         """Test rendering SystemNoteEvent (regression test)."""

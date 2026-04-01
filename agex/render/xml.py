@@ -161,12 +161,12 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                     messages.append({"role": "user", "content": content})
 
         elif isinstance(event, SuccessEvent):
-            # Render result repr — the value may not be apparent from the
-            # preceding task_success(var) call in the ActionEvent.
+            # Render result repr as observation — the value may not be
+            # apparent from the preceding task_success(var) call.
             estimated_chars = budget * 4
             rendered = render_value(event.result, budget=estimated_chars)
             content = f"{prefix}<{TAG_SUCCESS}>{rendered}</{TAG_SUCCESS}>"
-            messages.append({"role": "assistant", "content": content})
+            messages.append({"role": "user", "content": content})
 
         elif isinstance(event, (FailEvent, ClarifyEvent)):
             # Not rendered — the LLM already expressed its intent via
