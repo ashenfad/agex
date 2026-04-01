@@ -360,7 +360,7 @@ def render_success(result: Any, budget: int = HI_DETAIL_BUDGET) -> tuple[str, in
         (success_text, token_count)
     """
     estimated_chars = budget * 4  # ~4 chars per token
-    rendered = render_value(result, budget=estimated_chars)
+    rendered = render_value(result, budget=estimated_chars, token_budget=budget)
     text = f"✅ Task completed: {rendered}"
     tokens = count_tokens(text)
     return text, tokens

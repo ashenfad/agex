@@ -164,7 +164,9 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             # Render result repr as observation — the value may not be
             # apparent from the preceding task_success(var) call.
             estimated_chars = budget * 4
-            rendered = render_value(event.result, budget=estimated_chars)
+            rendered = render_value(
+                event.result, budget=estimated_chars, token_budget=budget
+            )
             content = f"{prefix}<{TAG_SUCCESS}>{rendered}</{TAG_SUCCESS}>"
             messages.append({"role": "user", "content": content})
 
