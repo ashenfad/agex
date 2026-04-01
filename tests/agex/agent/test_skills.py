@@ -1,5 +1,6 @@
 """Tests for skill registration and discovery in the system message."""
 
+import tempfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -201,3 +202,155 @@ def test_skill_rejects_string():
         assert False, "Should have raised TypeError"
     except TypeError:
         pass
+
+
+# --- Directory-based skill tests ---
+
+
+def _make_skill_dir(tmp_path: Path, name: str = "my-dsl") -> Path:
+    """Helper to create a skill directory with SKILL.md and sibling files."""
+    skill_dir = tmp_path / name
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_bytes(
+        b"---\nname: my-dsl\ndescription: A DSL reference\n---\n\n# My DSL\n\nStart here.\n"
+    )
+    (skill_dir / "types.md").write_bytes(b"# Types\n\nType reference docs.\n")
+    (skill_dir / "examples.md").write_bytes(b"# Examples\n\nSome examples.\n")
+    return skill_dir
+
+
+def test_skill_from_directory():
+    """Registering a directory mounts all files and shows skill in system message."""
+    agent = _make_agent()
+    with tempfile.TemporaryDirectory() as tmp:
+        skill_dir = _make_skill_dir(Path(tmp))
+        agent.skill(skill_dir)
+
+    msg = agent._build_system_message()
+    assert "my-dsl: A DSL reference" in msg
+
+
+def test_skill_directory_missing_skill_md():
+    """Directory without SKILL.md raises ValueError."""
+    agent = _make_agent()
+    with tempfile.TemporaryDirectory() as tmp:
+        skill_dir = Path(tmp) / "bad-skill"
+        skill_dir.mkdir()
+        (skill_dir / "other.md").write_bytes(b"# Not a SKILL.md\n")
+        try:
+            agent.skill(skill_dir)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "SKILL.md" in str(e)
+
+
+def test_skill_directory_nested_files():
+    """Nested subdirectories are preserved in the VFS."""
+    agent = _make_agent()
+    with tempfile.TemporaryDirectory() as tmp:
+        skill_dir = Path(tmp) / "nested-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes(
+            b"---\nname: nested\ndescription: Has subdirs\n---\n"
+        )
+        sub = skill_dir / "reference"
+        sub.mkdir()
+        (sub / "operators.md").write_bytes(b"# Operators\n")
+        agent.skill(skill_dir)
+
+    # Verify via VFS creation
+    from agex.fs.skills_vfs import create_skills_fs
+
+    vfs = create_skills_fs(agent._skills)
+    assert vfs is not None
+    # The nested file should be accessible
+    assert vfs.read("nested/reference/operators.md") == b"# Operators\n"
+    assert vfs.read("nested/SKILL.md").startswith(b"---")
+
+
+def test_skill_directory_skips_dotfiles():
+    """Dotfiles and dotdirectories are excluded from directory skills."""
+    agent = _make_agent()
+    with tempfile.TemporaryDirectory() as tmp:
+        skill_dir = Path(tmp) / "dottest"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes(b"---\nname: dottest\n---\n")
+        (skill_dir / ".hidden").write_bytes(b"secret")
+        dot_dir = skill_dir / ".git"
+        dot_dir.mkdir()
+        (dot_dir / "config").write_bytes(b"gitconfig")
+        agent.skill(skill_dir)
+
+    from agex.fs.skills_vfs import create_skills_fs
+
+    vfs = create_skills_fs(agent._skills)
+    assert vfs is not None
+    assert vfs.read("dottest/SKILL.md").startswith(b"---")
+    try:
+        vfs.read("dottest/.hidden")
+        assert False, "Should not find dotfile"
+    except (FileNotFoundError, OSError):
+        pass
+    try:
+        vfs.read("dottest/.git/config")
+        assert False, "Should not find dotdir contents"
+    except (FileNotFoundError, OSError):
+        pass
+
+
+def test_skill_directory_name_from_frontmatter():
+    """Frontmatter name takes precedence over directory name."""
+    agent = _make_agent()
+    with tempfile.TemporaryDirectory() as tmp:
+        skill_dir = Path(tmp) / "dir-name"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes(
+            b"---\nname: frontmatter-name\ndescription: FM wins\n---\n"
+        )
+        agent.skill(skill_dir)
+
+    msg = agent._build_system_message()
+    assert "frontmatter-name: FM wins" in msg
+    assert "dir-name" not in msg
+
+
+def test_skill_directory_name_fallback_to_dirname():
+    """Without frontmatter name, directory name is used."""
+    agent = _make_agent()
+    with tempfile.TemporaryDirectory() as tmp:
+        skill_dir = Path(tmp) / "my-fallback-dir"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes(b"# No frontmatter\n")
+        agent.skill(skill_dir)
+
+    msg = agent._build_system_message()
+    assert "- my-fallback-dir" in msg
+
+
+def test_skill_directory_siblings_readable_in_task():
+    """Agent can read sibling files from a directory skill during task execution."""
+    llm = Dummy(
+        responses=[
+            LLMResponse(
+                thinking="Read the sibling file.",
+                code=(
+                    'with open("/skills/my-dsl/types.md") as f:\n'
+                    "    content = f.read()\n"
+                    "task_success(content)"
+                ),
+            )
+        ]
+    )
+    agent = Agent(name="skill_dir_e2e", llm=llm)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        skill_dir = _make_skill_dir(Path(tmp))
+        agent.skill(skill_dir)
+
+    @agent.task
+    def read_sibling() -> str:  # type: ignore[return-value]
+        """Read a sibling file from the skill directory."""
+        pass
+
+    result = read_sibling()
+    assert "Type reference docs." in result
