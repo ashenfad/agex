@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.9.5] - 2026-04-01
+
+### Added
+- **Directory-based skills**: `agent.skill()` now accepts directories (Path or importlib Traversable) containing `SKILL.md` and sibling documents. All files are mounted together under `/skills/<name>/`. Dotfiles and dotdirectories are automatically excluded.
+- **Image interception**: Base64-encoded images printed via `__AGEX_IMAGE__:` prefix are automatically converted to `ImageAction` objects.
+- **Message collapsing**: Consecutive same-role messages in the LLM conversation are merged, producing cleaner conversation histories.
+
+### Fixed
+- **Renderer consistency**: `CancelledEvent` and `ClarifyEvent` are now handled identically across markdown and XML renderers. `CancelledEvent` renders as a user message; `ClarifyEvent` is skipped (intent already in preceding code).
+- **ChapterEvent role**: Chapters now render as assistant messages (previously user), correctly reflecting that they summarize the agent's prior work.
+- **Resilient deserialization**: State decoder catches all unpickling exceptions (not just `RecursionError`), and `get_events_from_log` skips corrupted events instead of crashing.
+
+### Changed
+- **Terminal events not rendered**: `SuccessEvent`, `FailEvent`, and `ClarifyEvent` are no longer sent to the LLM — the agent already expressed its intent via `task_success()`/`task_fail()`/`task_clarify()` in the preceding `ActionEvent`.
+- **Top-level PIL import**: `PIL.Image`, `base64`, and `io` are now imported at module level in `result.py` with graceful fallback when PIL is unavailable.
+
 ## [0.9.4] - 2026-03-19
 
 ### Fixed
