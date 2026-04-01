@@ -154,7 +154,7 @@ def mount_chapters_overlay(fs: Any, state: Any) -> None:
         fs.mount("/chapters", chapters_overlay)
 
 
-def mount_skills_overlay(fs: Any, skills: list[tuple[str, bytes]]) -> None:
+def mount_skills_overlay(fs: Any, skills: list[tuple[str, dict[str, bytes]]]) -> None:
     """Mount registered skills as a read-only /skills overlay on a MountFS.
 
     No-op if fs is not a MountFS or if no skills are registered.

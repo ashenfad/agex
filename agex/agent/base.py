@@ -143,8 +143,8 @@ class BaseAgent:
         )  # Module names collected at registration
         self._cached_dependencies: "Dependencies | None" = None  # Computed on access
 
-        # Skill files (raw bytes, collected via agent.skill())
-        self._skills: list[tuple[str, bytes]] = []
+        # Skill files (name → {relative_path: content_bytes})
+        self._skills: list[tuple[str, dict[str, bytes]]] = []
 
         # Fingerprint (lazy — computed on first access)
         self._fingerprint: str | None = None
@@ -270,25 +270,68 @@ class BaseAgent:
                         return name
         return fallback
 
-    def skill(self, source: Any) -> None:
-        """Register a skill file for the agent.
+    @staticmethod
+    def _walk_skill_dir(root: Any) -> dict[str, bytes]:
+        """Recursively read all files under *root*, returning {relative_posix_path: bytes}.
 
-        Skills are SKILL.md files mounted read-only at /skills/<name>/SKILL.md.
-        The name is taken from YAML frontmatter if present, otherwise derived
-        from the filename or parent directory.
+        Works with both pathlib.Path and importlib.resources Traversable objects.
+        Skips dotfiles and dotdirectories (e.g. .git, .DS_Store).
+        """
+        files: dict[str, bytes] = {}
+
+        def _walk(node: Any, prefix: str) -> None:
+            for child in node.iterdir():
+                child_name = getattr(child, "name", None) or ""
+                if child_name.startswith("."):
+                    continue
+                rel = (
+                    f"{prefix}{child_name}" if not prefix else f"{prefix}/{child_name}"
+                )
+                if hasattr(child, "iterdir") and child.is_dir():
+                    _walk(child, rel)
+                elif hasattr(child, "read_bytes"):
+                    files[rel] = child.read_bytes()
+
+        _walk(root, "")
+        return files
+
+    def skill(self, source: Any) -> None:
+        """Register a skill for the agent.
+
+        Skills are mounted read-only at /skills/<name>/. A skill can be a single
+        file (mounted as SKILL.md) or a directory containing SKILL.md and any
+        number of sibling documents.
+
+        The skill name is taken from YAML frontmatter in SKILL.md if present,
+        otherwise derived from the filename or parent directory.
 
         Args:
-            source: Path-like object (Path, importlib Traversable) or raw bytes.
+            source: Path-like object (file or directory), importlib Traversable,
+                    or raw bytes.
 
         Examples:
             from importlib.resources import files
             agent.skill(files("calgebra") / "skills" / "calgebra" / "SKILL.md")
+            agent.skill(files("my_dsl") / "skills" / "my-dsl")   # directory
+            agent.skill(Path("./skills/my-dsl/"))                 # directory
             agent.skill(Path("./my-skill.md"))
             agent.skill(b"---\\nname: foo\\n---\\n# Foo\\n...")
         """
         if isinstance(source, bytes):
             content = source
             fallback = "skill"
+            name = self._slugify(self._parse_skill_name(content, fallback))
+            self._skills.append((name, {"SKILL.md": content}))
+        elif hasattr(source, "iterdir") and source.is_dir():
+            # Directory source — walk the tree
+            files_dict = self._walk_skill_dir(source)
+            if "SKILL.md" not in files_dict:
+                raise ValueError("Directory skill requires a SKILL.md file at the root")
+            fallback = getattr(source, "name", None) or "skill"
+            name = self._slugify(
+                self._parse_skill_name(files_dict["SKILL.md"], fallback)
+            )
+            self._skills.append((name, files_dict))
         elif hasattr(source, "read_bytes"):
             content = source.read_bytes()
             filename = getattr(source, "name", None) or "skill"
@@ -297,13 +340,13 @@ class BaseAgent:
                 fallback = parent_name or "skill"
             else:
                 fallback = os.path.splitext(filename)[0]
+            name = self._slugify(self._parse_skill_name(content, fallback))
+            self._skills.append((name, {"SKILL.md": content}))
         else:
             raise TypeError(
-                f"skill() expects bytes or a Path-like object, got {type(source).__name__}"
+                f"skill() expects bytes, a Path-like object, or a directory, "
+                f"got {type(source).__name__}"
             )
-
-        name = self._slugify(self._parse_skill_name(content, fallback))
-        self._skills.append((name, content))
 
     def task(self, prompt: str | Callable) -> Callable[..., Any]: ...
 

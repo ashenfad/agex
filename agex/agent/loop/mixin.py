@@ -121,7 +121,8 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             return []
 
         skills = []
-        for name, content_bytes in self._skills:
+        for name, files in self._skills:
+            content_bytes = files.get("SKILL.md", b"")
             content = content_bytes.decode("utf-8", errors="replace")
             description = ""
             modules: list[str] = []
