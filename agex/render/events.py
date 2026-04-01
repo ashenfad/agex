@@ -8,7 +8,9 @@ from typing import Any, List
 
 from agex.agent.events import (
     ActionEvent,
+    CancelledEvent,
     ChapterEvent,
+    ClarifyEvent,
     ErrorEvent,
     Event,
     FailEvent,
@@ -98,11 +100,18 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
                     )
                     messages.append({"role": "user", "content": text})
 
-        elif isinstance(event, (SuccessEvent, FailEvent)):
+        elif isinstance(event, (SuccessEvent, FailEvent, ClarifyEvent)):
             # Terminal events are not rendered — the LLM already expressed
-            # its intent via task_success/task_fail in the preceding
-            # ActionEvent's code.
+            # its intent via task_success/task_fail/task_clarify in the
+            # preceding ActionEvent's code.
             pass
+
+        elif isinstance(event, CancelledEvent):
+            content = (
+                f"{prefix}Task '{event.task_name}' cancelled "
+                f"after {event.iterations_completed} iterations"
+            )
+            messages.append({"role": "user", "content": content})
 
         elif isinstance(event, ChapterEvent):
             text, _ = render_chapter(event.name, event.message)

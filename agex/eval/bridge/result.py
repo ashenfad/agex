@@ -10,7 +10,9 @@ Handles:
 
 from __future__ import annotations
 
+import base64
 import inspect
+import io
 import types
 from collections.abc import MutableMapping
 from typing import Any, Callable
@@ -22,6 +24,11 @@ from agex.agent.datatypes import TaskContinue, TaskSuccess
 from agex.agent.events import OutputEvent
 from agex.eval.objects import ImageAction
 from agex.state.log import add_event_to_log
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None  # type: ignore[assignment, misc]
 
 
 def handle_result(
@@ -77,11 +84,8 @@ def handle_result(
             and parts[0].startswith(_IMG_PREFIX)
         ):
             try:
-                import base64
-                import io
-
-                from PIL import Image
-
+                if Image is None:
+                    raise ImportError("PIL.Image not available")
                 b64 = parts[0][len(_IMG_PREFIX) :]
                 img = Image.open(io.BytesIO(base64.b64decode(b64)))
                 event = OutputEvent(
