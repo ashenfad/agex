@@ -102,10 +102,10 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
                     messages.append({"role": "user", "content": text})
 
         elif isinstance(event, SuccessEvent):
-            # Render success result repr — the value may not be apparent
-            # from the preceding task_success(var) call in the ActionEvent.
+            # Render success result repr as observation — the value may not
+            # be apparent from the preceding task_success(var) call.
             text, _ = render_success(event.result, budget=budget)
-            messages.append({"role": "assistant", "content": prefix + text})
+            messages.append({"role": "user", "content": prefix + text})
 
         elif isinstance(event, (FailEvent, ClarifyEvent)):
             # Not rendered — the LLM already expressed its intent via
