@@ -545,6 +545,8 @@ class RegistrationMixin(BaseAgent):
                 include=include,
                 exclude=tuple(exclude) if isinstance(exclude, list) else exclude,
                 configure=sec_configure,
+                host_fs_access=host_fs_access,
+                network_access=network_access,
             )
             # Store the live instance in the host registry for runtime access
             self._host_object_registry[name] = obj

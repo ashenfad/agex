@@ -154,6 +154,8 @@ class AgentPolicy:
         include: Pattern | None = "*",
         exclude: Pattern | None = ("_*", "*._*"),
         configure: dict[str, MemberSpec] | None = None,
+        host_fs_access: bool = False,
+        network_access: bool = False,
     ) -> Namespace:
         spec = Namespace(
             name=name,
@@ -164,6 +166,8 @@ class AgentPolicy:
             exclude=list(exclude) if isinstance(exclude, tuple) else exclude,
             configure=configure or {},
             recursive=False,
+            host_fs_access=host_fs_access,
+            network_access=network_access,
         )
         self.namespaces[name] = spec
         return spec
