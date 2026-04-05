@@ -8,7 +8,7 @@ from agex.llm.core import (
     LLM,
     TokenChunk,
 )
-from agex.llm.xml import TAG_TITLE, XML_FORMAT_PRIMER, tokenize_xml_stream
+from agex.llm.xml import XML_FORMAT_PRIMER, tokenize_xml_stream
 
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key", "timeout", "max_retries"}
@@ -128,14 +128,9 @@ class Anthropic(LLM):
             cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
         )
 
-        # Pre-fill response with opening tag to enforce XML structure
-        prefill_text = f"<{TAG_TITLE}>"
-        conversation_messages.append(
-            {
-                "role": "assistant",
-                "content": [{"type": "text", "text": prefill_text}],
-            }
-        )
+        # No assistant prefill — letting the model produce the whole response
+        # from scratch gives it better adherence to the format primer (closing
+        # tags, no skipping <THINKING>, etc.).
 
         # Set default max_tokens if not provided
         if "max_tokens" not in request_kwargs:
@@ -149,7 +144,6 @@ class Anthropic(LLM):
         ) as stream:
 
             def raw_chunks() -> Iterator[str]:
-                yield prefill_text
                 for text in stream.text_stream:
                     yield text
 
@@ -186,14 +180,6 @@ class Anthropic(LLM):
             cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
         )
 
-        prefill_text = f"<{TAG_TITLE}>"
-        conversation_messages.append(
-            {
-                "role": "assistant",
-                "content": [{"type": "text", "text": prefill_text}],
-            }
-        )
-
         if "max_tokens" not in request_kwargs:
             request_kwargs["max_tokens"] = MAX_TOKENS
 
@@ -205,7 +191,6 @@ class Anthropic(LLM):
         ) as stream:
 
             async def raw_chunks():
-                yield prefill_text
                 async for text in stream.text_stream:
                     yield text
 
