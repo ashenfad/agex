@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.9.7] - 2026-04-05
+
+### Added
+- **`PyfetchAnthropic`**: Browser-compatible Anthropic client using `pyodide.http.pyfetch` for direct browser-to-Anthropic API calls without a server proxy. Mirrors `PyfetchOpenAI` but targets the native Anthropic Messages API (with `anthropic-dangerous-direct-browser-access` header, system field, base64 image blocks, and prompt caching). Async-only with SSE streaming.
+- **`DEBUG_RAW_STREAM`**: Module-level flag on both pyfetch clients for printing raw SSE text deltas to stdout — useful for debugging model output vs XML-tokenizer behavior.
+
+### Changed
+- **No more `<TITLE>` prefill on Anthropic clients**: Removed the assistant-prefill step from both `Anthropic` (SDK-based) and `PyfetchAnthropic`. Letting Claude generate the whole response from scratch improves adherence to the XML format primer — with prefill, the model would occasionally skip `</TITLE>` and `<THINKING>`, then self-correct mid-stream, producing two concatenated attempts that the tokenizer couldn't disambiguate.
+
 ## [0.9.6] - 2026-04-01
 
 ### Fixed
