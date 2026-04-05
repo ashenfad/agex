@@ -69,6 +69,7 @@ def test_available_providers_in_error_message():
             patch("agex.llm.Anthropic", None),
             patch("agex.llm.Gemini", None),
             patch("agex.llm.PyfetchOpenAI", None),
+            patch("agex.llm.PyfetchAnthropic", None),
         ):
             try:
                 connect_llm(provider="invalid")  # type: ignore
@@ -85,6 +86,7 @@ def test_available_providers_in_error_message():
             patch("agex.llm.Anthropic", None),
             patch("agex.llm.Gemini", None),
             patch("agex.llm.PyfetchOpenAI", None),
+            patch("agex.llm.PyfetchAnthropic", None),
         ):
             try:
                 connect_llm(provider="invalid")  # type: ignore
@@ -100,6 +102,7 @@ def test_available_providers_in_error_message():
             patch("agex.llm.OpenAI", None),
             patch("agex.llm.Gemini", None),
             patch("agex.llm.PyfetchOpenAI", None),
+            patch("agex.llm.PyfetchAnthropic", None),
         ):
             try:
                 connect_llm(provider="invalid")  # type: ignore
@@ -114,6 +117,7 @@ def test_available_providers_in_error_message():
             patch("agex.llm.OpenAI", None),
             patch("agex.llm.Anthropic", None),
             patch("agex.llm.PyfetchOpenAI", None),
+            patch("agex.llm.PyfetchAnthropic", None),
         ):
             try:
                 connect_llm(provider="invalid")  # type: ignore
