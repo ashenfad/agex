@@ -37,6 +37,39 @@ TAG_CANCELLED = "TASK_CANCELLED"
 # Valid modes for FILE tag
 VALID_FILE_MODES = frozenset({"write", "append"})
 
+# Sibling opener pattern for implicit-close recovery.  If any of these
+# top-level tags appears at the start of a line (optionally indented) while
+# we're inside another section, we assume the agent forgot to close the
+# current section and transition to the new one.  Tags with attributes
+# (FILE, EDIT) require whitespace after the tag name; simple tags require
+# the closing ">" immediately.
+_IMPLICIT_CLOSE_PATTERN = re.compile(
+    rf"(?:^|\n)[\t ]*<(?:"
+    rf"{TAG_TITLE}>|"
+    rf"{TAG_THINKING}>|"
+    rf"{TAG_PYTHON}>|"
+    rf"{TAG_TERMINAL}>|"
+    rf"{TAG_FILE}\s|"
+    rf"{TAG_EDIT}\s"
+    rf")",
+    re.IGNORECASE,
+)
+
+
+def _find_implicit_close_pos(buffer: str, current_section: str) -> int | None:
+    """Find the position of a sibling top-level opener (the '<' character)
+    that should implicitly close the current section.
+
+    Returns None if no such boundary is found.  The returned position is
+    guaranteed to be at or after position 0; the opener tag remains in the
+    buffer so the tokenizer can start the new section on its next pass.
+    """
+    match = _IMPLICIT_CLOSE_PATTERN.search(buffer)
+    if match is None:
+        return None
+    # Find the '<' character within the matched range.
+    return buffer.find("<", match.start(), match.end())
+
 
 def validate_file_path(path: str) -> str:
     """Validate a file path from <FILE> tag.
@@ -147,7 +180,7 @@ OR
 <{TAG_PYTHON}># Your Python code here</{TAG_PYTHON}>
 
 IMPORTANT:
-1. Generate EXACTLY ONE sequence of Title and Thinking.
+1. EVERY response MUST begin with <{TAG_TITLE}>...</{TAG_TITLE}> followed by <{TAG_THINKING}>...</{TAG_THINKING}>. No exceptions, even on continuation turns — always restate your current focus and reasoning briefly.
 2. You can generate zero or more <{TAG_FILE}> or <{TAG_EDIT}> tags before the action.
 3. End with EITHER <{TAG_TERMINAL}> OR <{TAG_PYTHON}>.
 4. <{TAG_TERMINAL}> supports: ls, cat (with -A/-n), head, tail, grep, find, wc, sort, uniq, cut, diff, jq, cp, mv, rm, mkdir, touch, pwd, cd, echo, tee, tar, gzip, gunzip, zip, unzip
@@ -185,7 +218,7 @@ result = helpers.utils.add(5, 7)
 task_success(result)
 </{TAG_PYTHON}>
 
-Keep titles short but always include them!
+Keep titles short. Always close every tag you open.
 """
 
 
@@ -585,6 +618,24 @@ class _XMLTokenizerState:
             Tuple of (tokens_to_yield, updated_buffer, section_complete)
         """
         closing = re.search(rf"</{closing_tag}>", buffer, re.IGNORECASE)
+        closing_pos = closing.start() if closing else None
+
+        # Check for an implicit-close boundary (a sibling top-level tag opener
+        # at a line start).  If it appears before the proper closing tag,
+        # assume the agent forgot to close and transition early.
+        implicit_pos = _find_implicit_close_pos(buffer, section_type)
+        if implicit_pos is not None and (
+            closing_pos is None or implicit_pos < closing_pos
+        ):
+            tokens = []
+            before = buffer[:implicit_pos].rstrip("\n\t ")
+            if before:
+                tokens.append(TokenChunk(type=section_type, content=before, done=False))
+            tokens.append(TokenChunk(type=section_type, content="", done=True))
+            # Keep the sibling opener in the buffer so the tokenizer can
+            # pick it up on the next pass.
+            return tokens, buffer[implicit_pos:], True
+
         if closing:
             # Found closing tag - yield all content before it
             tokens = []

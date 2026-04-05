@@ -394,6 +394,136 @@ class TestTokenizeXMLStream:
         assert file_path_token.content == "path=stream.py,mode=append"
 
 
+class TestImplicitCloseRecovery:
+    """Tests for the tokenizer's implicit-close recovery for malformed streams.
+
+    When an agent forgets to close a section but opens a sibling top-level
+    tag at the start of a line, the tokenizer should transition cleanly.
+    """
+
+    def _build(self, chunks):
+        from agex.llm.core import ResponseBuilder
+
+        builder = ResponseBuilder()
+        for tok in tokenize_xml_stream(iter(chunks)):
+            builder.process_token(tok)
+        return builder.build()
+
+    def test_unclosed_file_followed_by_thinking(self):
+        """A <FILE> missing </FILE> should close when <THINKING> appears on
+        a new line — the thinking content should go to the thinking section,
+        not get absorbed into the file body."""
+        chunks = [
+            "<TITLE>Mistake</TITLE>\n"
+            "<THINKING>reasoning</THINKING>\n"
+            '<FILE path="a.py">\n'
+            "X = 1\n"
+            "<THINKING>now for file b</THINKING>\n"
+            '<FILE path="b.py">\n'
+            "Y = 2\n"
+            "</FILE>\n"
+            '<PYTHON>task_success("done")</PYTHON>'
+        ]
+        resp = self._build(chunks)
+        # Two separate file actions, both with clean bodies
+        assert len(resp.file_actions) == 2
+        assert resp.file_actions[0].path == "a.py"
+        assert resp.file_actions[0].content.strip() == "X = 1"
+        assert resp.file_actions[1].path == "b.py"
+        assert resp.file_actions[1].content.strip() == "Y = 2"
+        # Recovered thinking should accumulate both segments
+        assert "reasoning" in resp.thinking
+        assert "now for file b" in resp.thinking
+
+    def test_unclosed_title_followed_by_thinking(self):
+        """An unclosed <TITLE> should close when <THINKING> appears next."""
+        chunks = [
+            "<TITLE>Planning step\n"
+            "<THINKING>my reasoning</THINKING>\n"
+            '<PYTHON>task_success("done")</PYTHON>'
+        ]
+        resp = self._build(chunks)
+        assert resp.title.strip() == "Planning step"
+        assert resp.thinking.strip() == "my reasoning"
+        assert "task_success" in resp.code
+
+    def test_unclosed_thinking_followed_by_python(self):
+        """Unclosed <THINKING> should close when <PYTHON> appears."""
+        chunks = [
+            "<TITLE>T</TITLE>\n"
+            "<THINKING>some reasoning\n"
+            '<PYTHON>task_success("done")</PYTHON>'
+        ]
+        resp = self._build(chunks)
+        assert resp.title == "T"
+        assert resp.thinking.strip() == "some reasoning"
+        assert "task_success" in resp.code
+
+    def test_tag_inside_file_content_is_preserved(self):
+        """A tag-like string mid-line inside a FILE body should NOT trigger
+        implicit close — only line-start tags do.  This protects code that
+        contains tag strings (doctests, docs about agex, etc.)."""
+        chunks = [
+            "<TITLE>T</TITLE>\n"
+            "<THINKING>t</THINKING>\n"
+            '<FILE path="docs.py">\n'
+            'MSG = "use <THINKING>...</THINKING> in your response"\n'
+            "</FILE>\n"
+            '<PYTHON>task_success("ok")</PYTHON>'
+        ]
+        resp = self._build(chunks)
+        assert len(resp.file_actions) == 1
+        assert resp.file_actions[0].path == "docs.py"
+        assert "<THINKING>" in resp.file_actions[0].content
+        assert "</THINKING>" in resp.file_actions[0].content
+
+    def test_indented_sibling_opener_still_triggers(self):
+        """A sibling opener at line-start with leading whitespace should
+        still trigger implicit close — the model might indent tags."""
+        chunks = [
+            "<TITLE>T</TITLE>\n"
+            "<THINKING>reasoning\n"
+            "    <PYTHON>task_success(1)</PYTHON>"
+        ]
+        resp = self._build(chunks)
+        assert resp.thinking.strip() == "reasoning"
+        assert "task_success(1)" in resp.code
+
+    def test_edit_inner_tags_do_not_trigger_close(self):
+        """Inside an <EDIT>, the <SEARCH>/<REPLACE> inner tags should NOT
+        be treated as implicit-close triggers — they're legitimate children."""
+        chunks = [
+            "<TITLE>T</TITLE>\n"
+            "<THINKING>t</THINKING>\n"
+            '<EDIT path="file.py">\n'
+            "<SEARCH>old_code</SEARCH>\n"
+            "<REPLACE>new_code</REPLACE>\n"
+            "</EDIT>\n"
+            '<PYTHON>task_success("ok")</PYTHON>'
+        ]
+        resp = self._build(chunks)
+        assert len(resp.file_actions) == 1
+        action = resp.file_actions[0]
+        assert action.path == "file.py"
+        assert action.search == "old_code"
+        assert action.content == "new_code"
+
+    def test_chunked_stream_implicit_close(self):
+        """Implicit close should work when the sibling opener arrives in a
+        later chunk (realistic streaming scenario)."""
+        chunks = [
+            "<TITLE>T</TITLE>\n",
+            "<THINKING>partial reason",
+            "ing more words\n",
+            "<PYTHON>task_success(",
+            '"done")</PYTHON>',
+        ]
+        resp = self._build(chunks)
+        assert resp.title == "T"
+        assert "partial reasoning more words" in resp.thinking
+        assert "task_success" in resp.code
+
+
 class TestXMLResponse:
     """Tests for XMLResponse dataclass."""
 
