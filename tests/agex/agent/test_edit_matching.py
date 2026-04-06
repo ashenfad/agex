@@ -709,8 +709,236 @@ class TestApplyOptimisticFileActionsIntegration:
         assert lines[3] == "            x = 1"
         assert lines[4] == "            return x"
 
-    def test_already_applied_skipped(self, mock_fs, mock_agent, mock_llm_response):
-        """Edit where replacement already exists should be silently skipped."""
+    def test_duplicate_edits_deduplicated_with_warning(self, mock_fs, mock_agent):
+        """Identical EDIT blocks in one response should be deduplicated with
+        a warning — defensive repetition would otherwise insert duplicates."""
+        from agex.agent.datatypes import EditAction
+        from agex.agent.events import SystemNoteEvent
+        from agex.agent.loop.common import apply_optimistic_file_actions
+
+        mock_fs.files["test.py"] = b"stateRef.current = state"
+
+        class MockResponse:
+            file_actions = [
+                EditAction(
+                    path="test.py",
+                    search="stateRef.current = state",
+                    content="stateRef.current = state\n  saveTimer()",
+                    operation="replace",
+                ),
+                EditAction(  # exact duplicate
+                    path="test.py",
+                    search="stateRef.current = state",
+                    content="stateRef.current = state\n  saveTimer()",
+                    operation="replace",
+                ),
+                EditAction(  # another exact duplicate
+                    path="test.py",
+                    search="stateRef.current = state",
+                    content="stateRef.current = state\n  saveTimer()",
+                    operation="replace",
+                ),
+            ]
+
+        captured = []
+
+        def on_event(event):
+            captured.append(event)
+
+        apply_optimistic_file_actions(
+            mock_agent, MockResponse(), mock_fs, {}, on_event=on_event
+        )
+
+        # Only the first edit should have run — so the file has exactly ONE
+        # saveTimer() insertion, not three.
+        result = mock_fs.files["test.py"].decode("utf-8")
+        assert result.count("saveTimer()") == 1
+
+        notes = [e for e in captured if isinstance(e, SystemNoteEvent)]
+        # Expect: one "dropped duplicates" warning, one "applied" confirmation
+        assert len(notes) == 2
+        dup_msg = next(n.message for n in notes if "duplicate" in n.message.lower())
+        assert "test.py" in dup_msg
+        assert "2 duplicate" in dup_msg
+
+    def test_non_duplicate_edits_all_applied(self, mock_fs, mock_agent):
+        """Different EDITs targeting the same file should NOT be deduplicated."""
+        from agex.agent.datatypes import EditAction
+        from agex.agent.loop.common import apply_optimistic_file_actions
+
+        mock_fs.files["test.py"] = b"A\nB\nC\n"
+
+        class MockResponse:
+            file_actions = [
+                EditAction(path="test.py", search="A", content="AA"),
+                EditAction(path="test.py", search="B", content="BB"),
+                EditAction(path="test.py", search="C", content="CC"),
+            ]
+
+        apply_optimistic_file_actions(mock_agent, MockResponse(), mock_fs, {})
+
+        assert mock_fs.files["test.py"] == b"AA\nBB\nCC\n"
+
+    def test_applied_confirmation_emitted(self, mock_fs, mock_agent, mock_llm_response):
+        """After edits apply, agent should receive a confirmation event."""
+        from agex.agent.events import SystemNoteEvent
+        from agex.agent.loop.common import apply_optimistic_file_actions
+
+        mock_fs.files["test.py"] = b"old"
+        response = mock_llm_response(search="old", content="new")
+
+        captured = []
+
+        def on_event(event):
+            captured.append(event)
+
+        apply_optimistic_file_actions(
+            mock_agent, response, mock_fs, {}, on_event=on_event
+        )
+
+        notes = [e for e in captured if isinstance(e, SystemNoteEvent)]
+        assert len(notes) == 1
+        assert "Applied file actions" in notes[0].message
+        assert "edit test.py" in notes[0].message
+
+    def test_already_applied_not_triggered_when_sibling_modified_file(
+        self, mock_fs, mock_agent
+    ):
+        """If a prior action in the same batch modified the file, the
+        'already applied' heuristic should NOT fire — the replacement text
+        appearing may be a coincidental substring of the sibling's content."""
+        from agex.agent.datatypes import EditAction
+        from agex.agent.loop.common import apply_optimistic_file_actions
+        from agex.llm.core import ResponseParseError
+
+        # Write a big block that contains "btn" as a substring
+        mock_fs.files["index.html"] = b"<div>old</div>"
+
+        class MockResponse:
+            file_actions = [
+                # Edit 1: succeeds, writes content that includes "btn"
+                EditAction(
+                    path="index.html",
+                    search="<div>old</div>",
+                    content='<div>new <button class="btn">Go</button></div>',
+                ),
+                # Edit 2: search doesn't match, but its replacement "btn"
+                # IS in the file now (from edit 1). Without the fix, this
+                # would false-positive as "already applied".
+                EditAction(
+                    path="index.html",
+                    search="<footer>missing</footer>",
+                    content="btn",
+                ),
+            ]
+
+        with pytest.raises(ResponseParseError, match="not found"):
+            apply_optimistic_file_actions(mock_agent, MockResponse(), mock_fs, {})
+
+    def test_file_write_then_edit_same_path_no_false_positive(
+        self, mock_fs, mock_agent
+    ):
+        """A <FILE> write followed by an <EDIT> on the same path should NOT
+        trigger 'already applied' — the FILE just created the content that
+        the EDIT's replacement happens to match."""
+        from agex.agent.datatypes import EditAction, FileAction
+        from agex.agent.loop.common import apply_optimistic_file_actions
+        from agex.llm.core import ResponseParseError
+
+        class MockResponse:
+            file_actions = [
+                FileAction(
+                    path="index.html",
+                    content='<html><body><div class="shop">Shop</div></body></html>',
+                ),
+                EditAction(
+                    path="index.html",
+                    search="<footer>old</footer>",
+                    content="Shop",  # substring of the FILE content
+                ),
+            ]
+
+        with pytest.raises(ResponseParseError, match="not found"):
+            apply_optimistic_file_actions(mock_agent, MockResponse(), mock_fs, {})
+
+    def test_already_applied_still_works_on_fresh_file(
+        self, mock_fs, mock_agent, mock_llm_response
+    ):
+        """The 'already applied' heuristic should still work when no sibling
+        action has modified the file (the retry scenario)."""
+        from agex.agent.events import SystemNoteEvent
+        from agex.agent.loop.common import apply_optimistic_file_actions
+
+        # File already has the replacement content
+        mock_fs.files["test.py"] = b"def bar():\n    return 1"
+        response = mock_llm_response(
+            search="def foo():\n    pass",
+            content="def bar():\n    return 1",
+        )
+
+        captured = []
+        apply_optimistic_file_actions(
+            mock_agent, response, mock_fs, {}, on_event=lambda e: captured.append(e)
+        )
+
+        # Should skip (no sibling modified this file)
+        notes = [e for e in captured if isinstance(e, SystemNoteEvent)]
+        assert any("already-applied" in n.message.lower() for n in notes)
+
+    def test_multiple_file_writes_last_wins(self, mock_fs, mock_agent):
+        """Multiple <FILE> writes to the same path should keep only the last."""
+        from agex.agent.datatypes import FileAction
+        from agex.agent.events import SystemNoteEvent
+        from agex.agent.loop.common import apply_optimistic_file_actions
+
+        class MockResponse:
+            file_actions = [
+                FileAction(path="engine.js", content="version 1"),
+                FileAction(path="entities.js", content="entities code"),
+                FileAction(path="engine.js", content="version 2"),
+            ]
+
+        captured = []
+        apply_optimistic_file_actions(
+            mock_agent,
+            MockResponse(),
+            mock_fs,
+            {},
+            on_event=lambda e: captured.append(e),
+        )
+
+        # Last write wins
+        assert mock_fs.files["engine.js"] == b"version 2"
+        assert mock_fs.files["entities.js"] == b"entities code"
+
+        # Warning about dropped earlier write
+        notes = [e for e in captured if isinstance(e, SystemNoteEvent)]
+        assert any("superseded" in n.message.lower() for n in notes)
+
+    def test_file_append_not_deduplicated(self, mock_fs, mock_agent):
+        """FILE appends to the same path should NOT be deduplicated — appends
+        are additive, not last-write-wins."""
+        from agex.agent.datatypes import FileAction
+        from agex.agent.loop.common import apply_optimistic_file_actions
+
+        mock_fs.files["log.txt"] = b"line 1\n"
+
+        class MockResponse:
+            file_actions = [
+                FileAction(path="log.txt", content="line 2\n", mode="append"),
+                FileAction(path="log.txt", content="line 3\n", mode="append"),
+            ]
+
+        apply_optimistic_file_actions(mock_agent, MockResponse(), mock_fs, {})
+
+        assert mock_fs.files["log.txt"] == b"line 1\nline 2\nline 3\n"
+
+    def test_already_applied_skipped_with_warning(
+        self, mock_fs, mock_agent, mock_llm_response
+    ):
+        """Edit where replacement already exists should be skipped but emit a
+        warning so the agent isn't left wondering whether the edit worked."""
+        from agex.agent.events import SystemNoteEvent
         from agex.agent.loop.common import apply_optimistic_file_actions
 
         mock_fs.files["test.py"] = b"def bar():\n    return 1"
@@ -719,11 +947,24 @@ class TestApplyOptimisticFileActionsIntegration:
             content="def bar():\n    return 1",
         )
 
-        # Should not raise — replacement is already in the file
-        apply_optimistic_file_actions(mock_agent, response, mock_fs, {})
+        captured = []
 
-        # File should be unchanged
+        def on_event(event):
+            captured.append(event)
+
+        # Should not raise — replacement is already in the file
+        apply_optimistic_file_actions(
+            mock_agent, response, mock_fs, {}, on_event=on_event
+        )
+
+        # File unchanged
         assert mock_fs.files["test.py"] == b"def bar():\n    return 1"
+
+        # Warning SystemNoteEvent emitted
+        notes = [e for e in captured if isinstance(e, SystemNoteEvent)]
+        assert len(notes) == 1
+        assert "already-applied" in notes[0].message.lower()
+        assert "test.py" in notes[0].message
 
     def test_error_shows_similar_lines(self, mock_fs, mock_agent, mock_llm_response):
         """Error message should show most similar lines when match fails."""
