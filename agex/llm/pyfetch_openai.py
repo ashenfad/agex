@@ -227,6 +227,8 @@ class PyfetchOpenAI(LLM):
 
         async def raw_chunks() -> AsyncIterator[str]:
             async for payload in sse_iter:
+                if not payload.strip():
+                    continue
                 data = json.loads(payload)
                 _update_usage(data)
                 choices = data.get("choices", [])
@@ -245,6 +247,8 @@ class PyfetchOpenAI(LLM):
         # Drain remaining SSE events to capture the usage chunk.
         if usage_holder["input_tokens"] is None:
             async for payload in sse_iter:
+                if not payload.strip():
+                    continue
                 data = json.loads(payload)
                 _update_usage(data)
                 if usage_holder["input_tokens"] is not None:
@@ -343,6 +347,9 @@ class PyfetchOpenAI(LLM):
                             text = decoder.decode(chunk, False)
                             if text:
                                 yield text
+                        final_text = decoder.decode(b"", True)
+                        if final_text:
+                            yield final_text
             except ImportError:
                 raise RuntimeError(
                     "PyfetchOpenAI requires pyodide (emscripten) or aiohttp installed."
