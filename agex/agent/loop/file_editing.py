@@ -270,9 +270,79 @@ def apply_optimistic_file_actions(
     # Use underlying FS directly to avoid 'user' source attribution
     target_fs = fs._fs if isinstance(fs, AgentAwareFS) else fs
 
-    applied: list[str] = []  # track successful actions for error context
-
+    # Deduplicate identical EditActions within this response.  Agents
+    # occasionally repeat the same edit "defensively" to ensure it applies —
+    # but each duplicate re-runs the same search+replace on the previous
+    # edit's output, leading to multiplied insertions.  There is no
+    # legitimate reason to issue the same EDIT twice in one response
+    # (use match_all="true" for multiple matches).
+    seen_edits: set[tuple] = set()
+    deduped_actions: list[FileAction | EditAction] = []
+    dropped_duplicates: list[str] = []
     for action in llm_response.file_actions:
+        if isinstance(action, EditAction):
+            key = (
+                action.path,
+                action.search,
+                action.content,
+                action.operation,
+                action.match_all,
+            )
+            if key in seen_edits:
+                dropped_duplicates.append(action.path)
+                continue
+            seen_edits.add(key)
+        deduped_actions.append(action)
+
+    if dropped_duplicates:
+        note = SystemNoteEvent(
+            agent_name="System",
+            message=(
+                f"⚠️ Dropped {len(dropped_duplicates)} duplicate EDIT block(s) "
+                f"targeting: {', '.join(sorted(set(dropped_duplicates)))}. "
+                f"Each unique EDIT runs once — do not repeat the same "
+                f'search+replace defensively.  Use match_all="true" if you '
+                f"need a pattern applied to multiple matches."
+            ),
+        )
+        add_event_to_log(exec_state, note, on_event=on_event)
+
+    # Deduplicate FILE writes to the same path: keep only the last write
+    # (agents sometimes emit a first draft then a corrected version in the
+    # same response).  Appends are never deduplicated.
+    last_write_idx: dict[str, int] = {}
+    for i, action in enumerate(deduped_actions):
+        if isinstance(action, FileAction) and action.mode != "append":
+            last_write_idx[action.path] = i
+
+    dropped_file_writes: list[str] = []
+    final_actions: list[FileAction | EditAction] = []
+    for i, action in enumerate(deduped_actions):
+        if (
+            isinstance(action, FileAction)
+            and action.mode != "append"
+            and last_write_idx.get(action.path) != i
+        ):
+            dropped_file_writes.append(action.path)
+            continue
+        final_actions.append(action)
+
+    if dropped_file_writes:
+        note = SystemNoteEvent(
+            agent_name="System",
+            message=(
+                f"⚠️ Dropped {len(dropped_file_writes)} earlier FILE write(s) "
+                f"superseded by a later write to the same path: "
+                f"{', '.join(sorted(set(dropped_file_writes)))}. "
+                f"Only the last <FILE> per path is applied."
+            ),
+        )
+        add_event_to_log(exec_state, note, on_event=on_event)
+
+    applied: list[str] = []  # track successful actions for error context
+    modified_this_batch: set[str] = set()  # files changed by earlier actions
+
+    for action in final_actions:
         if isinstance(action, FileAction):
             path, content, mode = action.path, action.content, action.mode
             fs_mode = "a" if mode == "append" else "w"
@@ -293,6 +363,7 @@ def apply_optimistic_file_actions(
 
             target_fs.write(path, content.encode("utf-8"), mode=fs_mode)
             applied.append(f"{'append' if fs_mode == 'a' else 'write'} {path}")
+            modified_this_batch.add(path)
 
         elif isinstance(action, EditAction):
             path = action.path
@@ -328,9 +399,30 @@ def apply_optimistic_file_actions(
                     match_mode = "indent_flexible"
 
                     if count == 0:
-                        # Check if replacement is already in the file
-                        if action.content in existing_content:
+                        # Check if replacement is already in the file.
+                        # Only trust this heuristic if no earlier action in
+                        # this batch already modified the file — otherwise
+                        # the replacement may appear as a substring of a
+                        # sibling edit's content (false positive).
+                        if (
+                            path not in modified_this_batch
+                            and action.content in existing_content
+                        ):
                             applied.append(f"edit {path} (already applied)")
+                            note = SystemNoteEvent(
+                                agent_name="System",
+                                message=(
+                                    f"⚠️ EDIT {path}: search string not found, "
+                                    f"but replacement content appears to already "
+                                    f"be in the file — treating as already-applied "
+                                    f"and SKIPPING. If this is a false positive "
+                                    f"(e.g. your search had a whitespace typo but "
+                                    f"the file still needs updating), verify the "
+                                    f"file contents and re-issue the edit with a "
+                                    f"matching search string."
+                                ),
+                            )
+                            add_event_to_log(exec_state, note, on_event=on_event)
                             continue
 
                         # Build actionable error with closest match
@@ -428,3 +520,15 @@ def apply_optimistic_file_actions(
             # Write back
             target_fs.write(path, new_content.encode("utf-8"), mode="w")
             applied.append(f"edit {path}")
+            modified_this_batch.add(path)
+
+    # Positive confirmation: tell the agent exactly what was applied so it
+    # doesn't have to guess whether its file actions worked.  Exclude
+    # "already applied" skips — those already got their own warning above.
+    confirmed = [a for a in applied if "(already applied)" not in a]
+    if confirmed:
+        note = SystemNoteEvent(
+            agent_name="System",
+            message="✓ Applied file actions: " + "; ".join(confirmed),
+        )
+        add_event_to_log(exec_state, note, on_event=on_event)
