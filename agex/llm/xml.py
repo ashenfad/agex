@@ -187,11 +187,12 @@ IMPORTANT:
 5. <{TAG_TERMINAL}> implicitly continues the task. Use <{TAG_PYTHON}> with task_success()/task_fail() to complete.
 6. Use <{TAG_FILE}> with `mode="append"` to add code to an existing file. Defaults to `mode="write"`.
 7. Use <{TAG_EDIT}> for surgical edits. <{TAG_EDIT}> requires <{TAG_SEARCH}> plus ONE of: <{TAG_REPLACE}>, <{TAG_INSERT_AFTER}>, or <{TAG_INSERT_BEFORE}>. The search must match exactly (including whitespace/indentation) and occur once unless `match_all="true"`. Use `cat -A` to view files before editing - it shows `$` at line endings and `^I` for tabs, making invisible whitespace visible.
-8. <{TAG_REPLACE}> replaces the search text entirely. <{TAG_INSERT_AFTER}> keeps the search text and adds content after it. <{TAG_INSERT_BEFORE}> adds content before the search text.
-9. If you just need to append to a file, use <{TAG_FILE} mode="append">. Do NOT use <{TAG_EDIT}> for this.
-10. When making python modules, use the `helpers` directory as the root.
-11. Do NOT attempt to simulate observations or multiple turns in a single response.
-12. NEVER escape characters inside tag content. Write literal `<`, `>`, `&` - do NOT use `&lt;`, `&gt;`, `&amp;` or any HTML entities. The content must match the file exactly.
+8. <{TAG_REPLACE}> replaces the search text entirely. <{TAG_INSERT_AFTER}> keeps the search text and adds content after it. <{TAG_INSERT_BEFORE}> adds content before the search text. Prefer <{TAG_INSERT_AFTER}>/<{TAG_INSERT_BEFORE}> over a <{TAG_REPLACE}> that includes the original search text followed by additions — the latter makes duplicates more likely if the edit is accidentally re-run.
+9. Do NOT issue the same <{TAG_EDIT}> twice in one response "to make sure it applies" — each EDIT runs once, and duplicates will be dropped with a warning.  You will receive a "✓ Applied file actions" confirmation for everything that successfully ran.
+10. If you just need to append to a file, use <{TAG_FILE} mode="append">. Do NOT use <{TAG_EDIT}> for this.
+11. When making python modules, use the `helpers` directory as the root.
+12. Do NOT attempt to simulate observations or multiple turns in a single response.
+13. NEVER escape characters inside tag content. Write literal `<`, `>`, `&` - do NOT use `&lt;`, `&gt;`, `&amp;` or any HTML entities. The content must match the file exactly.
 
 You will receive environment output (stdout/images) in <{TAG_OBSERVATION}> tags.
 These will be visible after a `task_continue()` call or after <{TAG_TERMINAL}> execution.
