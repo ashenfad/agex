@@ -255,6 +255,8 @@ class PyfetchAnthropic(LLM):
             # prefill text, so we don't need to yield it manually (doing so
             # would double the prefill and break XML tokenization).
             async for payload in sse_iter:
+                if not payload.strip():
+                    continue
                 data = json.loads(payload)
                 evt_type = data.get("type")
                 if evt_type == "message_start":
@@ -293,6 +295,8 @@ class PyfetchAnthropic(LLM):
         # XML tokenizer may stop early (after </PYTHON> or </TERMINAL>).
         # Drain remaining SSE events to capture final usage.
         async for payload in sse_iter:
+            if not payload.strip():
+                continue
             data = json.loads(payload)
             if data.get("type") in ("message_start", "message_delta"):
                 _update_usage(data)
@@ -399,6 +403,9 @@ class PyfetchAnthropic(LLM):
                             text = decoder.decode(chunk, False)
                             if text:
                                 yield text
+                        final_text = decoder.decode(b"", True)
+                        if final_text:
+                            yield final_text
             except ImportError:
                 raise RuntimeError(
                     "PyfetchAnthropic requires pyodide (emscripten) or aiohttp installed."
