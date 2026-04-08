@@ -6,22 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.9.7] - Unreleased
+## [0.9.8] - 2026-04-08
+
+### Fixed
+- **Unchanged variables no longer re-persisted**: Only reassigned variables are written back to state (identity-based detection). Previously every namespace variable was re-pickled and stored as a new blob on every commit — even if untouched.
+- **Multiple EDITs/FILEs to the same file no longer clobber each other**: `ResponseBuilder` now uses unique per-block keys instead of bare file paths.
+- **False-positive "already applied" EDITs**: Skips the heuristic when a sibling action in the same batch already modified the file.
+- **Duplicate EDIT deduplication**: Identical `<EDIT>` blocks in one response are deduplicated with a warning.
+- **Duplicate FILE writes**: Last-write-wins with a warning. Appends preserved.
+- **"Already applied" EDIT visibility**: Now emits a `SystemNoteEvent` instead of silently skipping.
+- **SSE robustness**: Empty payloads skipped before `json.loads`; incremental UTF-8 decoder flushed at end of stream.
+
+### Added
+- **File action confirmations**: Agents receive "✓ Applied file actions: …" after writes/edits.
+
+### Changed
+- **kvgit >=0.1.11, termish >=0.1.4**.
+
+## [0.9.7] - 2026-04-05
 
 ### Added
 - **`PyfetchAnthropic`**: Browser-compatible Anthropic client using `pyodide.http.pyfetch` for direct browser-to-Anthropic API calls without a server proxy. Mirrors `PyfetchOpenAI` but targets the native Anthropic Messages API (with `anthropic-dangerous-direct-browser-access` header, system field, base64 image blocks, and prompt caching). Async-only with SSE streaming.
 - **`DEBUG_RAW_STREAM`**: Module-level flag on both pyfetch clients for printing raw SSE text deltas to stdout — useful for debugging model output vs XML-tokenizer behavior.
 - **Implicit-close recovery in XML tokenizer**: When an agent forgets to close a section and opens a sibling top-level tag on a new line, the tokenizer transitions cleanly instead of absorbing the new tag into the current section's content. Handles `<TITLE>`, `<THINKING>`, `<PYTHON>`, `<TERMINAL>`, `<FILE>`, and `<EDIT>` as boundaries. Mid-line tag-like strings in file content are preserved.
-- **File action confirmations**: Agents now receive a `SystemNoteEvent` ("✓ Applied file actions: …") summarizing which writes and edits ran, reducing the guesswork that drove defensive edit repetition.
-
-### Fixed
-- **False-positive "already applied" EDITs**: When multiple EDITs target the same file in a batch, earlier edits can write content that coincidentally contains a later edit's replacement text. The "already applied" heuristic now checks `modified_this_batch` and skips the shortcut when a sibling action already changed the file, raising the proper error instead.
-- **Duplicate FILE writes**: Multiple `<FILE>` writes to the same path in one response now keep only the last (last-write-wins) with a warning. Appends are preserved.
-- **"Already applied" EDIT visibility**: The silent skip now emits a `SystemNoteEvent` warning so agents know the edit was skipped and can verify.
 
 ### Changed
 - **No more `<TITLE>` prefill on Anthropic clients**: Removed the assistant-prefill step from both `Anthropic` (SDK-based) and `PyfetchAnthropic`. Letting Claude generate the whole response from scratch improves adherence to the XML format primer — with prefill, the model would occasionally skip `</TITLE>` and `<THINKING>`, then self-correct mid-stream, producing two concatenated attempts that the tokenizer couldn't disambiguate.
-- **Stronger XML primer**: Every response must begin with `<TITLE>` + `<THINKING>` (no exceptions). New guidance: prefer `INSERT-AFTER`/`INSERT-BEFORE` over `REPLACE` that retains the search text; do not repeat EDITs defensively (duplicates are dropped with a warning).
+- **Stronger XML primer**: Every response must begin with `<TITLE>` + `<THINKING>` (no exceptions, even on continuation turns).
 
 ## [0.9.6] - 2026-04-01
 
