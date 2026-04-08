@@ -38,6 +38,7 @@ def handle_result(
     pre_keys: set[str],
     on_event: Callable[[Any], None] | None = None,
     injected_keys: set[str] | None = None,
+    pre_ids: dict[str, int] | None = None,
 ) -> None:
     """Process an ExecResult: sync state and re-raise errors.
 
@@ -50,22 +51,38 @@ def handle_result(
         on_event: Optional event callback.
         injected_keys: Set of bridge-injected names (task_success, etc.)
                        that should not be synced back to state.
+        pre_ids: Object identity snapshot from before execution.  When
+                 provided, only variables whose ``id()`` changed (i.e.
+                 were reassigned or newly created) are written back to
+                 state.  Variables that were merely *referenced* but not
+                 reassigned are left to ``safe_commit``'s
+                 ``referenced_keys`` path, which re-stages them for
+                 byte-level change detection (catching in-place mutations
+                 without creating duplicate blobs for unchanged values).
 
     Raises:
         _AgentExit subclasses: TaskSuccess, TaskFail, TaskContinue, etc.
         Exception: Any regular exception from agent code.
     """
     skip = injected_keys or set()
+    ids = pre_ids or {}
 
-    # 1. Sync namespace values back to state
+    # 1. Sync namespace values back to state — only write variables that
+    #    were reassigned (different object identity) or newly created.
+    #    Variables with the same id() are untouched by agent code and
+    #    don't need to be re-staged; safe_commit's referenced_keys path
+    #    will catch any in-place mutations via byte comparison.
     for key, value in result.namespace.items():
-        if not key.startswith("__") and key not in skip:
-            if isinstance(value, types.ModuleType):
-                # Modules can't survive pickle — store a ref that _auto_activate
-                # will resolve via __sb_import__ on the next turn.
-                state[key] = ModuleRef(value.__name__, getattr(value, "__file__", None))
-            else:
-                state[key] = value
+        if key.startswith("__") or key in skip:
+            continue
+        if key in ids and id(value) == ids[key]:
+            continue  # Same object — not reassigned
+        if isinstance(value, types.ModuleType):
+            # Modules can't survive pickle — store a ref that _auto_activate
+            # will resolve via __sb_import__ on the next turn.
+            state[key] = ModuleRef(value.__name__, getattr(value, "__file__", None))
+        else:
+            state[key] = value
 
     # 2. Detect deletions (key was in state before exec, not in namespace after)
     post_keys = {k for k in result.namespace if not k.startswith("__")}

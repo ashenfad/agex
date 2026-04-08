@@ -68,7 +68,12 @@ def _prepare_sandbox(
     if file_path is not None:
         namespace["__file__"] = file_path
 
-    return sb, namespace, pre_keys, injected_keys
+    # Snapshot object identities so handle_result can skip unchanged vars.
+    pre_ids = {
+        key: id(value) for key, value in namespace.items() if not key.startswith("__")
+    }
+
+    return sb, namespace, pre_keys, injected_keys, pre_ids
 
 
 def execute_sandboxed(
@@ -86,7 +91,7 @@ def execute_sandboxed(
     """Execute agent code synchronously in the sandtrap sandbox."""
     from .policy import _current_on_event, _current_on_token, _current_session
 
-    sb, namespace, pre_keys, injected_keys = _prepare_sandbox(
+    sb, namespace, pre_keys, injected_keys, pre_ids = _prepare_sandbox(
         program,
         agent,
         state,
@@ -115,6 +120,7 @@ def execute_sandboxed(
         pre_keys,
         on_event=on_event,
         injected_keys=injected_keys,
+        pre_ids=pre_ids,
     )
 
 
@@ -148,7 +154,7 @@ async def aexecute_sandboxed(
         def safe_on_event(event: Any) -> None:
             asyncio.run_coroutine_threadsafe(on_event(event), loop)
 
-    sb, namespace, pre_keys, injected_keys = _prepare_sandbox(
+    sb, namespace, pre_keys, injected_keys, pre_ids = _prepare_sandbox(
         program,
         agent,
         state,
@@ -177,4 +183,5 @@ async def aexecute_sandboxed(
         pre_keys,
         on_event=safe_on_event,
         injected_keys=injected_keys,
+        pre_ids=pre_ids,
     )
