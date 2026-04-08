@@ -128,7 +128,7 @@ class ResponseBuilder:
         self.edit_metadata: dict[str, dict] = {}  # path -> {replace_all: bool}
         self.current_edit_path: str | None = None
         # Track ordering of file and edit actions
-        self.action_order: list[tuple[str, str]] = []  # [(type, path), ...]
+        self.action_order: list[tuple[str, str, str]] = []  # [(type, key, path)]
         # Token usage from the API response
         self.input_tokens: int | None = None
         self.output_tokens: int | None = None
@@ -198,11 +198,14 @@ class ResponseBuilder:
                     path = validate_file_path(path_match.group(1))
                     mode_str = mode_match.group(1) if mode_match else "write"
                     mode = validate_file_mode(mode_str, path)
-                    self.current_file_path = path
-                    self.file_parts[self.current_file_path] = []
-                    self.file_modes[self.current_file_path] = mode
-                    # Track ordering
-                    self.action_order.append(("file", path))
+                    # Use a unique key per FILE block (not bare path) so
+                    # multiple writes to the same path don't clobber.
+                    file_key = f"{path}:{len(self.action_order)}"
+                    self.current_file_path = file_key
+                    self.file_parts[file_key] = []
+                    self.file_modes[file_key] = mode
+                    # Track ordering — consistent 3-tuple: (type, key, path)
+                    self.action_order.append(("file", file_key, path))
             elif self.current_file_path:
                 self.file_parts[self.current_file_path].append(token.content)
         elif token.type == "edit":
@@ -253,23 +256,20 @@ class ResponseBuilder:
 
         file_actions: list[FileAction | EditAction] = []
 
-        # Build actions in the order they appeared
-        for action_entry in self.action_order:
-            action_type = action_entry[0]
+        # Build actions in the order they appeared.
+        # All entries are 3-tuples: (type, unique_key, real_path).
+        for action_type, unique_key, real_path in self.action_order:
             if action_type == "file":
-                _, path = action_entry
-                parts = self.file_parts.get(path, [])
+                parts = self.file_parts.get(unique_key, [])
                 content = "".join(parts)
-                mode = self.file_modes.get(path, "write")
+                mode = self.file_modes.get(unique_key, "write")
                 file_actions.append(
-                    FileAction(path=path, content=content, mode=mode)  # type: ignore[arg-type]
+                    FileAction(path=real_path, content=content, mode=mode)  # type: ignore[arg-type]
                 )
             elif action_type == "edit":
-                # Edit entries are 3-tuples: ("edit", edit_key, real_path)
-                _, edit_key, real_path = action_entry
-                parts = self.edit_parts.get(edit_key, [])
+                parts = self.edit_parts.get(unique_key, [])
                 inner_content = "".join(parts)
-                metadata = self.edit_metadata.get(edit_key, {})
+                metadata = self.edit_metadata.get(unique_key, {})
                 match_all = metadata.get("match_all", False)
 
                 # Parse SEARCH tag (required)
