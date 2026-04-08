@@ -761,6 +761,31 @@ class TestApplyOptimisticFileActionsIntegration:
         assert "test.py" in dup_msg
         assert "2 duplicate" in dup_msg
 
+    def test_two_different_edits_same_file_both_applied(self, mock_fs, mock_agent):
+        """Two DIFFERENT <EDIT> blocks targeting the same file in one response
+        should both apply — the ResponseBuilder must not clobber the first
+        edit's content when the second arrives."""
+        from agex.agent.datatypes import EditAction
+        from agex.agent.loop.common import apply_optimistic_file_actions
+
+        mock_fs.files["app.js"] = b"const A = 1;\nconst B = 2;\n"
+
+        class MockResponse:
+            file_actions = [
+                EditAction(
+                    path="app.js", search="const A = 1;", content="const A = 10;"
+                ),
+                EditAction(
+                    path="app.js", search="const B = 2;", content="const B = 20;"
+                ),
+            ]
+
+        apply_optimistic_file_actions(mock_agent, MockResponse(), mock_fs, {})
+
+        result = mock_fs.files["app.js"].decode("utf-8")
+        assert "const A = 10;" in result
+        assert "const B = 20;" in result
+
     def test_non_duplicate_edits_all_applied(self, mock_fs, mock_agent):
         """Different EDITs targeting the same file should NOT be deduplicated."""
         from agex.agent.datatypes import EditAction
