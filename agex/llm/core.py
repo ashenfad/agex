@@ -222,13 +222,17 @@ class ResponseBuilder:
                         match_all_match is not None
                         and match_all_match.group(1).lower() == "true"
                     )
-                    self.current_edit_path = path
-                    self.edit_parts[path] = []
-                    self.edit_metadata[path] = {
+                    # Use a unique key per edit (not bare path) so multiple
+                    # edits targeting the same file don't clobber each other.
+                    edit_key = f"{path}:{len(self.action_order)}"
+                    self.current_edit_path = edit_key
+                    self.edit_parts[edit_key] = []
+                    self.edit_metadata[edit_key] = {
                         "match_all": match_all,
                     }
-                    # Track ordering
-                    self.action_order.append(("edit", path))
+                    # Track ordering — store both the key (for dict lookup)
+                    # and the real path (for the EditAction).
+                    self.action_order.append(("edit", edit_key, path))
             elif self.current_edit_path:
                 self.edit_parts[self.current_edit_path].append(token.content)
 
@@ -250,8 +254,10 @@ class ResponseBuilder:
         file_actions: list[FileAction | EditAction] = []
 
         # Build actions in the order they appeared
-        for action_type, path in self.action_order:
+        for action_entry in self.action_order:
+            action_type = action_entry[0]
             if action_type == "file":
+                _, path = action_entry
                 parts = self.file_parts.get(path, [])
                 content = "".join(parts)
                 mode = self.file_modes.get(path, "write")
@@ -259,9 +265,11 @@ class ResponseBuilder:
                     FileAction(path=path, content=content, mode=mode)  # type: ignore[arg-type]
                 )
             elif action_type == "edit":
-                parts = self.edit_parts.get(path, [])
+                # Edit entries are 3-tuples: ("edit", edit_key, real_path)
+                _, edit_key, real_path = action_entry
+                parts = self.edit_parts.get(edit_key, [])
                 inner_content = "".join(parts)
-                metadata = self.edit_metadata.get(path, {})
+                metadata = self.edit_metadata.get(edit_key, {})
                 match_all = metadata.get("match_all", False)
 
                 # Parse SEARCH tag (required)
@@ -304,10 +312,10 @@ class ResponseBuilder:
                 if search_match:
                     search = search_match.group(1)
 
-                    validate_edit_search(path, search)
+                    validate_edit_search(real_path, search)
                     file_actions.append(
                         EditAction(
-                            path=path,
+                            path=real_path,
                             search=search,
                             content=content,
                             operation=operation,
