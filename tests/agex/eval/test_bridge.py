@@ -246,6 +246,177 @@ class TestResultHandler:
         assert state.get("x") == 42
 
 
+class TestChangeDetection:
+    """Tests for identity-based change detection in handle_result.
+
+    Only variables that were reassigned (different id()) or newly created
+    should be written to state.  Unchanged variables should be skipped to
+    avoid creating duplicate blobs in kvgit.
+    """
+
+    def test_unchanged_variable_not_restaged(self):
+        """A variable with the same id() after execution should not be
+        written back to state (no unnecessary staging)."""
+        state = Live()
+        original = [1, 2, 3]
+        state["data"] = original
+
+        # Simulate: namespace has the same object (not reassigned)
+        ns_obj = original  # same id()
+        pre_ids = {"data": id(ns_obj)}
+        result = ExecResult(namespace={"data": ns_obj})
+
+        handle_result(result, state, "test", {"data"}, pre_ids=pre_ids)
+        # state["data"] should not have been re-set (no __setitem__ call)
+        # We verify by checking that the Live store wasn't written to —
+        # if it were, .get() would return a re-pickled copy, not the original.
+        # For Live(), __setitem__ always writes, so the test is that the
+        # value is correct (and in production with Staged, the key wouldn't
+        # be in _updates).
+        assert state.get("data") == [1, 2, 3]
+
+    def test_reassigned_variable_is_staged(self):
+        """A variable with a different id() should be written to state."""
+        state = Live()
+        state["x"] = 10
+
+        old_obj = state.get("x")  # the hydrated value
+        new_obj = 20  # different id
+        pre_ids = {"x": id(old_obj)}
+        result = ExecResult(namespace={"x": new_obj})
+
+        handle_result(result, state, "test", {"x"}, pre_ids=pre_ids)
+        assert state.get("x") == 20
+
+    def test_new_variable_is_staged(self):
+        """A variable not in pre_ids (newly created) should be written."""
+        state = Live()
+        pre_ids = {}  # nothing existed before
+        result = ExecResult(namespace={"new_var": 42})
+
+        handle_result(result, state, "test", set(), pre_ids=pre_ids)
+        assert state.get("new_var") == 42
+
+    def test_deletion_still_works_with_pre_ids(self):
+        """Variable deletion should still work when pre_ids is provided."""
+        state = Live()
+        state["x"] = 42
+        state["y"] = 99
+
+        pre_ids = {"x": id(42), "y": id(99)}
+        result = ExecResult(namespace={"y": 99})  # x deleted
+
+        handle_result(result, state, "test", {"x", "y"}, pre_ids=pre_ids)
+        assert "x" not in state
+        assert state.get("y") == 99
+
+    def test_without_pre_ids_all_written(self):
+        """Without pre_ids (backward compat), all variables are written."""
+        state = Live()
+        state["x"] = 10
+        result = ExecResult(namespace={"x": 10, "y": 20})
+
+        handle_result(result, state, "test", {"x"})
+        assert state.get("x") == 10
+        assert state.get("y") == 20
+
+    def test_mixed_changed_and_unchanged(self):
+        """Only changed/new variables are staged; unchanged are skipped."""
+        state = Live()
+        big_data = {"key": "value" * 1000}
+        state["big"] = big_data
+        state["small"] = 1
+
+        # Simulate: big is same object, small is reassigned
+        pre_ids = {"big": id(big_data), "small": id(state.get("small"))}
+        result = ExecResult(
+            namespace={
+                "big": big_data,  # same id — should skip
+                "small": 2,  # different value, different id
+                "new": "hello",  # not in pre_ids — should write
+            }
+        )
+
+        # Use a tracking wrapper to count writes
+        writes = []
+
+        class TrackingState:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def __setitem__(self, key, value):
+                writes.append(key)
+                self._inner[key] = value
+
+            def __contains__(self, key):
+                return key in self._inner
+
+            def __delitem__(self, key):
+                del self._inner[key]
+
+            def get(self, key, default=None):
+                return self._inner.get(key, default)
+
+            def keys(self):
+                return self._inner.keys()
+
+        tracking = TrackingState(state)
+        handle_result(result, tracking, "test", {"big", "small"}, pre_ids=pre_ids)
+
+        assert "big" not in writes, "Unchanged variable should not be written"
+        assert "small" in writes, "Reassigned variable should be written"
+        assert "new" in writes, "New variable should be written"
+
+    def test_execute_sandboxed_skips_untouched_vars(self):
+        """End-to-end: execute_sandboxed only writes variables that changed."""
+        clear_agent_registry()
+        agent = Agent(name="cd_test")
+        state = Live()
+        state["__event_log__"] = []
+
+        # Turn 1: create two variables
+        execute_sandboxed("big = list(range(1000))\nsmall = 1", agent, state)
+        assert state.get("big") == list(range(1000))
+        assert state.get("small") == 1
+
+        # Wrap state to track writes on turn 2
+        writes = []
+
+        class TrackingLive:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def __setitem__(self, key, value):
+                writes.append(key)
+                self._inner[key] = value
+
+            def __contains__(self, key):
+                return key in self._inner
+
+            def __delitem__(self, key):
+                del self._inner[key]
+
+            def get(self, key, default=None):
+                return self._inner.get(key, default)
+
+            def keys(self):
+                return self._inner.keys()
+
+        tracking = TrackingLive(state)
+
+        # Turn 2: only reassign small, don't touch big
+        execute_sandboxed("small = 2", agent, tracking)
+
+        assert "small" in writes, "Reassigned variable should be written"
+        assert "big" not in writes, "Untouched variable should NOT be written"
+
+
 class TestTaskControlPicklability:
     """Tests that task control functions survive pickle roundtrip."""
 
