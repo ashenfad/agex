@@ -5,6 +5,7 @@ Uses pyodide.http.pyfetch for HTTP transport instead of the openai SDK,
 enabling direct browser-to-API calls without a server proxy.
 """
 
+import asyncio
 import codecs
 import json
 import sys
@@ -196,8 +197,6 @@ class PyfetchOpenAI(LLM):
                 if not is_network or attempt + 1 >= self._STREAM_MAX_RETRIES:
                     raise
                 # Brief pause before retry
-                import asyncio
-
                 await asyncio.sleep(1)
 
     async def _stream_once(
@@ -244,15 +243,26 @@ class PyfetchOpenAI(LLM):
             yield token
 
         # XML tokenizer may stop early (after </PYTHON> or </TERMINAL>).
-        # Drain remaining SSE events to capture the usage chunk.
-        if usage_holder["input_tokens"] is None:
+        # Drain remaining SSE events briefly to capture the usage chunk
+        # — but bound the wait tightly so a provider that stalls or
+        # keeps streaming (e.g. some OpenRouter routes not honoring
+        # stream_options, or a model that keeps generating past our
+        # stop point) can't hang the whole chat turn.
+        async def _drain() -> None:
             async for payload in sse_iter:
                 if not payload.strip():
                     continue
                 data = json.loads(payload)
                 _update_usage(data)
                 if usage_holder["input_tokens"] is not None:
-                    break
+                    return
+
+        if usage_holder["input_tokens"] is None:
+            try:
+                await asyncio.wait_for(_drain(), timeout=2.0)
+            except (asyncio.TimeoutError, Exception):
+                # Best-effort — partial or missing usage is acceptable.
+                pass
 
         yield TokenChunk(
             type="thinking",
