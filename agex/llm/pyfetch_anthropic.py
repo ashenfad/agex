@@ -6,6 +6,7 @@ server proxy.  Requires the ``anthropic-dangerous-direct-browser-access``
 header (supported by Anthropic for trusted browser contexts).
 """
 
+import asyncio
 import codecs
 import json
 import sys
@@ -293,13 +294,27 @@ class PyfetchAnthropic(LLM):
             yield token
 
         # XML tokenizer may stop early (after </PYTHON> or </TERMINAL>).
-        # Drain remaining SSE events to capture final usage.
-        async for payload in sse_iter:
-            if not payload.strip():
-                continue
-            data = json.loads(payload)
-            if data.get("type") in ("message_start", "message_delta"):
-                _update_usage(data)
+        # Drain remaining SSE events to capture final usage — but bound
+        # the wait tightly so we don't hang on a model that keeps
+        # generating past our stop point.  Anthropic models sometimes
+        # hallucinate trailing content (e.g. a fake next user turn),
+        # and without a timeout the drain waits for every single
+        # byte up to max_tokens before yielding the final done token.
+        async def _drain() -> None:
+            async for payload in sse_iter:
+                if not payload.strip():
+                    continue
+                data = json.loads(payload)
+                if data.get("type") in ("message_start", "message_delta"):
+                    _update_usage(data)
+
+        try:
+            await asyncio.wait_for(_drain(), timeout=2.0)
+        except (asyncio.TimeoutError, Exception):
+            # Best-effort — partial usage is acceptable.  The orphaned
+            # SSE reader will be garbage-collected or closed when the
+            # underlying HTTP response finishes.
+            pass
 
         yield TokenChunk(
             type="thinking",
