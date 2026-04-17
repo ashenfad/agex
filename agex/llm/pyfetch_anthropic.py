@@ -305,6 +305,8 @@ class PyfetchAnthropic(LLM):
                 if not payload.strip():
                     continue
                 data = json.loads(payload)
+                if data.get("type") == "message_stop":
+                    return
                 if data.get("type") in ("message_start", "message_delta"):
                     _update_usage(data)
 
