@@ -38,3 +38,11 @@ async def parse_sse_events(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
                     return
                 yield payload
             # Skip empty lines, comments (: ...), and other SSE fields
+
+    # Flush any trailing data not terminated by a newline (e.g. the
+    # server closed the connection before sending a final newline).
+    line = buffer.rstrip("\r")
+    if line.startswith("data: "):
+        payload = line[6:]
+        if payload != "[DONE]":
+            yield payload
