@@ -89,7 +89,12 @@ def execute_sandboxed(
     file_path: str | None = None,
 ) -> None:
     """Execute agent code synchronously in the sandtrap sandbox."""
-    from .policy import _current_on_event, _current_on_token, _current_session
+    from .policy import (
+        _current_on_event,
+        _current_on_token,
+        _current_parent_log,
+        _current_session,
+    )
 
     sb, namespace, pre_keys, injected_keys, pre_ids = _prepare_sandbox(
         program,
@@ -102,9 +107,12 @@ def execute_sandboxed(
     )
 
     # Set context vars so sub-agent task calls inherit session/on_event/on_token
+    # and can locate this agent's state+name as their "parent log" target for
+    # synthetic OutputEvents carrying sub-agent REPORTs.
     session_token = _current_session.set(session)
     event_token = _current_on_event.set(on_event)
     token_token = _current_on_token.set(on_token)
+    parent_log_token = _current_parent_log.set((state, agent.name))
     try:
         with sb:
             result = sb.exec(program, namespace=namespace)
@@ -112,6 +120,7 @@ def execute_sandboxed(
         _current_session.reset(session_token)
         _current_on_event.reset(event_token)
         _current_on_token.reset(token_token)
+        _current_parent_log.reset(parent_log_token)
 
     handle_result(
         result,
@@ -140,7 +149,12 @@ async def aexecute_sandboxed(
 
     Uses sandbox.aexec() so ``await`` works natively in sandbox code.
     """
-    from .policy import _current_on_event, _current_on_token, _current_session
+    from .policy import (
+        _current_on_event,
+        _current_on_token,
+        _current_parent_log,
+        _current_session,
+    )
 
     # Wrap async on_event into a thread-safe sync wrapper.  Sandbox code
     # runs in an executor thread, so async
@@ -165,9 +179,12 @@ async def aexecute_sandboxed(
     )
 
     # Set context vars so sub-agent task calls inherit session/on_event/on_token
+    # and can locate this agent's state+name as their "parent log" target for
+    # synthetic OutputEvents carrying sub-agent REPORTs.
     session_token = _current_session.set(session)
     event_token = _current_on_event.set(on_event)
     token_token = _current_on_token.set(on_token)
+    parent_log_token = _current_parent_log.set((state, agent.name))
     try:
         with sb:
             result = await sb.aexec(program, namespace=namespace)
@@ -175,6 +192,7 @@ async def aexecute_sandboxed(
         _current_session.reset(session_token)
         _current_on_event.reset(event_token)
         _current_on_token.reset(token_token)
+        _current_parent_log.reset(parent_log_token)
 
     handle_result(
         result,

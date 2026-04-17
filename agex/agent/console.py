@@ -272,6 +272,20 @@ def _format_event_lines(
             )
         body_lines.append(_indent(detail_indent, f"Thinking: {thinking_text}"))
 
+        report_text = getattr(event, "report", "")
+        if report_text:
+            if verbosity == "verbose":
+                report_display = _strip_newlines(report_text)
+            else:
+                report_display = _truncate(
+                    _strip_newlines(report_text),
+                    120 if verbosity != "brief" else 80,
+                )
+            report_line = f"Report: {report_display}"
+            if use_color:
+                report_line = _colorize(use_color, _Colors.green, report_line)
+            body_lines.append(_indent(detail_indent, report_line))
+
         if event.file_actions:
             file_names = ", ".join(f"`{action.path}`" for action in event.file_actions)
             body_lines.append(_indent(detail_indent, f"Files: {file_names}"))
@@ -480,6 +494,12 @@ def pprint_tokens(
         color_code = _Colors.cyan if use_color else ""
     elif token.type == "thinking":
         color_code = _Colors.bright_blue if use_color else ""
+    elif token.type == "report":
+        # Distinct label at section start so reports are visually separable
+        # from thinking and code.  Green reads as "user-facing communication."
+        if token.start:
+            prefix = "\n💬 "
+        color_code = _Colors.green if use_color else ""
     elif token.type == "file":
         color_code = _Colors.magenta if use_color else ""
     elif token.type == "edit":
@@ -492,7 +512,10 @@ def pprint_tokens(
         color_code = _Colors.cyan if use_color else ""
 
     # Final content assembly
-    final_text = prefix + content if token.start and token.type == "title" else content
+    if token.start and token.type in ("title", "report"):
+        final_text = prefix + content
+    else:
+        final_text = content
     if use_color and color_code:
         final_text = _colorize(use_color, color_code, final_text)
     output_stream.write(final_text)

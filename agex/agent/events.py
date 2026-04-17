@@ -414,6 +414,7 @@ class ActionEvent(BaseEvent):
 
     title: str = ""
     thinking: str
+    report: str = ""
     code: str | None = None
     terminal: str | None = None
     file_actions: list[FileAction | EditAction] = Field(default_factory=list)
@@ -423,7 +424,12 @@ class ActionEvent(BaseEvent):
     @model_validator(mode="after")
     def _compute_tokens(self):
         _, tokens = render_action_markdown(
-            self.thinking, self.code, self.title, self.file_actions, self.terminal
+            self.thinking,
+            self.code,
+            self.title,
+            self.file_actions,
+            self.terminal,
+            self.report,
         )
         self.full_detail_tokens = tokens
         self.low_detail_tokens = tokens  # No separate low-detail rendering

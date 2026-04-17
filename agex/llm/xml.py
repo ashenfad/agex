@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 # XML tag names as constants
 TAG_THINKING = "THINKING"
+TAG_REPORT = "REPORT"
 TAG_PYTHON = "PYTHON"
 TAG_TERMINAL = "TERMINAL"
 TAG_FILE = "FILE"
@@ -47,6 +48,7 @@ _IMPLICIT_CLOSE_PATTERN = re.compile(
     rf"(?:^|\n)[\t ]*<(?:"
     rf"{TAG_TITLE}>|"
     rf"{TAG_THINKING}>|"
+    rf"{TAG_REPORT}>|"
     rf"{TAG_PYTHON}>|"
     rf"{TAG_TERMINAL}>|"
     rf"{TAG_FILE}\s|"
@@ -155,6 +157,7 @@ class XMLResponse:
     file_actions: list["FileAction | EditAction"] = field(default_factory=list)
     terminal: str | None = None
     title: str = ""  # Optional for now, will be required in Phase 2.5
+    report: str = ""  # Optional — agent-to-caller message, streamed via on_token
 
 
 # System prompt instructions for XML format
@@ -162,6 +165,7 @@ XML_FORMAT_PRIMER = f"""
 Format your response using XML tags:
 <{TAG_TITLE}>A brief title here</{TAG_TITLE}>
 <{TAG_THINKING}>Your step-by-step reasoning here</{TAG_THINKING}>
+<{TAG_REPORT}>A short message for the user (optional)</{TAG_REPORT}>
 <{TAG_FILE} path="/helpers/file.py" mode="write|append"># File content here</{TAG_FILE}>
 <{TAG_EDIT} path="/helpers/file.py" match_all="false">
 <{TAG_SEARCH}>text to find</{TAG_SEARCH}>
@@ -193,6 +197,7 @@ IMPORTANT:
 11. When making python modules, use the `helpers` directory as the root.
 12. Do NOT attempt to simulate observations or multiple turns in a single response.
 13. NEVER escape characters inside tag content. Write literal `<`, `>`, `&` - do NOT use `&lt;`, `&gt;`, `&amp;` or any HTML entities. The content must match the file exactly.
+14. `<{TAG_REPORT}>` is optional. When you use it, place it immediately after `<{TAG_THINKING}>` and keep it to one per response. See "Communicating with Your Caller" above for when to emit one — the short version is: use `<{TAG_REPORT}>` on multi-turn tasks (any turn calling `task_continue()`) so the caller knows what you're doing, and skip it on trivial single-turn tasks.
 
 You will receive environment output (stdout/images) in <{TAG_OBSERVATION}> tags.
 These will be visible after a `task_continue()` call or after <{TAG_TERMINAL}> execution.
@@ -217,6 +222,16 @@ def add(a, b):
 import helpers.utils
 result = helpers.utils.add(5, 7)
 task_success(result)
+</{TAG_PYTHON}>
+
+Example using <{TAG_REPORT}> to narrate a slow step before running it:
+<{TAG_TITLE}>Scanning calendars for weeknight slots</{TAG_TITLE}>
+<{TAG_THINKING}>Need to fetch both calendars and filter. This may take a few seconds, so let the user know.</{TAG_THINKING}>
+<{TAG_REPORT}>Scanning your calendars for the next 60 days...</{TAG_REPORT}>
+<{TAG_PYTHON}>
+cals = list_calendars()
+events = fetch_events(cals, days=60)
+task_continue()
 </{TAG_PYTHON}>
 
 Keep titles short. Always close every tag you open.
@@ -286,6 +301,14 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
     )
     if title_match:
         title = title_match.group(1).strip()
+
+    # Extract optional report (case-insensitive)
+    report = ""
+    report_match = re.search(
+        rf"<{TAG_REPORT}>(.*?)</{TAG_REPORT}>", xml_text, re.DOTALL | re.IGNORECASE
+    )
+    if report_match:
+        report = report_match.group(1).strip()
 
     # Extract all <FILE> and <EDIT> tags, preserving order
     from agex.agent.datatypes import EditAction, FileAction
@@ -418,6 +441,7 @@ def parse_xml_response(xml_text: str) -> XMLResponse:
         code=code,
         terminal=terminal,
         title=title,
+        report=report,
         file_actions=file_actions,
     )
 
@@ -434,6 +458,7 @@ class _XMLTokenizerState:
     _CLOSING_TAGS = {
         "title": TAG_TITLE,
         "thinking": TAG_THINKING,
+        "report": TAG_REPORT,
         "python": TAG_PYTHON,
         "terminal": TAG_TERMINAL,
         "file": TAG_FILE,
@@ -443,7 +468,8 @@ class _XMLTokenizerState:
     def __init__(self) -> None:
         self.buffer = ""
         self.current_section: (
-            Literal["title", "thinking", "python", "terminal", "file", "edit"] | None
+            Literal["title", "thinking", "report", "python", "terminal", "file", "edit"]
+            | None
         ) = None
 
     def add_chunk(self, chunk: str) -> None:
@@ -496,6 +522,7 @@ class _XMLTokenizerState:
         # Look for opening tags (case-insensitive)
         title_start = re.search(rf"<{TAG_TITLE}>", self.buffer, re.IGNORECASE)
         thinking_start = re.search(rf"<{TAG_THINKING}>", self.buffer, re.IGNORECASE)
+        report_start = re.search(rf"<{TAG_REPORT}>", self.buffer, re.IGNORECASE)
         python_start = re.search(rf"<{TAG_PYTHON}>", self.buffer, re.IGNORECASE)
         terminal_start = re.search(rf"<{TAG_TERMINAL}>", self.buffer, re.IGNORECASE)
         file_start = re.search(rf"<{TAG_FILE}\s+([^>]*?)>", self.buffer, re.IGNORECASE)
@@ -509,6 +536,8 @@ class _XMLTokenizerState:
             starts.append(
                 (thinking_start.start(), "thinking", thinking_start.end(), None)
             )
+        if report_start:
+            starts.append((report_start.start(), "report", report_start.end(), None))
         if python_start:
             starts.append((python_start.start(), "python", python_start.end(), None))
         if terminal_start:
@@ -604,7 +633,7 @@ class _XMLTokenizerState:
     def _process_section_closing(
         buffer: str,
         section_type: Literal[
-            "title", "thinking", "python", "terminal", "file", "edit"
+            "title", "thinking", "report", "python", "terminal", "file", "edit"
         ],
         closing_tag: str,
     ) -> tuple[list[TokenChunk], str, bool]:

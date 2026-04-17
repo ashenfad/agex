@@ -76,6 +76,7 @@ def create_action_event(
         agent_name=agent_name,
         title=llm_response.title,
         thinking=llm_response.thinking,
+        report=llm_response.report,
         code=llm_response.code,
         terminal=llm_response.terminal,
         file_actions=llm_response.file_actions,

@@ -277,6 +277,7 @@ def render_action_markdown(
     title: str = "",
     file_actions: list[FileAction | EditAction] | None = None,
     terminal: str | None = None,
+    report: str = "",
 ) -> tuple[str, int]:
     """
     Render an action event as markdown.
@@ -287,11 +288,13 @@ def render_action_markdown(
         title: Optional title for the action
         file_actions: List of file write/edit actions
         terminal: Terminal script to execute (mutually exclusive with code)
+        report: Optional agent-to-caller message (rendered back to agent in history)
 
     Returns:
         (markdown_text, token_count)
     """
     title_section = f"# {title}\n" if title else ""
+    report_section = f"# Report\n{report}\n\n" if report else ""
     files_section = ""
 
     if file_actions:
@@ -324,7 +327,8 @@ def render_action_markdown(
         action_section = f"# Code\n```python\n{code or ''}\n```"
 
     content = (
-        f"{title_section}# Thinking\n{thinking}\n\n{files_section}{action_section}"
+        f"{title_section}# Thinking\n{thinking}\n\n"
+        f"{report_section}{files_section}{action_section}"
     )
     tokens = count_tokens(content)
     return content, tokens
