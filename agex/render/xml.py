@@ -31,6 +31,7 @@ from agex.llm.xml import (
     TAG_OBSERVATION,
     TAG_PYTHON,
     TAG_REPLACE,
+    TAG_REPORT,
     TAG_SEARCH,
     TAG_SUCCESS,
     TAG_TERMINAL,
@@ -119,8 +120,15 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             else:
                 action_section = f"<{TAG_PYTHON}>{event.code or ''}</{TAG_PYTHON}>"
 
+            report_section = (
+                f"<{TAG_REPORT}>{event.report}</{TAG_REPORT}>\n"
+                if getattr(event, "report", "")
+                else ""
+            )
+
             content = (
                 f"{prefix}{title_section}<{TAG_THINKING}>{event.thinking}</{TAG_THINKING}>\n"
+                f"{report_section}"
                 f"{files_section}"
                 f"{action_section}"
             )

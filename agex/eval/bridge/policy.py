@@ -8,6 +8,7 @@ to sandtrap's policy.fn(), policy.cls(), and policy.module() calls.
 from __future__ import annotations
 
 import contextvars
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
 from sandtrap.policy import MemberSpec as SandtrapMemberSpec
@@ -28,6 +29,14 @@ _current_on_event: contextvars.ContextVar[Callable[[Any], None] | None] = (
 _current_on_token: contextvars.ContextVar[Callable[[Any], None] | None] = (
     contextvars.ContextVar("_current_on_token", default=None)
 )
+# Holds (state, agent_name) for the currently executing sandbox's agent.
+# When a sub-task is called from inside sandbox code, its sync_task_func
+# reads this to know where to inject synthetic OutputEvents that carry
+# the sub-agent's REPORTs into the parent's observation history.
+# None at the top level (no parent sandbox active).
+_current_parent_log: contextvars.ContextVar[
+    tuple[MutableMapping[str, Any], str] | None
+] = contextvars.ContextVar("_current_parent_log", default=None)
 
 
 def _translate_configure(

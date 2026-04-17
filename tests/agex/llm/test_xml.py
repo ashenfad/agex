@@ -1049,3 +1049,129 @@ class TestEditParsing:
         """
         with pytest.raises(ResponseParseError, match="multiple operation tags"):
             parse_xml_response(xml)
+
+
+class TestReportTag:
+    """Tests for <REPORT> tag parsing (non-streaming and streaming)."""
+
+    def test_report_absent_by_default(self):
+        """A response without REPORT parses cleanly with empty report."""
+        xml = """
+        <THINKING>x</THINKING>
+        <PYTHON>y</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        assert result.report == ""
+
+    def test_report_extracted_between_thinking_and_python(self):
+        """REPORT in canonical position (after THINKING) is extracted."""
+        xml = """
+        <TITLE>Scanning</TITLE>
+        <THINKING>Need to fetch data</THINKING>
+        <REPORT>Fetching calendar...</REPORT>
+        <PYTHON>task_continue()</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        assert result.title == "Scanning"
+        assert result.thinking == "Need to fetch data"
+        assert result.report == "Fetching calendar..."
+        assert "task_continue" in result.code
+
+    def test_report_case_insensitive(self):
+        xml = """
+        <thinking>x</thinking>
+        <report>hello user</report>
+        <python>pass</python>
+        """
+        result = parse_xml_response(xml)
+        assert result.report == "hello user"
+
+    def test_report_with_terminal(self):
+        xml = """
+        <THINKING>reason</THINKING>
+        <REPORT>about to list files</REPORT>
+        <TERMINAL>ls</TERMINAL>
+        """
+        result = parse_xml_response(xml)
+        assert result.report == "about to list files"
+        assert result.terminal == "ls"
+
+    def test_report_without_python_still_fails(self):
+        """REPORT does not satisfy the exactly-one-terminator requirement."""
+        xml = """
+        <THINKING>x</THINKING>
+        <REPORT>hi</REPORT>
+        """
+        with pytest.raises(ResponseParseError, match="Missing <TERMINAL> or <PYTHON>"):
+            parse_xml_response(xml)
+
+    def test_report_multiline(self):
+        xml = """
+        <THINKING>x</THINKING>
+        <REPORT>
+        Line 1
+        Line 2
+        </REPORT>
+        <PYTHON>pass</PYTHON>
+        """
+        result = parse_xml_response(xml)
+        assert "Line 1" in result.report
+        assert "Line 2" in result.report
+
+    def test_report_streaming_basic(self):
+        """Streaming tokenizer yields REPORT tokens with done=True at closing tag."""
+        chunks = [
+            "<THINKING>",
+            "reason",
+            "</THINKING>",
+            "<REPORT>",
+            "Working ",
+            "on it...",
+            "</REPORT>",
+            "<PYTHON>",
+            "pass",
+            "</PYTHON>",
+        ]
+        tokens = list(tokenize_xml_stream(iter(chunks)))
+
+        report_tokens = [t for t in tokens if t.type == "report"]
+        assert len(report_tokens) > 0
+        assert any(t.done for t in report_tokens)
+        content = "".join(t.content for t in report_tokens if not t.done)
+        assert content == "Working on it..."
+
+    def test_report_streaming_split_tags(self):
+        """REPORT open/close tags split across chunks still parse."""
+        chunks = [
+            "<THINKING>x</THINKING>",
+            "<REP",
+            "ORT>",
+            "message",
+            "</REP",
+            "ORT>",
+            "<PYTHON>pass</PYTHON>",
+        ]
+        tokens = list(tokenize_xml_stream(iter(chunks)))
+        report_content = "".join(
+            t.content for t in tokens if t.type == "report" and not t.done
+        )
+        assert report_content == "message"
+
+    def test_report_implicit_close_recovery(self):
+        """Agents that forget </REPORT> still recover via sibling-opener detection."""
+        # REPORT not closed, PYTHON appears at line start — implicit close fires.
+        chunks = [
+            "<THINKING>x</THINKING>\n",
+            "<REPORT>forgot to close\n",
+            "<PYTHON>pass</PYTHON>",
+        ]
+        tokens = list(tokenize_xml_stream(iter(chunks)))
+        report_content = "".join(
+            t.content for t in tokens if t.type == "report" and not t.done
+        )
+        assert "forgot to close" in report_content
+        # PYTHON still parses afterward
+        code_content = "".join(
+            t.content for t in tokens if t.type == "python" and not t.done
+        )
+        assert "pass" in code_content

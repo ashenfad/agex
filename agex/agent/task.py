@@ -6,6 +6,7 @@ which wraps functions to become agent tasks.
 """
 
 import inspect
+import logging
 from dataclasses import make_dataclass
 from typing import Any, Callable
 
@@ -13,15 +14,65 @@ from kvgit import Staged
 
 from agex.agent.base import BaseAgent
 from agex.agent.datatypes import TaskClarify, TaskFail
+from agex.agent.events import ActionEvent, OutputEvent
 from agex.agent.loop import TaskLoopMixin
-from agex.agent.utils import is_function_body_empty
+from agex.agent.utils import call_sync_or_async, is_function_body_empty
+from agex.eval.objects import PrintAction
 from agex.eval.validation import validate_with_sampling
 from agex.host import Local
 from agex.state import raw_set
+from agex.state.log import add_event_to_log
+
+logger = logging.getLogger(__name__)
 
 # Global registry for dynamically created input dataclasses
 # This allows pickle to find them by module.classname lookup
 _DYNAMIC_DATACLASS_REGISTRY: dict[str, type] = {}
+
+
+def _flush_reports_to_parent_log(
+    collected_reports: list[str], sub_agent_name: str
+) -> None:
+    """Inject collected sub-agent REPORTs into the parent's state log.
+
+    Reads the `_current_parent_log` context var set by
+    `execute_sandboxed`/`aexecute_sandboxed`.  When set, constructs a
+    synthetic OutputEvent attributed to the parent agent and appends it
+    to the parent's event log so it renders as a <OBSERVATION> message
+    in the parent's next history.
+
+    When the context var is None (top-level invocation, no parent
+    sandbox active), this is a no-op: subscribers still see the reports
+    via the sub-agent's own ActionEvent.report flowing through the
+    shared on_event callback, and top-level invocations never write to
+    real stdout.
+    """
+    if not collected_reports:
+        return
+    from agex.eval.bridge.policy import _current_parent_log
+
+    parent_log = _current_parent_log.get()
+    if parent_log is None:
+        return
+    parent_state, parent_name = parent_log
+    try:
+        output_event = OutputEvent(
+            agent_name=parent_name,
+            parts=[
+                PrintAction([f"[report:{sub_agent_name}] {text}"])
+                for text in collected_reports
+            ],
+        )
+        # on_event=None: subscribers already saw these reports via the
+        # sub-agent's ActionEvent flowing through the tap chain.  Firing
+        # a duplicate synthetic event would cause double notification.
+        add_event_to_log(parent_state, output_event, on_event=None)
+    except Exception:
+        # Never mask the real return value / exception from the task loop
+        # with a log-write failure.
+        logger.debug(
+            "Failed to inject sub-agent REPORTs into parent log", exc_info=True
+        )
 
 
 def _reactivate_result(result, agent):
@@ -484,53 +535,30 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
             inputs_instance, session, on_event, on_token = _bind_and_validate(
                 *args, **kwargs
             )
-            # Route through host for non-local execution
-            if not isinstance(self._host, Local):
-                # Extract raw args/kwargs for remote execution
-                bound = new_sig.bind(*args, **kwargs)
-                bound.apply_defaults()
-                raw_kwargs = dict(bound.arguments)
-                raw_kwargs.pop("session", None)
-                raw_kwargs.pop("on_event", None)
-                raw_kwargs.pop("on_token", None)
-                return _reactivate_result(
-                    self._host.execute(
-                        agent=self,
-                        task_name=task_name,
-                        args=(),
-                        kwargs=raw_kwargs,
-                        session=session,
-                        on_event=on_event,
-                        on_token=on_token,
-                    ),
-                    self,
-                )
-            # Resolve state from session using agent's state config
-            state = self._host.resolve_state(
-                self._state_config, session, self.fingerprint or ""
-            )
-            return self._run_task_loop(
-                task_name=task_name,
-                docstring=effective_docstring,
-                inputs_dataclass=inputs_dataclass,
-                inputs_instance=inputs_instance,
-                return_type=return_type,
-                state=state,
-                session=session,
-                on_event=on_event,
-                on_token=on_token,
-                setup=setup,
-                on_conflict=on_conflict,
-                max_conflict_retries=max_conflict_retries,
-            )
 
-        # Create the actual task function (async or sync based on original function)
-        if inspect.iscoroutinefunction(func):
+            # Collect any REPORTs this sub-agent emits during the run.
+            # On return (or raise), _flush_reports_to_parent_log injects
+            # them as a synthetic OutputEvent into the parent's log —
+            # provided a parent sandbox is active (otherwise no-op).
+            collected_reports: list[str] = []
+            user_on_event = on_event
+            sub_agent_name = self.name
 
-            async def task_wrapper(*args, **kwargs):
-                inputs_instance, session, on_event, on_token = _bind_and_validate(
-                    *args, **kwargs
-                )
+            def tapped_on_event(event):
+                # Agent-name filter is critical for multi-level nesting:
+                # without it, a grandparent's tap would also collect a
+                # grandchild's reports via the callback chain and
+                # double-emit into the wrong parent's log.
+                if (
+                    isinstance(event, ActionEvent)
+                    and getattr(event, "report", "")
+                    and event.agent_name == sub_agent_name
+                ):
+                    collected_reports.append(event.report)
+                if user_on_event is not None:
+                    user_on_event(event)
+
+            try:
                 # Route through host for non-local execution
                 if not isinstance(self._host, Local):
                     # Extract raw args/kwargs for remote execution
@@ -541,13 +569,13 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     raw_kwargs.pop("on_event", None)
                     raw_kwargs.pop("on_token", None)
                     return _reactivate_result(
-                        await self._host.aexecute(
+                        self._host.execute(
                             agent=self,
                             task_name=task_name,
                             args=(),
                             kwargs=raw_kwargs,
                             session=session,
-                            on_event=on_event,
+                            on_event=tapped_on_event,
                             on_token=on_token,
                         ),
                         self,
@@ -556,7 +584,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 state = self._host.resolve_state(
                     self._state_config, session, self.fingerprint or ""
                 )
-                return await self._arun_task_loop(
+                return self._run_task_loop(
                     task_name=task_name,
                     docstring=effective_docstring,
                     inputs_dataclass=inputs_dataclass,
@@ -564,12 +592,89 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     return_type=return_type,
                     state=state,
                     session=session,
-                    on_event=on_event,
+                    on_event=tapped_on_event,
                     on_token=on_token,
                     setup=setup,
                     on_conflict=on_conflict,
                     max_conflict_retries=max_conflict_retries,
                 )
+            finally:
+                _flush_reports_to_parent_log(collected_reports, sub_agent_name)
+
+        # Create the actual task function (async or sync based on original function)
+        if inspect.iscoroutinefunction(func):
+
+            async def task_wrapper(*args, **kwargs):
+                inputs_instance, session, on_event, on_token = _bind_and_validate(
+                    *args, **kwargs
+                )
+
+                # Collect any REPORTs this sub-agent emits during the run.
+                # The tap is a sync function that forwards via
+                # call_sync_or_async and returns the result.  This works
+                # at both direct-sync call sites in the loop (where an
+                # async user callback's coroutine would be dropped, same
+                # as pre-existing behavior) and await-capable call sites
+                # (which check isawaitable on the result and await it).
+                # Making the tap itself async would break the direct-sync
+                # call sites.
+                collected_reports: list[str] = []
+                user_on_event = on_event
+                sub_agent_name = self.name
+
+                def tapped_on_event(event):
+                    if (
+                        isinstance(event, ActionEvent)
+                        and getattr(event, "report", "")
+                        and event.agent_name == sub_agent_name
+                    ):
+                        collected_reports.append(event.report)
+                    if user_on_event is not None:
+                        return call_sync_or_async(user_on_event, event)
+                    return None
+
+                try:
+                    # Route through host for non-local execution
+                    if not isinstance(self._host, Local):
+                        # Extract raw args/kwargs for remote execution
+                        bound = new_sig.bind(*args, **kwargs)
+                        bound.apply_defaults()
+                        raw_kwargs = dict(bound.arguments)
+                        raw_kwargs.pop("session", None)
+                        raw_kwargs.pop("on_event", None)
+                        raw_kwargs.pop("on_token", None)
+                        return _reactivate_result(
+                            await self._host.aexecute(
+                                agent=self,
+                                task_name=task_name,
+                                args=(),
+                                kwargs=raw_kwargs,
+                                session=session,
+                                on_event=tapped_on_event,
+                                on_token=on_token,
+                            ),
+                            self,
+                        )
+                    # Resolve state from session using agent's state config
+                    state = self._host.resolve_state(
+                        self._state_config, session, self.fingerprint or ""
+                    )
+                    return await self._arun_task_loop(
+                        task_name=task_name,
+                        docstring=effective_docstring,
+                        inputs_dataclass=inputs_dataclass,
+                        inputs_instance=inputs_instance,
+                        return_type=return_type,
+                        state=state,
+                        session=session,
+                        on_event=tapped_on_event,
+                        on_token=on_token,
+                        setup=setup,
+                        on_conflict=on_conflict,
+                        max_conflict_retries=max_conflict_retries,
+                    )
+                finally:
+                    _flush_reports_to_parent_log(collected_reports, sub_agent_name)
 
         else:
             task_wrapper = sync_task_func

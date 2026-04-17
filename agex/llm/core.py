@@ -59,14 +59,14 @@ class TokenChunk:
     Not an Event - tokens are ephemeral and don't go in the state log.
 
     Attributes:
-        type: Either "title", "thinking", "python", "file", "edit", or "terminal"
+        type: Either "title", "thinking", "report", "python", "file", "edit", or "terminal"
         content: The text content (incremental)
         done: True when this section is complete
         input_tokens: Actual input token count from the API (set on final chunk only)
         output_tokens: Actual output token count from the API (set on final chunk only)
     """
 
-    type: Literal["title", "thinking", "python", "file", "edit", "terminal"]
+    type: Literal["title", "thinking", "report", "python", "file", "edit", "terminal"]
     content: str
     done: bool = False
     input_tokens: int | None = None
@@ -88,6 +88,7 @@ class LLMResponse(BaseModel):
 
     title: str = ""
     thinking: str
+    report: str = ""
     code: str | None = None
     file_actions: list[FileAction | EditAction] = Field(default_factory=list)
     terminal: str | None = None
@@ -118,6 +119,7 @@ class ResponseBuilder:
         self.exec_state = exec_state
         self.title_parts: list[str] = []
         self.thinking_parts: list[str] = []
+        self.report_parts: list[str] = []
         self.code_parts: list[str] = []
         self.terminal_parts: list[str] = []
         self.file_parts: dict[str, list[str]] = {}
@@ -135,6 +137,7 @@ class ResponseBuilder:
         self.seen_sections: dict[str, bool] = {
             "title": False,
             "thinking": False,
+            "report": False,
             "python": False,
             "file": False,
             "edit": False,
@@ -179,6 +182,8 @@ class ResponseBuilder:
             self.title_parts.append(token.content)
         elif token.type == "thinking":
             self.thinking_parts.append(token.content)
+        elif token.type == "report":
+            self.report_parts.append(token.content)
         elif token.type == "python":
             self.code_parts.append(token.content)
         elif token.type == "terminal":
@@ -326,6 +331,7 @@ class ResponseBuilder:
         return LLMResponse(
             title="".join(self.title_parts).strip(),
             thinking="".join(self.thinking_parts),
+            report="".join(self.report_parts).strip(),
             code="".join(self.code_parts),
             file_actions=file_actions,
             terminal="".join(self.terminal_parts) if self.terminal_parts else None,
@@ -435,6 +441,11 @@ class LLM(ABC):
             yield TokenChunk(type="thinking", content=response.thinking, done=False)
         yield TokenChunk(type="thinking", content="", done=True)
 
+        # Yield optional report section
+        if response.report:
+            yield TokenChunk(type="report", content=response.report, done=False)
+            yield TokenChunk(type="report", content="", done=True)
+
         # Yield code section
         if response.code:
             yield TokenChunk(type="python", content=response.code, done=False)
@@ -485,6 +496,11 @@ class LLM(ABC):
         if response.thinking:
             yield TokenChunk(type="thinking", content=response.thinking, done=False)
         yield TokenChunk(type="thinking", content="", done=True)
+
+        # Yield optional report section
+        if response.report:
+            yield TokenChunk(type="report", content=response.report, done=False)
+            yield TokenChunk(type="report", content="", done=True)
 
         # Yield code section
         if response.code:
