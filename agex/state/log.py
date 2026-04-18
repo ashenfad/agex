@@ -54,10 +54,25 @@ def add_event_to_log(
         if task_ref:
             event.parent_ref = task_ref
 
-    # Call the event handler, if provided
+    # Call the event handler, if provided (sync or async)
     if on_event:
         try:
-            on_event(event)
+            import inspect
+
+            result = on_event(event)
+            if inspect.isawaitable(result):
+                # Fire-and-forget: schedule the coroutine without blocking.
+                # add_event_to_log is called from sync contexts that can't
+                # await, so we schedule on the running loop if available.
+                import asyncio
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(result)
+                except RuntimeError:
+                    # No running loop — can't await, close the coroutine
+                    # to suppress the "never awaited" warning.
+                    result.close()
         except Exception as e:
             # Log handler error but don't crash the main loop
             print(f"--- Event handler error: {e} ---")
