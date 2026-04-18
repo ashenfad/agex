@@ -64,6 +64,7 @@ def commit_files(state, files, message=None):
 class TestCommitAndLog:
     def test_commit_with_message(self, vkv, state, git):
         commit_files(state, {"hello.py": b"print('hello')"}, "initial")
+        state["hello.py"] = b"print('hello v2')"
         output = run_git(git, "commit", "-m", "second commit")
         assert "second commit" in output
 
@@ -337,10 +338,11 @@ class TestAdd:
 
     def test_add_dot_stages_all_changed(self, vkv, state, git):
         """git add . stages all VFS files that changed since last agent commit."""
-        commit_files(state, {"x.py": b"xxx"})
+        state["x.py"] = b"xxx"
         run_git(git, "commit", "-m", "baseline")
 
-        commit_files(state, {"x.py": b"xxx_v2", "y.py": b"yyy"})
+        state["x.py"] = b"xxx_v2"
+        state["y.py"] = b"yyy"
         run_git(git, "add", ".")
         run_git(git, "commit", "-m", "updated")
 
@@ -350,7 +352,7 @@ class TestAdd:
 
     def test_commit_without_add_has_no_files_annotation(self, vkv, state, git):
         """Without git add, the commit has no files annotation."""
-        commit_files(state, {"a.py": b"aaa"})
+        state["a.py"] = b"aaa"
         run_git(git, "commit", "-m", "everything")
 
         info = vkv.commit_info(vkv.current_commit)
@@ -359,13 +361,11 @@ class TestAdd:
 
     def test_status_shows_staged_and_unstaged(self, vkv, state, git):
         """git status distinguishes staged vs unstaged files."""
-        commit_files(state, {"base.py": b"base"})
+        state["base.py"] = b"base"
         run_git(git, "commit", "-m", "baseline")
 
-        # Write new files (simulating safe_commit)
-        commit_files(
-            state, {"base.py": b"base", "staged.py": b"s", "unstaged.py": b"u"}
-        )
+        state["staged.py"] = b"s"
+        state["unstaged.py"] = b"u"
         run_git(git, "add", "staged.py")
 
         output = run_git(git, "status")
@@ -375,12 +375,28 @@ class TestAdd:
         assert "unstaged.py" in output
 
     def test_status_clean_after_commit(self, vkv, state, git):
-        """git status shows clean right after a commit bookmark."""
-        commit_files(state, {"f.py": b"x"})
+        """git status shows clean right after a full commit."""
+        state["f.py"] = b"x"
         run_git(git, "commit", "-m", "checkpoint")
 
         output = run_git(git, "status")
         assert "nothing to commit" in output
+
+    def test_commit_nothing_pending_refuses(self, vkv, state, git):
+        """git commit with nothing pending refuses like real git."""
+        state["f.py"] = b"x"
+        run_git(git, "commit", "-m", "first")
+        with pytest.raises(TerminalError, match="nothing to commit"):
+            run_git(git, "commit", "-m", "empty")
+
+    def test_checkout_with_uncommitted_changes_refuses(self, vkv, state, git):
+        """git checkout refuses when there are uncommitted changes."""
+        state["a.py"] = b"1"
+        run_git(git, "commit", "-m", "init")
+        vkv.create_branch("other")
+        state["a.py"] = b"modified"
+        with pytest.raises(TerminalError, match="local changes"):
+            run_git(git, "checkout", "other")
 
     def test_add_no_args_errors(self, git):
         with pytest.raises(TerminalError, match="nothing specified"):
