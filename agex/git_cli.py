@@ -286,20 +286,24 @@ def _git_log(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> 
     branch = vkv.current_branch
     tagged = _agent_commits(vkv)
 
+    # Encode the path filter once, outside the loop
+    _add_fn = kw.get("_add", lambda k: k)
+    internal_path = _add_fn(path_filter) if path_filter else None
+
     for commit_hash in tagged:
         if max_count is not None and count >= max_count:
             break
 
         # If filtering by path, check if this commit touched it
-        if path_filter:
-            _add_fn = kw.get("_add", lambda k: k)
-            internal_path = _add_fn(path_filter)
+        if internal_path is not None:
             parents = vkv.parents(commit_hash)
-            if parents:
-                d = vkv.diff(parents[0], commit_hash)
-                touched = d.added | d.removed | d.modified
-                if internal_path not in touched:
-                    continue
+            if not parents:
+                # Root commit — can't diff, skip when path-filtering
+                continue
+            d = vkv.diff(parents[0], commit_hash)
+            touched = d.added | d.removed | d.modified
+            if internal_path not in touched:
+                continue
 
         info = vkv.commit_info(commit_hash) or {}
         message = info.get("message", "")
@@ -334,12 +338,14 @@ def _git_diff(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) ->
             refs.append(arg)
 
     if len(refs) == 0:
-        # git diff (no args) → diff previous agent-tagged commit vs HEAD
-        commit_b = vkv.current_commit
+        # git diff (no args) → diff last agent commit vs current HEAD.
+        # Shows what changed since the agent's last git commit, matching
+        # real git's "working tree vs HEAD" semantics.
         tagged = _agent_commits(vkv)
-        if len(tagged) < 2:
-            return  # no previous tagged commit to diff against
-        commit_a = tagged[1]  # second most recent agent commit
+        if not tagged:
+            return  # no agent commits yet, nothing to diff
+        commit_a = tagged[0]  # most recent agent commit
+        commit_b = vkv.current_commit
     elif len(refs) == 1:
         commit_a = _resolve_ref(refs[0], vkv)
         commit_b = vkv.current_commit
