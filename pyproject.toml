@@ -1,6 +1,6 @@
 [project]
 name = "agex"
-version = "0.9.8"
+version = "0.10.0"
 description = "Library-friendly agents that work directly with your existing Python codebase."
 readme = "README.md"
 license = "MIT"
@@ -28,7 +28,7 @@ requires-python = ">=3.10"
 dependencies = [
     "termish>=0.1.5,<0.2.0",
     "kvgit>=0.2.1,<0.3.0",
-    "sandtrap>=0.1.11,<0.2.0",
+    "sandtrap>=0.1.14,<0.2.0",
     "reprobate>=0.1.1,<0.2.0",
     "monkeyfs>=0.1.4,<0.2.0",
     "tiktoken",

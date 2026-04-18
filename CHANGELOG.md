@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.10.0] - 2026-04-18
 
 ### Added
 - **`<REPORT>` tag**: New XML primitive for agent-to-caller communication mid-task. Streams live via `on_token`, persists on `ActionEvent.report`, renders back to the agent's own history for commitment coherence. Sub-agent reports propagate into the parent's observation log via direct `OutputEvent` injection.
