@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- **`<REPORT>` tag**: New XML primitive for agent-to-caller communication mid-task. Streams live via `on_token`, persists on `ActionEvent.report`, renders back to the agent's own history for commitment coherence. Sub-agent reports propagate into the parent's observation log via direct `OutputEvent` injection.
+- **Python script execution**: Agents can run `python file.py` from `<TERMINAL>` blocks. Scripts execute in a sandtrap sandbox with the agent's full policy but a fresh namespace (no REPL state, no `task_*` bindings). Always available — no opt-in required.
+- **Git CLI**: Agents can run `git log`, `git commit -m`, `git diff`, `git branch`, `git checkout`, `git reset --hard`, `git show`, and `git merge` from `<TERMINAL>`, backed by kvgit. History is virtualized — only agent-tagged commits appear; system commits are filtered out. `git reset` restores files without moving kvgit's real HEAD. Opt-in via `register_git(agent)`.
+- **`register_git(agent)`**: Registers the git skill and mounts a usage guide at `/skills/git/SKILL.md`.
+- **`make_git_handler(vkv, state, vfs)`**: Creates a termish `CommandFunc` for git, suitable for manual wiring into `execute()`.
+- **`make_python_handler(agent, fs)`**: Creates a termish `CommandFunc` for python script execution.
+- **`build_terminal_commands(agent, fs, state, vfs)`**: Builds the injected commands dict for terminal execution (wired automatically in the agent loop).
+- **`pprint_events` / `pprint_tokens`**: Now render `<REPORT>` content — green "Report:" line in events, speech-bubble prefix in token stream.
+- **Primer coaching**: `BUILTIN_PRIMER` gains "Communicating with Your Caller" section coaching agents to use `<REPORT>` on multi-turn tasks. Task Control Functions section notes that `task_*` functions are `<PYTHON>`-only.
+
+### Fixed
+- **SSE drain**: Flush trailing data on connection close; exit drain early on `message_stop`.
+
+### Changed
+- **termish >=0.1.5**: Pluggable command injection via `CommandContext`. All commands unified on a single signature. Parser treats `:@,%+!^` as word characters.
+
 ## [0.9.8] - 2026-04-08
 
 ### Fixed

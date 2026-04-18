@@ -411,6 +411,32 @@ agent.module(calgebra, visibility="low", recursive=True)
 agent.skill(files("calgebra") / "skills" / "calgebra" / "SKILL.md")
 ```
 
+## Terminal Plugins
+
+Agents can use `<TERMINAL>` blocks to run shell commands against the VFS. Two plugins extend the terminal with additional capabilities:
+
+### Python Scripts (always available)
+
+Agents can run `python file.py` from `<TERMINAL>` blocks. Scripts execute in a sandtrap sandbox with the agent's full policy (registered modules, VFS) but in a fresh namespace — no REPL state and no `task_*` bindings. The agent completes tasks by importing from scripts in a `<PYTHON>` block.
+
+### Git CLI (opt-in)
+
+Register the git skill to give agents version control over their workspace files:
+
+```python
+from agex.git_cli import register_git
+
+register_git(agent)
+```
+
+This enables `git log`, `git commit -m`, `git diff`, `git branch`, `git checkout`, `git reset --hard`, `git show`, and `git merge` from `<TERMINAL>` blocks, backed by kvgit.
+
+Key behaviors:
+
+- **All file writes are automatically tracked** — there is no staging area or `git add`.
+- **History is virtualized** — only agent-tagged commits (those with a message) appear in `git log`. System commits from the framework are filtered out.
+- **`git reset --hard`** restores files without moving kvgit's real HEAD, preserving session state.
+
 ## Next Steps
 
 - **Agent Creation**: See [Agent](agent.md) for Agent class documentation
