@@ -321,48 +321,51 @@ class TestMerge:
 
 
 class TestAdd:
-    def test_add_specific_file(self, vkv, state, git):
-        """git add stages a file; git commit only commits staged files."""
+    def test_add_specific_file_selective_commit(self, vkv, state, git):
+        """git add + commit only flushes the tracked file; others stay staged."""
         state["a.py"] = b"aaa"
         state["b.py"] = b"bbb"
         run_git(git, "add", "a.py")
         run_git(git, "commit", "-m", "just a")
 
-        # a.py was committed with the message
-        tagged = [
-            h
-            for h in vkv.history()
-            if (vkv.commit_info(h) or {}).get("message") == "just a"
-        ]
-        assert len(tagged) == 1
+        info = vkv.commit_info(vkv.current_commit)
+        assert info["message"] == "just a"
+        assert info.get("files") == ["a.py"]
 
-        # b.py is still pending in Staged (not committed by git commit)
-        assert "b.py" in state._updates
+        # b.py is still pending in Staged (not committed)
+        assert state.is_staged("b.py")
 
-    def test_add_dot_stages_all(self, vkv, state, git):
-        """git add . stages all pending VFS changes."""
-        state["x.py"] = b"xxx"
-        state["y.py"] = b"yyy"
+    def test_add_dot_stages_all_changed(self, vkv, state, git):
+        """git add . stages all VFS files that changed since last agent commit."""
+        commit_files(state, {"x.py": b"xxx"})
+        run_git(git, "commit", "-m", "baseline")
+
+        commit_files(state, {"x.py": b"xxx_v2", "y.py": b"yyy"})
         run_git(git, "add", ".")
-        run_git(git, "commit", "-m", "all files")
+        run_git(git, "commit", "-m", "updated")
 
-        # Both should be committed
-        assert "x.py" not in state._updates
-        assert "y.py" not in state._updates
+        info = vkv.commit_info(vkv.current_commit)
+        assert "x.py" in info.get("files", [])
+        assert "y.py" in info.get("files", [])
 
-    def test_commit_without_add_flushes_everything(self, vkv, state, git):
-        """Without git add, git commit flushes all pending changes (backwards compat)."""
-        state["a.py"] = b"aaa"
-        state["b.py"] = b"bbb"
+    def test_commit_without_add_has_no_files_annotation(self, vkv, state, git):
+        """Without git add, the commit has no files annotation."""
+        commit_files(state, {"a.py": b"aaa"})
         run_git(git, "commit", "-m", "everything")
 
-        # Both committed
-        assert not state._updates
+        info = vkv.commit_info(vkv.current_commit)
+        assert info["message"] == "everything"
+        assert "files" not in info
 
     def test_status_shows_staged_and_unstaged(self, vkv, state, git):
         """git status distinguishes staged vs unstaged files."""
-        state["staged.py"] = b"s"
-        state["unstaged.py"] = b"u"
+        commit_files(state, {"base.py": b"base"})
+        run_git(git, "commit", "-m", "baseline")
+
+        # Write new files (simulating safe_commit)
+        commit_files(
+            state, {"base.py": b"base", "staged.py": b"s", "unstaged.py": b"u"}
+        )
         run_git(git, "add", "staged.py")
 
         output = run_git(git, "status")
@@ -372,9 +375,9 @@ class TestAdd:
         assert "unstaged.py" in output
 
     def test_status_clean_after_commit(self, vkv, state, git):
-        """git status shows clean after committing everything."""
-        state["f.py"] = b"x"
-        run_git(git, "commit", "-m", "all")
+        """git status shows clean right after a commit bookmark."""
+        commit_files(state, {"f.py": b"x"})
+        run_git(git, "commit", "-m", "checkpoint")
 
         output = run_git(git, "status")
         assert "nothing to commit" in output

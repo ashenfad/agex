@@ -407,30 +407,37 @@ def _git_status(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) 
     _tracked: set[str] = kw["_tracked"]
     _is_visible_fn = kw.get("_is_visible", lambda k: True)
     _strip_fn = kw.get("_strip", lambda k: k)
-    staged = kw.get("_state")
+
+    staged_state = kw.get("_state")
 
     ctx.stdout.write(f"On branch {vkv.current_branch}\n")
 
-    # Show staged (git add'd) and unstaged changes
+    # Pending changes come from two sources:
+    # 1. kvgit diff: files committed by safe_commit since the last agent bookmark
+    # 2. Staged buffer: files written this turn but not yet flushed
+    tagged = _agent_commits(vkv)
+
+    changed_keys: set[str] = set()
+    if tagged:
+        d = vkv.diff(tagged[0], vkv.current_commit)
+        changed_keys = {
+            k for k in (d.added | d.modified | d.removed) if _is_visible_fn(k)
+        }
+
+    # Also include pending Staged keys (not yet in kvgit) via public API
+    if staged_state is not None and hasattr(staged_state, "is_staged"):
+        for key in staged_state.keys():
+            if staged_state.is_staged(key) and _is_visible_fn(key):
+                changed_keys.add(key)
+
     staged_files: list[str] = []
     unstaged_files: list[str] = []
-
-    if staged is not None and hasattr(staged, "_updates"):
-        for key in staged._updates:
-            if _is_visible_fn(key):
-                display = _strip_fn(key)
-                if key in _tracked:
-                    staged_files.append(display)
-                else:
-                    unstaged_files.append(display)
-    if staged is not None and hasattr(staged, "_removals"):
-        for key in staged._removals:
-            if _is_visible_fn(key):
-                display = _strip_fn(key)
-                if key in _tracked:
-                    staged_files.append(f"{display} (deleted)")
-                else:
-                    unstaged_files.append(f"{display} (deleted)")
+    for key in changed_keys:
+        display = _strip_fn(key)
+        if key in _tracked:
+            staged_files.append(display)
+        else:
+            unstaged_files.append(display)
 
     if staged_files:
         ctx.stdout.write("\nChanges to be committed:\n")
@@ -447,10 +454,9 @@ def _git_status(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) 
         ctx.stdout.write("nothing to commit, working tree clean\n")
 
     # Show recent agent-tagged commits
-    tagged_commits = _agent_commits(vkv)[:3]
-    if tagged_commits:
+    if tagged:
         ctx.stdout.write("\nRecent commits:\n")
-        for h in tagged_commits:
+        for h in tagged[:3]:
             info = vkv.commit_info(h) or {}
             ctx.stdout.write(f"  {_short_hash(h)} {info.get('message', '')}\n")
 
@@ -529,48 +535,27 @@ def _git_commit(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) 
             "git commit: please supply a message with -m 'your message'"
         )
 
-    staged = kw.get("_state")
     _tracked: set[str] = kw["_tracked"]
+    _strip_fn = kw.get("_strip", lambda k: k)
+    staged = kw.get("_state")
+
+    info: dict[str, Any] = {"message": message}
 
     if _tracked and staged is not None:
-        # Selective commit: only commit tracked (git add'd) files.
-        # Encode tracked updates, commit directly to VersionedKV,
-        # then remove committed keys from Staged's buffer so
-        # safe_commit doesn't re-commit them with no message.
-        encoded_updates: dict[str, bytes] = {}
-        removals: set[str] = set()
-        for key in _tracked:
-            if hasattr(staged, "_updates") and key in staged._updates:
-                encoded_updates[key] = staged._encoder(staged._updates[key])
-            elif hasattr(staged, "_removals") and key in staged._removals:
-                removals.add(key)
-
-        if not encoded_updates and not removals:
-            raise TerminalError(
-                "git commit: nothing to commit (tracked files have no pending changes)"
-            )
-
-        result = vkv.commit(
-            updates=encoded_updates or None,
-            removals=removals or None,
-            info={"message": message},
-        )
-
-        # Remove committed keys from Staged so safe_commit skips them
-        for key in encoded_updates:
-            staged._updates.pop(key, None)
-            staged._cache.pop(key, None)
-        for key in removals:
-            staged._removals.discard(key)
-
+        # Selective commit: flush only the tracked keys via the public
+        # Staged.commit(keys=...) API.  Untracked changes remain staged
+        # for safe_commit to handle at the turn boundary.
+        info["files"] = sorted(_strip_fn(k) for k in _tracked)
+        result = staged.commit(keys=_tracked, info=info)
         _tracked.clear()
-    elif staged is not None and hasattr(staged, "commit"):
-        # No tracked files — flush everything (original behavior)
-        result = staged.commit(info={"message": message})
+    elif staged is not None and hasattr(staged, "has_changes") and staged.has_changes:
+        # No tracked files — flush everything.
+        result = staged.commit(info=info)
         _tracked.clear()
     else:
-        result = vkv.commit(info={"message": message})
-
+        # No Staged or nothing pending — metadata-only bookmark.
+        result = vkv.commit(info=info)
+        _tracked.clear()
     short = _short_hash(result.commit) if result.commit else "?"
     ctx.stdout.write(f"[{vkv.current_branch} {short}] {message}\n")
 
@@ -724,19 +709,20 @@ def _git_add(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> 
     _tracked: set[str] = kw["_tracked"]
     _add_fn = kw.get("_add", lambda k: k)
     _is_visible_fn = kw.get("_is_visible", lambda k: True)
-    staged = kw.get("_state")
 
     if not args:
         raise TerminalError("git add: nothing specified")
 
     if args == ["."] or args == ["-A"]:
-        # Stage all modified/new VFS files
-        if staged is not None and hasattr(staged, "_updates"):
-            for key in staged._updates:
+        # Stage all changed VFS files (diff current HEAD vs last agent commit)
+        tagged = _agent_commits(vkv)
+        if tagged:
+            d = vkv.diff(tagged[0], vkv.current_commit)
+            for key in d.added | d.modified | d.removed:
                 if _is_visible_fn(key):
                     _tracked.add(key)
-        if staged is not None and hasattr(staged, "_removals"):
-            for key in staged._removals:
+        else:
+            for key in vkv.keys():
                 if _is_visible_fn(key):
                     _tracked.add(key)
     else:

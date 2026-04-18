@@ -459,5 +459,6 @@ class TestGitAddSelective:
         assert "just module A" in all_output
         assert "add module B" in all_output
 
-        # Status after first selective commit should have shown b.py as unstaged
+        # After selective commit, b.py is still uncommitted (only a.py was flushed).
+        # The git status output should show b.py as unstaged.
         assert "not staged" in all_output
