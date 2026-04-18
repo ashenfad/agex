@@ -149,12 +149,32 @@ def make_git_handler(
 
 
 # ---------------------------------------------------------------------------
-# Ref resolution
+# Virtual history — agent sees only its own tagged commits
 # ---------------------------------------------------------------------------
 
 
+def _agent_commits(vkv: "VersionedKV") -> list[str]:
+    """Return commit hashes that have an agent-supplied message.
+
+    System commits (from safe_commit / turn boundaries) have no message
+    and are filtered out.  The agent's ``git log``, ``git diff``, and
+    ``HEAD~N`` ref resolution all operate on this filtered list.
+    """
+    tagged = []
+    for h in vkv.history():
+        info = vkv.commit_info(h)
+        if info and info.get("message"):
+            tagged.append(h)
+    return tagged
+
+
 def _resolve_ref(ref: str, vkv: "VersionedKV") -> str:
-    """Resolve a git-style ref (HEAD, HEAD~N, or a raw hash) to a commit hash."""
+    """Resolve a git-style ref to a commit hash.
+
+    ``HEAD`` resolves to the current kvgit HEAD (real, includes system
+    commits).  ``HEAD~N`` counts only agent-tagged commits.  Raw hash
+    prefixes match against all commits.
+    """
     if ref == "HEAD":
         return vkv.current_commit
 
@@ -163,14 +183,14 @@ def _resolve_ref(ref: str, vkv: "VersionedKV") -> str:
             n = int(ref[5:])
         except ValueError:
             raise TerminalError(f"git: invalid ref '{ref}'")
-        commits = list(vkv.history())
-        if n >= len(commits):
+        tagged = _agent_commits(vkv)
+        if n >= len(tagged):
             raise TerminalError(
-                f"git: '{ref}' is beyond the history ({len(commits)} commits)"
+                f"git: '{ref}' is beyond the history ({len(tagged)} tagged commits)"
             )
-        return commits[n]
+        return tagged[n]
 
-    # Treat as a raw commit hash (prefix match)
+    # Treat as a raw commit hash (prefix match against all commits)
     if len(ref) >= 7:
         for h in vkv.history():
             if h.startswith(ref):
@@ -256,8 +276,9 @@ def _git_log(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> 
 
     count = 0
     branch = vkv.current_branch
+    tagged = _agent_commits(vkv)
 
-    for commit_hash in vkv.history():
+    for commit_hash in tagged:
         if max_count is not None and count >= max_count:
             break
 
@@ -275,14 +296,11 @@ def _git_log(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> 
         info = vkv.commit_info(commit_hash) or {}
         message = info.get("message", "")
 
-        if oneline or not message:
-            # Branch indicator on HEAD
+        if oneline:
             head_marker = ""
             if commit_hash == vkv.current_commit:
                 head_marker = f" (HEAD -> {branch})"
-            line = f"{_short_hash(commit_hash)}{head_marker}"
-            if message:
-                line += f" {message}"
+            line = f"{_short_hash(commit_hash)}{head_marker} {message}"
             ctx.stdout.write(line + "\n")
         else:
             ctx.stdout.write(f"commit {commit_hash}\n")
@@ -308,12 +326,12 @@ def _git_diff(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) ->
             refs.append(arg)
 
     if len(refs) == 0:
-        # git diff (no args) → diff HEAD~1 vs HEAD
+        # git diff (no args) → diff previous agent-tagged commit vs HEAD
         commit_b = vkv.current_commit
-        parents = vkv.parents(commit_b)
-        if not parents:
-            return  # initial commit, nothing to diff
-        commit_a = parents[0]
+        tagged = _agent_commits(vkv)
+        if len(tagged) < 2:
+            return  # no previous tagged commit to diff against
+        commit_a = tagged[1]  # second most recent agent commit
     elif len(refs) == 1:
         commit_a = _resolve_ref(refs[0], vkv)
         commit_b = vkv.current_commit
@@ -386,19 +404,13 @@ def _git_status(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) 
         "Use `git commit -m 'message'` to checkpoint.\n"
     )
 
-    # Show recent agent-tagged commits (commits with a message)
-    tagged = []
-    for commit_hash in vkv.history():
-        info = vkv.commit_info(commit_hash) or {}
-        if info.get("message"):
-            tagged.append((commit_hash, info["message"]))
-        if len(tagged) >= 3:
-            break
-
+    # Show recent agent-tagged commits
+    tagged = _agent_commits(vkv)[:3]
     if tagged:
         ctx.stdout.write("\nRecent commits:\n")
-        for h, msg in tagged:
-            ctx.stdout.write(f"  {_short_hash(h)} {msg}\n")
+        for h in tagged:
+            info = vkv.commit_info(h) or {}
+            ctx.stdout.write(f"  {_short_hash(h)} {info.get('message', '')}\n")
 
 
 def _git_branch(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> None:
@@ -498,10 +510,49 @@ def _git_reset(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -
         raise TerminalError("git reset: need a ref (e.g. HEAD~1)")
 
     target = _resolve_ref(refs[0], vkv)
-    if not vkv.reset_to(target):
+
+    # Virtual reset: restore VFS files to match the target commit without
+    # moving kvgit's real HEAD.  This preserves the event log, REPL
+    # namespace, and all session state.  The restored files become pending
+    # changes that the next safe_commit (or git commit) persists as a new
+    # forward commit.
+    _is_visible_fn = kw.get("_is_visible", lambda k: True)
+    staged = kw.get("_state")
+
+    # Get the target commit's keyset
+    _checkout = staged.checkout if staged is not None else vkv.checkout
+    target_snap = _checkout(target)
+    if target_snap is None:
         raise TerminalError(f"git reset: commit '{refs[0]}' not found")
 
-    ctx.stdout.write(f"HEAD is now at {_short_hash(target)}\n")
+    # Compute what needs to change: diff current vs target, filtered to VFS keys
+    d = vkv.diff(vkv.current_commit, target)
+    visible_changes = {
+        k for k in (d.added | d.modified | d.removed) if _is_visible_fn(k)
+    }
+
+    if not visible_changes:
+        ctx.stdout.write(f"Already at {_short_hash(target)}\n")
+        return
+
+    # Apply file-level restore into the current state
+    if staged is not None:
+        for key in visible_changes:
+            if key in d.removed:
+                # File existed in current but not in target — delete it
+                try:
+                    del staged[key]
+                except KeyError:
+                    pass
+            else:
+                # File added or modified in target — write the target version
+                val = target_snap.get(key)
+                if val is not None:
+                    staged[key] = val
+    else:
+        raise TerminalError("git reset: requires state (Staged) for virtual reset")
+
+    ctx.stdout.write(f"Restored files to {_short_hash(target)}\n")
 
 
 def _git_show(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> None:

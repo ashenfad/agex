@@ -7,6 +7,7 @@ git subcommands via the handler directly using CommandContext.
 import io
 
 import pytest
+from kvgit import Staged
 from kvgit.store import Memory
 from kvgit.versioned.kv import VersionedKV
 from termish import MemoryFS, execute
@@ -23,9 +24,15 @@ def vkv():
 
 
 @pytest.fixture
-def git(vkv):
-    """Git command handler bound to the VersionedKV."""
-    return make_git_handler(vkv)
+def state(vkv):
+    """Staged wrapper around the VersionedKV."""
+    return Staged(vkv)
+
+
+@pytest.fixture
+def git(vkv, state):
+    """Git command handler bound to the VersionedKV with Staged."""
+    return make_git_handler(vkv, state=state)
 
 
 def run_git(git_handler, *args):
@@ -41,35 +48,43 @@ def run_git(git_handler, *args):
     return stdout.getvalue()
 
 
+def commit_files(state, files, message=None):
+    """Helper: stage files and commit through Staged (matches real usage)."""
+    for key, value in files.items():
+        state[key] = value
+    info = {"message": message} if message else None
+    state.commit(info=info)
+
+
 # =============================================================================
 # git commit + log
 # =============================================================================
 
 
 class TestCommitAndLog:
-    def test_commit_with_message(self, vkv, git):
-        vkv.commit({"hello.py": b"print('hello')"}, info={"message": "initial"})
+    def test_commit_with_message(self, vkv, state, git):
+        commit_files(state, {"hello.py": b"print('hello')"}, "initial")
         output = run_git(git, "commit", "-m", "second commit")
         assert "second commit" in output
 
-    def test_log_shows_commits(self, vkv, git):
-        vkv.commit({"a.py": b"1"}, info={"message": "first"})
-        vkv.commit({"a.py": b"2"}, info={"message": "second"})
+    def test_log_shows_commits(self, vkv, state, git):
+        commit_files(state, {"a.py": b"1"}, "first")
+        commit_files(state, {"a.py": b"2"}, "second")
         output = run_git(git, "log", "--oneline")
         assert "second" in output
         assert "first" in output
         # Most recent first
         assert output.index("second") < output.index("first")
 
-    def test_log_max_count(self, vkv, git):
+    def test_log_max_count(self, vkv, state, git):
         for i in range(5):
-            vkv.commit({f"f{i}": b"x"}, info={"message": f"commit {i}"})
+            commit_files(state, {f"f{i}": b"x"}, f"commit {i}")
         output = run_git(git, "log", "--oneline", "-n", "2")
         lines = [line for line in output.strip().split("\n") if line]
         assert len(lines) == 2
 
-    def test_log_head_marker(self, vkv, git):
-        vkv.commit({"a": b"1"}, info={"message": "one"})
+    def test_log_head_marker(self, vkv, state, git):
+        commit_files(state, {"a": b"1"}, "one")
         output = run_git(git, "log", "--oneline")
         assert "(HEAD -> main)" in output
 
@@ -77,9 +92,9 @@ class TestCommitAndLog:
         with pytest.raises(TerminalError, match="-m"):
             run_git(git, "commit")
 
-    def test_log_path_filter(self, vkv, git):
-        vkv.commit({"a.py": b"1"}, info={"message": "touched a"})
-        vkv.commit({"b.py": b"2"}, info={"message": "touched b"})
+    def test_log_path_filter(self, vkv, state, git):
+        commit_files(state, {"a.py": b"1"}, "touched a")
+        commit_files(state, {"b.py": b"2"}, "touched b")
         output = run_git(git, "log", "--oneline", "a.py")
         assert "touched a" in output
         assert "touched b" not in output
@@ -91,34 +106,32 @@ class TestCommitAndLog:
 
 
 class TestDiff:
-    def test_diff_shows_changes(self, vkv, git):
-        vkv.commit({"hello.py": b"print('hello')\n"}, info={"message": "v1"})
-        vkv.commit({"hello.py": b"print('world')\n"}, info={"message": "v2"})
+    def test_diff_shows_changes(self, vkv, state, git):
+        commit_files(state, {"hello.py": b"print('hello')\n"}, "v1")
+        commit_files(state, {"hello.py": b"print('world')\n"}, "v2")
         output = run_git(git, "diff", "HEAD~1", "HEAD")
         assert "hello" in output
         assert "world" in output
         assert "---" in output  # unified diff markers
         assert "+++" in output
 
-    def test_diff_no_args_diffs_head_vs_parent(self, vkv, git):
-        vkv.commit({"f.py": b"old\n"}, info={"message": "v1"})
-        vkv.commit({"f.py": b"new\n"}, info={"message": "v2"})
+    def test_diff_no_args_diffs_head_vs_parent(self, vkv, state, git):
+        commit_files(state, {"f.py": b"old\n"}, "v1")
+        commit_files(state, {"f.py": b"new\n"}, "v2")
         output = run_git(git, "diff")
         assert "old" in output
         assert "new" in output
 
-    def test_diff_added_file(self, vkv, git):
-        vkv.commit({"a.py": b"existing\n"}, info={"message": "v1"})
-        vkv.commit(
-            {"a.py": b"existing\n", "b.py": b"new file\n"}, info={"message": "v2"}
-        )
+    def test_diff_added_file(self, vkv, state, git):
+        commit_files(state, {"a.py": b"existing\n"}, "v1")
+        commit_files(state, {"a.py": b"existing\n", "b.py": b"new file\n"}, "v2")
         output = run_git(git, "diff", "HEAD~1")
         assert "b.py" in output
         assert "new file" in output
 
-    def test_diff_path_filter(self, vkv, git):
-        vkv.commit({"a.py": b"old_a\n", "b.py": b"old_b\n"}, info={"message": "v1"})
-        vkv.commit({"a.py": b"new_a\n", "b.py": b"new_b\n"}, info={"message": "v2"})
+    def test_diff_path_filter(self, vkv, state, git):
+        commit_files(state, {"a.py": b"old_a\n", "b.py": b"old_b\n"}, "v1")
+        commit_files(state, {"a.py": b"new_a\n", "b.py": b"new_b\n"}, "v2")
         output = run_git(git, "diff", "HEAD~1", "HEAD", "--", "a.py")
         assert "a.py" in output
         assert "b.py" not in output
@@ -134,8 +147,8 @@ class TestStatus:
         output = run_git(git, "status")
         assert "On branch main" in output
 
-    def test_status_shows_recent_commits(self, vkv, git):
-        vkv.commit({"a": b"1"}, info={"message": "my commit"})
+    def test_status_shows_recent_commits(self, vkv, state, git):
+        commit_files(state, {"a": b"1"}, "my commit")
         output = run_git(git, "status")
         assert "my commit" in output
 
@@ -146,33 +159,33 @@ class TestStatus:
 
 
 class TestBranch:
-    def test_list_branches(self, vkv, git):
-        vkv.commit({"a": b"1"})
+    def test_list_branches(self, vkv, state, git):
+        commit_files(state, {"a": b"1"})
         vkv.create_branch("experiment")
         output = run_git(git, "branch")
         assert "* main" in output
         assert "experiment" in output
 
-    def test_create_branch(self, vkv, git):
-        vkv.commit({"a": b"1"})
+    def test_create_branch(self, vkv, state, git):
+        commit_files(state, {"a": b"1"})
         output = run_git(git, "branch", "feature")
         assert "Created branch feature" in output
         assert "feature" in vkv.list_branches()
 
-    def test_delete_branch(self, vkv, git):
-        vkv.commit({"a": b"1"})
+    def test_delete_branch(self, vkv, state, git):
+        commit_files(state, {"a": b"1"})
         vkv.create_branch("temp")
         output = run_git(git, "branch", "-d", "temp")
         assert "Deleted branch temp" in output
         assert "temp" not in vkv.list_branches()
 
-    def test_cannot_delete_current_branch(self, vkv, git):
-        vkv.commit({"a": b"1"})
+    def test_cannot_delete_current_branch(self, vkv, state, git):
+        commit_files(state, {"a": b"1"})
         with pytest.raises(TerminalError, match="Cannot delete"):
             run_git(git, "branch", "-d", "main")
 
-    def test_create_duplicate_branch_fails(self, vkv, git):
-        vkv.commit({"a": b"1"})
+    def test_create_duplicate_branch_fails(self, vkv, state, git):
+        commit_files(state, {"a": b"1"})
         vkv.create_branch("dup")
         with pytest.raises(TerminalError, match="already exists"):
             run_git(git, "branch", "dup")
@@ -184,21 +197,21 @@ class TestBranch:
 
 
 class TestCheckout:
-    def test_checkout_existing_branch(self, vkv, git):
-        vkv.commit({"a": b"1"})
+    def test_checkout_existing_branch(self, vkv, state, git):
+        commit_files(state, {"a": b"1"})
         vkv.create_branch("dev")
         output = run_git(git, "checkout", "dev")
         assert "Switched to branch 'dev'" in output
         assert vkv.current_branch == "dev"
 
-    def test_checkout_b_creates_and_switches(self, vkv, git):
-        vkv.commit({"a": b"1"})
+    def test_checkout_b_creates_and_switches(self, vkv, state, git):
+        commit_files(state, {"a": b"1"})
         output = run_git(git, "checkout", "-b", "feature")
         assert "Switched to a new branch 'feature'" in output
         assert vkv.current_branch == "feature"
 
-    def test_checkout_nonexistent_fails(self, vkv, git):
-        vkv.commit({"a": b"1"})
+    def test_checkout_nonexistent_fails(self, vkv, state, git):
+        commit_files(state, {"a": b"1"})
         with pytest.raises(TerminalError, match="does not exist"):
             run_git(git, "checkout", "nope")
 
@@ -209,16 +222,24 @@ class TestCheckout:
 
 
 class TestReset:
-    def test_reset_hard(self, vkv, git):
-        vkv.commit({"a": b"version1"}, info={"message": "v1"})
+    def test_reset_hard_restores_files_without_moving_head(self, vkv, state, git):
+        """Reset restores files from a tagged commit without rewinding kvgit HEAD."""
+        state["a"] = b"version1"
+        state.commit(info={"message": "v1"})
         v1_hash = vkv.current_commit
-        vkv.commit({"a": b"version2"}, info={"message": "v2"})
-        assert vkv.get("a") == b"version2"
+
+        state["a"] = b"version2"
+        state.commit(info={"message": "v2"})
+
+        assert state.get("a") == b"version2"
 
         output = run_git(git, "reset", "--hard", "HEAD~1")
-        assert "HEAD is now at" in output
-        assert vkv.current_commit == v1_hash
-        assert vkv.get("a") == b"version1"
+        assert "Restored" in output
+
+        # Files restored to v1 content
+        assert state.get("a") == b"version1"
+        # But kvgit HEAD was NOT moved back — it's still at or past v2
+        assert vkv.current_commit != v1_hash
 
     def test_reset_requires_hard(self, git):
         with pytest.raises(TerminalError, match="only --hard"):
@@ -235,20 +256,20 @@ class TestReset:
 
 
 class TestShow:
-    def test_show_file_at_head(self, vkv, git):
-        vkv.commit({"hello.py": b"print('hello')\n"}, info={"message": "init"})
+    def test_show_file_at_head(self, vkv, state, git):
+        commit_files(state, {"hello.py": b"print('hello')\n"}, "init")
         output = run_git(git, "show", "HEAD:hello.py")
         assert "print('hello')" in output
 
-    def test_show_file_at_older_commit(self, vkv, git):
-        vkv.commit({"f.py": b"old content\n"}, info={"message": "v1"})
-        vkv.commit({"f.py": b"new content\n"}, info={"message": "v2"})
+    def test_show_file_at_older_commit(self, vkv, state, git):
+        commit_files(state, {"f.py": b"old content\n"}, "v1")
+        commit_files(state, {"f.py": b"new content\n"}, "v2")
         output = run_git(git, "show", "HEAD~1:f.py")
         assert "old content" in output
         assert "new content" not in output
 
-    def test_show_missing_file(self, vkv, git):
-        vkv.commit({"a": b"1"}, info={"message": "init"})
+    def test_show_missing_file(self, vkv, state, git):
+        commit_files(state, {"a": b"1"}, "init")
         with pytest.raises(TerminalError, match="not found"):
             run_git(git, "show", "HEAD:nope.py")
 
@@ -263,34 +284,33 @@ class TestShow:
 
 
 class TestMerge:
-    def test_merge_branch(self, vkv, git):
-        vkv.commit({"shared.py": b"base\n"}, info={"message": "base"})
+    def test_merge_branch(self, vkv, state, git):
+        commit_files(state, {"shared.py": b"base\n"}, "base")
         vkv.create_branch("feature")
         vkv.switch_branch("feature")
-        vkv.commit(
-            {"shared.py": b"base\n", "new.py": b"feature code\n"},
-            info={"message": "feature work"},
+        commit_files(
+            state, {"shared.py": b"base\n", "new.py": b"feature code\n"}, "feature work"
         )
         vkv.switch_branch("main")
 
         output = run_git(git, "merge", "feature")
         assert "Merge" in output
-        # The new file from feature should now be on main
-        assert vkv.get("new.py") == b"feature code\n"
+        # The new file from feature should now be on main (read through Staged)
+        assert state.get("new.py") == b"feature code\n"
 
-    def test_merge_already_up_to_date(self, vkv, git):
-        vkv.commit({"a": b"1"}, info={"message": "init"})
+    def test_merge_already_up_to_date(self, vkv, state, git):
+        commit_files(state, {"a": b"1"}, "init")
         vkv.create_branch("same")
         output = run_git(git, "merge", "same")
         assert "Already up to date" in output
 
-    def test_merge_nonexistent_branch(self, vkv, git):
-        vkv.commit({"a": b"1"})
+    def test_merge_nonexistent_branch(self, vkv, state, git):
+        commit_files(state, {"a": b"1"})
         with pytest.raises(TerminalError, match="not found"):
             run_git(git, "merge", "ghost")
 
-    def test_merge_into_self_fails(self, vkv, git):
-        vkv.commit({"a": b"1"})
+    def test_merge_into_self_fails(self, vkv, state, git):
+        commit_files(state, {"a": b"1"})
         with pytest.raises(TerminalError, match="cannot merge"):
             run_git(git, "merge", "main")
 
@@ -417,7 +437,7 @@ class TestMonkeyFSIntegration:
         assert vfs.exists("feature.py")
 
     def test_reset_restores_previous_file_state(self):
-        """git reset --hard HEAD~1 restores old file content through VFS."""
+        """git reset --hard HEAD~1 restores old file content without moving HEAD."""
         vkv, state, vfs, git_handler = self._setup()
         commands = {"git": git_handler}
 
@@ -427,13 +447,12 @@ class TestMonkeyFSIntegration:
         execute("echo 'v2' > code.py", vfs, commands=commands)
         execute("git commit -m 'v2'", vfs, commands=commands)
 
-        # Reset to v1
-        execute("git reset --hard HEAD~1", vfs, commands=commands)
+        # Reset to v1 — virtual restore, not a HEAD move
+        output = execute("git reset --hard HEAD~1", vfs, commands=commands)
+        assert "Restored" in output
 
-        # kvgit is reset; verify the underlying key has old content
-        internal_key = vfs._encode_path("code.py")
-        content = vkv.get(internal_key)
-        assert content is not None
+        # The VFS now has v1 content (restored via Staged writes)
+        content = vfs.read("code.py")
         assert b"v1" in content
 
     def test_full_workflow_with_pipeline(self):

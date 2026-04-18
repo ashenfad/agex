@@ -130,7 +130,12 @@ def build_terminal_commands(
 
         vkv = getattr(state, "_versioned", None) if state is not None else None
         if vkv is not None:
-            commands["git"] = make_git_handler(vkv, state=state, vfs=vfs)
+            # Extract the raw VirtualFS from a MountFS wrapper if needed.
+            # The git handler needs the VFS for key encoding/decoding.
+            raw_vfs = vfs
+            if hasattr(vfs, "_base"):
+                raw_vfs = vfs._base  # MountFS wraps a base FS
+            commands["git"] = make_git_handler(vkv, state=state, vfs=raw_vfs)
 
     return commands
 
