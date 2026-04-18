@@ -316,16 +316,72 @@ class TestMerge:
 
 
 # =============================================================================
-# git add (no-op)
+# git add + selective commit
 # =============================================================================
 
 
 class TestAdd:
-    def test_add_is_silent_noop(self, git):
-        output = run_git(git, "add", ".")
-        assert output == ""
-        output = run_git(git, "add", "file.py")
-        assert output == ""
+    def test_add_specific_file(self, vkv, state, git):
+        """git add stages a file; git commit only commits staged files."""
+        state["a.py"] = b"aaa"
+        state["b.py"] = b"bbb"
+        run_git(git, "add", "a.py")
+        run_git(git, "commit", "-m", "just a")
+
+        # a.py was committed with the message
+        tagged = [
+            h
+            for h in vkv.history()
+            if (vkv.commit_info(h) or {}).get("message") == "just a"
+        ]
+        assert len(tagged) == 1
+
+        # b.py is still pending in Staged (not committed by git commit)
+        assert "b.py" in state._updates
+
+    def test_add_dot_stages_all(self, vkv, state, git):
+        """git add . stages all pending VFS changes."""
+        state["x.py"] = b"xxx"
+        state["y.py"] = b"yyy"
+        run_git(git, "add", ".")
+        run_git(git, "commit", "-m", "all files")
+
+        # Both should be committed
+        assert "x.py" not in state._updates
+        assert "y.py" not in state._updates
+
+    def test_commit_without_add_flushes_everything(self, vkv, state, git):
+        """Without git add, git commit flushes all pending changes (backwards compat)."""
+        state["a.py"] = b"aaa"
+        state["b.py"] = b"bbb"
+        run_git(git, "commit", "-m", "everything")
+
+        # Both committed
+        assert not state._updates
+
+    def test_status_shows_staged_and_unstaged(self, vkv, state, git):
+        """git status distinguishes staged vs unstaged files."""
+        state["staged.py"] = b"s"
+        state["unstaged.py"] = b"u"
+        run_git(git, "add", "staged.py")
+
+        output = run_git(git, "status")
+        assert "Changes to be committed" in output
+        assert "staged.py" in output
+        assert "Changes not staged" in output
+        assert "unstaged.py" in output
+
+    def test_status_clean_after_commit(self, vkv, state, git):
+        """git status shows clean after committing everything."""
+        state["f.py"] = b"x"
+        run_git(git, "commit", "-m", "all")
+
+        output = run_git(git, "status")
+        assert "nothing to commit" in output
+
+    def test_add_no_args_errors(self, git):
+        with pytest.raises(TerminalError, match="nothing specified"):
+            run_git(git, "add")
 
 
 # =============================================================================
