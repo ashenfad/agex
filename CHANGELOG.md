@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.10.1] - 2026-04-18
+
+### Fixed
+- **Skills not packaged**: `agex/skills/*.md` files were missing from the wheel because `setuptools` only includes Python files by default. Added to `[tool.setuptools.package-data]`.
+
 ## [0.10.0] - 2026-04-18
 
 ### Added
