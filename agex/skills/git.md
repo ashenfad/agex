@@ -50,7 +50,7 @@ git diff HEAD~1              # check what changed before resetting
 
 ## Key differences from real git
 
-- **No `git add`** — all file writes are automatically tracked.
+- **`git add` is optional** — if you `git commit` without adding files first, all pending changes are committed. Use `git add <file>` when you want to commit only specific files.
 - **`git commit -m "msg"`** checkpoints the current state with your message. Every commit must include `-m`.
 - **Local only** — no `push`, `pull`, `fetch`, or `remote`. Your workspace is the only copy.
 - **No `.git` directory** — git state is managed internally, not as files in your workspace.

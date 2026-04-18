@@ -401,3 +401,63 @@ class TestGitWithPython:
         # Should see both script outputs
         assert "4" in all_output  # 2 + 2
         assert "21" in all_output  # 3 * 7
+
+
+class TestGitAddSelective:
+    """Agent uses git add for selective commits."""
+
+    def test_selective_commit_through_agent_loop(self):
+        """Agent writes two files via FILE, adds only one in terminal, commits selectively."""
+        agent = _make_agent()
+        agent.llm = Dummy(
+            responses=[
+                # Turn 1: write two files via FILE tags (applied before terminal runs),
+                # then add only a.py and commit in the same turn's terminal block.
+                LLMResponse(
+                    thinking="Creating two files, but only committing a.py.",
+                    file_actions=[
+                        {"path": "a.py", "content": "module A\n", "mode": "write"},
+                        {"path": "b.py", "content": "module B\n", "mode": "write"},
+                    ],
+                    terminal="git add a.py && git commit -m 'just module A' && git status",
+                ),
+                # Turn 2: now add and commit b.py (it's still in Staged after
+                # safe_commit ran — wait, safe_commit flushed it. So we write
+                # b.py again and commit it.)
+                LLMResponse(
+                    thinking="Now committing b.py.",
+                    file_actions=[
+                        {"path": "b.py", "content": "module B v2\n", "mode": "write"},
+                    ],
+                    terminal="git add b.py && git commit -m 'add module B'",
+                ),
+                # Turn 3: log should show both commits
+                LLMResponse(
+                    thinking="Check history.",
+                    terminal="git log --oneline",
+                ),
+                LLMResponse(
+                    thinking="Done.",
+                    code="task_success('selective')",
+                ),
+            ]
+        )
+
+        collected_events = []
+
+        @agent.task("Selective commit")
+        def work() -> str:
+            """Do selective work."""
+            pass
+
+        result = work(on_event=collected_events.append)
+        assert result == "selective"
+
+        all_output = _collect_output_text(collected_events)
+
+        # Both commits should appear in log
+        assert "just module A" in all_output
+        assert "add module B" in all_output
+
+        # Status after first selective commit should have shown b.py as unstaged
+        assert "not staged" in all_output
