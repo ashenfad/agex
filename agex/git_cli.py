@@ -253,7 +253,7 @@ def _usage() -> str:
         "   reset      Reset HEAD to a previous commit\n"
         "   show       Show file content at a commit\n"
         "   merge      Merge a branch into the current branch\n"
-        "   add        (no-op) Files are tracked automatically\n"
+        "   add        Stage files for the next commit\n"
     )
 
 
@@ -471,10 +471,29 @@ def _git_branch(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) 
             ctx.stdout.write(f"{marker}{b}\n")
         return
 
-    if args[0] == "-d" or args[0] == "-D":
+    if args[0] in ("-d", "-D"):
+        force = args[0] == "-D"
         if len(args) < 2:
             raise TerminalError("git branch: branch name required")
         name = args[1]
+
+        # -d (safe delete): check if the branch is merged into current
+        if not force:
+            try:
+                # A branch is "merged" if its HEAD is an ancestor of
+                # the current branch (i.e., current history contains it).
+                branch_commits = set(vkv.history())
+                from kvgit.versioned.kv import VersionedKV as _VKV
+
+                other = _VKV(vkv.store, branch=name)
+                if other.current_commit not in branch_commits:
+                    raise TerminalError(
+                        f"git branch: branch '{name}' is not fully merged.\n"
+                        f"Use `git branch -D {name}` to force delete."
+                    )
+            except ValueError:
+                pass  # Branch doesn't exist — delete_branch will handle
+
         try:
             vkv.delete_branch(name)
         except ValueError as e:
@@ -496,6 +515,22 @@ def _git_checkout(
 ) -> None:
     if not args:
         raise TerminalError("git checkout: branch name required")
+
+    staged = kw.get("_state")
+    _is_visible_fn = kw.get("_is_visible", lambda k: True)
+
+    # Guard: refuse to switch if there are uncommitted VFS file changes.
+    # Only check VFS-visible keys — internal state (event log, REPL vars)
+    # is managed by the framework and shouldn't block branch switching.
+    if staged is not None and hasattr(staged, "is_staged"):
+        has_vfs_changes = any(
+            staged.is_staged(k) and _is_visible_fn(k) for k in staged.keys()
+        )
+        if has_vfs_changes:
+            raise TerminalError(
+                "git checkout: your local changes would be lost.\n"
+                "Please commit your changes (git commit -m '...') before switching branches."
+            )
 
     if args[0] == "-b":
         if len(args) < 2:
@@ -553,9 +588,9 @@ def _git_commit(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) 
         result = staged.commit(info=info)
         _tracked.clear()
     else:
-        # No Staged or nothing pending — metadata-only bookmark.
-        result = vkv.commit(info=info)
+        # Nothing pending and nothing tracked — refuse like real git.
         _tracked.clear()
+        raise TerminalError("git commit: nothing to commit, working tree clean")
     short = _short_hash(result.commit) if result.commit else "?"
     ctx.stdout.write(f"[{vkv.current_branch} {short}] {message}\n")
 
@@ -613,6 +648,9 @@ def _git_reset(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -
     else:
         raise TerminalError("git reset: requires state (Staged) for virtual reset")
 
+    # Clear tracking state — reset is a clean slate
+    kw["_tracked"].clear()
+
     ctx.stdout.write(f"Restored files to {_short_hash(target)}\n")
 
 
@@ -654,6 +692,19 @@ def _git_show(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) ->
 def _git_merge(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> None:
     if not args:
         raise TerminalError("git merge: branch name required")
+
+    # Guard: refuse to merge if there are uncommitted VFS file changes.
+    staged = kw.get("_state")
+    _is_visible_fn = kw.get("_is_visible", lambda k: True)
+    if staged is not None and hasattr(staged, "is_staged"):
+        has_vfs_changes = any(
+            staged.is_staged(k) and _is_visible_fn(k) for k in staged.keys()
+        )
+        if has_vfs_changes:
+            raise TerminalError(
+                "git merge: your local changes would be overwritten.\n"
+                "Please commit your changes (git commit -m '...') before merging."
+            )
 
     source_branch = args[0]
     branches = vkv.list_branches()
@@ -713,17 +764,21 @@ def _git_add(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> 
     if not args:
         raise TerminalError("git add: nothing specified")
 
+    staged_state = kw.get("_state")
+
     if args == ["."] or args == ["-A"]:
-        # Stage all changed VFS files (diff current HEAD vs last agent commit)
+        # Stage all changed VFS files from both sources:
+        # 1. kvgit diff (cross-turn changes already committed by safe_commit)
         tagged = _agent_commits(vkv)
         if tagged:
             d = vkv.diff(tagged[0], vkv.current_commit)
             for key in d.added | d.modified | d.removed:
                 if _is_visible_fn(key):
                     _tracked.add(key)
-        else:
-            for key in vkv.keys():
-                if _is_visible_fn(key):
+        # 2. Pending Staged writes (within-turn, not yet flushed)
+        if staged_state is not None and hasattr(staged_state, "is_staged"):
+            for key in staged_state.keys():
+                if staged_state.is_staged(key) and _is_visible_fn(key):
                     _tracked.add(key)
     else:
         for path in args:
