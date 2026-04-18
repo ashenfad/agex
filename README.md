@@ -11,6 +11,7 @@ Key features:
 - **Curated Scope**: Whitelist exactly which modules and classes are available.
 - **Stateful Memory**: Versioned workspace enables time-travel debugging.
 - **Multi-Agent Orchestration**: Coordinate agents with natural Python control flow.
+- **Terminal & Scripting**: Agents run shell commands, Python scripts, and git — all sandboxed.
 - **Flexible Hosting**: Run locally (default), on HTTP servers, or serverless via [Modal](https://modal.com/).
 
 ![Demo of an agex agent returning pandas DataFrames and plotly figures in an IPython REPL](docs/assets/teaser.gif)
