@@ -12,6 +12,12 @@ Usage::
     handler = make_git_handler(versioned_kv)
     execute(script, fs, commands={"git": handler})
 
+Or register as a skill on an agent for automatic discovery::
+
+    from agex.git_cli import register_git
+
+    register_git(agent)
+
 The handler is a :class:`~termish.context.CommandContext` →
 :class:`~termish.context.CommandResult` | None callable suitable for
 passing to termish's ``commands`` parameter.
@@ -20,6 +26,7 @@ passing to termish's ``commands`` parameter.
 from __future__ import annotations
 
 import difflib
+from importlib import resources
 from typing import TYPE_CHECKING, Any
 
 from termish.context import CommandContext, CommandResult
@@ -28,6 +35,19 @@ from termish.errors import TerminalError
 if TYPE_CHECKING:
     from kvgit import VersionedKV
     from termish.errors import CommandFunc
+
+
+def register_git(agent: Any) -> None:
+    """Register the git skill on an agent.
+
+    Mounts the git usage guide at ``/skills/git/SKILL.md`` so the agent
+    can discover git commands on demand via ``cat /skills/git/SKILL.md``.
+
+    Args:
+        agent: An :class:`~agex.Agent` instance.
+    """
+    skill_bytes = resources.files("agex.skills").joinpath("git.md").read_bytes()
+    agent.skill(skill_bytes)
 
 
 def make_git_handler(
@@ -361,6 +381,10 @@ def _git_diff(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) ->
 
 def _git_status(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> None:
     ctx.stdout.write(f"On branch {vkv.current_branch}\n")
+    ctx.stdout.write(
+        "All file writes are automatically tracked. "
+        "Use `git commit -m 'message'` to checkpoint.\n"
+    )
 
     # Show recent agent-tagged commits (commits with a message)
     tagged = []
@@ -375,8 +399,6 @@ def _git_status(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) 
         ctx.stdout.write("\nRecent commits:\n")
         for h, msg in tagged:
             ctx.stdout.write(f"  {_short_hash(h)} {msg}\n")
-    else:
-        ctx.stdout.write("nothing to commit\n")
 
 
 def _git_branch(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> None:
