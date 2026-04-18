@@ -257,12 +257,20 @@ class SyncLoopMixin:
 
                     if llm_response.terminal:
                         # Execute terminal script - implicitly continues
+                        from agex.agent.loop.event_factories import (
+                            build_terminal_commands,
+                        )
+
+                        terminal_commands = build_terminal_commands(
+                            self, fs, state=versioned_state, vfs=fs
+                        )
                         execute_terminal(
                             self.name,
                             llm_response.terminal,
                             fs,
                             exec_state,
                             on_event=on_event,
+                            commands=terminal_commands or None,
                         )
 
                         # Yield any events from terminal execution

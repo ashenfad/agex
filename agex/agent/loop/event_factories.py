@@ -109,12 +109,39 @@ def create_error_output(agent_name: str, exception: Exception) -> OutputEvent:
     )
 
 
+def build_terminal_commands(
+    agent: Any, fs: Any, state: Any = None, vfs: Any = None
+) -> dict:
+    """Build the injected commands dict for termish execution.
+
+    ``python`` is always available (core capability).
+    ``git`` is available when the agent has the git skill registered.
+
+    Returns an empty dict if no handlers are applicable.
+    """
+    from agex.python_cli import make_python_handler
+
+    commands: dict = {"python": make_python_handler(agent, fs)}
+
+    # git is opt-in via register_git(agent)
+    skill_names = {name for name, _ in getattr(agent, "_skills", [])}
+    if "git" in skill_names:
+        from agex.git_cli import make_git_handler
+
+        vkv = getattr(state, "_versioned", None) if state is not None else None
+        if vkv is not None:
+            commands["git"] = make_git_handler(vkv, state=state, vfs=vfs)
+
+    return commands
+
+
 def execute_terminal(
     agent_name: str,
     terminal_script: str,
     fs: Any,
     exec_state: MutableMapping[str, Any],
     on_event: Callable[[BaseEvent], None] | None = None,
+    commands: dict | None = None,
 ) -> str:
     """Execute terminal script and emit output event.
 
@@ -124,6 +151,7 @@ def execute_terminal(
         fs: FileSystem to execute against
         exec_state: Execution state for event logging
         on_event: Optional callback for event emission
+        commands: Optional injected command handlers (e.g. python, git)
 
     Returns:
         The stdout from terminal execution
@@ -133,7 +161,7 @@ def execute_terminal(
     """
     try:
         script = to_script(terminal_script)
-        stdout = execute_script(script, fs)
+        stdout = execute_script(script, fs, commands=commands)
 
         # Create output event with stdout (no echo of input - ActionEvent has that)
         if stdout:

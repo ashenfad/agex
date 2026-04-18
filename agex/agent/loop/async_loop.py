@@ -295,6 +295,13 @@ class AsyncLoopMixin:
 
                 if llm_response.terminal:
                     # Execute terminal script in executor - implicitly continues
+                    from agex.agent.loop.event_factories import (
+                        build_terminal_commands,
+                    )
+
+                    terminal_commands = build_terminal_commands(
+                        self, fs, state=versioned_state, vfs=fs
+                    )
                     ctx = contextvars.copy_context()
                     await loop.run_in_executor(
                         None,
@@ -306,6 +313,7 @@ class AsyncLoopMixin:
                             fs,
                             exec_state,
                             thread_safe_on_event,
+                            terminal_commands or None,
                         ),
                     )
 
