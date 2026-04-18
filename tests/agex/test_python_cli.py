@@ -77,6 +77,51 @@ class TestBasicExecution:
         with pytest.raises(TerminalError, match="not supported"):
             run(vfs, handler, "python -m json")
 
+    def test_ignored_flags_stripped(self, setup):
+        """Harmless flags like -u, -B are stripped before the filename."""
+        _, vfs, handler = setup
+        vfs.write("hello.py", b"print('hi')\n")
+        output = run(vfs, handler, "python -u hello.py")
+        assert "hi" in output
+
+    def test_ignored_arg_flags_stripped(self, setup):
+        """Flags with arguments like -W ignore are consumed."""
+        _, vfs, handler = setup
+        vfs.write("hello.py", b"print('hi')\n")
+        output = run(vfs, handler, "python -W ignore hello.py")
+        assert "hi" in output
+
+    def test_multiple_ignored_flags(self, setup):
+        """Multiple ignored flags before the filename."""
+        _, vfs, handler = setup
+        vfs.write("hello.py", b"print('hi')\n")
+        output = run(vfs, handler, "python -u -B hello.py")
+        assert "hi" in output
+
+    def test_unknown_flag_errors(self, setup):
+        """Unknown flags raise a clear error instead of file-not-found."""
+        _, vfs, handler = setup
+        with pytest.raises(TerminalError, match="unknown option"):
+            run(vfs, handler, "python --badopt")
+
+    def test_help_flag(self, setup):
+        """python --help shows usage information."""
+        _, vfs, handler = setup
+        output = run(vfs, handler, "python --help")
+        assert "usage:" in output
+        assert "task_success" in output
+
+    def test_no_args_suggests_python_block(self, setup):
+        """python with no args suggests using <PYTHON> blocks."""
+        _, vfs, handler = setup
+        output = run(vfs, handler, "python")
+        assert "<PYTHON>" in output
+
+    def test_v_flag(self, setup):
+        _, vfs, handler = setup
+        output = run(vfs, handler, "python -V")
+        assert "Python" in output
+
 
 # =============================================================================
 # Fresh namespace / no task_*

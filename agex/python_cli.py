@@ -60,15 +60,65 @@ def make_python_handler(agent: "BaseAgent", fs: "FileSystem") -> "CommandFunc":
     except (ValueError, TypeError):
         pass  # Already registered or name conflict — fine
 
+    # Flags that are harmless to ignore (no-op in a sandboxed VFS environment)
+    _IGNORED_FLAGS = frozenset({"-u", "-B", "-s", "-E", "-O", "-OO"})
+    # Flags that take a following argument (consumed and ignored)
+    _IGNORED_ARG_FLAGS = frozenset({"-W", "-X"})
+
     def handler(ctx: CommandContext) -> CommandResult | None:
-        args = ctx.args
+        args = list(ctx.args)
+
+        # python (no args) — point the agent to <PYTHON> blocks
+        if not args:
+            ctx.stdout.write(
+                f"Python {sys.version.split()[0]} (sandtrap)\n"
+                "Use a <PYTHON> block for interactive Python.\n"
+            )
+            return None
+
+        # Strip known harmless flags before the filename
+        script_args_start = 0
+        while script_args_start < len(args):
+            a = args[script_args_start]
+            if a in _IGNORED_FLAGS:
+                args.pop(script_args_start)
+            elif a in _IGNORED_ARG_FLAGS:
+                # Flag + its argument (e.g. -W ignore)
+                args.pop(script_args_start)
+                if script_args_start < len(args):
+                    args.pop(script_args_start)
+            elif a == "-i":
+                # -i (interactive after script) — ignore, we can't do interactive
+                args.pop(script_args_start)
+            else:
+                break
+
+        if not args:
+            ctx.stdout.write(f"Python {sys.version.split()[0]} (sandtrap)\n")
+            return None
 
         # python --version / python -V
-        if not args or args == ["--version"] or args == ["-V"]:
-            if not args:
-                ctx.stdout.write(f"Python {sys.version.split()[0]} (sandtrap)\n")
-                return None
+        if args[0] in ("--version", "-V"):
             ctx.stdout.write(f"Python {sys.version.split()[0]}\n")
+            return None
+
+        # python --help / python -h
+        if args[0] in ("--help", "-h"):
+            ctx.stdout.write(
+                f"Python {sys.version.split()[0]} (sandtrap)\n\n"
+                "usage: python [options] file.py [args...]\n"
+                "       python -c 'code' [args...]\n\n"
+                "Options (accepted, most ignored in sandbox):\n"
+                "  -c code    Execute code string\n"
+                "  -u         Unbuffered output (ignored)\n"
+                "  -B         Don't write .pyc files (ignored)\n"
+                "  -W arg     Warning control (ignored)\n"
+                "  -i         Interactive after script (ignored)\n"
+                "  --version  Print version\n\n"
+                "Note: task_success() is only available from <PYTHON> blocks,\n"
+                "not from scripts. Import your work in a <PYTHON> block to\n"
+                "complete a task.\n"
+            )
             return None
 
         # python -c "code"
@@ -86,11 +136,18 @@ def make_python_handler(agent: "BaseAgent", fs: "FileSystem") -> "CommandFunc":
                 stdout=ctx.stdout,
             )
 
-        # python -m module (not supported in v1)
+        # python -m module (not supported)
         if args[0] == "-m":
             raise TerminalError(
                 "python -m is not supported. "
                 "Use `import module` from a <PYTHON> block instead."
+            )
+
+        # Unknown flags
+        if args[0].startswith("-"):
+            raise TerminalError(
+                f"python: unknown option: {args[0]}\n"
+                "Use `python --help` for available options."
             )
 
         # python file.py [args...]
