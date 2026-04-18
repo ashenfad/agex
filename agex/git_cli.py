@@ -132,6 +132,7 @@ def make_git_handler(
             "show": _git_show,
             "merge": _git_merge,
             "add": _git_add,
+            "rm": _git_rm,
         }
 
         fn = dispatch.get(subcommand)
@@ -254,6 +255,7 @@ def _usage() -> str:
         "   show       Show file content at a commit\n"
         "   merge      Merge a branch into the current branch\n"
         "   add        Stage files for the next commit\n"
+        "   rm         Remove files from the workspace\n"
     )
 
 
@@ -429,6 +431,19 @@ def _git_status(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) 
         for key in staged_state.keys():
             if staged_state.is_staged(key) and _is_visible_fn(key):
                 changed_keys.add(key)
+
+    # Detect pending deletions: keys that exist at the last agent commit
+    # but are no longer visible in Staged (deleted via git rm / rm).
+    if tagged and staged_state is not None:
+        _staged_checkout = (
+            staged_state.checkout if staged_state is not None else vkv.checkout
+        )
+        last_snap = _staged_checkout(tagged[0])
+        if last_snap is not None:
+            current_keys = staged_state.keys()
+            for key in last_snap.keys():
+                if _is_visible_fn(key) and key not in current_keys:
+                    changed_keys.add(key)
 
     staged_files: list[str] = []
     unstaged_files: list[str] = []
@@ -784,3 +799,59 @@ def _git_add(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> 
         for path in args:
             internal_key = _add_fn(path)
             _tracked.add(internal_key)
+
+
+def _git_rm(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> None:
+    """Remove files from the workspace and stage the deletion."""
+    _add_fn = kw.get("_add", lambda k: k)
+    _strip_fn = kw.get("_strip", lambda k: k)
+    _is_visible_fn = kw.get("_is_visible", lambda k: True)
+    staged = kw.get("_state")
+
+    if staged is None:
+        raise TerminalError("git rm: requires state (Staged)")
+
+    recursive = "-r" in args
+    paths = [a for a in args if not a.startswith("-")]
+
+    if not paths:
+        raise TerminalError("git rm: nothing specified")
+
+    removed: list[str] = []
+    for path in paths:
+        internal_key = _add_fn(path)
+
+        if recursive:
+            # Find all VFS keys under this path prefix
+            prefix = internal_key
+            keys_to_remove = [
+                k
+                for k in staged.keys()
+                if k == prefix or k.startswith(prefix)
+                if _is_visible_fn(k)
+            ]
+            if not keys_to_remove:
+                # Try as a directory path (add trailing slash for prefix match)
+                dir_prefix = _add_fn(path.rstrip("/") + "/")
+                keys_to_remove = [
+                    k
+                    for k in staged.keys()
+                    if k.startswith(dir_prefix) and _is_visible_fn(k)
+                ]
+            for k in keys_to_remove:
+                try:
+                    del staged[k]
+                    removed.append(_strip_fn(k))
+                except KeyError:
+                    pass
+        else:
+            if internal_key not in staged:
+                raise TerminalError(f"git rm: '{path}': not found")
+            try:
+                del staged[internal_key]
+                removed.append(path)
+            except KeyError:
+                raise TerminalError(f"git rm: '{path}': not found")
+
+    for name in sorted(removed):
+        ctx.stdout.write(f"rm '{name}'\n")
