@@ -140,4 +140,4 @@ build-backend = "setuptools.build_meta"
 packages = {find = {where = ["./"], exclude = ["tests*", "examples*", "benchmarks*", "build*", "docs*"]}}  # Discover packages, exclude tests/examples
 
 [tool.setuptools.package-data]
-agex = ["py.typed"]
+agex = ["py.typed", "skills/*.md"]
