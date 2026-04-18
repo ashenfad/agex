@@ -404,6 +404,52 @@ class TestAdd:
 
 
 # =============================================================================
+# git rm
+# =============================================================================
+
+
+class TestRm:
+    def test_rm_removes_file(self, vkv, state, git):
+        """git rm deletes a file from the workspace."""
+        state["a.py"] = b"aaa"
+        run_git(git, "commit", "-m", "add a")
+
+        output = run_git(git, "rm", "a.py")
+        assert "rm 'a.py'" in output
+        assert "a.py" not in state
+
+    def test_rm_shows_in_status(self, vkv, state, git):
+        """After git rm, git status shows the deletion as pending."""
+        state["a.py"] = b"aaa"
+        run_git(git, "commit", "-m", "add a")
+
+        run_git(git, "rm", "a.py")
+        output = run_git(git, "status")
+        assert "a.py" in output
+
+    def test_rm_then_commit_persists(self, vkv, state, git):
+        """git rm + git commit persists the deletion."""
+        state["a.py"] = b"aaa"
+        state["b.py"] = b"bbb"
+        run_git(git, "commit", "-m", "add both")
+
+        run_git(git, "rm", "a.py")
+        run_git(git, "commit", "-m", "remove a")
+
+        output = run_git(git, "log", "--oneline")
+        assert "remove a" in output
+
+    def test_rm_nonexistent_errors(self, vkv, state, git):
+        """git rm on a file that doesn't exist raises an error."""
+        with pytest.raises(TerminalError, match="not found"):
+            run_git(git, "rm", "ghost.py")
+
+    def test_rm_no_args_errors(self, git):
+        with pytest.raises(TerminalError, match="nothing specified"):
+            run_git(git, "rm")
+
+
+# =============================================================================
 # Error cases
 # =============================================================================
 
