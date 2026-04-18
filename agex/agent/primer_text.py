@@ -72,7 +72,9 @@ def new_method():
 
 ## Task Control Functions
 
-You should end every execution block with **exactly one** of these control functions. If you forget, your code will still run and you'll get another turn — but always prefer being explicit.
+You should end every `<PYTHON>` block with **exactly one** of these control functions. If you forget, your code will still run and you'll get another turn — but always prefer being explicit.
+
+**Note:** These functions are only available from `<PYTHON>` blocks, not from scripts run via `<TERMINAL>` (e.g., `python file.py`). If you develop in scripts, complete the task by importing your work from a `<PYTHON>` block: `from helpers.compute import solve; task_success(solve(inputs))`.
 
 ### `task_continue(*observations)`
 **"I'm not done yet. Run this code and show me the output."**
