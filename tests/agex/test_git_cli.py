@@ -116,12 +116,21 @@ class TestDiff:
         assert "---" in output  # unified diff markers
         assert "+++" in output
 
-    def test_diff_no_args_diffs_head_vs_parent(self, vkv, state, git):
+    def test_diff_no_args_shows_pending_changes(self, vkv, state, git):
+        """git diff (no args) shows changes since the last agent commit."""
         commit_files(state, {"f.py": b"old\n"}, "v1")
-        commit_files(state, {"f.py": b"new\n"}, "v2")
+        # Simulate a safe_commit with new content (not agent-tagged)
+        commit_files(state, {"f.py": b"new\n"})
         output = run_git(git, "diff")
         assert "old" in output
         assert "new" in output
+
+    def test_diff_no_args_clean_after_commit(self, vkv, state, git):
+        """git diff (no args) shows nothing when HEAD matches the last agent commit."""
+        state["f.py"] = b"content\n"
+        run_git(git, "commit", "-m", "v1")
+        output = run_git(git, "diff")
+        assert output.strip() == ""
 
     def test_diff_added_file(self, vkv, state, git):
         commit_files(state, {"a.py": b"existing\n"}, "v1")
