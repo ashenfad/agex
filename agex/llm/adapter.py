@@ -96,7 +96,17 @@ class DefaultPyfetchAdapter(FetchAdapter):
 
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, json=body, headers=headers) as resp:
-                        resp.raise_for_status()
+                        if resp.status >= 400:
+                            try:
+                                error_body = await resp.json()
+                                error_msg = error_body.get("error", {}).get(
+                                    "message", str(error_body)
+                                )
+                            except Exception:
+                                error_msg = f"HTTP {resp.status}"
+                            raise RuntimeError(
+                                f"API error ({resp.status}): {error_msg}"
+                            )
                         return await resp.json()
             except ImportError:
                 raise RuntimeError(
@@ -142,6 +152,13 @@ class DefaultPyfetchAdapter(FetchAdapter):
                     break
                 text = text_decoder.decode(result.value, {"stream": True})
                 yield text
+            # Flush pending bytes from any incomplete multi-byte sequence
+            # retained across the last call with stream=True. If the stream
+            # happens to end mid-multibyte (rare, e.g. truncated network),
+            # this surfaces the remaining bytes rather than silently dropping.
+            final_text = text_decoder.decode()
+            if final_text:
+                yield final_text
         else:
             try:
                 import aiohttp
@@ -149,7 +166,17 @@ class DefaultPyfetchAdapter(FetchAdapter):
                 decoder = codecs.getincrementaldecoder("utf-8")()
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, json=body, headers=headers) as resp:
-                        resp.raise_for_status()
+                        if resp.status >= 400:
+                            try:
+                                error_body = await resp.json()
+                                error_msg = error_body.get("error", {}).get(
+                                    "message", str(error_body)
+                                )
+                            except Exception:
+                                error_msg = f"HTTP {resp.status}"
+                            raise RuntimeError(
+                                f"API error ({resp.status}): {error_msg}"
+                            )
                         async for chunk in resp.content.iter_any():
                             text = decoder.decode(chunk, False)
                             if text:
