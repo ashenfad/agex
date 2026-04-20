@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.10.2] - 2026-04-20
+
+### Added
+- **`FetchAdapter` seam for pyfetch LLM clients**: `PyfetchOpenAI` and `PyfetchAnthropic` accept an optional keyword-only `fetch_adapter` parameter. The adapter owns the HTTP transport; clients handle request construction, SSE parsing, and streaming. Enables custom transports (e.g., routing through a JS bridge so API keys can live outside Python scope). `DefaultPyfetchAdapter` (pyfetch in Pyodide, aiohttp elsewhere) preserves existing behavior when no adapter is passed. See `agex/llm/adapter.py`.
+- **Empty-`api_key` support** for pyfetch clients: when `api_key=""` and a `fetch_adapter` is provided, the client omits the `Authorization` / `x-api-key` header, letting the adapter inject auth on the way out. Non-auth headers (e.g., `anthropic-version`) are unaffected.
+
+### Changed
+- Transport code (pyfetch / aiohttp fallback) deduplicated from both pyfetch clients into `DefaultPyfetchAdapter`. No behavior change for existing callers.
+
 ## [0.10.1] - 2026-04-18
 
 ### Fixed

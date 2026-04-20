@@ -6,12 +6,11 @@ enabling direct browser-to-API calls without a server proxy.
 """
 
 import asyncio
-import codecs
 import json
-import sys
 from typing import Any, AsyncIterator, Iterator, List
 
 from agex.agent.events import Event
+from agex.llm.adapter import DefaultPyfetchAdapter, FetchAdapter
 from agex.llm.core import LLM, TokenChunk
 from agex.llm.xml import XML_FORMAT_PRIMER
 
@@ -90,6 +89,8 @@ class PyfetchOpenAI(LLM):
         api_key: str = "",
         base_url: str | None = None,
         timeout_seconds: float = 90.0,
+        *,
+        fetch_adapter: FetchAdapter | None = None,
         **kwargs,
     ):
         kwargs.pop("provider", None)
@@ -100,12 +101,15 @@ class PyfetchOpenAI(LLM):
         self._base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._kwargs = kwargs
+        # Transport seam. When empty api_key is paired with a custom
+        # adapter, the adapter is expected to inject auth headers on the
+        # way out (e.g., a JS bridge that reads the key from localStorage).
+        self._adapter: FetchAdapter = fetch_adapter or DefaultPyfetchAdapter()
 
     def _headers(self) -> dict[str, str]:
-        h = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self._api_key}",
-        }
+        h: dict[str, str] = {"Content-Type": "application/json"}
+        if self._api_key:
+            h["Authorization"] = f"Bearer {self._api_key}"
         if self._app_url:
             h["HTTP-Referer"] = self._app_url
         if self._app_title:
@@ -209,7 +213,7 @@ class PyfetchOpenAI(LLM):
         from agex.llm.sse import parse_sse_events
         from agex.llm.xml import atokenize_xml_stream
 
-        response = self._pyfetch_stream(url, body=body, headers=headers)
+        response = self._adapter.fetch_stream(url, headers=headers, body=body)
 
         usage_holder: dict[str, int | None] = {
             "input_tokens": None,
@@ -295,111 +299,10 @@ class PyfetchOpenAI(LLM):
 
         headers = self._headers()
 
-        response_data = await self._pyfetch_json(
+        response_data = await self._adapter.fetch_json(
             f"{self._base_url}/chat/completions",
-            body=body,
             headers=headers,
+            body=body,
         )
 
         return response_data["choices"][0]["message"]["content"] or ""
-
-    # -- Transport -----------------------------------------------------------
-
-    @staticmethod
-    async def _pyfetch_stream(
-        url: str,
-        body: dict,
-        headers: dict,
-    ) -> AsyncIterator[str]:
-        """POST and return an async iterator of text chunks from the SSE stream."""
-        if sys.platform == "emscripten":
-            from pyodide.http import pyfetch
-
-            resp = await pyfetch(
-                url,
-                method="POST",
-                headers=headers,
-                body=json.dumps(body),
-            )
-            if resp.status >= 400:
-                try:
-                    error_body = await resp.json()
-                    error_msg = error_body.get("error", {}).get(
-                        "message", str(error_body)
-                    )
-                except Exception:
-                    error_msg = f"HTTP {resp.status}"
-                raise RuntimeError(f"API error ({resp.status}): {error_msg}")
-            js_response = resp.js_response
-            reader = js_response.body.getReader()
-
-            from js import TextDecoder
-
-            text_decoder = TextDecoder.new("utf-8")
-
-            while True:
-                result = await reader.read()
-                if result.done:
-                    break
-                # result.value is a Uint8Array
-                text = text_decoder.decode(result.value, {"stream": True})
-                yield text
-        else:
-            # Non-Pyodide fallback (for testing with aiohttp)
-            try:
-                import aiohttp
-
-                decoder = codecs.getincrementaldecoder("utf-8")()
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json=body, headers=headers) as resp:
-                        resp.raise_for_status()
-                        async for chunk in resp.content.iter_any():
-                            text = decoder.decode(chunk, False)
-                            if text:
-                                yield text
-                        final_text = decoder.decode(b"", True)
-                        if final_text:
-                            yield final_text
-            except ImportError:
-                raise RuntimeError(
-                    "PyfetchOpenAI requires pyodide (emscripten) or aiohttp installed."
-                )
-
-    @staticmethod
-    async def _pyfetch_json(
-        url: str,
-        body: dict,
-        headers: dict,
-    ) -> dict:
-        """POST and return parsed JSON response."""
-        if sys.platform == "emscripten":
-            from pyodide.http import pyfetch
-
-            resp = await pyfetch(
-                url,
-                method="POST",
-                headers=headers,
-                body=json.dumps(body),
-            )
-            if resp.status >= 400:
-                try:
-                    error_body = await resp.json()
-                    error_msg = error_body.get("error", {}).get(
-                        "message", str(error_body)
-                    )
-                except Exception:
-                    error_msg = f"HTTP {resp.status}"
-                raise RuntimeError(f"API error ({resp.status}): {error_msg}")
-            return await resp.json()
-        else:
-            try:
-                import aiohttp
-
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json=body, headers=headers) as resp:
-                        resp.raise_for_status()
-                        return await resp.json()
-            except ImportError:
-                raise RuntimeError(
-                    "PyfetchOpenAI requires pyodide (emscripten) or aiohttp installed."
-                )
