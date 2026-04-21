@@ -39,12 +39,23 @@ from .common import (
 )
 from .sync_loop import SyncLoopMixin
 
+_RETRYABLE_CACHE: tuple[type[Exception], ...] | None = None
+
 
 def _retryable_exceptions() -> tuple[type[Exception], ...]:
-    """Build tuple of retryable exception types from available SDK packages."""
+    """Tuple of retryable exception types from available SDK packages.
+
+    Resolved lazily on first call — importing the provider SDKs eagerly
+    at module load would pull heavy transitive deps (e.g. google-genai
+    pulls PIL) into every ``import agex``.
+    """
+    global _RETRYABLE_CACHE
+    if _RETRYABLE_CACHE is not None:
+        return _RETRYABLE_CACHE
+
     retryable: list[type[Exception]] = [ResponseParseError]
     try:
-        import anthropic
+        import anthropic  # noqa: PLC0415
 
         retryable.extend(
             [
@@ -57,7 +68,7 @@ def _retryable_exceptions() -> tuple[type[Exception], ...]:
     except ImportError:
         pass
     try:
-        import openai
+        import openai  # noqa: PLC0415
 
         retryable.extend(
             [
@@ -70,15 +81,14 @@ def _retryable_exceptions() -> tuple[type[Exception], ...]:
     except ImportError:
         pass
     try:
-        from google.genai import errors as genai_errors
+        from google.genai import errors as genai_errors  # noqa: PLC0415
 
         retryable.append(genai_errors.ServerError)
     except ImportError:
         pass
-    return tuple(retryable)
 
-
-_RETRYABLE = _retryable_exceptions()
+    _RETRYABLE_CACHE = tuple(retryable)
+    return _RETRYABLE_CACHE
 
 
 class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
@@ -440,7 +450,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                 else:
                     return self.llm.complete(system_message, messages_to_send)
 
-            except _RETRYABLE as e:
+            except _retryable_exceptions() as e:
                 is_last = attempt >= max_retries
                 err = ErrorEvent(
                     agent_name=self.name,
@@ -501,7 +511,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                 else:
                     return await self.llm.acomplete(system_message, messages_to_send)
 
-            except _RETRYABLE as e:
+            except _retryable_exceptions() as e:
                 is_last = attempt >= max_retries
                 err = ErrorEvent(
                     agent_name=self.name,
