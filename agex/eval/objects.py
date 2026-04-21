@@ -6,10 +6,19 @@ import io
 from dataclasses import dataclass
 from typing import Any, Literal
 
-try:
-    from PIL import Image as _PILImage
-except ImportError:
-    _PILImage = None  # type: ignore[assignment, misc]
+
+def _pil_image_cls():
+    """Lazily import PIL.Image and return its ``Image`` class (or None).
+
+    PIL loads a non-trivial amount of code at import time; defer it until
+    something actually needs to serialize or type-check an image.
+    """
+    try:
+        from PIL import Image  # noqa: PLC0415
+
+        return Image
+    except ImportError:
+        return None
 
 
 class PrintAction(tuple):
@@ -32,7 +41,8 @@ class ImageAction:
     def __getstate__(self) -> dict:
         state = {"detail": self.detail}
         img = self.image
-        if _PILImage is not None and isinstance(img, _PILImage.Image):
+        _Image = _pil_image_cls()
+        if _Image is not None and isinstance(img, _Image.Image):
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             state["_png_bytes"] = buf.getvalue()
@@ -56,7 +66,8 @@ class ImageAction:
         cached = getattr(self, "_png_bytes", None)
         if cached is not None:
             return cached
-        if _PILImage is None or not isinstance(self.image, _PILImage.Image):
+        _Image = _pil_image_cls()
+        if _Image is None or not isinstance(self.image, _Image.Image):
             raise TypeError(
                 f"Cannot get PNG bytes for non-PIL image of type "
                 f"{type(self.image).__name__}"

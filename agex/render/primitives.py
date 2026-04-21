@@ -3,34 +3,47 @@ Rendering primitives for events and values.
 
 This module provides low-level rendering functions that don't depend on event types,
 enabling clean layering: primitives → events → provider messages.
+
+Image-specific helpers (PIL/matplotlib/plotly) live in ``.images`` and are
+imported lazily — ``import agex`` reaches this module eagerly via the
+agent-event chain, so eager heavy-graphics imports here would pay that
+cost on every agex load. Callers that need image utilities import them
+from ``.images`` directly.
 """
 
-import base64
-import io
 from typing import Any
-
-# Gracefully import optional image libraries
-try:
-    from PIL import Image
-except ImportError:
-    Image = None  # type: ignore
-
-try:
-    import matplotlib.figure
-except ImportError:
-    matplotlib = None  # type: ignore
-
-try:
-    import plotly.graph_objects
-except ImportError:
-    plotly = None  # type: ignore
 
 from ..agent.datatypes import EditAction, FileAction
 from ..eval.objects import ImageAction, PrintAction
 from ..fs.slugify import slugify as _slugify
 from ..llm.core import ContentPart, ImagePart, TextPart
 from ..tokenizers import get_tokenizer
+from .images import (
+    estimate_image_cost,
+    get_image_error_message,
+    serialize_image_to_base64,
+)
 from .value import render_value
+
+# Re-export for backward compatibility: older code paths and external
+# callers import these directly from ``render.primitives``.
+__all__ = [
+    "HI_DETAIL_BUDGET",
+    "LOW_DETAIL_BUDGET",
+    "collapse_same_role_messages",
+    "count_tokens",
+    "estimate_image_cost",
+    "get_image_error_message",
+    "is_dataframe",
+    "render_action_markdown",
+    "render_chapter",
+    "render_dataframe_with_budget",
+    "render_fail",
+    "render_output_parts_full",
+    "render_success",
+    "render_task_start",
+    "serialize_image_to_base64",
+]
 
 # Standard token budget for "hi" detail rendering
 HI_DETAIL_BUDGET = 8192
@@ -140,130 +153,6 @@ def count_tokens(text: str) -> int:
     """
     tokenizer = get_tokenizer("gpt-4")
     return len(tokenizer.encode(text))
-
-
-# ============================================================================
-# Image utilities
-# ============================================================================
-
-
-def _is_plotly_figure(image: Any) -> bool:
-    """Check if an object is a Plotly figure using duck typing."""
-    # Check for to_image method (defining characteristic of Plotly figures)
-    if hasattr(image, "to_image") and callable(getattr(image, "to_image", None)):
-        # Also check for layout attribute (Plotly figures have this)
-        if hasattr(image, "layout"):
-            return True
-    # Fallback: check isinstance if plotly is available
-    if plotly is not None:
-        try:
-            return isinstance(image, plotly.graph_objects.Figure)
-        except Exception:
-            pass
-    return False
-
-
-def estimate_image_cost(image: Any, detail: str = "high") -> int:
-    """
-    Estimates the token cost for an image.
-
-    This provides a reasonable, model-agnostic estimation for budget management.
-
-    Args:
-        image: The image object (e.g., PIL Image, Matplotlib Figure).
-        detail: The requested detail level ("high" or "low").
-
-    Returns:
-        The estimated token cost.
-    """
-    if detail == "low":
-        return 85  # A common, fixed cost for low-detail/thumbnail images.
-
-    # For high detail, we need the image dimensions.
-    width, height = 0, 0
-    if Image and isinstance(image, Image.Image):
-        width, height = image.size
-    elif matplotlib and isinstance(image, matplotlib.figure.Figure):
-        # Matplotlib figures are in inches; convert to pixels using a common default DPI.
-        dpi = image.get_dpi() if image.get_dpi() else 100.0
-        width, height = (
-            int(image.get_figwidth() * dpi),
-            int(image.get_figheight() * dpi),
-        )
-    elif _is_plotly_figure(image):
-        # Plotly figures often have explicit pixel dimensions.
-        width = image.layout.width if image.layout.width else 500
-        height = image.layout.height if image.layout.height else 400
-    else:
-        # Fallback for unsupported types: a fixed high-cost guess.
-        return 2000
-
-    if width == 0 or height == 0:
-        return 2000  # Avoid division by zero for invalid images
-
-    # Use a simple, linear scaling formula as a general-purpose heuristic.
-    # Anthropic's is (width_px * height_px) / 750, which is a good baseline.
-    return (width * height) // 750
-
-
-def serialize_image_to_base64(image: Any) -> str | None:
-    """Serializes a supported image type to a PNG base64 string."""
-    # Pre-rendered base64 string (e.g. from browser-side Plotly.js)
-    if isinstance(image, str):
-        return image
-
-    buffer = io.BytesIO()
-    try:
-        if Image and isinstance(image, Image.Image):
-            # For security and consistency, convert to a standard format like PNG.
-            image.save(buffer, format="PNG")
-            return base64.b64encode(buffer.getvalue()).decode("utf-8")
-        elif matplotlib and isinstance(image, matplotlib.figure.Figure):
-            image.savefig(buffer, format="png", bbox_inches="tight")
-            return base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-        if _is_plotly_figure(image):
-            # kaleido is used by plotly to export static images
-            if hasattr(image, "to_image") and callable(
-                getattr(image, "to_image", None)
-            ):
-                image_bytes = image.to_image(format="png")
-                return base64.b64encode(image_bytes).decode("utf-8")
-    except Exception:
-        # If any error occurs during serialization, fail gracefully.
-        # The caller will generate appropriate error messages
-        return None
-
-    # Unsupported type
-    return None
-
-
-def get_image_error_message(image: Any) -> str:
-    """Generate a helpful error message for failed image serialization."""
-    if not _is_plotly_figure(image):
-        return f"<unsupported image type: {type(image).__name__}>"
-
-    # Try to get the actual error from Plotly export
-    error_msg = None
-    try:
-        if hasattr(image, "to_image") and callable(getattr(image, "to_image", None)):
-            image.to_image(format="png")
-    except Exception as e:
-        error_msg = str(e)
-
-    # Check for kaleido-specific errors
-    if error_msg and ("kaleido" in error_msg.lower()):
-        return (
-            "<Plotly figure export failed: Kaleido package is required. "
-            "Install with: pip install kaleido>"
-        )
-    elif error_msg:
-        return f"<Plotly figure export failed: {error_msg}>"
-    else:
-        return (
-            "<Plotly figure export failed: Kaleido package may be missing. "
-            "Install with: pip install kaleido>"
-        )
 
 
 # ============================================================================

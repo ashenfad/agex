@@ -1,6 +1,10 @@
-"""Budget-controlled value rendering backed by reprobate."""
+"""Budget-controlled value rendering backed by reprobate.
 
-import reprobate
+reprobate's ``__init__`` eagerly auto-registers optional ext modules
+(PIL, pandas, numpy, …), so importing it at module load would pull all
+those packages into every ``import agex``. We defer it to the first
+``render_value`` call.
+"""
 
 
 def render_value(value, budget=2048, token_budget=None):
@@ -16,4 +20,6 @@ def render_value(value, budget=2048, token_budget=None):
         if is_dataframe(value):
             rendered = render_dataframe_with_budget(value, token_budget)
             return rendered[:budget] if len(rendered) > budget else rendered
+    import reprobate  # noqa: PLC0415
+
     return reprobate.render(value, budget=budget)

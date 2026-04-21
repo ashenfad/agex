@@ -25,11 +25,6 @@ from agex.agent.events import OutputEvent
 from agex.eval.objects import ImageAction
 from agex.state.log import add_event_to_log
 
-try:
-    from PIL import Image
-except ImportError:
-    Image = None  # type: ignore[assignment, misc]
-
 
 def handle_result(
     result: ExecResult,
@@ -101,8 +96,11 @@ def handle_result(
             and parts[0].startswith(_IMG_PREFIX)
         ):
             try:
-                if Image is None:
-                    raise ImportError("PIL.Image not available")
+                # Defer PIL until we actually need to decode an image —
+                # keeps ``import agex`` fast when the agent never prints
+                # __AGEX_IMAGE__ markers.
+                from PIL import Image  # noqa: PLC0415
+
                 b64 = parts[0][len(_IMG_PREFIX) :]
                 img = Image.open(io.BytesIO(base64.b64decode(b64)))
                 event = OutputEvent(
