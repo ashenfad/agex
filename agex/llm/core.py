@@ -59,18 +59,39 @@ class TokenChunk:
     Not an Event - tokens are ephemeral and don't go in the state log.
 
     Attributes:
-        type: Either "title", "thinking", "report", "python", "file", "edit", or "terminal"
-        content: The text content (incremental)
-        done: True when this section is complete
-        input_tokens: Actual input token count from the API (set on final chunk only)
-        output_tokens: Actual output token count from the API (set on final chunk only)
+        type: One of "title", "thinking", "report", "python", "file",
+            "edit", "terminal", or "file_action".  The first seven carry
+            streamed text in ``content``; "file_action" carries a fully
+            built :class:`FileAction` or :class:`EditAction` in
+            ``action`` and is emitted by wire formats (like tool-use)
+            that already have the file operation in structured form.
+        content: The text content (incremental).  Empty for
+            "file_action" tokens.
+        done: True when this section is complete.  Always True for
+            "file_action" tokens (one-shot).
+        action: The completed file operation, for "file_action" tokens.
+            None otherwise.
+        input_tokens: Actual input token count from the API (set on
+            final chunk only).
+        output_tokens: Actual output token count from the API (set on
+            final chunk only).
     """
 
-    type: Literal["title", "thinking", "report", "python", "file", "edit", "terminal"]
+    type: Literal[
+        "title",
+        "thinking",
+        "report",
+        "python",
+        "file",
+        "edit",
+        "terminal",
+        "file_action",
+    ]
     content: str
     done: bool = False
     input_tokens: int | None = None
     output_tokens: int | None = None
+    action: FileAction | EditAction | None = None
 
 
 @dataclass
@@ -81,6 +102,7 @@ class StreamToken(TokenChunk):
     full_namespace: str = ""
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     start: bool = False
+    # ``action`` is inherited from TokenChunk.
 
 
 class LLMResponse(BaseModel):
@@ -131,6 +153,11 @@ class ResponseBuilder:
         self.current_edit_path: str | None = None
         # Track ordering of file and edit actions
         self.action_order: list[tuple[str, str, str]] = []  # [(type, key, path)]
+        # Pre-built file/edit actions supplied as "file_action" tokens
+        # (used by wire formats that receive actions already structured,
+        # e.g. tool-use).  Appended to file_actions at build() time, in
+        # arrival order, after any stream-assembled actions.
+        self.completed_actions: list[FileAction | EditAction] = []
         # Token usage from the API response
         self.input_tokens: int | None = None
         self.output_tokens: int | None = None
@@ -169,7 +196,15 @@ class ResponseBuilder:
             full_namespace=getattr(self.exec_state, "namespace", self.agent_name or ""),
             timestamp=datetime.now(timezone.utc),
             start=start_flag,
+            action=token.action,
         )
+
+        # Structured file_action tokens carry a fully-built
+        # FileAction/EditAction — append directly, skip accumulation.
+        if token.type == "file_action":
+            if token.action is not None:
+                self.completed_actions.append(token.action)
+            return enriched
 
         if token.done:
             if token.type == "file":
@@ -330,6 +365,9 @@ class ResponseBuilder:
                             match_all=match_all,
                         )
                     )
+
+        # Structured actions from "file_action" tokens (tool-use path).
+        file_actions.extend(self.completed_actions)
 
         return LLMResponse(
             title="".join(self.title_parts).strip(),
