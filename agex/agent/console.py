@@ -449,6 +449,29 @@ def pprint_tokens(
 
     use_color = _should_color(color, output_stream)
 
+    # Tool-use wire formats emit a single ``file_action`` token per file
+    # operation, carrying a fully built FileAction/EditAction in
+    # ``token.action``.  Handle it before the generic ``done`` shortcut
+    # so the summary actually renders.
+    if token.type == "file_action" and token.action is not None:
+        from agex.agent.datatypes import EditAction, FileAction
+
+        action_obj = token.action
+        color_code = _Colors.magenta if use_color else ""
+        if isinstance(action_obj, FileAction):
+            label = "[APPEND]" if action_obj.mode == "append" else "[CREATE]"
+            line = f"📁 {action_obj.path} {label}\n"
+        elif isinstance(action_obj, EditAction):
+            scope = "[EDIT ALL]" if action_obj.match_all else "[EDIT]"
+            line = f"✏️ {action_obj.path} {scope} ({action_obj.operation})\n"
+        else:
+            line = f"file_action: {action_obj!r}\n"
+        if use_color and color_code:
+            line = _colorize(use_color, color_code, line)
+        output_stream.write(line)
+        output_stream.flush()
+        return
+
     if token.done:
         # Ensure sections end with a newline for readability (but only once)
         output_stream.write("\n")
@@ -469,19 +492,27 @@ def pprint_tokens(
             action = "[APPEND]" if mode == "append" else "[CREATE]"
             content = f"📁 {path} {action}\n"
 
-    elif token.type == "edit" and token.content.startswith("path="):
-        # Parse metadata: "path=foo.py,match_all=False"
-        # Note: operation (replace/insert-after/insert-before) is determined by inner tags
+    elif token.type == "edit":
+        if token.content.startswith("path="):
+            # Parse metadata: "path=foo.py,match_all=False"
+            # The XML wire format emits this as the first ``edit`` token;
+            # subsequent content tokens carry the XML-inline body
+            # (<SEARCH>.../<REPLACE>... etc.), which we suppress below.
+            path_match = re.search(r"path=([^,]+)", token.content)
+            match_all_match = re.search(r"match_all=([^,]+)", token.content)
 
-        path_match = re.search(r"path=([^,]+)", token.content)
-        match_all_match = re.search(r"match_all=([^,]+)", token.content)
-
-        if path_match:
-            path = path_match.group(1)
-            match_all = match_all_match and match_all_match.group(1).lower() == "true"
-            # Build action label
-            action = "[EDIT ALL]" if match_all else "[EDIT]"
-            content = f"✏️ {path} {action}\n"
+            if path_match:
+                path = path_match.group(1)
+                match_all = (
+                    match_all_match and match_all_match.group(1).lower() == "true"
+                )
+                action = "[EDIT ALL]" if match_all else "[EDIT]"
+                content = f"✏️ {path} {action}\n"
+        else:
+            # XML-inline edit body — raw <SEARCH>/<REPLACE>/<INSERT-*>
+            # tags that are noise to the reader. The header already
+            # labeled the edit; don't dump tags into the console.
+            return
 
     # Color based on token type and optionally prepend context
     prefix = ""
