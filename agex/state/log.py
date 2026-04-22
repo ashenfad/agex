@@ -5,6 +5,7 @@ This module provides helpers for adding and retrieving events from the event log
 using a reference-based approach that avoids O(N) storage growth.
 """
 
+import logging
 from typing import Callable
 
 from kvgit import Namespaced, Staged
@@ -13,6 +14,34 @@ from agex.agent.events import BaseEvent, ChapterEvent, Event, TaskStartEvent
 from agex.state import get_root
 
 _CURRENT_TASK_REF_KEY = "__current_task_ref__"
+
+logger = logging.getLogger(__name__)
+
+
+def _log_dangling(where: str, state, refs: list, missing: list) -> None:
+    """Warn about a dangling-ref situation.
+
+    Included in the message: where we noticed it, the namespace (if
+    visible), how many refs are dangling out of how many total, a
+    sample of the missing keys, and the first + last refs (so we can
+    tell if damage is concentrated at the start — the observed
+    "beginning disappears" symptom — or scattered).
+    """
+    ns = getattr(state, "namespace", "") or "<root>"
+    sample = missing[:5]
+    first_ref = refs[0] if refs else None
+    last_ref = refs[-1] if refs else None
+    logger.warning(
+        "[agex.state.log] dangling event refs at %s: ns=%r, %d/%d missing, "
+        "first_ref=%r, last_ref=%r, missing_sample=%r",
+        where,
+        ns,
+        len(missing),
+        len(refs),
+        first_ref,
+        last_ref,
+        sample,
+    )
 
 
 def add_event_to_log(
@@ -85,6 +114,15 @@ def add_event_to_log(
     new_refs = event_refs + [event_key]
     state["__event_log__"] = new_refs
 
+    # Invariant check: if ANY ref in the log (including the one we just
+    # wrote) isn't in state, log it loudly.  A missing just-written key
+    # means our write didn't land; a missing earlier ref means something
+    # else corrupted the log between the last turn and this write.
+    # Cheap: one membership check per ref, all against the same state.
+    _missing = [r for r in new_refs if r not in state]
+    if _missing:
+        _log_dangling("add_event_to_log", state, new_refs, _missing)
+
     return event_key
 
 
@@ -101,20 +139,27 @@ def get_events_from_log(state) -> list[Event]:
     if hasattr(state, "get_many"):
         try:
             batch = state.get_many(*event_refs)
+            missing = [ref for ref in event_refs if ref not in batch]
+            if missing:
+                _log_dangling("get_events_from_log", state, event_refs, missing)
             return [batch[ref] for ref in event_refs if ref in batch]
         except (UnpicklableVariableError, Exception):
             pass  # fall back to individual gets below
 
     # Fallback: individual gets (for plain dicts or when batch fails)
     events = []
+    missing_refs: list = []
     for ref in event_refs:
         if ref not in state:
+            missing_refs.append(ref)
             continue
         try:
             events.append(state.get(ref))
         except (UnpicklableVariableError, Exception):
             # Skip corrupted events rather than crashing the session
             continue
+    if missing_refs:
+        _log_dangling("get_events_from_log", state, event_refs, missing_refs)
     return events
 
 
