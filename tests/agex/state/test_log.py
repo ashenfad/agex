@@ -33,6 +33,74 @@ def test_add_and_get_events():
     assert events[1].thinking == "thought 2"
 
 
+class TestDanglingRefDetection:
+    """The event log writes a value under ``_event_<ts>_`` and a pointer
+    to it in ``__event_log__``. If those two ever disagree — pointer
+    present, value missing — history silently truncates on the next
+    read. We've patched one known cause (eval bridge deleting event
+    keys), but the symptom is intermittent and suggests at least one
+    more silent leak somewhere. Until we find it, both sides of the
+    event log log loudly when they see the damage."""
+
+    def _seed(self, n):
+        state = _make_state()
+        for i in range(n):
+            add_event_to_log(
+                state, ActionEvent(agent_name="t", thinking=f"e{i}", code="x")
+            )
+        return state
+
+    def test_read_side_logs_when_refs_dangle(self, caplog):
+        state = self._seed(3)
+        refs = state["__event_log__"]
+        # Manually delete the first backing key — simulating whatever
+        # silent path is corrupting the log.
+        del state[refs[0]]
+
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="agex.state.log"):
+            events = get_events_from_log(state)
+
+        # Only 2 of 3 events come back (the dangling one is skipped).
+        assert len(events) == 2
+        # And we logged about it with useful detail.
+        recs = [r for r in caplog.records if "dangling event refs" in r.message]
+        assert len(recs) == 1
+        msg = recs[0].getMessage()
+        assert "get_events_from_log" in msg
+        assert "1/3 missing" in msg
+        # The specific missing key is in the sample.
+        assert refs[0] in msg
+
+    def test_write_side_logs_when_prior_ref_is_missing(self, caplog):
+        """If a previous turn's event has already been silently removed,
+        the very next add_event_to_log call should notice and warn."""
+        state = self._seed(2)
+        refs = state["__event_log__"]
+        del state[refs[0]]  # simulate prior corruption
+
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="agex.state.log"):
+            add_event_to_log(
+                state, ActionEvent(agent_name="t", thinking="new", code="x")
+            )
+
+        recs = [r for r in caplog.records if "dangling event refs" in r.message]
+        assert len(recs) == 1
+        msg = recs[0].getMessage()
+        assert "add_event_to_log" in msg
+        # Three refs now (two old + one new); one dangling.
+        assert "1/3 missing" in msg
+
+    def test_no_warning_when_log_is_intact(self, caplog):
+        """Baseline: sane writes and reads should stay silent."""
+        with caplog.at_level("WARNING", logger="agex.state.log"):
+            state = self._seed(3)
+            get_events_from_log(state)
+        recs = [r for r in caplog.records if "dangling event refs" in r.message]
+        assert recs == []
+
+
 def test_replace_events_with_chapters():
     """Test replacing a range of events with a chapter."""
     state = _make_state()
