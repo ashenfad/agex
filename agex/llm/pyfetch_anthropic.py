@@ -14,6 +14,12 @@ from agex.agent.events import Event
 from agex.llm.adapter import DefaultPyfetchAdapter, FetchAdapter
 from agex.llm.core import LLM, TokenChunk
 from agex.llm.formats import WireFormat, XmlWireFormat
+from agex.llm.formats.tool_use.anthropic_adapter import (
+    apply_cache_control,
+    atranslate_anthropic_stream_to_events,
+    schemas_to_anthropic_tools,
+    translate_messages_to_anthropic,
+)
 
 ANTHROPIC_VERSION = "2023-06-01"
 CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
@@ -153,6 +159,11 @@ class PyfetchAnthropic(LLM):
     ) -> AsyncIterator[TokenChunk]:
         """Stream tokens from the Anthropic Messages API via pyfetch.
 
+        Dispatches on ``wire_format.tool_schema()``:
+
+        - ``None`` → text-stream path (XML-in-text formats).
+        - non-None → provider-native tool-calling path.
+
         Retries on network errors (e.g. connection drops on mobile).
         """
         request_kwargs = {**self._kwargs, **kwargs}
@@ -170,35 +181,49 @@ class PyfetchAnthropic(LLM):
             }
         ]
 
-        # Place cache breakpoint on second-to-last message (end of previous
-        # turn's context). The last message is always new, so caching it
-        # wouldn't yield a hit.
-        cache_idx = len(messages_dicts) - 2
-        conversation = [
-            _format_message_for_anthropic(m, cache=(i == cache_idx))
-            for i, m in enumerate(messages_dicts)
-        ]
-        # No assistant prefill — letting the model produce the whole response
-        # from scratch gives it better adherence to the format primer (closing
-        # tags, no skipping <THINKING>, etc.).  If the model starts adding
-        # preamble like "Sure, here's my response:", reintroduce prefill or
-        # add a stop_sequences=["</PYTHON>", "</TERMINAL>"] instead.
+        tool_schemas = self._wire_format.tool_schema()
 
-        body = {
-            "model": self._model,
-            "system": system_blocks,
-            "messages": conversation,
-            "stream": True,
-            **request_kwargs,
-        }
+        if tool_schemas is None:
+            cache_idx = len(messages_dicts) - 2
+            conversation = [
+                _format_message_for_anthropic(m, cache=(i == cache_idx))
+                for i, m in enumerate(messages_dicts)
+            ]
+            body: dict[str, Any] = {
+                "model": self._model,
+                "system": system_blocks,
+                "messages": conversation,
+                "stream": True,
+                **request_kwargs,
+            }
+            tool_use_mode = False
+        else:
+            translated = translate_messages_to_anthropic(messages_dicts)
+            cache_idx = len(translated) - 2
+            conversation = apply_cache_control(
+                translated, cache_index=cache_idx, ttl="1h"
+            )
+            body = {
+                "model": self._model,
+                "system": system_blocks,
+                "messages": conversation,
+                "tools": schemas_to_anthropic_tools(tool_schemas),
+                "stream": True,
+                **request_kwargs,
+            }
+            tool_use_mode = True
 
         headers = self._headers()
         url = f"{self._base_url}/messages"
 
         for attempt in range(self._STREAM_MAX_RETRIES):
             try:
-                async for token in self._stream_once(url, body, headers):
-                    yield token
+                if tool_use_mode:
+                    async for token in self._stream_once_tools(url, body, headers):
+                        yield token
+                else:
+                    async for token in self._stream_once(url, body, headers):
+                        yield token
                 return  # success
             except Exception as exc:
                 is_network = _is_network_error(exc)
@@ -322,6 +347,56 @@ class PyfetchAnthropic(LLM):
             # SSE reader will be garbage-collected or closed when the
             # underlying HTTP response finishes.
             pass
+
+        yield TokenChunk(
+            type="thinking",
+            content="",
+            done=True,
+            input_tokens=usage_holder["input_tokens"],
+            output_tokens=usage_holder["output_tokens"],
+        )
+
+    async def _stream_once_tools(
+        self,
+        url: str,
+        body: dict,
+        headers: dict,
+    ) -> AsyncIterator[TokenChunk]:
+        """Single tool-use streaming attempt.
+
+        Reads Anthropic SSE ``data:`` payloads, routes each to the
+        adapter which maps ``content_block_*`` / ``message_*`` events
+        into :class:`ToolCallEvent`\\ s.
+        """
+        from agex.llm.sse import parse_sse_events
+
+        response = self._adapter.fetch_stream(url, headers=headers, body=body)
+
+        usage_holder: dict[str, int | None] = {
+            "input_tokens": None,
+            "output_tokens": None,
+        }
+
+        sse_iter = parse_sse_events(response)
+
+        async def event_dicts():
+            async for payload in sse_iter:
+                if not payload.strip():
+                    continue
+                data = json.loads(payload)
+                if data.get("type") == "error":
+                    err = data.get("error", {})
+                    raise RuntimeError(
+                        f"Anthropic stream error: {err.get('message', err)}"
+                    )
+                yield data
+
+        tool_events = atranslate_anthropic_stream_to_events(
+            event_dicts(), usage_holder=usage_holder
+        )
+
+        async for token in self._wire_format.aparse_tool_stream(tool_events):
+            yield token
 
         yield TokenChunk(
             type="thinking",
