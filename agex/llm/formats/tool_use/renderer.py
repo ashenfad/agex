@@ -13,12 +13,13 @@ Rendering rules:
   :class:`EditAction` (in order) followed by one for the main
   python_action / terminal_action.
 * Each ``tool_use`` needs a matching ``tool_result`` in the next user
-  message.  File actions get a synthesized ``"ok"`` result; the main
-  action's result is filled by the next :class:`OutputEvent` /
-  :class:`SuccessEvent` / :class:`CancelledEvent`.  If none arrives
-  (task ended via task_fail/task_clarify without further output), a
-  placeholder ``"(no observation)"`` result is synthesized so the
-  provider sees a well-formed tool_use → tool_result pairing.
+  message.  File actions get a synthesized result that names what ran
+  ("write_file: wrote /helpers/x.py") so the LLM can tie the
+  ``tool_result`` back to its earlier ``tool_use`` in plain language;
+  the main action's result is filled by the next
+  :class:`OutputEvent` / :class:`SuccessEvent` / :class:`CancelledEvent`
+  / :class:`FailEvent` / :class:`ClarifyEvent` with a tool-name prefix
+  so the same linkage is legible.
 * Non-action events (:class:`TaskStartEvent`, :class:`FileEvent`,
   :class:`SystemNoteEvent`, :class:`ChapterEvent`) are emitted as text
   parts within the surrounding user message to keep role alternation
@@ -42,6 +43,7 @@ from agex.agent.events import (
     SystemNoteEvent,
     TaskStartEvent,
 )
+from agex.eval.objects import ImageAction, PrintAction
 from agex.llm.core import ContentPart, ImagePart, TextPart
 from agex.render.primitives import (
     HI_DETAIL_BUDGET,
@@ -69,16 +71,65 @@ def _content_parts_to_dicts(parts: List[ContentPart]) -> List[dict]:
     return out
 
 
+def _print_action_to_text(action: PrintAction) -> str:
+    """Render a ``PrintAction`` (tuple of ``print()`` args) the same
+    way a terminal would — strings pass through verbatim, other types
+    go through :func:`render_value`.  This avoids the ``repr``-style
+    quote wrapping you get if you run strings through ``render_value``
+    and is what the LLM wants to see for stdout lines.
+    """
+    bits: list[str] = []
+    for arg in action:
+        if isinstance(arg, str):
+            bits.append(arg)
+        else:
+            bits.append(render_value(arg))
+    return " ".join(bits)
+
+
+def _output_to_text(event: OutputEvent) -> tuple[str, list[ContentPart]]:
+    """Split an OutputEvent into its text stream and image parts.
+
+    The text stream is built verbatim from :class:`PrintAction`\\ s so
+    ``print("hello")`` appears as ``hello`` — not ``'hello'``.  Images
+    are rendered via the budget-aware path.
+    """
+    text_bits: list[str] = []
+    image_parts: list[Any] = []
+    for item in event.parts:
+        if isinstance(item, PrintAction):
+            text_bits.append(_print_action_to_text(item))
+        elif isinstance(item, ImageAction):
+            image_parts.append(item)
+        elif isinstance(item, str):
+            text_bits.append(item)
+        else:
+            text_bits.append(render_value(item))
+    # Route images through the existing budget-aware renderer so we
+    # reuse its PNG-serialization / detail-level logic.
+    rendered_images: list[ContentPart] = []
+    if image_parts:
+        rendered, _ = render_output_parts_full(image_parts, budget=HI_DETAIL_BUDGET)
+        rendered_images = [p for p in rendered if isinstance(p, ImagePart)]
+    return "\n".join(text_bits), rendered_images
+
+
 def _build_action_blocks(
     event: ActionEvent, task_number: int, event_index: int
-) -> tuple[list[dict], list[str], str]:
-    """Return (tool_use_blocks, file_tool_use_ids, main_tool_use_id)."""
+) -> tuple[list[dict], list[tuple[str, str, str]], tuple[str, str]]:
+    """Return ``(tool_use_blocks, file_infos, main_info)``.
+
+    - ``file_infos`` is a list of ``(block_id, tool_name, path)`` — one
+      per emitted file tool_use, used to synthesize richer
+      ``tool_result`` text than a bare ``"ok"``.
+    - ``main_info`` is ``(block_id, tool_name)`` for the main action,
+      used to prefix paired observations with ``"{tool_name}: ..."``.
+    """
     blocks: list[dict] = []
-    file_ids: list[str] = []
+    file_infos: list[tuple[str, str, str]] = []
 
     for j, fa in enumerate(event.file_actions):
         block_id = f"toolu_{task_number}_{event_index}_{j}"
-        file_ids.append(block_id)
         if isinstance(fa, FileAction):
             file_input: dict[str, Any] = {
                 "path": fa.path,
@@ -94,6 +145,7 @@ def _build_action_blocks(
                     "input": file_input,
                 }
             )
+            file_infos.append((block_id, TOOL_WRITE_FILE, fa.path))
         elif isinstance(fa, EditAction):
             edit_input: dict[str, Any] = {"path": fa.path, "search": fa.search}
             if fa.operation == "insert-after":
@@ -112,6 +164,7 @@ def _build_action_blocks(
                     "input": edit_input,
                 }
             )
+            file_infos.append((block_id, TOOL_EDIT_FILE, fa.path))
 
     main_id = f"toolu_{task_number}_{event_index}_main"
     if event.terminal:
@@ -130,6 +183,7 @@ def _build_action_blocks(
                 "input": main_input,
             }
         )
+        main_tool_name = TOOL_TERMINAL
     else:
         main_input = {
             "title": event.title,
@@ -146,8 +200,9 @@ def _build_action_blocks(
                 "input": main_input,
             }
         )
+        main_tool_name = TOOL_PYTHON
 
-    return blocks, file_ids, main_id
+    return blocks, file_infos, (main_id, main_tool_name)
 
 
 def _file_event_to_text(event: FileEvent) -> str:
@@ -172,26 +227,53 @@ def _tool_result_block(
     }
 
 
+def _file_action_result_text(action_block: dict) -> str:
+    """Synthesize a tool_result that names the tool and what it touched.
+
+    Gives the LLM a plain-language link between ``tool_use`` and
+    ``tool_result`` — structural id matching isn't always enough to make
+    the continuity legible in the model's in-context reasoning.
+    """
+    name = action_block["name"]
+    inp = action_block.get("input", {})
+    path = inp.get("path", "")
+    if name == TOOL_WRITE_FILE:
+        mode = inp.get("mode", "write")
+        verb = "appended to" if mode == "append" else "wrote"
+        return f"write_file: {verb} {path}"
+    if name == TOOL_EDIT_FILE:
+        if "replace" in inp:
+            op = "replace"
+        elif "insert_after" in inp:
+            op = "insert-after"
+        elif "insert_before" in inp:
+            op = "insert-before"
+        else:
+            op = "edit"
+        suffix = " (match_all)" if inp.get("match_all") else ""
+        return f"edit_file: {op} applied to {path}{suffix}"
+    return f"{name}: applied"
+
+
 def render_events_as_tool_use(events: List[Event]) -> List[dict]:
     """Render events for the tool-use wire format."""
     messages: List[dict[str, Any]] = []
-    # Pending content for the *next* user message.  Mix of text parts
-    # and tool_result blocks.  Flushed when the next assistant event
-    # arrives or at end of log.
     pending_user: list[dict] = []
-    # Tool-use ids from the most recent ActionEvent still awaiting
-    # their main tool_result.  None once paired.
-    pending_main_id: str | None = None
+    # Tool-use id + name of the most recent ActionEvent still awaiting
+    # its main tool_result.  Cleared once paired.
+    pending_main: tuple[str, str] | None = None
 
     task_number = 0
     filtered = [e for e in events if not isinstance(e, ErrorEvent)]
 
     def flush_user() -> None:
-        nonlocal pending_user, pending_main_id
-        # Synthesize placeholder main tool_result if none arrived.
-        if pending_main_id is not None:
-            pending_user.append(_tool_result_block(pending_main_id, "(no observation)"))
-            pending_main_id = None
+        nonlocal pending_user, pending_main
+        if pending_main is not None:
+            main_id, main_name = pending_main
+            pending_user.append(
+                _tool_result_block(main_id, f"{main_name}: (no observation)")
+            )
+            pending_main = None
         if pending_user:
             messages.append({"role": "user", "content": pending_user})
             pending_user = []
@@ -203,61 +285,91 @@ def render_events_as_tool_use(events: List[Event]) -> List[dict]:
             pending_user.append({"type": "text", "text": f"[{task_number}] {text}"})
 
         elif isinstance(event, ActionEvent):
-            # Emit any queued user message first.
             flush_user()
-            blocks, file_ids, main_id = _build_action_blocks(event, task_number, idx)
+            blocks, file_infos, main_info = _build_action_blocks(
+                event, task_number, idx
+            )
             messages.append({"role": "assistant", "content": blocks})
-            # Synthesize file tool_results; defer main.
-            for fid in file_ids:
-                pending_user.append(_tool_result_block(fid, "ok"))
-            pending_main_id = main_id
+            # Synthesize per-file tool_results with tool-name framing so
+            # the LLM sees a legible linkage back to each file tool_use.
+            for (file_id, _tool, _path), block in zip(
+                file_infos, blocks[: len(file_infos)]
+            ):
+                pending_user.append(
+                    _tool_result_block(file_id, _file_action_result_text(block))
+                )
+            pending_main = main_info
 
         elif isinstance(event, OutputEvent):
-            parts, _ = render_output_parts_full(event.parts, budget=HI_DETAIL_BUDGET)
-            if pending_main_id is not None:
-                if parts:
-                    has_image = any(isinstance(p, ImagePart) for p in parts)
-                    if has_image:
-                        content = _content_parts_to_dicts(parts)
-                    else:
-                        content = "\n".join(
-                            p.text for p in parts if isinstance(p, TextPart)
-                        )
+            if pending_main is None:
+                continue  # Stray observation before any action — drop.
+            main_id, main_name = pending_main
+            text, image_parts = _output_to_text(event)
+            if image_parts:
+                blocks: list[dict] = []
+                prefix = f"{main_name}: output"
+                if text:
+                    blocks.append({"type": "text", "text": f"{prefix}\n{text}"})
                 else:
-                    content = "(no output)"
-                pending_user.append(_tool_result_block(pending_main_id, content))
-                pending_main_id = None
-            # If no pending_main_id (stray OutputEvent before any action),
-            # drop — no tool_use to pair with.
+                    blocks.append({"type": "text", "text": prefix})
+                for img in image_parts:
+                    blocks.append({"type": "image", "image_data": img.image})
+                pending_user.append(_tool_result_block(main_id, blocks))
+            elif text:
+                pending_user.append(
+                    _tool_result_block(main_id, f"{main_name}: output\n{text}")
+                )
+            else:
+                pending_user.append(
+                    _tool_result_block(main_id, f"{main_name}: (no output)")
+                )
+            pending_main = None
 
         elif isinstance(event, SuccessEvent):
-            if pending_main_id is not None:
+            if pending_main is not None:
+                main_id, main_name = pending_main
                 estimated = HI_DETAIL_BUDGET * 4
                 rendered = render_value(
                     event.result,
                     budget=estimated,
                     token_budget=HI_DETAIL_BUDGET,
                 )
-                pending_user.append(_tool_result_block(pending_main_id, rendered))
-                pending_main_id = None
+                pending_user.append(
+                    _tool_result_block(
+                        main_id, f"{main_name}: task_success returned\n{rendered}"
+                    )
+                )
+                pending_main = None
 
         elif isinstance(event, CancelledEvent):
-            if pending_main_id is not None:
+            if pending_main is not None:
+                main_id, main_name = pending_main
                 msg = (
-                    f"Task '{event.task_name}' cancelled after "
+                    f"{main_name}: cancelled after "
                     f"{event.iterations_completed} iterations"
                 )
-                pending_user.append(_tool_result_block(pending_main_id, msg))
-                pending_main_id = None
+                pending_user.append(_tool_result_block(main_id, msg))
+                pending_main = None
 
-        elif isinstance(event, (FailEvent, ClarifyEvent)):
-            # Agent already expressed intent via task_fail/task_clarify in
-            # the preceding action's code.  Synthesize a neutral marker
-            # so the tool_use pairing is well-formed; the next agent turn
-            # sees a new TaskStart anyway.
-            if pending_main_id is not None:
-                pending_user.append(_tool_result_block(pending_main_id, "(task ended)"))
-                pending_main_id = None
+        elif isinstance(event, FailEvent):
+            if pending_main is not None:
+                main_id, main_name = pending_main
+                pending_user.append(
+                    _tool_result_block(
+                        main_id, f"{main_name}: task_fail: {event.message}"
+                    )
+                )
+                pending_main = None
+
+        elif isinstance(event, ClarifyEvent):
+            if pending_main is not None:
+                main_id, main_name = pending_main
+                pending_user.append(
+                    _tool_result_block(
+                        main_id, f"{main_name}: task_clarify: {event.message}"
+                    )
+                )
+                pending_main = None
 
         elif isinstance(event, FileEvent):
             pending_user.append({"type": "text", "text": _file_event_to_text(event)})

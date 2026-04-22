@@ -123,7 +123,9 @@ class TestFileActions:
         results = _only(msgs[1]["content"], "tool_result")
         assert len(results) == 2
         assert results[0]["tool_use_id"] == use_blocks[0]["id"]
-        assert results[0]["content"] == "ok"
+        # File tool_result names the tool and what it touched so the
+        # LLM can link tool_use ↔ tool_result in plain language.
+        assert results[0]["content"] == "write_file: wrote /helpers/a.py"
         assert results[1]["tool_use_id"] == use_blocks[1]["id"]
 
     def test_append_mode_included(self):
@@ -209,38 +211,41 @@ class TestObservationPairing:
         # Result is rendered — should contain "42" somewhere.
         assert "42" in str(results[0]["content"])
 
-    def test_fail_event_synthesizes_neutral_result(self):
+    def test_fail_event_names_tool_and_carries_message(self):
         events = [
             ActionEvent(
                 agent_name="a",
                 title="t",
                 thinking="T",
-                code="task_fail('bad')",
+                code="task_fail('bad creds')",
             ),
-            FailEvent(agent_name="a", message="bad"),
+            FailEvent(agent_name="a", message="bad creds"),
         ]
         msgs = render_events_as_tool_use(events)
         results = _only(msgs[-1]["content"], "tool_result")
         assert len(results) == 1
-        assert "task ended" in results[0]["content"]
+        # Framing includes the tool name AND surfaces the fail message
+        # so the LLM can read what happened on its previous turn.
+        assert results[0]["content"] == "python_action: task_fail: bad creds"
 
-    def test_clarify_event_synthesizes_neutral_result(self):
+    def test_clarify_event_names_tool_and_carries_message(self):
         events = [
             ActionEvent(
                 agent_name="a",
                 title="t",
                 thinking="T",
-                code="task_clarify('?')",
+                code="task_clarify('which dataset?')",
             ),
-            ClarifyEvent(agent_name="a", message="?"),
+            ClarifyEvent(agent_name="a", message="which dataset?"),
         ]
         msgs = render_events_as_tool_use(events)
         results = _only(msgs[-1]["content"], "tool_result")
-        assert "task ended" in results[0]["content"]
+        assert results[0]["content"] == "python_action: task_clarify: which dataset?"
 
-    def test_no_observation_synthesizes_placeholder(self):
+    def test_no_observation_synthesizes_named_placeholder(self):
         """Trailing ActionEvent with no follow-up still needs a tool_result
-        for a well-formed tool_use pairing."""
+        for a well-formed tool_use pairing.  The placeholder names the
+        tool so the LLM sees the linkage."""
         events = [
             ActionEvent(
                 agent_name="a",
@@ -253,7 +258,101 @@ class TestObservationPairing:
         assert len(msgs) == 2
         assert msgs[1]["role"] == "user"
         results = _only(msgs[1]["content"], "tool_result")
-        assert results[0]["content"] == "(no observation)"
+        assert results[0]["content"] == "python_action: (no observation)"
+
+    def test_python_action_output_prefixed_with_tool_name(self):
+        """OutputEvent text (stdout etc.) should land in the tool_result
+        with a tool-name prefix so the LLM can read it as "output from
+        my python_action."""
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="print('hello'); task_continue()",
+            ),
+            OutputEvent(agent_name="a", parts=["hello"]),
+        ]
+        msgs = render_events_as_tool_use(events)
+        content = _only(msgs[-1]["content"], "tool_result")[0]["content"]
+        assert content.startswith("python_action: output")
+        assert "hello" in content
+
+    def test_terminal_action_output_prefixed_with_tool_name(self):
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                terminal="ls -la",
+            ),
+            OutputEvent(agent_name="a", parts=["file1\nfile2"]),
+        ]
+        msgs = render_events_as_tool_use(events)
+        content = _only(msgs[-1]["content"], "tool_result")[0]["content"]
+        assert content.startswith("terminal_action: output")
+        assert "file1" in content
+
+    def test_print_string_args_unwrapped_no_repr_quotes(self):
+        """Regression: previously ``PrintAction(('hello',))`` rendered as
+        ``'hello'`` (repr-wrapped) in tool_result text, producing odd
+        stray quotes.  Must appear as ``hello``."""
+        from agex.eval.objects import PrintAction
+
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="print('hi')",
+            ),
+            OutputEvent(agent_name="a", parts=[PrintAction(("hi",))]),
+        ]
+        msgs = render_events_as_tool_use(events)
+        content = _only(msgs[-1]["content"], "tool_result")[0]["content"]
+        assert content.endswith("hi")
+        # No repr-style wrapping.
+        assert "'hi'" not in content
+
+    def test_edit_file_result_names_operation_and_path(self):
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="pass",
+                file_actions=[
+                    EditAction(
+                        path="/x.py",
+                        search="X",
+                        content="Y",
+                        operation="insert-after",
+                        match_all=True,
+                    )
+                ],
+            ),
+            OutputEvent(agent_name="a", parts=["ok"]),
+        ]
+        msgs = render_events_as_tool_use(events)
+        file_result = _only(msgs[-1]["content"], "tool_result")[0]
+        assert file_result["content"] == (
+            "edit_file: insert-after applied to /x.py (match_all)"
+        )
+
+    def test_success_event_result_prefixed_with_tool_name(self):
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="task_success(42)",
+            ),
+            SuccessEvent(agent_name="a", result=42),
+        ]
+        msgs = render_events_as_tool_use(events)
+        content = _only(msgs[-1]["content"], "tool_result")[0]["content"]
+        assert content.startswith("python_action: task_success returned")
+        assert "42" in content
 
     def test_output_with_image_uses_content_parts(self):
         from PIL import Image
