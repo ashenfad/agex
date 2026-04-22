@@ -13,6 +13,11 @@ from agex.agent.events import Event
 from agex.llm.adapter import DefaultPyfetchAdapter, FetchAdapter
 from agex.llm.core import LLM, TokenChunk
 from agex.llm.formats import WireFormat, XmlWireFormat
+from agex.llm.formats.tool_use.openai_adapter import (
+    atranslate_openai_stream_to_events,
+    schemas_to_openai_tools,
+    translate_messages_to_openai,
+)
 
 CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
 
@@ -160,41 +165,73 @@ class PyfetchOpenAI(LLM):
     ) -> AsyncIterator[TokenChunk]:
         """Stream tokens from an OpenAI-compatible endpoint via pyfetch.
 
+        Dispatches on ``wire_format.tool_schema()``:
+
+        - ``None`` → text-stream path (XML-in-text formats).
+        - non-None → provider-native tool-calling path.
+
         Retries on network errors (e.g. connection drops on mobile).
         """
         request_kwargs = {**self._kwargs, **kwargs}
 
         messages_dicts = self._wire_format.render_events(events)
         system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
-        system_msg = _format_message_for_openai(
-            {"role": "system", "content": system_with_format}, cache=True
-        )
-        # Place cache breakpoint on the second-to-last message (the end of
-        # the previous turn's context).  The last message is always new, so
-        # caching it would never yield a hit.  With the breakpoint one step
-        # back, the entire prefix (system + history) gets cached across turns.
-        cache_idx = len(messages_dicts) - 2
-        conversation = [
-            _format_message_for_openai(m, cache=(i == cache_idx))
-            for i, m in enumerate(messages_dicts)
-        ]
-        full_messages = [system_msg] + conversation
+        tool_schemas = self._wire_format.tool_schema()
 
-        body = {
-            "model": self._model,
-            "messages": full_messages,
-            "stream": True,
-            "stream_options": {"include_usage": True},
-            **request_kwargs,
-        }
+        if tool_schemas is None:
+            system_msg = _format_message_for_openai(
+                {"role": "system", "content": system_with_format}, cache=True
+            )
+            # Cache breakpoint on second-to-last message so system + history
+            # gets cached across turns.
+            cache_idx = len(messages_dicts) - 2
+            conversation = [
+                _format_message_for_openai(m, cache=(i == cache_idx))
+                for i, m in enumerate(messages_dicts)
+            ]
+            full_messages = [system_msg] + conversation
+            body: dict[str, Any] = {
+                "model": self._model,
+                "messages": full_messages,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+                **request_kwargs,
+            }
+            tool_use_mode = False
+        else:
+            translated = translate_messages_to_openai(messages_dicts)
+            system_msg = _format_message_for_openai(
+                {"role": "system", "content": system_with_format}, cache=True
+            )
+            # Cache breakpoint on second-to-last translated message.
+            cache_idx = len(translated) - 2
+            conversation = [
+                _format_message_for_openai(m, cache=(i == cache_idx))
+                for i, m in enumerate(translated)
+            ]
+            full_messages = [system_msg] + conversation
+            body = {
+                "model": self._model,
+                "messages": full_messages,
+                "tools": schemas_to_openai_tools(tool_schemas),
+                "tool_choice": "auto",
+                "stream": True,
+                "stream_options": {"include_usage": True},
+                **request_kwargs,
+            }
+            tool_use_mode = True
 
         headers = self._headers()
         url = f"{self._base_url}/chat/completions"
 
         for attempt in range(self._STREAM_MAX_RETRIES):
             try:
-                async for token in self._stream_once(url, body, headers):
-                    yield token
+                if tool_use_mode:
+                    async for token in self._stream_once_tools(url, body, headers):
+                        yield token
+                else:
+                    async for token in self._stream_once(url, body, headers):
+                        yield token
                 return  # success
             except Exception as exc:
                 is_network = _is_network_error(exc)
@@ -266,6 +303,50 @@ class PyfetchOpenAI(LLM):
             except (asyncio.TimeoutError, Exception):
                 # Best-effort — partial or missing usage is acceptable.
                 pass
+
+        yield TokenChunk(
+            type="thinking",
+            content="",
+            done=True,
+            input_tokens=usage_holder["input_tokens"],
+            output_tokens=usage_holder["output_tokens"],
+        )
+
+    async def _stream_once_tools(
+        self,
+        url: str,
+        body: dict,
+        headers: dict,
+    ) -> AsyncIterator[TokenChunk]:
+        """Single tool-use streaming attempt.
+
+        Reads SSE JSON chunks from the provider, translates them to
+        :class:`ToolCallEvent`\\ s, and feeds those through the wire
+        format's ``aparse_tool_stream``.
+        """
+        from agex.llm.sse import parse_sse_events
+
+        response = self._adapter.fetch_stream(url, headers=headers, body=body)
+
+        usage_holder: dict[str, int | None] = {
+            "input_tokens": None,
+            "output_tokens": None,
+        }
+
+        sse_iter = parse_sse_events(response)
+
+        async def chunk_dicts():
+            async for payload in sse_iter:
+                if not payload.strip():
+                    continue
+                yield json.loads(payload)
+
+        tool_events = atranslate_openai_stream_to_events(
+            chunk_dicts(), usage_holder=usage_holder
+        )
+
+        async for token in self._wire_format.aparse_tool_stream(tool_events):
+            yield token
 
         yield TokenChunk(
             type="thinking",

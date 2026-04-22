@@ -8,6 +8,12 @@ from agex.llm.core import (
     TokenChunk,
 )
 from agex.llm.formats import WireFormat, XmlWireFormat
+from agex.llm.formats.tool_use.openai_adapter import (
+    atranslate_openai_stream_to_events,
+    schemas_to_openai_tools,
+    translate_messages_to_openai,
+    translate_openai_stream_to_events,
+)
 from agex.tokenizers import get_tokenizer
 
 # Define keys for client setup vs. completion
@@ -91,22 +97,29 @@ class OpenAI(LLM):
     def complete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> Iterator[TokenChunk]:
-        """
-        Stream tokens from OpenAI using XML format.
+        """Stream tokens from OpenAI.
 
-        Uses standard streaming API with XML parsing for token-level updates.
+        Dispatches on ``wire_format.tool_schema()``:
+
+        - ``None`` → text-stream path (XML-in-text formats).
+        - non-None → provider-native tool-calling path.
         """
-        # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
-
         messages_dicts = self._wire_format.render_events(events)
-
         system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         full_messages = [
             {"role": "system", "content": system_with_format}
         ] + messages_dicts
 
-        # Request usage data on the final chunk
+        tool_schemas = self._wire_format.tool_schema()
+        if tool_schemas is None:
+            yield from self._stream_text(full_messages, request_kwargs)
+        else:
+            yield from self._stream_tools(full_messages, request_kwargs, tool_schemas)
+
+    def _stream_text(
+        self, full_messages: list[dict], request_kwargs: dict
+    ) -> Iterator[TokenChunk]:
         stream = self.client.chat.completions.create(
             model=self._model,
             messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
@@ -115,7 +128,6 @@ class OpenAI(LLM):
             **request_kwargs,
         )
 
-        # Generator for raw text chunks; capture usage from final chunk
         usage_holder: dict[str, int | None] = {
             "input_tokens": None,
             "output_tokens": None,
@@ -133,7 +145,43 @@ class OpenAI(LLM):
 
         yield from self._wire_format.parse_text_stream(raw_chunks())
 
-        # Yield final usage token
+        yield TokenChunk(
+            type="thinking",
+            content="",
+            done=True,
+            input_tokens=usage_holder["input_tokens"],
+            output_tokens=usage_holder["output_tokens"],
+        )
+
+    def _stream_tools(
+        self,
+        full_messages: list[dict],
+        request_kwargs: dict,
+        tool_schemas: list[dict],
+    ) -> Iterator[TokenChunk]:
+        translated = translate_messages_to_openai(full_messages)
+        tools = schemas_to_openai_tools(tool_schemas)
+
+        stream = self.client.chat.completions.create(
+            model=self._model,
+            messages=[_format_message_for_openai(msg) for msg in translated],  # type: ignore
+            tools=tools,  # type: ignore
+            tool_choice="auto",
+            stream=True,
+            stream_options={"include_usage": True},
+            **request_kwargs,
+        )
+
+        usage_holder: dict[str, int | None] = {
+            "input_tokens": None,
+            "output_tokens": None,
+        }
+
+        tool_events = translate_openai_stream_to_events(
+            iter(stream), usage_holder=usage_holder
+        )
+        yield from self._wire_format.parse_tool_stream(tool_events)
+
         yield TokenChunk(
             type="thinking",
             content="",
@@ -145,15 +193,27 @@ class OpenAI(LLM):
     async def acomplete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> AsyncIterator[TokenChunk]:
-        """Async version of complete_stream."""
+        """Async version of :meth:`complete_stream`."""
         request_kwargs = {**self._kwargs, **kwargs}
         messages_dicts = self._wire_format.render_events(events)
-
         system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         full_messages = [
             {"role": "system", "content": system_with_format}
         ] + messages_dicts
 
+        tool_schemas = self._wire_format.tool_schema()
+        if tool_schemas is None:
+            async for t in self._astream_text(full_messages, request_kwargs):
+                yield t
+        else:
+            async for t in self._astream_tools(
+                full_messages, request_kwargs, tool_schemas
+            ):
+                yield t
+
+    async def _astream_text(
+        self, full_messages: list[dict], request_kwargs: dict
+    ) -> AsyncIterator[TokenChunk]:
         stream = await self.async_client.chat.completions.create(
             model=self._model,
             messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
@@ -178,6 +238,44 @@ class OpenAI(LLM):
                         yield delta.content
 
         async for token in self._wire_format.aparse_text_stream(raw_chunks()):
+            yield token
+
+        yield TokenChunk(
+            type="thinking",
+            content="",
+            done=True,
+            input_tokens=usage_holder["input_tokens"],
+            output_tokens=usage_holder["output_tokens"],
+        )
+
+    async def _astream_tools(
+        self,
+        full_messages: list[dict],
+        request_kwargs: dict,
+        tool_schemas: list[dict],
+    ) -> AsyncIterator[TokenChunk]:
+        translated = translate_messages_to_openai(full_messages)
+        tools = schemas_to_openai_tools(tool_schemas)
+
+        stream = await self.async_client.chat.completions.create(
+            model=self._model,
+            messages=[_format_message_for_openai(msg) for msg in translated],  # type: ignore
+            tools=tools,  # type: ignore
+            tool_choice="auto",
+            stream=True,
+            stream_options={"include_usage": True},
+            **request_kwargs,
+        )
+
+        usage_holder: dict[str, int | None] = {
+            "input_tokens": None,
+            "output_tokens": None,
+        }
+
+        tool_events = atranslate_openai_stream_to_events(
+            stream, usage_holder=usage_holder
+        )
+        async for token in self._wire_format.aparse_tool_stream(tool_events):
             yield token
 
         yield TokenChunk(

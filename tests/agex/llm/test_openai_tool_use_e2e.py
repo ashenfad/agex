@@ -1,0 +1,299 @@
+"""End-to-end tests for OpenAI clients in tool-use mode.
+
+Mocks the OpenAI streaming API to return a canned sequence of
+``ChatCompletionChunk``-shaped dicts and verifies that the client
+dispatches to the tool-use path, yields TokenChunks, and produces a
+valid :class:`LLMResponse` when run through :class:`ResponseBuilder`.
+"""
+
+import json
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from agex.agent.datatypes import EditAction, FileAction
+from agex.agent.events import TaskStartEvent
+from agex.llm.core import ResponseBuilder
+from agex.llm.formats import ToolUseWireFormat
+from agex.llm.openai_client import OpenAI
+from agex.llm.pyfetch_openai import PyfetchOpenAI
+
+
+def _mk_chunk(choices=None, usage=None):
+    """Build a MagicMock chunk matching the SDK shape we consume."""
+    chunk = MagicMock()
+    chunk.usage = usage
+    chunk.choices = choices or []
+    # Translator normalizes via .model_dump(); provide a matching dict.
+    chunk.model_dump = lambda: {
+        "choices": [
+            {
+                "index": c["index"],
+                "delta": c.get("delta", {}),
+                "finish_reason": c.get("finish_reason"),
+            }
+            for c in (choices or [])
+        ],
+        "usage": usage,
+    }
+    return chunk
+
+
+def _mk_tool_chunk(index, call_id=None, name=None, args=None, finish=None):
+    tc: dict = {"index": index}
+    fn = {}
+    if call_id:
+        tc["id"] = call_id
+    if name:
+        fn["name"] = name
+    if args is not None:
+        fn["arguments"] = args
+    if fn:
+        tc["function"] = fn
+    return _mk_chunk(
+        choices=[
+            {
+                "index": 0,
+                "delta": {"tool_calls": [tc]},
+                "finish_reason": finish,
+            }
+        ]
+    )
+
+
+def _mk_usage_chunk(prompt=10, completion=5):
+    usage = MagicMock()
+    usage.prompt_tokens = prompt
+    usage.completion_tokens = completion
+    # The SDK model_dump should have integer keys, not Mock
+    chunk = _mk_chunk(choices=[], usage=usage)
+    chunk.model_dump = lambda: {
+        "choices": [],
+        "usage": {"prompt_tokens": prompt, "completion_tokens": completion},
+    }
+    return chunk
+
+
+# ---------------------------------------------------------------------------
+# Sync SDK client
+# ---------------------------------------------------------------------------
+
+
+class TestOpenAIToolUse:
+    def test_python_action_round_trip(self):
+        """Mocked stream emits a python_action tool call; output
+        should populate LLMResponse.title/thinking/code."""
+        args_json = json.dumps({"title": "t", "thinking": "T", "code": "print(1)"})
+        stream = [
+            _mk_tool_chunk(0, call_id="call_a", name="python_action", args=""),
+            _mk_tool_chunk(0, args=args_json),
+            _mk_tool_chunk(0, args="", finish="tool_calls"),
+            _mk_usage_chunk(prompt=12, completion=3),
+        ]
+
+        client = OpenAI(api_key="test", wire_format=ToolUseWireFormat())
+        with patch.object(
+            client.client.chat.completions, "create", return_value=iter(stream)
+        ) as mock_create:
+            system = "You are helpful."
+            events = [
+                TaskStartEvent(agent_name="a", task_name="t", inputs={}, message="go")
+            ]
+            tokens = list(client.complete_stream(system, events))
+
+            # create() was called with tools= and tool_choice="auto".
+            call_kwargs = mock_create.call_args.kwargs
+            assert "tools" in call_kwargs
+            assert call_kwargs["tool_choice"] == "auto"
+            assert len(call_kwargs["tools"]) == 4
+            assert {t["function"]["name"] for t in call_kwargs["tools"]} == {
+                "python_action",
+                "terminal_action",
+                "write_file",
+                "edit_file",
+            }
+
+        # Feed tokens through ResponseBuilder to check end state.
+        builder = ResponseBuilder(agent_name="a")
+        for t in tokens:
+            builder.process_token(t)
+        resp = builder.build()
+        assert resp.title == "t"
+        assert resp.thinking == "T"
+        assert resp.code == "print(1)"
+        assert resp.input_tokens == 12
+        assert resp.output_tokens == 3
+
+    def test_write_file_plus_python(self):
+        """Two parallel tool calls: write_file then python_action."""
+        file_args = json.dumps({"path": "/a.py", "content": "X = 1"})
+        py_args = json.dumps({"title": "t", "thinking": "T", "code": "import a"})
+        stream = [
+            _mk_tool_chunk(0, call_id="call_f", name="write_file", args=""),
+            _mk_tool_chunk(0, args=file_args),
+            _mk_tool_chunk(1, call_id="call_p", name="python_action", args=""),
+            _mk_tool_chunk(1, args=py_args),
+            _mk_tool_chunk(0, args="", finish="tool_calls"),
+            _mk_usage_chunk(),
+        ]
+
+        client = OpenAI(api_key="test", wire_format=ToolUseWireFormat())
+        with patch.object(
+            client.client.chat.completions, "create", return_value=iter(stream)
+        ):
+            tokens = list(client.complete_stream("sys", []))
+
+        builder = ResponseBuilder(agent_name="a")
+        for t in tokens:
+            builder.process_token(t)
+        resp = builder.build()
+
+        assert resp.code == "import a"
+        assert len(resp.file_actions) == 1
+        fa = resp.file_actions[0]
+        assert isinstance(fa, FileAction)
+        assert fa.path == "/a.py"
+        assert fa.content == "X = 1"
+
+    def test_edit_file_insert_after(self):
+        edit_args = json.dumps(
+            {
+                "path": "/b.py",
+                "search": "anchor",
+                "insert_after": "added",
+                "match_all": True,
+            }
+        )
+        py_args = json.dumps({"title": "t", "thinking": "T", "code": "pass"})
+        stream = [
+            _mk_tool_chunk(0, call_id="call_e", name="edit_file", args=edit_args),
+            _mk_tool_chunk(1, call_id="call_p", name="python_action", args=py_args),
+            _mk_tool_chunk(0, args="", finish="tool_calls"),
+            _mk_usage_chunk(),
+        ]
+
+        client = OpenAI(api_key="test", wire_format=ToolUseWireFormat())
+        with patch.object(
+            client.client.chat.completions, "create", return_value=iter(stream)
+        ):
+            tokens = list(client.complete_stream("sys", []))
+
+        builder = ResponseBuilder(agent_name="a")
+        for t in tokens:
+            builder.process_token(t)
+        resp = builder.build()
+
+        assert len(resp.file_actions) == 1
+        ea = resp.file_actions[0]
+        assert isinstance(ea, EditAction)
+        assert ea.path == "/b.py"
+        assert ea.search == "anchor"
+        assert ea.content == "added"
+        assert ea.operation == "insert-after"
+        assert ea.match_all is True
+
+    def test_xml_format_still_works(self):
+        """Default (no wire_format arg) still uses XML path."""
+        mock_chunk = MagicMock()
+        mock_chunk.usage = None
+        mock_chunk.choices = [MagicMock()]
+        mock_chunk.choices[
+            0
+        ].delta.content = "<THINKING>T</THINKING><PYTHON>pass</PYTHON>"
+        client = OpenAI(api_key="test")  # Default XmlWireFormat.
+        with patch.object(
+            client.client.chat.completions, "create", return_value=iter([mock_chunk])
+        ) as mock_create:
+            list(client.complete_stream("sys", []))
+            # Tools should NOT be passed in XML mode.
+            assert "tools" not in mock_create.call_args.kwargs
+
+
+# ---------------------------------------------------------------------------
+# Async pyfetch client
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pyfetch_openai_tool_use():
+    """PyfetchOpenAI in tool-use mode: mock fetch_stream with canned SSE."""
+    args_json = json.dumps({"title": "t", "thinking": "T", "code": "print(1)"})
+
+    sse_lines = [
+        "data: "
+        + json.dumps(
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "python_action",
+                                        "arguments": args_json,
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            }
+        )
+        + "\n\n",
+        "data: "
+        + json.dumps(
+            {
+                "choices": [],
+                "usage": {"prompt_tokens": 20, "completion_tokens": 5},
+            }
+        )
+        + "\n\n",
+        "data: [DONE]\n\n",
+    ]
+
+    # Fake fetch_stream: parse_sse_events consumes its return value
+    # directly as an async iterator of str chunks.
+    class FakeStream:
+        def __init__(self, lines):
+            self._lines = lines
+
+        def __aiter__(self):
+            async def gen():
+                for line in self._lines:
+                    yield line
+
+            return gen()
+
+    fake_adapter = MagicMock()
+    fake_adapter.fetch_stream = MagicMock(return_value=FakeStream(sse_lines))
+
+    client = PyfetchOpenAI(
+        model="gpt-4",
+        api_key="sk-test",
+        fetch_adapter=fake_adapter,
+        wire_format=ToolUseWireFormat(),
+    )
+
+    tokens = []
+    async for t in client.acomplete_stream("sys", []):
+        tokens.append(t)
+
+    # Verify body passed to fetch_stream includes tools.
+    call_kwargs = fake_adapter.fetch_stream.call_args.kwargs
+    body = call_kwargs["body"]
+    assert "tools" in body
+    assert body["tool_choice"] == "auto"
+
+    # Round-trip through ResponseBuilder.
+    builder = ResponseBuilder(agent_name="a")
+    for t in tokens:
+        builder.process_token(t)
+    resp = builder.build()
+    assert resp.title == "t"
+    assert resp.code == "print(1)"
+    assert resp.input_tokens == 20
+    assert resp.output_tokens == 5
