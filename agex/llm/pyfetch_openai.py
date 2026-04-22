@@ -40,36 +40,62 @@ def _is_network_error(exc: Exception) -> bool:
 
 
 def _format_message_for_openai(message: dict[str, Any], *, cache: bool = False) -> dict:
-    """Convert generic message dict to OpenAI's format (images as data URIs)."""
-    if isinstance(message.get("content"), list):
+    """Convert generic message dict to OpenAI's format (images as data URIs).
+
+    Preserves all non-content fields (``tool_calls``, ``tool_call_id``,
+    ``name``, etc.) — ``translate_messages_to_openai`` sets these when
+    the tool-use wire format is in play and they must flow through
+    unchanged to the API.
+
+    Cache-control handling:
+
+    - ``content`` is a list of parts → reshape to OpenAI's ``text``/``image_url``
+      vocabulary; if ``cache`` is set, add ``cache_control`` to the last block.
+    - ``content`` is a string and ``cache`` is set → wrap into a single
+      text block carrying ``cache_control``; preserve every other field.
+    - ``content`` is ``None`` (e.g. an assistant message whose body is in
+      ``tool_calls``) → pass through unchanged.  Skipping the cache marker
+      is safer than emitting an invalid ``text: null`` block.
+    """
+    out = {**message}
+    content = message.get("content")
+
+    if isinstance(content, list):
         content_parts = []
-        for part in message["content"]:
-            if part["type"] == "text":
-                content_parts.append({"type": "text", "text": part["text"]})
-            elif part["type"] == "image":
+        for part in content:
+            if not isinstance(part, dict):
+                content_parts.append(part)
+                continue
+            ptype = part.get("type")
+            if ptype == "text":
+                content_parts.append({"type": "text", "text": part.get("text", "")})
+            elif ptype == "image":
                 content_parts.append(
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/png;base64,{part['image_data']}"
+                            "url": f"data:image/png;base64,{part.get('image_data', '')}"
                         },
                     }
                 )
+            else:
+                # Already-OpenAI-shape or unknown — pass through.
+                content_parts.append(part)
         if cache and content_parts:
-            content_parts[-1]["cache_control"] = CACHE_CONTROL
-        return {"role": message["role"], "content": content_parts}
-    if cache:
-        return {
-            "role": message["role"],
-            "content": [
-                {
-                    "type": "text",
-                    "text": message["content"],
-                    "cache_control": CACHE_CONTROL,
-                }
-            ],
-        }
-    return message
+            last = dict(content_parts[-1])
+            last["cache_control"] = CACHE_CONTROL
+            content_parts[-1] = last
+        out["content"] = content_parts
+        return out
+
+    if cache and isinstance(content, str):
+        out["content"] = [
+            {"type": "text", "text": content, "cache_control": CACHE_CONTROL}
+        ]
+        return out
+
+    # content is a string without cache, or None — pass through (with extras).
+    return out
 
 
 class PyfetchOpenAI(LLM):

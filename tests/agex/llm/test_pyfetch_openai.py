@@ -35,6 +35,77 @@ def test_format_multimodal_message():
     }
 
 
+class TestCachePreservesToolUseFields:
+    """Regression guard: the ``cache=True`` path used to drop
+    ``tool_calls`` / ``tool_call_id`` from tool-use-shaped messages
+    (emitted by ``translate_messages_to_openai``). Those fields MUST
+    flow through to the API or the request is invalid."""
+
+    def test_assistant_with_tool_calls_preserves_field(self):
+        msg = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "toolu_1",
+                    "type": "function",
+                    "function": {
+                        "name": "python_action",
+                        "arguments": '{"x":1}',
+                    },
+                }
+            ],
+        }
+        result = _format_message_for_openai(msg, cache=True)
+        assert result["tool_calls"] == msg["tool_calls"]
+        # content None must NOT get wrapped into an invalid text:None block.
+        assert result["content"] is None
+
+    def test_tool_role_preserves_tool_call_id_and_wraps_content(self):
+        msg = {"role": "tool", "tool_call_id": "toolu_1", "content": "ok"}
+        result = _format_message_for_openai(msg, cache=True)
+        assert result["tool_call_id"] == "toolu_1"
+        # content wrapped to a single text block with cache_control.
+        assert isinstance(result["content"], list)
+        assert result["content"][0]["text"] == "ok"
+        assert result["content"][0]["cache_control"]["type"] == "ephemeral"
+
+    def test_user_string_wrap_preserves_role(self):
+        msg = {"role": "user", "content": "hi"}
+        result = _format_message_for_openai(msg, cache=True)
+        assert result["role"] == "user"
+        assert result["content"][0]["text"] == "hi"
+        assert "cache_control" in result["content"][0]
+
+    def test_multimodal_cache_goes_to_last_block(self):
+        msg = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "here:"},
+                {"type": "image", "image_data": "BYTES"},
+            ],
+        }
+        result = _format_message_for_openai(msg, cache=True)
+        assert "cache_control" not in result["content"][0]
+        assert "cache_control" in result["content"][1]
+
+    def test_passthrough_when_no_cache_and_content_is_string(self):
+        """XML-mode messages without cache should pass through unchanged."""
+        msg = {"role": "user", "content": "hello"}
+        assert _format_message_for_openai(msg) == msg
+
+    def test_content_is_none_without_cache_pass_through(self):
+        msg = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "a", "type": "function", "function": {}}],
+        }
+        result = _format_message_for_openai(msg)
+        # Shape preserved, extras preserved.
+        assert result["content"] is None
+        assert result["tool_calls"] == msg["tool_calls"]
+
+
 # ---------------------------------------------------------------------------
 # Client config
 # ---------------------------------------------------------------------------
