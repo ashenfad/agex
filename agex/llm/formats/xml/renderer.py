@@ -1,7 +1,9 @@
-"""
-XML rendering utilities for events.
+"""Event-log renderer for the XML wire format.
 
-Converts agex events into XML-formatted messages for LLM consumption.
+Converts agex :class:`~agex.agent.events.Event` objects into
+provider-agnostic message dicts tagged with the XML surface (see
+``tags.py``). Clients translate these dicts to their provider's concrete
+shape (content arrays, tool results, etc.).
 """
 
 from typing import Any, List
@@ -22,7 +24,16 @@ from agex.agent.events import (
     TaskStartEvent,
 )
 from agex.llm.core import ContentPart, ImagePart, TextPart
-from agex.llm.xml import (
+from agex.render.primitives import (
+    HI_DETAIL_BUDGET,
+    collapse_same_role_messages,
+    render_chapter,
+    render_output_parts_full,
+    render_task_start,
+)
+from agex.render.value import render_value
+
+from .tags import (
     TAG_CANCELLED,
     TAG_EDIT,
     TAG_FILE,
@@ -38,31 +49,17 @@ from agex.llm.xml import (
     TAG_THINKING,
     TAG_TITLE,
 )
-from agex.render.primitives import (
-    HI_DETAIL_BUDGET,
-    collapse_same_role_messages,
-    render_chapter,
-    render_output_parts_full,
-    render_task_start,
-)
-from agex.render.value import render_value
 
 
 def render_events_as_xml(events: List[Event]) -> List[dict]:
-    """
-    Render events in XML format for LLM consumption.
+    """Render events in XML format for LLM consumption.
 
-    Similar to render_events_as_markdown() but uses XML tags.
-
-    Args:
-        events: List of Event objects to render
-
-    Returns:
-        List of message dicts with role and content
+    Returns a list of message dicts with ``role`` and ``content``.
+    ``content`` is either a plain string or a list of content parts
+    (``{"type": "text" | "image", ...}``).
     """
     messages: List[dict[str, Any]] = []
 
-    # Filter out ErrorEvents (not shown to agents)
     filtered_events = [e for e in events if not isinstance(e, ErrorEvent)]
 
     task_number = 0
@@ -76,28 +73,24 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             prefix = ""
 
         if isinstance(event, TaskStartEvent):
-            # Render task start message with appropriate budget
             text, _ = render_task_start(event.message, budget=budget)
             messages.append({"role": "user", "content": prefix + text})
 
         elif isinstance(event, ActionEvent):
-            # ActionEvent always renders at full detail (XML format with uppercase tags)
             title_section = (
                 f"<{TAG_TITLE}>{event.title}</{TAG_TITLE}>" if event.title else ""
             )
 
-            # Render file actions (both FILE and EDIT)
             files_section = ""
             if event.file_actions:
                 for action in event.file_actions:
                     if isinstance(action, EditAction):
                         match_all_attr = ' match_all="true"' if action.match_all else ""
-                        # Determine which tag to use based on operation
                         if action.operation == "insert-after":
                             content_tag = TAG_INSERT_AFTER
                         elif action.operation == "insert-before":
                             content_tag = TAG_INSERT_BEFORE
-                        else:  # "replace"
+                        else:
                             content_tag = TAG_REPLACE
                         files_section += (
                             f'<{TAG_EDIT} path="{action.path}"{match_all_attr}>\n'
@@ -114,7 +107,6 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                             f"{action.content}</{TAG_FILE}>\n"
                         )
 
-            # Choose terminal or python based on what's present
             if event.terminal:
                 action_section = f"<{TAG_TERMINAL}>{event.terminal}</{TAG_TERMINAL}>"
             else:
@@ -135,15 +127,12 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             messages.append({"role": "assistant", "content": content})
 
         elif isinstance(event, OutputEvent):
-            # Render OutputEvent parts with budget (low detail replaces images with placeholders)
             content_parts, _ = render_output_parts_full(event.parts, budget=budget)
 
             if content_parts:
-                # Check for images
                 has_images = any(isinstance(p, ImagePart) for p in content_parts)
 
                 if has_images:
-                    # Multimodal message - wrap in OBSERVATION tags
                     messages.append(
                         {
                             "role": "user",
@@ -161,7 +150,6 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                         }
                     )
                 else:
-                    # Text-only message
                     text = "\n".join(
                         p.text for p in content_parts if isinstance(p, TextPart)
                     )
@@ -169,8 +157,6 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
                     messages.append({"role": "user", "content": content})
 
         elif isinstance(event, SuccessEvent):
-            # Render result repr as observation — the value may not be
-            # apparent from the preceding task_success(var) call.
             estimated_chars = budget * 4
             rendered = render_value(
                 event.result, budget=estimated_chars, token_budget=budget
@@ -179,9 +165,6 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             messages.append({"role": "user", "content": content})
 
         elif isinstance(event, (FailEvent, ClarifyEvent)):
-            # Not rendered — the LLM already expressed its intent via
-            # task_fail/task_clarify string literals in the preceding
-            # ActionEvent's code.
             pass
 
         elif isinstance(event, CancelledEvent):
@@ -193,11 +176,9 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             messages.append({"role": "assistant", "content": prefix + text})
 
         elif isinstance(event, SystemNoteEvent):
-            # Render system note as a user message (transient context)
             messages.append({"role": "user", "content": prefix + event.message})
 
         elif isinstance(event, FileEvent):
-            # Render file changes with XML tags
             parts = []
             if event.added:
                 parts.append(f"Added: {', '.join(event.added)}")
@@ -212,10 +193,10 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
 
 
 def _content_part_to_dict(part: ContentPart) -> dict:
-    """
-    Convert ContentPart to a generic dict format.
+    """Convert a :class:`ContentPart` to a generic dict.
 
-    Individual clients will need to convert this to their provider's format.
+    Clients translate this to their provider's concrete image/text
+    representation.
     """
     if isinstance(part, TextPart):
         return {"type": "text", "text": part.text}

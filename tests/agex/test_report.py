@@ -64,7 +64,7 @@ class TestReportOnActionEvent:
 
     def test_action_event_report_rendered_in_history(self):
         """Agent's own prior REPORT is rendered in its history on later turns."""
-        from agex.render.xml import render_events_as_xml
+        from agex.llm.formats.xml import render_events_as_xml
 
         clear_agent_registry()
         connect_state(type="versioned", storage="memory")

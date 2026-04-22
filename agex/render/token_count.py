@@ -24,7 +24,7 @@ def estimate_log_tokens(agent, state, model_name: str = "gpt-4") -> Dict[str, An
     Returns:
         Dict with ``system``, ``log``, and ``total`` token counts.
     """
-    from agex.render.xml import render_events_as_xml
+    from agex.llm.formats.xml import render_events_as_xml
     from agex.state.log import get_events_from_log
 
     # System tokens

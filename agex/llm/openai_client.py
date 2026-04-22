@@ -7,7 +7,7 @@ from agex.llm.core import (
     LLM,
     TokenChunk,
 )
-from agex.llm.xml import XML_FORMAT_PRIMER, tokenize_xml_stream
+from agex.llm.formats import WireFormat, XmlWireFormat
 from agex.tokenizers import get_tokenizer
 
 # Define keys for client setup vs. completion
@@ -51,6 +51,7 @@ class OpenAI(LLM):
         self,
         model: str = "gpt-4.1-nano",
         timeout_seconds: float = 90.0,
+        wire_format: WireFormat | None = None,
         **kwargs,
     ):
         kwargs.pop("provider", None)
@@ -69,6 +70,7 @@ class OpenAI(LLM):
         self._model = model
         self._kwargs = completion_kwargs
         self._timeout_seconds = timeout_seconds
+        self._wire_format: WireFormat = wire_format or XmlWireFormat()
         self.client = openai.OpenAI(**client_kwargs)
         self.async_client = openai.AsyncOpenAI(**client_kwargs)
         self.tokenizer = get_tokenizer(model)
@@ -94,16 +96,12 @@ class OpenAI(LLM):
 
         Uses standard streaming API with XML parsing for token-level updates.
         """
-        from agex.render.xml import render_events_as_xml
-
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
 
-        # Use XML rendering for streaming (instead of structured outputs)
-        messages_dicts = render_events_as_xml(events)
+        messages_dicts = self._wire_format.render_events(events)
 
-        # Add system message with XML format instructions
-        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+        system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         full_messages = [
             {"role": "system", "content": system_with_format}
         ] + messages_dicts
@@ -133,8 +131,7 @@ class OpenAI(LLM):
                     if delta.content:
                         yield delta.content
 
-        # Parse XML stream into TokenChunks
-        yield from tokenize_xml_stream(raw_chunks())
+        yield from self._wire_format.parse_text_stream(raw_chunks())
 
         # Yield final usage token
         yield TokenChunk(
@@ -149,13 +146,10 @@ class OpenAI(LLM):
         self, system: str, events: List[Event], **kwargs
     ) -> AsyncIterator[TokenChunk]:
         """Async version of complete_stream."""
-        from agex.llm.xml import atokenize_xml_stream
-        from agex.render.xml import render_events_as_xml
-
         request_kwargs = {**self._kwargs, **kwargs}
-        messages_dicts = render_events_as_xml(events)
+        messages_dicts = self._wire_format.render_events(events)
 
-        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+        system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         full_messages = [
             {"role": "system", "content": system_with_format}
         ] + messages_dicts
@@ -183,7 +177,7 @@ class OpenAI(LLM):
                     if delta.content:
                         yield delta.content
 
-        async for token in atokenize_xml_stream(raw_chunks()):
+        async for token in self._wire_format.aparse_text_stream(raw_chunks()):
             yield token
 
         yield TokenChunk(

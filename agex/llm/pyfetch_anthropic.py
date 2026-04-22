@@ -13,7 +13,7 @@ from typing import Any, AsyncIterator, Iterator, List
 from agex.agent.events import Event
 from agex.llm.adapter import DefaultPyfetchAdapter, FetchAdapter
 from agex.llm.core import LLM, TokenChunk
-from agex.llm.xml import XML_FORMAT_PRIMER
+from agex.llm.formats import WireFormat, XmlWireFormat
 
 ANTHROPIC_VERSION = "2023-06-01"
 CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
@@ -88,6 +88,7 @@ class PyfetchAnthropic(LLM):
         timeout_seconds: float = 90.0,
         *,
         fetch_adapter: FetchAdapter | None = None,
+        wire_format: WireFormat | None = None,
         **kwargs,
     ):
         kwargs.pop("provider", None)
@@ -100,6 +101,7 @@ class PyfetchAnthropic(LLM):
         # adapter, the adapter is expected to inject auth headers on the
         # way out (e.g., a JS bridge that reads the key from localStorage).
         self._adapter: FetchAdapter = fetch_adapter or DefaultPyfetchAdapter()
+        self._wire_format: WireFormat = wire_format or XmlWireFormat()
 
     def _headers(self) -> dict[str, str]:
         h: dict[str, str] = {
@@ -153,16 +155,13 @@ class PyfetchAnthropic(LLM):
 
         Retries on network errors (e.g. connection drops on mobile).
         """
-        from agex.render.xml import render_events_as_xml
-
         request_kwargs = {**self._kwargs, **kwargs}
         if "max_tokens" not in request_kwargs:
             request_kwargs["max_tokens"] = MAX_TOKENS
 
-        messages_dicts = render_events_as_xml(events)
+        messages_dicts = self._wire_format.render_events(events)
 
-        # System message with XML format primer, cached.
-        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+        system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         system_blocks = [
             {
                 "type": "text",
@@ -217,7 +216,6 @@ class PyfetchAnthropic(LLM):
     ) -> AsyncIterator[TokenChunk]:
         """Single streaming attempt — separated for retry logic."""
         from agex.llm.sse import parse_sse_events
-        from agex.llm.xml import atokenize_xml_stream
 
         response = self._adapter.fetch_stream(url, headers=headers, body=body)
 
@@ -297,7 +295,7 @@ class PyfetchAnthropic(LLM):
                         f"Anthropic stream error: {err.get('message', err)}"
                     )
 
-        async for token in atokenize_xml_stream(raw_chunks()):
+        async for token in self._wire_format.aparse_text_stream(raw_chunks()):
             yield token
 
         # XML tokenizer may stop early (after </PYTHON> or </TERMINAL>).

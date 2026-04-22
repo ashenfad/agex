@@ -9,7 +9,7 @@ from agex.agent.events import (
     SuccessEvent,
     TaskStartEvent,
 )
-from agex.render.xml import render_events_as_xml
+from agex.llm.formats.xml import render_events_as_xml
 
 
 class TestRenderEventsAsXML:

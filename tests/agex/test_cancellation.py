@@ -243,7 +243,7 @@ class TestTaskCancellation:
 
     def test_cancelled_tag_rendering(self):
         """Verify that cancellation is rendered in history with the correct XML tag."""
-        from agex.llm.xml import TAG_CANCELLED
+        from agex.llm.formats.xml import TAG_CANCELLED
 
         llm = Dummy(
             responses=[

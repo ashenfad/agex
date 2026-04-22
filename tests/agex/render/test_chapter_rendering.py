@@ -7,9 +7,9 @@ from agex.agent.events import (
     SuccessEvent,
     TaskStartEvent,
 )
+from agex.llm.formats.xml import render_events_as_xml
 from agex.render.events import render_events_as_markdown
 from agex.render.primitives import render_chapter
-from agex.render.xml import render_events_as_xml
 
 
 class TestRenderChapter:

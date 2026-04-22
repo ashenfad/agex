@@ -194,7 +194,10 @@ class ResponseBuilder:
                 metadata = token.content
                 import re
 
-                from agex.llm.xml import validate_file_mode, validate_file_path
+                from agex.llm.formats.xml import (
+                    validate_file_mode,
+                    validate_file_path,
+                )
 
                 path_match = re.search(r"path=([^,]+)", metadata)
                 mode_match = re.search(r"mode=([^,]+)", metadata)
@@ -219,7 +222,7 @@ class ResponseBuilder:
                 metadata = token.content
                 import re
 
-                from agex.llm.xml import validate_file_path
+                from agex.llm.formats.xml import validate_file_path
 
                 path_match = re.search(r"path=([^,]+)", metadata)
                 match_all_match = re.search(r"match_all=([^,]+)", metadata)
@@ -251,7 +254,7 @@ class ResponseBuilder:
         import re
 
         from agex.agent.datatypes import EditAction, FileAction
-        from agex.llm.xml import (
+        from agex.llm.formats.xml import (
             TAG_INSERT_AFTER,
             TAG_INSERT_BEFORE,
             TAG_REPLACE,
