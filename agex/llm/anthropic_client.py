@@ -8,7 +8,7 @@ from agex.llm.core import (
     LLM,
     TokenChunk,
 )
-from agex.llm.xml import XML_FORMAT_PRIMER, tokenize_xml_stream
+from agex.llm.formats import WireFormat, XmlWireFormat
 
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key", "timeout", "max_retries"}
@@ -64,6 +64,7 @@ class Anthropic(LLM):
         self,
         model: str = "claude-3-sonnet-20240229",
         timeout_seconds: float = 90.0,
+        wire_format: WireFormat | None = None,
         **kwargs,
     ):
         kwargs.pop("provider", None)
@@ -82,6 +83,7 @@ class Anthropic(LLM):
         self._model = model
         self._kwargs = completion_kwargs
         self._timeout_seconds = timeout_seconds
+        self._wire_format: WireFormat = wire_format or XmlWireFormat()
         self.client = anthropic.Anthropic(**client_kwargs)
         self.async_client = anthropic.AsyncAnthropic(**client_kwargs)
 
@@ -106,13 +108,10 @@ class Anthropic(LLM):
 
         Uses standard streaming API with XML parsing for token-level updates.
         """
-        from agex.render.xml import render_events_as_xml
-
         # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
 
-        # Use XML rendering for streaming (instead of tool calling)
-        messages_dicts = render_events_as_xml(events)
+        messages_dicts = self._wire_format.render_events(events)
 
         # Convert to Anthropic format
         conversation_messages = [
@@ -120,8 +119,7 @@ class Anthropic(LLM):
             for index, msg in enumerate(messages_dicts)
         ]
 
-        # Add system message with XML format instructions
-        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+        system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         system_block = TextBlockParam(
             type="text",
             text=system_with_format,
@@ -147,7 +145,7 @@ class Anthropic(LLM):
                 for text in stream.text_stream:
                     yield text
 
-            yield from tokenize_xml_stream(raw_chunks())
+            yield from self._wire_format.parse_text_stream(raw_chunks())
 
             # Extract usage from the accumulated message
             message = stream.get_final_message()
@@ -163,17 +161,14 @@ class Anthropic(LLM):
         self, system: str, events: List[Event], **kwargs
     ) -> AsyncIterator[TokenChunk]:
         """Async version of complete_stream."""
-        from agex.llm.xml import atokenize_xml_stream
-        from agex.render.xml import render_events_as_xml
-
         request_kwargs = {**self._kwargs, **kwargs}
-        messages_dicts = render_events_as_xml(events)
+        messages_dicts = self._wire_format.render_events(events)
         conversation_messages = [
             _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
             for index, msg in enumerate(messages_dicts)
         ]
 
-        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+        system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         system_block = TextBlockParam(
             type="text",
             text=system_with_format,
@@ -194,7 +189,7 @@ class Anthropic(LLM):
                 async for text in stream.text_stream:
                     yield text
 
-            async for token in atokenize_xml_stream(raw_chunks()):
+            async for token in self._wire_format.aparse_text_stream(raw_chunks()):
                 yield token
 
             message = await stream.get_final_message()

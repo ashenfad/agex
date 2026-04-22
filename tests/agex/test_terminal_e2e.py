@@ -752,7 +752,7 @@ class TestTerminalTokenStreaming:
 
     def test_terminal_tokens_emitted_during_streaming(self):
         """Test that terminal tokens are emitted during streaming."""
-        from agex.llm.xml import tokenize_xml_stream
+        from agex.llm.formats.xml import tokenize_xml_stream
 
         xml = "<THINKING>Exploring</THINKING><TERMINAL>find . -name '*.py'</TERMINAL>"
         chunks = list(tokenize_xml_stream([xml]))

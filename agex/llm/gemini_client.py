@@ -9,7 +9,8 @@ from agex.llm.core import (
     LLM,
     TokenChunk,
 )
-from agex.llm.xml import TAG_TITLE, XML_FORMAT_PRIMER, tokenize_xml_stream
+from agex.llm.formats import WireFormat, XmlWireFormat
+from agex.llm.formats.xml import TAG_TITLE
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ class Gemini(LLM):
         google_search: bool = False,
         url_context: bool = False,
         timeout_seconds: float = 90.0,
+        wire_format: WireFormat | None = None,
         **kwargs,
     ):
         kwargs = kwargs.copy()
@@ -59,6 +61,7 @@ class Gemini(LLM):
         self._google_search = google_search
         self._url_context = url_context
         self._timeout_seconds = timeout_seconds
+        self._wire_format: WireFormat = wire_format or XmlWireFormat()
 
         # Wire timeout and disable SDK retries (agex handles retries)
         client_kwargs["http_options"] = types.HttpOptions(
@@ -90,16 +93,13 @@ class Gemini(LLM):
         """
         Stream tokens from Gemini using XML format.
         """
-        from agex.render.xml import render_events_as_xml
-
         request_kwargs = {**self._kwargs, **kwargs}
         if "max_tokens" in request_kwargs:
             request_kwargs["max_output_tokens"] = request_kwargs.pop("max_tokens")
 
-        messages_dicts = render_events_as_xml(events)
+        messages_dicts = self._wire_format.render_events(events)
 
-        # Add system message with XML format instructions
-        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+        system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
 
         grounding_primer = _get_grounding_primer(self._google_search, self._url_context)
         if grounding_primer:
@@ -156,7 +156,7 @@ class Gemini(LLM):
                 text = chunk.text or ""
                 yield text
 
-        yield from tokenize_xml_stream(raw_chunks())
+        yield from self._wire_format.parse_text_stream(raw_chunks())
 
         # Yield final usage token
         yield TokenChunk(
@@ -171,15 +171,12 @@ class Gemini(LLM):
         self, system: str, events: List[Event], **kwargs
     ) -> AsyncIterator[TokenChunk]:
         """Async version of complete_stream."""
-        from agex.llm.xml import atokenize_xml_stream
-        from agex.render.xml import render_events_as_xml
-
         request_kwargs = {**self._kwargs, **kwargs}
         if "max_tokens" in request_kwargs:
             request_kwargs["max_output_tokens"] = request_kwargs.pop("max_tokens")
 
-        messages_dicts = render_events_as_xml(events)
-        system_with_format = f"{system}\n\n{XML_FORMAT_PRIMER}"
+        messages_dicts = self._wire_format.render_events(events)
+        system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
 
         grounding_primer = _get_grounding_primer(self._google_search, self._url_context)
         if grounding_primer:
@@ -229,7 +226,7 @@ class Gemini(LLM):
                     )
                 yield chunk.text or ""
 
-        async for token in atokenize_xml_stream(raw_chunks()):
+        async for token in self._wire_format.aparse_text_stream(raw_chunks()):
             yield token
 
         yield TokenChunk(

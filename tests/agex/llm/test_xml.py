@@ -3,9 +3,8 @@
 import pytest
 
 from agex.agent.datatypes import EditAction, FileAction
-from agex.llm.core import ResponseParseError
-from agex.llm.xml import (
-    TokenChunk,
+from agex.llm.core import ResponseParseError, TokenChunk
+from agex.llm.formats.xml import (
     XMLResponse,
     parse_xml_response,
     tokenize_xml_stream,

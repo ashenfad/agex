@@ -223,7 +223,7 @@ def test_circular_imports_detection():
 def test_missing_thinking_error():
     """Test that missing <thinking> tags raise a ResponseParseError."""
     from agex.llm.core import ResponseParseError
-    from agex.llm.xml import parse_xml_response
+    from agex.llm.formats.xml import parse_xml_response
 
     bad_xml = "<PYTHON>task_success(1)</PYTHON>"
     with pytest.raises(ResponseParseError) as exc:

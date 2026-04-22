@@ -92,7 +92,7 @@ class Dummy(LLM):
         has_unsupported_images = False
         try:
             if renderer_type == "xml":
-                from agex.render.xml import render_events_as_xml
+                from agex.llm.formats.xml import render_events_as_xml
 
                 messages_dicts = render_events_as_xml(events)
             else:
