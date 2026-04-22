@@ -18,6 +18,22 @@ if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
 
 
+# Prefixes for state keys that are internal bookkeeping (event log,
+# framework metadata) and must never be hydrated into the agent's
+# sandbox namespace. Exposing them is both a privacy leak (the agent
+# could see its own prior events) and a correctness hazard: if a key
+# ends up in ``pre_keys`` but not in the sandbox's post-exec namespace,
+# ``handle_result`` treats it as "user deleted it" and removes it from
+# state. That silently corrupted ``__event_log__`` in the wild —
+# events were referenced by the log but their backing keys had been
+# deleted on a subsequent agent turn.
+_INTERNAL_STATE_PREFIXES = ("__", "_event_")
+
+
+def _is_internal_state_key(key: str) -> bool:
+    return any(key.startswith(p) for p in _INTERNAL_STATE_PREFIXES)
+
+
 def build_namespace(
     state: MutableMapping[str, Any],
     agent: "BaseAgent",
@@ -45,24 +61,25 @@ def build_namespace(
     from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
 
     for key in state.keys():
-        if not key.startswith("__"):
-            try:
-                namespace[key] = state.get(key)
-            except UnpicklableVariableError as exc:
-                # Place marker in namespace so the agent gets a descriptive
-                # error on access rather than a bare NameError.
-                if exc.marker is not None:
-                    exc.marker.variable_name = key
-                    namespace[key] = exc.marker
-                else:
-                    namespace[key] = UnpicklableMarker(
-                        variable_name=key,
-                        type_name="<unknown>",
-                        original_exception=str(exc),
-                    )
-            except Exception:
-                continue  # Skip corrupt values
-            pre_keys.add(key)
+        if _is_internal_state_key(key):
+            continue
+        try:
+            namespace[key] = state.get(key)
+        except UnpicklableVariableError as exc:
+            # Place marker in namespace so the agent gets a descriptive
+            # error on access rather than a bare NameError.
+            if exc.marker is not None:
+                exc.marker.variable_name = key
+                namespace[key] = exc.marker
+            else:
+                namespace[key] = UnpicklableMarker(
+                    variable_name=key,
+                    type_name="<unknown>",
+                    original_exception=str(exc),
+                )
+        except Exception:
+            continue  # Skip corrupt values
+        pre_keys.add(key)
 
     # 2. Inject task control functions — module-level so they're picklable
     #    for cross-process isolation. Validation happens in handle_result.
