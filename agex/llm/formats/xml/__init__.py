@@ -6,10 +6,13 @@ This is the classic/legacy agex wire format — no provider-native tool
 calling.
 """
 
-from typing import AsyncIterator, Iterator
+from typing import TYPE_CHECKING, AsyncIterator, Iterator
 
 from agex.agent.events import Event
 from agex.llm.core import TokenChunk
+
+if TYPE_CHECKING:
+    from agex.llm.formats.tool_use.events import ToolCallEvent
 
 from .renderer import render_events_as_xml
 from .tags import (
@@ -69,6 +72,20 @@ class XmlWireFormat:
 
     def aparse_text_stream(self, raw: AsyncIterator[str]) -> AsyncIterator[TokenChunk]:
         return atokenize_xml_stream(raw)
+
+    def parse_tool_stream(self, raw: "Iterator[ToolCallEvent]") -> Iterator[TokenChunk]:
+        raise NotImplementedError(
+            "XmlWireFormat parses text streams, not tool-call events. "
+            "Use parse_text_stream() instead."
+        )
+
+    def aparse_tool_stream(
+        self, raw: "AsyncIterator[ToolCallEvent]"
+    ) -> AsyncIterator[TokenChunk]:
+        raise NotImplementedError(
+            "XmlWireFormat parses text streams, not tool-call events. "
+            "Use aparse_text_stream() instead."
+        )
 
 
 __all__ = [

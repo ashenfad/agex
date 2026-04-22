@@ -10,12 +10,18 @@ interaction:
 4. Optionally declaring a tool schema for provider-native tool-calling.
 
 Transport concerns (HTTP, auth, SSE framing, retries, streaming chunk
-decode) remain with the client. Two implementations are planned:
+decode) remain with the client. Two implementations exist:
 
-- :class:`XmlWireFormat` — XML tags embedded in text content; single
-  text stream; no provider tool-calling.
-- ``ToolUseWireFormat`` (future) — provider-native tool-calling with
-  per-provider flavours (OpenAI, Anthropic, Gemini).
+- :class:`~agex.llm.formats.xml.XmlWireFormat` — XML tags embedded in
+  text content; single text stream; no provider tool-calling.
+- :class:`~agex.llm.formats.tool_use.ToolUseWireFormat` — provider-native
+  tool-calling; stream is a sequence of :class:`ToolCallEvent` objects.
+
+Each concrete format supports ONE of the two parse paths:
+``parse_text_stream`` (for XML) or ``parse_tool_stream`` (for
+tool-use). The unsupported method raises :class:`NotImplementedError`.
+Clients dispatch to the right one based on ``tool_schema()`` being
+``None`` or not.
 
 ``WireFormat`` is a ``typing.Protocol`` rather than an ABC because it's
 a pure interface — no shared behaviour to inherit. Implementers may
@@ -35,6 +41,7 @@ from typing import (
 if TYPE_CHECKING:
     from agex.agent.events import Event
     from agex.llm.core import TokenChunk
+    from agex.llm.formats.tool_use.events import ToolCallEvent
 
 
 @runtime_checkable
@@ -69,11 +76,26 @@ class WireFormat(_TypingProtocol):
     def parse_text_stream(self, raw: Iterator[str]) -> Iterator["TokenChunk"]:
         """Parse a stream of raw text chunks into ``TokenChunk``\\ s.
         Used by formats whose provider response is a plain text stream
-        (e.g. XML tags embedded in ``choices[].delta.content``)."""
+        (e.g. XML tags embedded in ``choices[].delta.content``).
+        Tool-use formats raise :class:`NotImplementedError`."""
         ...
 
     def aparse_text_stream(
         self, raw: AsyncIterator[str]
     ) -> AsyncIterator["TokenChunk"]:
         """Async counterpart to :meth:`parse_text_stream`."""
+        ...
+
+    def parse_tool_stream(
+        self, raw: Iterator["ToolCallEvent"]
+    ) -> Iterator["TokenChunk"]:
+        """Parse a stream of provider-agnostic tool-call events into
+        ``TokenChunk``\\ s. Used by tool-use formats; text formats raise
+        :class:`NotImplementedError`."""
+        ...
+
+    def aparse_tool_stream(
+        self, raw: AsyncIterator["ToolCallEvent"]
+    ) -> AsyncIterator["TokenChunk"]:
+        """Async counterpart to :meth:`parse_tool_stream`."""
         ...
