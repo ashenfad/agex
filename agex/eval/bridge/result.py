@@ -22,6 +22,7 @@ from sandtrap.wrappers import ModuleRef
 
 from agex.agent.datatypes import TaskContinue, TaskSuccess
 from agex.agent.events import OutputEvent
+from agex.eval.bridge.namespace import _is_internal_state_key
 from agex.eval.objects import ImageAction
 from agex.state.log import add_event_to_log
 
@@ -79,9 +80,16 @@ def handle_result(
         else:
             state[key] = value
 
-    # 2. Detect deletions (key was in state before exec, not in namespace after)
-    post_keys = {k for k in result.namespace if not k.startswith("__")}
+    # 2. Detect deletions (key was in state before exec, not in namespace after).
+    #    Internal bookkeeping keys (__..., _event_...) are never hydrated
+    #    into the sandbox, so a well-behaved caller won't list them in
+    #    ``pre_keys``. Belt-and-suspenders: still filter them here, so
+    #    a buggy caller can't accidentally have us delete the event log's
+    #    backing store.
+    post_keys = {k for k in result.namespace if not _is_internal_state_key(k)}
     for key in pre_keys - post_keys:
+        if _is_internal_state_key(key):
+            continue
         if key in state:
             del state[key]
 

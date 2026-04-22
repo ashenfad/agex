@@ -215,6 +215,61 @@ class TestResultHandler:
         assert "x" not in state
         assert state.get("y") == "keep"
 
+    def test_does_not_delete_event_log_entries(self):
+        """Regression: ``_event_*`` keys must survive a sandbox turn.
+
+        Event keys (stored by ``agex.state.log.add_event_to_log``) live
+        alongside user-visible state at keys like ``_event_<ts>_`` —
+        single underscore, not the dunder prefix used for framework
+        metadata. An earlier version of ``build_namespace`` hydrated
+        them into the sandbox and added them to ``pre_keys``; if the
+        sandbox's post-exec namespace didn't carry them back out,
+        ``handle_result`` treated them as user deletions and removed
+        them from state, leaving ``__event_log__`` with dangling refs.
+        """
+        state = Live()
+        state["__event_log__"] = [
+            "_event_1000_",
+            "_event_2000_",
+        ]
+        state["_event_1000_"] = "event-one"
+        state["_event_2000_"] = "event-two"
+        state["x"] = 42  # real user var
+
+        # Simulate what a buggy caller might have passed: pre_keys that
+        # includes the internal event keys.
+        pre_keys = {"_event_1000_", "_event_2000_", "x"}
+        # Sandbox returned only the user var — event keys are missing.
+        result = ExecResult(namespace={"x": 42})
+
+        handle_result(result, state, "test", pre_keys)
+
+        assert state.get("_event_1000_") == "event-one", (
+            "event keys must not be deleted by the sandbox deletion-detection path"
+        )
+        assert state.get("_event_2000_") == "event-two"
+        assert state.get("x") == 42
+
+    def test_build_namespace_excludes_event_keys(self):
+        """Regression: event keys must not enter the sandbox namespace.
+
+        Preventing the hydration in the first place is the primary fix
+        for the ``__event_log__`` dangling-ref bug above; this guards
+        the contract independently of the deletion logic.
+        """
+        state = Live()
+        state["__event_log__"] = ["_event_1000_"]
+        state["_event_1000_"] = "event-one"
+        state["x"] = 42
+        agent = Agent(name="ns_event_test")
+
+        ns, pre_keys, _ = build_namespace(state, agent, "ns_event_test")
+
+        assert "_event_1000_" not in ns, "event keys leaked into sandbox namespace"
+        assert "_event_1000_" not in pre_keys, "event keys leaked into pre_keys"
+        assert "x" in ns
+        assert pre_keys == {"x"}
+
     def test_reraises_task_success(self):
         state = Live()
         result = ExecResult(error=TaskSuccess("done"))
