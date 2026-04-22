@@ -9,6 +9,13 @@ from agex.llm.core import (
     TokenChunk,
 )
 from agex.llm.formats import WireFormat, XmlWireFormat
+from agex.llm.formats.tool_use.anthropic_adapter import (
+    apply_cache_control,
+    atranslate_anthropic_stream_to_events,
+    schemas_to_anthropic_tools,
+    translate_anthropic_stream_to_events,
+    translate_messages_to_anthropic,
+)
 
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key", "timeout", "max_retries"}
@@ -103,22 +110,18 @@ class Anthropic(LLM):
     def complete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> Iterator[TokenChunk]:
-        """
-        Stream tokens from Anthropic using XML format.
+        """Stream tokens from Anthropic.
 
-        Uses standard streaming API with XML parsing for token-level updates.
+        Dispatches on ``wire_format.tool_schema()``:
+
+        - ``None`` → text-stream path (XML-in-text formats).
+        - non-None → provider-native tool-calling path.
         """
-        # Combine kwargs, giving precedence to method-level ones
         request_kwargs = {**self._kwargs, **kwargs}
+        if "max_tokens" not in request_kwargs:
+            request_kwargs["max_tokens"] = MAX_TOKENS
 
         messages_dicts = self._wire_format.render_events(events)
-
-        # Convert to Anthropic format
-        conversation_messages = [
-            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
-            for index, msg in enumerate(messages_dicts)
-        ]
-
         system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         system_block = TextBlockParam(
             type="text",
@@ -126,13 +129,24 @@ class Anthropic(LLM):
             cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
         )
 
-        # No assistant prefill — letting the model produce the whole response
-        # from scratch gives it better adherence to the format primer (closing
-        # tags, no skipping <THINKING>, etc.).
+        tool_schemas = self._wire_format.tool_schema()
+        if tool_schemas is None:
+            yield from self._stream_text(messages_dicts, system_block, request_kwargs)
+        else:
+            yield from self._stream_tools(
+                messages_dicts, system_block, request_kwargs, tool_schemas
+            )
 
-        # Set default max_tokens if not provided
-        if "max_tokens" not in request_kwargs:
-            request_kwargs["max_tokens"] = MAX_TOKENS
+    def _stream_text(
+        self,
+        messages_dicts: list[dict],
+        system_block: TextBlockParam,
+        request_kwargs: dict,
+    ) -> Iterator[TokenChunk]:
+        conversation_messages = [
+            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
+            for index, msg in enumerate(messages_dicts)
+        ]
 
         with self.client.messages.stream(
             model=self._model,
@@ -147,7 +161,6 @@ class Anthropic(LLM):
 
             yield from self._wire_format.parse_text_stream(raw_chunks())
 
-            # Extract usage from the accumulated message
             message = stream.get_final_message()
             yield TokenChunk(
                 type="thinking",
@@ -157,17 +170,55 @@ class Anthropic(LLM):
                 output_tokens=message.usage.output_tokens,
             )
 
+    def _stream_tools(
+        self,
+        messages_dicts: list[dict],
+        system_block: TextBlockParam,
+        request_kwargs: dict,
+        tool_schemas: list[dict],
+    ) -> Iterator[TokenChunk]:
+        translated = translate_messages_to_anthropic(messages_dicts)
+        # Cache breakpoint on second-to-last message (end of prior turn's
+        # context).  The last message is always new — caching it never hits.
+        cache_idx = len(translated) - 2
+        conversation_messages = apply_cache_control(
+            translated, cache_index=cache_idx, ttl=CACHE_TTL
+        )
+
+        usage_holder: dict[str, int | None] = {
+            "input_tokens": None,
+            "output_tokens": None,
+        }
+
+        with self.client.messages.stream(
+            model=self._model,
+            system=[system_block],
+            messages=conversation_messages,  # type: ignore[arg-type]
+            tools=schemas_to_anthropic_tools(tool_schemas),  # type: ignore[arg-type]
+            **request_kwargs,
+        ) as stream:
+            tool_events = translate_anthropic_stream_to_events(
+                iter(stream), usage_holder=usage_holder
+            )
+            yield from self._wire_format.parse_tool_stream(tool_events)
+
+        yield TokenChunk(
+            type="thinking",
+            content="",
+            done=True,
+            input_tokens=usage_holder["input_tokens"],
+            output_tokens=usage_holder["output_tokens"],
+        )
+
     async def acomplete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> AsyncIterator[TokenChunk]:
-        """Async version of complete_stream."""
+        """Async version of :meth:`complete_stream`."""
         request_kwargs = {**self._kwargs, **kwargs}
-        messages_dicts = self._wire_format.render_events(events)
-        conversation_messages = [
-            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
-            for index, msg in enumerate(messages_dicts)
-        ]
+        if "max_tokens" not in request_kwargs:
+            request_kwargs["max_tokens"] = MAX_TOKENS
 
+        messages_dicts = self._wire_format.render_events(events)
         system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         system_block = TextBlockParam(
             type="text",
@@ -175,8 +226,28 @@ class Anthropic(LLM):
             cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
         )
 
-        if "max_tokens" not in request_kwargs:
-            request_kwargs["max_tokens"] = MAX_TOKENS
+        tool_schemas = self._wire_format.tool_schema()
+        if tool_schemas is None:
+            async for t in self._astream_text(
+                messages_dicts, system_block, request_kwargs
+            ):
+                yield t
+        else:
+            async for t in self._astream_tools(
+                messages_dicts, system_block, request_kwargs, tool_schemas
+            ):
+                yield t
+
+    async def _astream_text(
+        self,
+        messages_dicts: list[dict],
+        system_block: TextBlockParam,
+        request_kwargs: dict,
+    ) -> AsyncIterator[TokenChunk]:
+        conversation_messages = [
+            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
+            for index, msg in enumerate(messages_dicts)
+        ]
 
         async with self.async_client.messages.stream(
             model=self._model,
@@ -200,6 +271,45 @@ class Anthropic(LLM):
                 input_tokens=message.usage.input_tokens,
                 output_tokens=message.usage.output_tokens,
             )
+
+    async def _astream_tools(
+        self,
+        messages_dicts: list[dict],
+        system_block: TextBlockParam,
+        request_kwargs: dict,
+        tool_schemas: list[dict],
+    ) -> AsyncIterator[TokenChunk]:
+        translated = translate_messages_to_anthropic(messages_dicts)
+        cache_idx = len(translated) - 2
+        conversation_messages = apply_cache_control(
+            translated, cache_index=cache_idx, ttl=CACHE_TTL
+        )
+
+        usage_holder: dict[str, int | None] = {
+            "input_tokens": None,
+            "output_tokens": None,
+        }
+
+        async with self.async_client.messages.stream(
+            model=self._model,
+            system=[system_block],
+            messages=conversation_messages,  # type: ignore[arg-type]
+            tools=schemas_to_anthropic_tools(tool_schemas),  # type: ignore[arg-type]
+            **request_kwargs,
+        ) as stream:
+            tool_events = atranslate_anthropic_stream_to_events(
+                stream.__aiter__(), usage_holder=usage_holder
+            )
+            async for token in self._wire_format.aparse_tool_stream(tool_events):
+                yield token
+
+        yield TokenChunk(
+            type="thinking",
+            content="",
+            done=True,
+            input_tokens=usage_holder["input_tokens"],
+            output_tokens=usage_holder["output_tokens"],
+        )
 
     def summarize(self, system: str, content: str | List[Event], **kwargs) -> str:
         """Send a summarization request to Anthropic (text or events with multimodal)."""
