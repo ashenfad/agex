@@ -10,7 +10,7 @@ https://asciinema.org/a/ZqYiNf6AJoskeVkcjPQAalgba
 import math
 from typing import Callable
 
-from agex import Agent, connect_llm, connect_state, pprint_tokens
+from agex import Agent, connect_llm, connect_state, pprint_events, pprint_tokens
 
 funcy_agent = Agent(
     name="funcy",
@@ -35,6 +35,7 @@ def main():
     fn = fn_builder(
         "a fn for the first prime larger than a given number.",
         on_token=pprint_tokens,
+        on_event=pprint_events,
     )
 
     # ----------------------------------------------

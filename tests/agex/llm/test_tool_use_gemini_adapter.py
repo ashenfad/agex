@@ -368,6 +368,41 @@ class TestTranslateGeminiStream:
         assert len([e for e in out if isinstance(e, ToolCallStart)]) == 1
         assert len([e for e in out if isinstance(e, ToolCallEnd)]) == 1
 
+    def test_signature_on_later_chunk_wins(self):
+        """Gemini 3 may surface a function_call in one streaming chunk
+        without a ``thought_signature`` and then deliver the signature
+        on a subsequent chunk referencing the same call id.  The
+        translator must keep the latest signature so the emission can
+        replay it — without this, the very next turn 400s with
+        ``Function call is missing a thought_signature in functionCall
+        parts``.
+        """
+        sig = b"\x99\x88opaque"
+        chunks = [
+            _chunk(
+                _fc_part(
+                    id="call_1",
+                    name="python_action",
+                    args={"title": "t", "code": "x"},
+                    thought_signature=None,
+                )
+            ),
+            _chunk(
+                _fc_part(
+                    id="call_1",
+                    name="python_action",
+                    args={"title": "t", "code": "x"},
+                    thought_signature=sig,
+                )
+            ),
+        ]
+        out = list(translate_gemini_stream_to_events(iter(chunks)))
+        starts = [e for e in out if isinstance(e, ToolCallStart)]
+        ends = [e for e in out if isinstance(e, ToolCallEnd)]
+        assert len(starts) == 1
+        assert starts[0].signature == sig
+        assert len(ends) == 1
+
     def test_missing_id_synthesized(self):
         chunks = [
             _chunk(
