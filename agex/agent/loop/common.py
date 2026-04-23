@@ -59,6 +59,7 @@ from .event_factories import (
     create_error_output,
     create_fail_event,
     create_guidance_output,
+    create_no_progress_guidance,
     create_success_event,
     create_task_start_event,
     create_transient_event,
@@ -94,6 +95,7 @@ __all__ = [
     "create_fail_event",
     "create_error_output",
     "create_guidance_output",
+    "create_no_progress_guidance",
     "create_transient_event",
     "create_unsaved_warning",
     # Terminal execution

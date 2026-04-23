@@ -21,6 +21,7 @@ from kvgit import Staged
 
 from agex.agent.chapter import CHAPTER_TASK
 from agex.agent.emissions import (
+    ACTION_EMISSION_TYPES,
     FileEditEmission,
     FileWriteEmission,
     PythonEmission,
@@ -58,6 +59,7 @@ from .common import (
     create_error_output,
     create_fail_event,
     create_guidance_output,
+    create_no_progress_guidance,
     create_success_event,
     create_task_start_event,
     events,
@@ -522,6 +524,17 @@ class AsyncLoopMixin:
                     if inspect.isawaitable(res):
                         await res
                 yield guidance_output
+                events_yielded += 1
+            elif not any(
+                isinstance(em, ACTION_EMISSION_TYPES) for em in action_event.emissions
+            ):
+                no_progress = create_no_progress_guidance(self.name)
+                add_event_to_log(exec_state, no_progress, on_event=None)
+                if on_event:
+                    res = call_sync_or_async(on_event, no_progress)
+                    if inspect.isawaitable(res):
+                        await res
+                yield no_progress
                 events_yielded += 1
 
         msg = f"Task '{task_name}' exceeded maximum iterations ({self.max_iterations})"

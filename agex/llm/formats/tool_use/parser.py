@@ -228,8 +228,10 @@ class _ParserState:
         if isinstance(event, TextPart):
             # Plain assistant text (not thinking, not a tool call).
             # Give it its own emission_index and deliver as a prebuilt
-            # :class:`TextEmission`.
-            if not event.text:
+            # :class:`TextEmission`.  Whitespace-only text is noise
+            # (providers occasionally emit a lone newline between
+            # parts) — drop it so it doesn't clutter the event log.
+            if not event.text or not event.text.strip():
                 return
             idx = self._next_index
             self._next_index += 1

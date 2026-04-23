@@ -293,7 +293,9 @@ def _format_event_lines(
                 if em.text and not em.redacted:
                     thinking_pieces.append(em.text)
             elif isinstance(em, TextEmission):
-                if em.text:
+                # Whitespace-only text is invisible in the console and
+                # shouldn't trigger a bare ``Report:`` label.
+                if em.text and em.text.strip():
                     text_pieces.append(em.text)
             elif isinstance(em, FileWriteEmission):
                 tag = "append" if em.mode == "append" else "write"
