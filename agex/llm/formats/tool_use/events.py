@@ -22,10 +22,17 @@ from typing import Union
 
 @dataclass(frozen=True, slots=True)
 class ToolCallStart:
-    """A tool call is beginning. Carries the tool name."""
+    """A tool call is beginning. Carries the tool name.
+
+    ``signature`` carries any opaque per-call state the provider wants
+    us to round-trip on subsequent turns (Gemini's ``thought_signature``
+    is the load-bearing case today).  ``None`` when the provider
+    doesn't sign function calls.
+    """
 
     call_id: str
     tool_name: str
+    signature: bytes | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,6 +2,7 @@
 
 import json
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -64,6 +65,53 @@ class TestTranslateMessagesToGemini:
             "name": "python_action",
             "args": {"title": "t"},
         }
+
+    def test_tool_use_signature_becomes_thought_signature(self):
+        """When a rendered tool_use block carries a ``signature`` (the
+        bytes captured from a previous Gemini turn), the translator
+        must put it onto the function_call as ``thought_signature`` —
+        Gemini 3 400s on function_calls missing their signature on
+        subsequent turns."""
+        sig = b"\x01\x02opaque-signature"
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "write_file",
+                        "input": {"path": "x", "content": "y"},
+                        "signature": sig,
+                    }
+                ],
+            }
+        ]
+        out = translate_messages_to_gemini(msgs)
+        fc = out[0]["parts"][0]["function_call"]
+        assert fc["thought_signature"] == sig
+        # Round-trip sanity: id/name/args still present.
+        assert fc["id"] == "toolu_1"
+        assert fc["name"] == "write_file"
+        assert fc["args"] == {"path": "x", "content": "y"}
+
+    def test_tool_use_without_signature_omits_field(self):
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "python_action",
+                        "input": {},
+                    }
+                ],
+            }
+        ]
+        out = translate_messages_to_gemini(msgs)
+        fc = out[0]["parts"][0]["function_call"]
+        assert "thought_signature" not in fc
 
     def test_tool_result_gets_name_from_preceding_tool_use(self):
         """The tool_result block only carries tool_use_id; translator
@@ -218,18 +266,41 @@ class TestTranslateMessagesToGemini:
         assert frs[1]["name"] == "python_action"
 
 
+def _chunk(*parts: Any, usage_metadata: Any = None) -> SimpleNamespace:
+    """Build a mock Gemini stream chunk whose candidate content holds
+    the given parts.  Each ``part`` is already a ``SimpleNamespace``
+    mimicking ``Part(function_call=..., thought_signature=...)``.
+    """
+    return SimpleNamespace(
+        candidates=[
+            SimpleNamespace(content=SimpleNamespace(parts=list(parts))),
+        ],
+        usage_metadata=usage_metadata,
+    )
+
+
+def _fc_part(
+    *,
+    id: str | None = None,
+    name: str = "python_action",
+    args: dict | None = None,
+    thought_signature: bytes | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        function_call=SimpleNamespace(id=id, name=name, args=args or {}),
+        thought_signature=thought_signature,
+    )
+
+
 class TestTranslateGeminiStream:
     def test_single_function_call_emits_triple(self):
         chunks = [
-            SimpleNamespace(
-                function_calls=[
-                    SimpleNamespace(
-                        id="call_1",
-                        name="python_action",
-                        args={"title": "t", "thinking": "T", "code": "x"},
-                    )
-                ],
-                usage_metadata=None,
+            _chunk(
+                _fc_part(
+                    id="call_1",
+                    name="python_action",
+                    args={"title": "t", "thinking": "T", "code": "x"},
+                )
             )
         ]
         out = list(translate_gemini_stream_to_events(iter(chunks)))
@@ -237,6 +308,7 @@ class TestTranslateGeminiStream:
         assert isinstance(out[0], ToolCallStart)
         assert out[0].call_id == "call_1"
         assert out[0].tool_name == "python_action"
+        assert out[0].signature is None
         assert isinstance(out[1], ToolCallArgDelta)
         assert json.loads(out[1].argument_chunk) == {
             "title": "t",
@@ -246,18 +318,31 @@ class TestTranslateGeminiStream:
         assert isinstance(out[2], ToolCallEnd)
         assert out[2].call_id == "call_1"
 
+    def test_thought_signature_forwarded_on_start(self):
+        """Gemini 3 attaches ``thought_signature`` bytes to the Part
+        wrapping a function_call; the adapter must forward it onto
+        :class:`ToolCallStart` so the emission can replay it."""
+        sig = b"\x01\x02\x03opaque-signature"
+        chunks = [
+            _chunk(
+                _fc_part(
+                    id="call_1",
+                    name="write_file",
+                    args={"path": "x", "content": "y"},
+                    thought_signature=sig,
+                )
+            )
+        ]
+        out = list(translate_gemini_stream_to_events(iter(chunks)))
+        starts = [e for e in out if isinstance(e, ToolCallStart)]
+        assert len(starts) == 1
+        assert starts[0].signature == sig
+
     def test_multiple_function_calls_in_one_chunk(self):
         chunks = [
-            SimpleNamespace(
-                function_calls=[
-                    SimpleNamespace(id="call_a", name="write_file", args={"path": "x"}),
-                    SimpleNamespace(
-                        id="call_b",
-                        name="python_action",
-                        args={"title": "t"},
-                    ),
-                ],
-                usage_metadata=None,
+            _chunk(
+                _fc_part(id="call_a", name="write_file", args={"path": "x"}),
+                _fc_part(id="call_b", name="python_action", args={"title": "t"}),
             )
         ]
         out = list(translate_gemini_stream_to_events(iter(chunks)))
@@ -269,10 +354,9 @@ class TestTranslateGeminiStream:
     def test_duplicate_call_id_across_chunks_deduplicated(self):
         """Gemini may re-emit an already-seen function_call; translator
         should only emit Start/Delta/End for it once."""
-        fc = SimpleNamespace(id="call_1", name="python_action", args={})
         chunks = [
-            SimpleNamespace(function_calls=[fc], usage_metadata=None),
-            SimpleNamespace(function_calls=[fc], usage_metadata=None),
+            _chunk(_fc_part(id="call_1", name="python_action")),
+            _chunk(_fc_part(id="call_1", name="python_action")),
         ]
         out = list(translate_gemini_stream_to_events(iter(chunks)))
         assert len([e for e in out if isinstance(e, ToolCallStart)]) == 1
@@ -280,12 +364,9 @@ class TestTranslateGeminiStream:
 
     def test_missing_id_synthesized(self):
         chunks = [
-            SimpleNamespace(
-                function_calls=[
-                    SimpleNamespace(id=None, name="python_action", args={}),
-                    SimpleNamespace(id=None, name="write_file", args={}),
-                ],
-                usage_metadata=None,
+            _chunk(
+                _fc_part(id=None, name="python_action"),
+                _fc_part(id=None, name="write_file"),
             )
         ]
         out = list(translate_gemini_stream_to_events(iter(chunks)))
@@ -295,9 +376,7 @@ class TestTranslateGeminiStream:
 
     def test_usage_captured(self):
         um = SimpleNamespace(prompt_token_count=42, candidates_token_count=7)
-        chunks = [
-            SimpleNamespace(function_calls=[], usage_metadata=um),
-        ]
+        chunks = [_chunk(usage_metadata=um)]
         usage: dict = {}
         list(translate_gemini_stream_to_events(iter(chunks), usage_holder=usage))
         assert usage["input_tokens"] == 42
@@ -305,22 +384,87 @@ class TestTranslateGeminiStream:
 
     def test_chunks_without_function_calls_produce_nothing(self):
         chunks = [
-            SimpleNamespace(function_calls=None, usage_metadata=None),
-            SimpleNamespace(function_calls=[], usage_metadata=None),
+            _chunk(),
+            SimpleNamespace(candidates=[], usage_metadata=None),
         ]
         out = list(translate_gemini_stream_to_events(iter(chunks)))
         assert out == []
 
 
+class TestSignatureFullRoundTrip:
+    """The load-bearing scenario: stream carries a signature in, the
+    emission stores it, and the renderer puts it back out on the
+    function_call for the next turn's request.  If any link in that
+    chain drops the bytes Gemini 3 will 400 us."""
+
+    def test_signature_survives_stream_to_tool_use_block(self):
+        from agex.agent.emissions import PythonEmission
+        from agex.agent.events import ActionEvent
+        from agex.llm.core import EmissionsBuilder
+        from agex.llm.formats.tool_use.parser import parse_tool_events
+        from agex.llm.formats.tool_use.renderer import render_events_as_tool_use
+
+        sig_py = b"PY_SIG"
+        sig_file = b"FILE_SIG"
+
+        # Simulate two Gemini 3 function_calls, each with its own
+        # signature on the wrapping Part.
+        chunks = [
+            _chunk(
+                _fc_part(
+                    id="call_file",
+                    name="write_file",
+                    args={"path": "/h.py", "content": "X=1"},
+                    thought_signature=sig_file,
+                ),
+                _fc_part(
+                    id="call_py",
+                    name="python_action",
+                    args={"title": "t", "thinking": "T", "code": "x"},
+                    thought_signature=sig_py,
+                ),
+            )
+        ]
+
+        # Stream → parser → builder, mimicking the client path.
+        tool_events = translate_gemini_stream_to_events(iter(chunks))
+        tokens = list(parse_tool_events(tool_events))
+        builder = EmissionsBuilder()
+        for t in tokens:
+            builder.process_token(t)
+        response = builder.build()
+
+        # Signatures landed on the right emissions.
+        em_by_type = {type(em).__name__: em for em in response.emissions}
+        assert em_by_type["FileWriteEmission"].signature == sig_file
+        # Action-tool thinking may produce a leading ThinkingEmission; the
+        # signature goes on the PythonEmission alongside the code.
+        py = em_by_type["PythonEmission"]
+        assert isinstance(py, PythonEmission)
+        assert py.signature == sig_py
+
+        # Now render that back as if we were building the next turn and
+        # verify the signature rides on the tool_use blocks.
+        event = ActionEvent(agent_name="a", emissions=list(response.emissions))
+        rendered = render_events_as_tool_use([event])
+        assistant = rendered[0]
+        tool_uses = [b for b in assistant["content"] if b.get("type") == "tool_use"]
+        assert len(tool_uses) == 2
+        assert tool_uses[0]["signature"] == sig_file
+        assert tool_uses[1]["signature"] == sig_py
+
+        # Gemini translator then turns that into function_call with
+        # thought_signature — the final step that silences the 400.
+        gemini_contents = translate_messages_to_gemini(rendered)
+        model_turn = next(c for c in gemini_contents if c["role"] == "model")
+        fcs = [p["function_call"] for p in model_turn["parts"]]
+        assert [fc["thought_signature"] for fc in fcs] == [sig_file, sig_py]
+
+
 @pytest.mark.asyncio
 async def test_async_stream_translator():
     async def gen():
-        yield SimpleNamespace(
-            function_calls=[
-                SimpleNamespace(id="c1", name="python_action", args={"title": "t"})
-            ],
-            usage_metadata=None,
-        )
+        yield _chunk(_fc_part(id="c1", name="python_action", args={"title": "t"}))
 
     out = []
     async for e in atranslate_gemini_stream_to_events(gen()):

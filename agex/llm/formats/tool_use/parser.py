@@ -62,14 +62,28 @@ class _CallState:
 
     ``emission_index`` is assigned at :class:`ToolCallStart` time from a
     monotonic counter owned by the parser; all tokens emitted for this
-    call carry that same index.
+    call carry that same index.  ``signature`` is forwarded verbatim
+    onto the built emission via the :class:`EmissionsBuilder`.
     """
 
-    __slots__ = ("tool_name", "emission_index", "_extractor", "_key_map", "_raw_buf")
+    __slots__ = (
+        "tool_name",
+        "emission_index",
+        "signature",
+        "_extractor",
+        "_key_map",
+        "_raw_buf",
+    )
 
-    def __init__(self, tool_name: str, emission_index: int) -> None:
+    def __init__(
+        self,
+        tool_name: str,
+        emission_index: int,
+        signature: bytes | None = None,
+    ) -> None:
         self.tool_name = tool_name
         self.emission_index = emission_index
+        self.signature = signature
         self._extractor: JsonStringExtractor | None = None
         self._key_map: dict[str, str] | None = None
         self._raw_buf: list[str] | None = None
@@ -115,6 +129,8 @@ class _CallState:
         elif self.tool_name == TOOL_EDIT_FILE:
             emission = _build_edit_file(args)
         if emission is not None:
+            if self.signature is not None:
+                emission.signature = self.signature
             yield TokenChunk(
                 type="emission",
                 content="",
@@ -171,7 +187,22 @@ class _ParserState:
         if isinstance(event, ToolCallStart):
             idx = self._next_index
             self._next_index += 1
-            self._calls[event.call_id] = _CallState(event.tool_name, idx)
+            self._calls[event.call_id] = _CallState(
+                event.tool_name, idx, event.signature
+            )
+            # Hoist the signature onto its own token so the builder can
+            # slot it independently of the arg-delta stream.  File
+            # tools get the signature applied inline at finalize() time,
+            # but action tools need it stashed in the builder's slot
+            # before their chunks stream in.
+            if event.signature is not None and event.tool_name in ACTION_TOOLS:
+                yield TokenChunk(
+                    type="signature",
+                    content="",
+                    done=True,
+                    emission_index=idx,
+                    signature=event.signature,
+                )
         elif isinstance(event, ToolCallArgDelta):
             state = self._calls.get(event.call_id)
             if state is not None:

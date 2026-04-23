@@ -24,12 +24,25 @@ from tests.agex._emissions import (
 )
 
 
-def _fc(id_, name, args):
-    return SimpleNamespace(id=id_, name=name, args=args)
+def _fc(id_, name, args, *, signature=None):
+    """Build a mock Gemini Part wrapping a function_call.
+
+    Gemini 3 attaches ``thought_signature`` bytes to the Part; the
+    adapter walks ``candidates[*].content.parts`` to pick them up.
+    """
+    return SimpleNamespace(
+        function_call=SimpleNamespace(id=id_, name=name, args=args),
+        thought_signature=signature,
+    )
 
 
 def _chunk(function_calls=None, usage=None):
-    return SimpleNamespace(function_calls=function_calls or [], usage_metadata=usage)
+    """Mock a streamed chunk: wrap parts in a single candidate's content."""
+    parts = function_calls or []
+    return SimpleNamespace(
+        candidates=[SimpleNamespace(content=SimpleNamespace(parts=list(parts)))],
+        usage_metadata=usage,
+    )
 
 
 def _usage(prompt, completion):
