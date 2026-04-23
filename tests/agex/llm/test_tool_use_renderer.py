@@ -293,6 +293,125 @@ class TestObservationPairing:
         assert content.startswith("terminal_action: output")
         assert "file1" in content
 
+    def test_multiple_output_events_aggregate_into_one_tool_result(self):
+        """A Python turn emits one OutputEvent per print() call (see
+        agex/eval/bridge/result.py), so a turn with N prints produces
+        N OutputEvents between the ActionEvent and the next boundary.
+        Previously only the first paired with the tool_result and the
+        rest silently dropped — the LLM saw only the first print."""
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="print(a); print(b); print(c); task_continue()",
+            ),
+            OutputEvent(agent_name="a", parts=["[read .hud] hp 50/50"]),
+            OutputEvent(agent_name="a", parts=["[eval] restart btn ok"]),
+            OutputEvent(agent_name="a", parts=["[eval] 2"]),
+        ]
+        msgs = render_events_as_tool_use(events)
+        tool_results = _only(msgs[-1]["content"], "tool_result")
+        assert len(tool_results) == 1  # single aggregated result
+        content = tool_results[0]["content"]
+        # All three print outputs must appear.
+        assert "hp 50/50" in content
+        assert "restart btn ok" in content
+        assert "[eval] 2" in content
+        # Single tool-name prefix, not three.
+        assert content.count("python_action: output") == 1
+
+    def test_prints_plus_task_success_both_land_in_tool_result(self):
+        """Turn with print() + task_success() must preserve both — prior
+        renderer dropped the SuccessEvent when any OutputEvent had already
+        paired and cleared pending_main."""
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="print('done!'); task_success(42)",
+            ),
+            OutputEvent(agent_name="a", parts=["done!"]),
+            SuccessEvent(agent_name="a", result=42),
+        ]
+        msgs = render_events_as_tool_use(events)
+        tool_results = _only(msgs[-1]["content"], "tool_result")
+        assert len(tool_results) == 1
+        content = tool_results[0]["content"]
+        assert "done!" in content
+        assert "task_success returned" in content
+        assert "42" in content
+
+    def test_multiple_view_images_all_appear_in_tool_result(self):
+        """view_image() emits an ImageAction as its own OutputEvent. A
+        turn with multiple view_image() calls previously only rendered
+        the first image."""
+        from PIL import Image
+
+        from agex.eval.objects import ImageAction
+
+        img1 = Image.new("RGB", (4, 4), color="red")
+        img2 = Image.new("RGB", (4, 4), color="green")
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="view_image(a); view_image(b); task_continue()",
+            ),
+            OutputEvent(agent_name="a", parts=[ImageAction(image=img1)]),
+            OutputEvent(agent_name="a", parts=[ImageAction(image=img2)]),
+        ]
+        msgs = render_events_as_tool_use(events)
+        tool_results = _only(msgs[-1]["content"], "tool_result")
+        assert len(tool_results) == 1
+        content = tool_results[0]["content"]
+        assert isinstance(content, list)
+        image_blocks = [b for b in content if b.get("type") == "image"]
+        assert len(image_blocks) == 2
+
+    def test_tool_result_precedes_text_parts_in_user_message(self):
+        """Anthropic requires tool_result blocks before free-form text
+        inside a user message. Aggregation shouldn't disturb that."""
+        events = [
+            TaskStartEvent(agent_name="a", task_name="t1", inputs={}, message="task 1"),
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="print('x'); task_continue()",
+            ),
+            OutputEvent(agent_name="a", parts=["x"]),
+            TaskStartEvent(
+                agent_name="a", task_name="t2", inputs={}, message="next task"
+            ),
+            ActionEvent(
+                agent_name="a",
+                title="t2",
+                thinking="T2",
+                code="task_success(1)",
+            ),
+            SuccessEvent(agent_name="a", result=1),
+        ]
+        msgs = render_events_as_tool_use(events)
+        # Find the user message that holds task 1's tool_result AND the
+        # next task's start banner.  Order across msgs:
+        #   [0] user (task 1 start)
+        #   [1] assistant (task 1 tool_use)
+        #   [2] user (task 1 tool_result + [2] task 2 start)  ← this one
+        #   [3] assistant (task 2 tool_use)
+        #   [4] user (task 2 tool_result)
+        bridged_user = msgs[2]
+        assert bridged_user["role"] == "user"
+        types = [b.get("type") for b in bridged_user["content"]]
+        # tool_result first, then text (task-2 start).
+        assert types[0] == "tool_result"
+        assert "text" in types
+        tool_result_idx = types.index("tool_result")
+        text_idx = types.index("text")
+        assert tool_result_idx < text_idx
+
     def test_print_large_non_string_arg_not_truncated(self):
         """Regression: ``print(big_list)`` previously rendered through
         ``render_value`` (default 2048-char budget) which silently
