@@ -6,6 +6,11 @@ from agex.agent.events import TaskStartEvent
 from agex.llm.anthropic_client import Anthropic
 from agex.llm.core import TokenChunk
 from agex.llm.formats import XmlWireFormat
+from tests.agex._emissions import (
+    response_code,
+    response_thinking,
+    response_title,
+)
 
 
 def test_anthropic_client_initialization():
@@ -62,9 +67,9 @@ def test_anthropic_client_complete_wraps_stream():
         client = Anthropic(api_key="test")
         response = client.complete("system", [])
 
-        assert response.title == "My Title"
-        assert response.thinking == "Thinking..."
-        assert response.code == "pass"
+        assert response_title(response) == "My Title"
+        assert response_thinking(response) == "Thinking..."
+        assert response_code(response) == "pass"
 
 
 @pytest.mark.asyncio
@@ -130,5 +135,5 @@ async def test_anthropic_acomplete_wraps_stream():
         client = Anthropic(api_key="test")
         response = await client.acomplete("system", [])
 
-        assert response.thinking == "Thinking..."
-        assert response.code == "pass"
+        assert response_thinking(response) == "Thinking..."
+        assert response_code(response) == "pass"

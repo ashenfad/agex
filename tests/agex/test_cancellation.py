@@ -6,9 +6,13 @@ import pytest
 from kvgit import Staged
 
 from agex import Agent, TaskCancelled, connect_state, events
+from agex.agent.events import ActionEvent
 from agex.llm import Dummy
-from agex.llm.core import LLMResponse
 from agex.state import raw_get, raw_set
+from tests.agex._emissions import (
+    event_code,
+    make_response,
+)
 
 
 def _set_cancel_sentinel(state: Staged, task_name: str) -> None:
@@ -30,7 +34,7 @@ class TestTaskCancellation:
         """cancel() writes the sentinel to state."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Working", code='task_success("done")'),
+                make_response(thinking="Working", code='task_success("done")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -54,8 +58,8 @@ class TestTaskCancellation:
         """cancel() respects session parameter."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Working", code='task_success("done")'),
-                LLMResponse(thinking="Working", code='task_success("done")'),
+                make_response(thinking="Working", code='task_success("done")'),
+                make_response(thinking="Working", code='task_success("done")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -85,9 +89,9 @@ class TestTaskCancellation:
         llm = Dummy(
             responses=[
                 # First iteration - task_continue to allow another iteration
-                LLMResponse(thinking="First", code='task_continue("working")'),
+                make_response(thinking="First", code='print("working")'),
                 # Second iteration - won't complete due to cancel
-                LLMResponse(thinking="Second", code='task_success("done")'),
+                make_response(thinking="Second", code='task_success("done")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -118,8 +122,8 @@ class TestTaskCancellation:
         """When task is cancelled, sentinel is removed from state."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="First", code='task_continue("working")'),
-                LLMResponse(thinking="Second", code='task_success("ok")'),
+                make_response(thinking="First", code='print("working")'),
+                make_response(thinking="Second", code='task_success("ok")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -148,9 +152,9 @@ class TestTaskCancellation:
         # Task that runs multiple iterations before cancel
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Iteration 0", code='task_continue("working")'),
-                LLMResponse(thinking="Iteration 1", code='task_continue("working")'),
-                LLMResponse(thinking="Won't run", code='task_success("done")'),
+                make_response(thinking="Iteration 0", code='print("working")'),
+                make_response(thinking="Iteration 1", code='print("working")'),
+                make_response(thinking="Won't run", code='task_success("done")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -182,10 +186,10 @@ class TestTaskCancellation:
         llm = Dummy(
             responses=[
                 # task_a iter 0 - task_continue then cancel set
-                LLMResponse(thinking="A0", code='task_continue("a0")'),
+                make_response(thinking="A0", code='print("a0")'),
                 # task_a iter 1 - not reached, cancel detected
                 # task_b uses this next
-                LLMResponse(thinking="B", code='task_success("b")'),
+                make_response(thinking="B", code='task_success("b")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -218,7 +222,7 @@ class TestTaskCancellation:
         """cancel() works with disk-backed versioned state."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Working", code='task_success("done")'),
+                make_response(thinking="Working", code='task_success("done")'),
             ]
         )
         agent = Agent(
@@ -248,11 +252,11 @@ class TestTaskCancellation:
         llm = Dummy(
             responses=[
                 # Run 1: First iteration (task_continue), cancel set during this
-                LLMResponse(thinking="Run 1 iter 0", code='task_continue("working")'),
+                make_response(thinking="Run 1 iter 0", code='print("working")'),
                 # Run 1: Won't complete due to cancel
-                LLMResponse(thinking="Run 1 iter 1", code='task_success("done")'),
+                make_response(thinking="Run 1 iter 1", code='task_success("done")'),
                 # Run 2: Should see history of Run 1 cancellation
-                LLMResponse(thinking="Run 2", code='task_success("done")'),
+                make_response(thinking="Run 2", code='task_success("done")'),
             ],
             renderer="xml",  # Enable XML rendering for verification of tags
         )
@@ -298,8 +302,8 @@ class TestTaskCancellationAsync:
         """Async task raises TaskCancelled when cancel is set during execution."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="First", code='task_continue("working")'),
-                LLMResponse(thinking="Second", code='task_success("done")'),
+                make_response(thinking="First", code='print("working")'),
+                make_response(thinking="Second", code='task_success("done")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -329,8 +333,8 @@ class TestCancelledEvent:
 
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="First", code='task_continue("working")'),
-                LLMResponse(thinking="Second", code='task_success("done")'),
+                make_response(thinking="First", code='print("working")'),
+                make_response(thinking="Second", code='task_success("done")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -365,8 +369,8 @@ class TestCancelledEvent:
 
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Working", code='task_continue("working")'),
-                LLMResponse(thinking="Second", code='task_success("done")'),
+                make_response(thinking="Working", code='print("working")'),
+                make_response(thinking="Second", code='task_success("done")'),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -408,10 +412,12 @@ class TestConcurrentCancellation:
     def test_cancel_during_multi_iteration_task(self, tmp_path):
         """Cancel a task mid-execution - verify sentinel is detected between iterations."""
 
-        # Create responses - task_continue indefinitely until cancelled
+        # Stream of print-and-continue responses — the implicit continue
+        # (Python returning without a terminator) takes the role the old
+        # task_continue() calls played.
         llm = Dummy(
             responses=[
-                LLMResponse(thinking=f"Iter {i}", code=f'task_continue("{i}")')
+                make_response(thinking=f"Iter {i}", code=f'print("{i}")')
                 for i in range(20)  # Enough responses for 10 max iterations
             ]
         )
@@ -433,7 +439,7 @@ class TestConcurrentCancellation:
 
         def on_event(event):
             # Signal on first iteration
-            if hasattr(event, "code") and "task_continue" in str(event.code):
+            if isinstance(event, ActionEvent) and "print" in (event_code(event) or ""):
                 if not first_iteration_seen.is_set():
                     first_iteration_seen.set()
                 # Wait for cancel to be set before proceeding to next iteration
@@ -475,8 +481,8 @@ class TestConcurrentCancellation:
         """Stale cancel signal from previous run is cleared when new task starts."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="First run", code='task_success("first")'),
-                LLMResponse(
+                make_response(thinking="First run", code='task_success("first")'),
+                make_response(
                     thinking="Second run should complete", code='task_success("second")'
                 ),
             ]
@@ -506,8 +512,8 @@ class TestConcurrentCancellation:
         """Verify that cancel sentinel is persisted to disk storage."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Init", code='task_success("done")'),
-                LLMResponse(thinking="Second", code='task_success("second")'),
+                make_response(thinking="Init", code='task_success("done")'),
+                make_response(thinking="Second", code='task_success("second")'),
             ]
         )
         agent = Agent(
@@ -535,8 +541,8 @@ class TestConcurrentCancellation:
         """Stale cancel signal is cleared at async task start."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Init", code='task_success("first")'),
-                LLMResponse(
+                make_response(thinking="Init", code='task_success("first")'),
+                make_response(
                     thinking="Second run completes", code='task_success("second")'
                 ),
             ]
@@ -567,10 +573,12 @@ class TestConcurrentCancellation:
         """Cancel an async task mid-execution - verify sentinel is detected between iterations."""
         import asyncio
 
-        # Create responses - task_continue indefinitely until cancelled
+        # Stream of print-and-continue responses — the implicit continue
+        # (Python returning without a terminator) takes the role the old
+        # task_continue() calls played.
         llm = Dummy(
             responses=[
-                LLMResponse(thinking=f"Iter {i}", code=f'task_continue("{i}")')
+                make_response(thinking=f"Iter {i}", code=f'print("{i}")')
                 for i in range(20)  # Enough responses for 10 max iterations
             ]
         )
@@ -592,7 +600,7 @@ class TestConcurrentCancellation:
 
         async def on_event(event):
             # Signal on first iteration
-            if hasattr(event, "code") and "task_continue" in str(event.code):
+            if isinstance(event, ActionEvent) and "print" in (event_code(event) or ""):
                 if not first_iteration_seen.is_set():
                     first_iteration_seen.set()
                 # Wait for cancel to be set before proceeding to next iteration

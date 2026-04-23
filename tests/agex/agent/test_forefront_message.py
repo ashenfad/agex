@@ -7,6 +7,7 @@ import pytest
 from agex import Agent, clear_agent_registry
 from agex.agent.events import SystemNoteEvent
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -19,12 +20,11 @@ def clear_registry():
 def test_transient_message_injection():
     """Test that forefront message is injected into LLM context but not event log."""
     # 1. Setup Agent with Dummy Client
-    from agex.llm import LLMResponse
 
     client = Dummy()
     # Use real LLMResponse instead of MagicMock to avoid pydantic validation errors in ActionEvent
     client.complete = MagicMock(
-        return_value=LLMResponse(thinking="ok", code="task_success()", title="done")
+        return_value=make_response(thinking="ok", code="task_success()", title="done")
     )
 
     # 5 iterations. Threshold is max(0, 5-3) = 2.

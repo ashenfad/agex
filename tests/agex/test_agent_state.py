@@ -4,7 +4,7 @@ import pytest
 
 from agex import Agent, connect_state, events, view
 from agex.llm import Dummy
-from agex.llm.core import LLMResponse
+from tests.agex._emissions import make_response
 
 
 class TestAgentState:
@@ -12,7 +12,9 @@ class TestAgentState:
         """state() works with local host and memory storage."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Incrementing", code="task_success(inputs.x + 1)")
+                make_response(
+                    thinking="Incrementing", code="task_success(inputs.x + 1)"
+                )
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -33,8 +35,8 @@ class TestAgentState:
         """state() retrieves the correct session."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Storing", code="task_success()"),
-                LLMResponse(thinking="Storing", code="task_success()"),
+                make_response(thinking="Storing", code="task_success()"),
+                make_response(thinking="Storing", code="task_success()"),
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -59,7 +61,7 @@ class TestAgentState:
         """state() defaults to 'default' session."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Processing", code="task_success(inputs.x)")
+                make_response(thinking="Processing", code="task_success(inputs.x)")
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -96,7 +98,7 @@ class TestAgentState:
         """state() works with view() utility."""
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Calculating", code="task_success(inputs.x * 2)")
+                make_response(thinking="Calculating", code="task_success(inputs.x * 2)")
             ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
@@ -116,7 +118,7 @@ class TestAgentState:
         """state() works with events() utility."""
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Processing", code="task_success(inputs.data.upper())"
                 )
             ]
@@ -138,7 +140,9 @@ class TestAgentState:
         """state() works with live state type."""
         from agex.state.live import Live
 
-        llm = Dummy(responses=[LLMResponse(thinking="Working", code="task_success()")])
+        llm = Dummy(
+            responses=[make_response(thinking="Working", code="task_success()")]
+        )
         agent = Agent(state=connect_state(type="live", storage="memory"), llm=llm)
 
         @agent.task
@@ -158,7 +162,7 @@ class TestAgentState:
         from agex.state.live import Live
 
         llm = Dummy(
-            responses=[LLMResponse(thinking="Working", code='task_success("result")')]
+            responses=[make_response(thinking="Working", code='task_success("result")')]
         )
         agent = Agent(llm=llm)  # No state config
 
@@ -206,37 +210,37 @@ def test_hierarchical_session_inheritance():
     # Specialist: Verify its state is isolated by session even when called via orchestrator
     # Turn 1: Run in session_a
     orchestrator.llm.responses = [
-        LLMResponse(thinking="call spec", code="specialist_task()\ntask_success()")
+        make_response(thinking="call spec", code="specialist_task()\ntask_success()")
     ]
     specialist.llm.responses = [
-        LLMResponse(thinking="set spec", code="Y='Session A'\ntask_success()")
+        make_response(thinking="set spec", code="Y='Session A'\ntask_success()")
     ]
     main_task(session="session_a")
 
     # Turn 2: Run in session_b
     orchestrator.llm.responses = [
-        LLMResponse(thinking="call spec", code="specialist_task()\ntask_success()")
+        make_response(thinking="call spec", code="specialist_task()\ntask_success()")
     ]
     specialist.llm.responses = [
-        LLMResponse(thinking="set spec", code="Y='Session B'\ntask_success()")
+        make_response(thinking="set spec", code="Y='Session B'\ntask_success()")
     ]
     main_task(session="session_b")
 
     # Turn 3: Verify specialist session_a state
     orchestrator.llm.responses = [
-        LLMResponse(thinking="call spec", code="task_success(specialist_task())")
+        make_response(thinking="call spec", code="task_success(specialist_task())")
     ]
     specialist.llm.responses = [
-        LLMResponse(thinking="get spec", code="task_success(Y)")
+        make_response(thinking="get spec", code="task_success(Y)")
     ]
     assert main_task(session="session_a") == "Session A"
 
     # Turn 4: Verify specialist session_b state
     orchestrator.llm.responses = [
-        LLMResponse(thinking="call spec", code="task_success(specialist_task())")
+        make_response(thinking="call spec", code="task_success(specialist_task())")
     ]
     specialist.llm.responses = [
-        LLMResponse(thinking="get spec", code="task_success(Y)")
+        make_response(thinking="get spec", code="task_success(Y)")
     ]
     assert main_task(session="session_b") == "Session B"
 
@@ -265,13 +269,13 @@ def test_session_vfs_isolation():
 
     # Session A: verify VAL is 42
     agent.llm.responses = [
-        LLMResponse(thinking="import", code="import config\ntask_success(config.VAL)")
+        make_response(thinking="import", code="import config\ntask_success(config.VAL)")
     ]
     assert get_config_val(session="session_a") == 42
 
     # Session B: verify VAL is 99
     agent.llm.responses = [
-        LLMResponse(thinking="import", code="import config\ntask_success(config.VAL)")
+        make_response(thinking="import", code="import config\ntask_success(config.VAL)")
     ]
     assert get_config_val(session="session_b") == 99
 
@@ -302,7 +306,7 @@ def test_vfs_module_rehydration_with_session():
     # Setup and import from a session
     agent.fs(session="session_a").write("mylib.py", b"X = 'Alpha'")
     agent.llm.responses = [
-        LLMResponse(thinking="get", code="import mylib\ntask_success(mylib.X)")
+        make_response(thinking="get", code="import mylib\ntask_success(mylib.X)")
     ]
     val = get_val(session="session_a")
 

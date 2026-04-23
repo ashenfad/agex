@@ -13,10 +13,13 @@ from agex.agent.events import (
     SuccessEvent,
     TaskStartEvent,
 )
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
 from agex.state import _agex_decoder, _agex_encoder, connect_state, events
 from agex.state.kv import Memory
+from tests.agex._emissions import (
+    event_code,
+    make_response,
+)
 
 
 def _make_state():
@@ -36,7 +39,7 @@ class TestEventsSimple:
 
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll complete this task.",
                     code='task_success("completed")',
                 )
@@ -65,7 +68,7 @@ class TestEventsSimple:
 
         assert isinstance(event_list[1], ActionEvent)
         assert event_list[1].agent_name == "simple_agent"
-        assert 'task_success("completed")' in event_list[1].code
+        assert 'task_success("completed")' in event_code(event_list[1])
 
         assert isinstance(event_list[2], SuccessEvent)
         assert event_list[2].agent_name == "simple_agent"
@@ -77,11 +80,11 @@ class TestEventsSimple:
         """Test if print statements work when separated with task_continue."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll print something.",
                     code='print("Hello")\ntask_continue("Printed")',
                 ),
-                LLMResponse(thinking="Now I'll finish.", code='task_success("done")'),
+                make_response(thinking="Now I'll finish.", code='task_success("done")'),
             ]
         )
         config = connect_state(type="versioned", storage="memory")
@@ -108,7 +111,7 @@ class TestEventsSimple:
     def test_investigate_stateful_builtins(self):
         """Test to investigate how stateful builtins are called during evaluation."""
         llm = Dummy(
-            [LLMResponse(thinking="I'll just print.", code='print("Debug print")')]
+            [make_response(thinking="I'll just print.", code='print("Debug print")')]
         )
         config = connect_state(type="versioned", storage="memory")
         agent = Agent(name="investigate_agent", llm=llm, state=config)
@@ -135,7 +138,7 @@ class TestEventsSimple:
         for i, event in enumerate(event_list):
             print(f"{i}: {type(event).__name__}")
             if isinstance(event, ActionEvent):
-                print(f"   Code: {repr(event.code)}")
+                print(f"   Code: {repr(event_code(event))}")
             elif isinstance(event, OutputEvent):
                 print(f"   Parts: {event.parts}")
 

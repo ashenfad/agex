@@ -11,7 +11,12 @@ from agex.agent.base import clear_agent_registry
 from agex.agent.datatypes import FileAction
 from agex.agent.events import ActionEvent, OutputEvent
 from agex.llm import Dummy
-from agex.llm.core import LLMResponse
+from tests.agex._emissions import (
+    event_code,
+    event_terminal,
+    event_thinking,
+    make_response,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -31,11 +36,11 @@ class TestTerminalBasicExecution:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Let me list the files.",
                     terminal="ls",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done exploring.",
                     code="task_success('explored')",
                 ),
@@ -62,11 +67,11 @@ class TestTerminalBasicExecution:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Let me read the file.",
                     terminal="cat /workspace/readme.txt",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Got the content.",
                     code="task_success('read')",
                 ),
@@ -99,11 +104,11 @@ class TestTerminalBasicExecution:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Let me search for the pattern.",
                     terminal="grep -r 'TODO' /workspace",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Found the results.",
                     code="task_success('searched')",
                 ),
@@ -137,11 +142,11 @@ class TestTerminalBasicExecution:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Let me find Python files.",
                     terminal="find /workspace -name '*.py'",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Found them.",
                     code="task_success('found')",
                 ),
@@ -180,11 +185,11 @@ class TestTerminalWithPipes:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Count matching lines.",
                     terminal="grep 'def ' /workspace/code.py | wc -l",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Got the count.",
                     code="task_success('counted')",
                 ),
@@ -219,11 +224,11 @@ class TestTerminalWithPipes:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Get unique sorted lines.",
                     terminal="cat /workspace/data.txt | sort | uniq",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Got unique lines.",
                     code="task_success('done')",
                 ),
@@ -261,14 +266,14 @@ class TestTerminalWithFileActions:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Write a file then list it.",
                     file_actions=[
                         FileAction(path="/workspace/new.txt", content="new content")
                     ],
                     terminal="ls /workspace",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('wrote and listed')",
                 ),
@@ -304,15 +309,15 @@ class TestTerminalMultiTurn:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="First, list files.",
                     terminal="ls /workspace",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Now read one.",
                     terminal="cat /workspace/file.txt",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Now finish.",
                     code="task_success('multi-turn complete')",
                 ),
@@ -337,12 +342,12 @@ class TestTerminalMultiTurn:
         assert len(action_events) == 3
 
         # First two should have terminal, last one should have code
-        assert action_events[0].terminal == "ls /workspace"
-        assert action_events[0].code is None
-        assert action_events[1].terminal == "cat /workspace/file.txt"
-        assert action_events[1].code is None
-        assert action_events[2].terminal is None
-        assert action_events[2].code == "task_success('multi-turn complete')"
+        assert event_terminal(action_events[0]) == "ls /workspace"
+        assert event_code(action_events[0]) is None
+        assert event_terminal(action_events[1]) == "cat /workspace/file.txt"
+        assert event_code(action_events[1]) is None
+        assert event_terminal(action_events[2]) is None
+        assert event_code(action_events[2]) == "task_success('multi-turn complete')"
 
     def test_terminal_then_python(self):
         """Test terminal exploration followed by Python action."""
@@ -350,11 +355,11 @@ class TestTerminalMultiTurn:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Explore the structure.",
                     terminal="find /workspace -type f",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Now process with Python.",
                     code="result = 'processed'\ntask_success(result)",
                 ),
@@ -384,11 +389,11 @@ class TestTerminalErrorHandling:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Try to read nonexistent file.",
                     terminal="cat /workspace/nonexistent.txt",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Handle the error.",
                     code="task_success('handled error')",
                 ),
@@ -416,15 +421,15 @@ class TestTerminalErrorHandling:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Try invalid syntax.",
                     terminal="ls | | grep",  # Invalid pipe syntax
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Fix and retry.",
                     terminal="ls",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('recovered')",
                 ),
@@ -460,11 +465,11 @@ class TestTerminalActionEvent:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Run a terminal command.",
                     terminal="echo 'hello'",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('done')",
                 ),
@@ -485,14 +490,14 @@ class TestTerminalActionEvent:
 
         # First action should have terminal
         first_action = action_events[0]
-        assert first_action.terminal == "echo 'hello'"
-        assert first_action.code is None
-        assert first_action.thinking == "Run a terminal command."
+        assert event_terminal(first_action) == "echo 'hello'"
+        assert event_code(first_action) is None
+        assert event_thinking(first_action) == "Run a terminal command."
 
         # Second action should have code
         second_action = action_events[1]
-        assert second_action.terminal is None
-        assert second_action.code == "task_success('done')"
+        assert event_terminal(second_action) is None
+        assert event_code(second_action) == "task_success('done')"
 
     def test_action_event_str_repr(self):
         """Test ActionEvent string representation with terminal."""
@@ -500,11 +505,11 @@ class TestTerminalActionEvent:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Multi-line terminal.",
                     terminal="ls -la\ngrep pattern\nwc -l",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('done')",
                 ),
@@ -523,9 +528,10 @@ class TestTerminalActionEvent:
         action_events = [e for e in events if isinstance(e, ActionEvent)]
         first_action = action_events[0]
 
-        # String repr should mention terminal lines
+        # String repr should mention that this turn included a Terminal
+        # emission.
         str_repr = str(first_action)
-        assert "Terminal: 3 lines" in str_repr
+        assert "Terminal" in str_repr
 
 
 class TestTerminalAsync:
@@ -538,11 +544,11 @@ class TestTerminalAsync:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Async terminal.",
                     terminal="ls /workspace",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done async.",
                     code="task_success('async done')",
                 ),
@@ -568,15 +574,15 @@ class TestTerminalAsync:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="First async terminal.",
                     terminal="echo 'step1'",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Second async terminal.",
                     terminal="echo 'step2'",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Finish.",
                     code="task_success('async multi done')",
                 ),
@@ -595,8 +601,8 @@ class TestTerminalAsync:
 
         action_events = [e for e in events if isinstance(e, ActionEvent)]
         assert len(action_events) == 3
-        assert action_events[0].terminal == "echo 'step1'"
-        assert action_events[1].terminal == "echo 'step2'"
+        assert event_terminal(action_events[0]) == "echo 'step1'"
+        assert event_terminal(action_events[1]) == "echo 'step2'"
 
 
 class TestTerminalJQ:
@@ -608,11 +614,11 @@ class TestTerminalJQ:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Parse JSON with jq.",
                     terminal="cat /workspace/data.json | jq '.name'",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Got the name.",
                     code="task_success('jq done')",
                 ),
@@ -647,19 +653,19 @@ class TestTerminalFilesystemOperations:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Create directory structure.",
                     terminal="mkdir /workspace/newdir",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Create a file.",
                     terminal="touch /workspace/newdir/file.txt",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Verify.",
                     terminal="ls /workspace/newdir",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('created')",
                 ),
@@ -686,19 +692,19 @@ class TestTerminalFilesystemOperations:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Copy file.",
                     terminal="cp /workspace/original.txt /workspace/copy.txt",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Move file.",
                     terminal="mv /workspace/copy.txt /workspace/moved.txt",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Remove original.",
                     terminal="rm /workspace/original.txt",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('modified')",
                 ),
@@ -777,11 +783,11 @@ class TestTerminalStreaming:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Terminal action.",
                     terminal="echo 'streamed'",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('stream test')",
                 ),
@@ -824,7 +830,7 @@ class TestTerminalFileEvents:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Create multiple files.",
                     terminal=(
                         "echo 'file1' > /workspace/file1.txt\n"
@@ -832,7 +838,7 @@ class TestTerminalFileEvents:
                         "echo 'file3' > /workspace/file3.txt"
                     ),
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('created')",
                 ),
@@ -872,14 +878,14 @@ class TestTerminalFileEvents:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Create a file then modify it.",
                     terminal=(
                         "echo 'original' > /workspace/myfile.txt\n"
                         "echo 'modified' >> /workspace/myfile.txt"
                     ),
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('modified')",
                 ),
@@ -918,11 +924,11 @@ class TestTerminalFileEvents:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Just read files, don't modify.",
                     terminal="ls /workspace",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('read only')",
                 ),
@@ -958,14 +964,14 @@ class TestTerminalFileEvents:
         state = connect_state(type="versioned", storage="memory")
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Create files async.",
                     terminal=(
                         "echo 'async1' > /workspace/async1.txt\n"
                         "echo 'async2' > /workspace/async2.txt"
                     ),
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('async created')",
                 ),

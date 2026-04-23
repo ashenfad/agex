@@ -8,7 +8,6 @@ shape (content arrays, tool results, etc.).
 
 from typing import Any, List
 
-from agex.agent.datatypes import EditAction, FileAction
 from agex.agent.events import (
     ActionEvent,
     CancelledEvent,
@@ -77,49 +76,81 @@ def render_events_as_xml(events: List[Event]) -> List[dict]:
             messages.append({"role": "user", "content": prefix + text})
 
         elif isinstance(event, ActionEvent):
-            title_section = (
-                f"<{TAG_TITLE}>{event.title}</{TAG_TITLE}>" if event.title else ""
+            # Phase 3 deletes this renderer; for now walk ``emissions``
+            # and reconstruct the XML-tag shape from them so the legacy
+            # format stays lit until the formal cutover.
+            from agex.agent.emissions import (
+                FileEditEmission,
+                FileWriteEmission,
+                PythonEmission,
+                TerminalEmission,
+                TextEmission,
+                ThinkingEmission,
             )
 
+            title = ""
+            thinking_parts: list[str] = []
+            text_parts: list[str] = []
+            code_parts: list[str] = []
+            terminal_parts: list[str] = []
             files_section = ""
-            if event.file_actions:
-                for action in event.file_actions:
-                    if isinstance(action, EditAction):
-                        match_all_attr = ' match_all="true"' if action.match_all else ""
-                        if action.operation == "insert-after":
-                            content_tag = TAG_INSERT_AFTER
-                        elif action.operation == "insert-before":
-                            content_tag = TAG_INSERT_BEFORE
-                        else:
-                            content_tag = TAG_REPLACE
-                        files_section += (
-                            f'<{TAG_EDIT} path="{action.path}"{match_all_attr}>\n'
-                            f"<{TAG_SEARCH}>{action.search}</{TAG_SEARCH}>\n"
-                            f"<{content_tag}>{action.content}</{content_tag}>\n"
-                            f"</{TAG_EDIT}>\n"
-                        )
-                    elif isinstance(action, FileAction):
-                        mode_attr = (
-                            f' mode="{action.mode}"' if action.mode != "write" else ""
-                        )
-                        files_section += (
-                            f'<{TAG_FILE} path="{action.path}"{mode_attr}>'
-                            f"{action.content}</{TAG_FILE}>\n"
-                        )
 
-            if event.terminal:
-                action_section = f"<{TAG_TERMINAL}>{event.terminal}</{TAG_TERMINAL}>"
+            for em in event.emissions:
+                if isinstance(em, (PythonEmission, TerminalEmission)):
+                    if em.title and not title:
+                        title = em.title
+                    if em.thinking:
+                        thinking_parts.append(em.thinking)
+                    if isinstance(em, PythonEmission) and em.code:
+                        code_parts.append(em.code)
+                    elif isinstance(em, TerminalEmission) and em.commands:
+                        terminal_parts.append(em.commands)
+                elif isinstance(em, ThinkingEmission):
+                    if em.text and not em.redacted:
+                        thinking_parts.append(em.text)
+                elif isinstance(em, TextEmission):
+                    if em.text:
+                        text_parts.append(em.text)
+                elif isinstance(em, FileEditEmission):
+                    match_all_attr = ' match_all="true"' if em.match_all else ""
+                    if em.operation == "insert-after":
+                        content_tag = TAG_INSERT_AFTER
+                    elif em.operation == "insert-before":
+                        content_tag = TAG_INSERT_BEFORE
+                    else:
+                        content_tag = TAG_REPLACE
+                    files_section += (
+                        f'<{TAG_EDIT} path="{em.path}"{match_all_attr}>\n'
+                        f"<{TAG_SEARCH}>{em.search}</{TAG_SEARCH}>\n"
+                        f"<{content_tag}>{em.content}</{content_tag}>\n"
+                        f"</{TAG_EDIT}>\n"
+                    )
+                elif isinstance(em, FileWriteEmission):
+                    mode_attr = f' mode="{em.mode}"' if em.mode != "write" else ""
+                    files_section += (
+                        f'<{TAG_FILE} path="{em.path}"{mode_attr}>'
+                        f"{em.content}</{TAG_FILE}>\n"
+                    )
+
+            title_section = f"<{TAG_TITLE}>{title}</{TAG_TITLE}>" if title else ""
+            thinking = "\n".join(thinking_parts)
+            report = "\n\n".join(text_parts)
+
+            if terminal_parts:
+                action_section = (
+                    f"<{TAG_TERMINAL}>{chr(10).join(terminal_parts)}</{TAG_TERMINAL}>"
+                )
             else:
-                action_section = f"<{TAG_PYTHON}>{event.code or ''}</{TAG_PYTHON}>"
+                action_section = (
+                    f"<{TAG_PYTHON}>{chr(10).join(code_parts)}</{TAG_PYTHON}>"
+                )
 
             report_section = (
-                f"<{TAG_REPORT}>{event.report}</{TAG_REPORT}>\n"
-                if getattr(event, "report", "")
-                else ""
+                f"<{TAG_REPORT}>{report}</{TAG_REPORT}>\n" if report else ""
             )
 
             content = (
-                f"{prefix}{title_section}<{TAG_THINKING}>{event.thinking}</{TAG_THINKING}>\n"
+                f"{prefix}{title_section}<{TAG_THINKING}>{thinking}</{TAG_THINKING}>\n"
                 f"{report_section}"
                 f"{files_section}"
                 f"{action_section}"

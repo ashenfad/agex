@@ -142,7 +142,9 @@ class TestNamespaceBuilder:
         assert callable(ns["task_success"])
         assert callable(ns["task_fail"])
         assert callable(ns["task_clarify"])
-        assert callable(ns["task_continue"])
+        # task_continue was removed in the retooling — returning normally
+        # is the implicit continue now.
+        assert "task_continue" not in ns
 
     def test_view_image_present(self):
         state = Live()
@@ -164,6 +166,8 @@ class TestNamespaceBuilder:
 
     def test_print_snapshot_creates_output_event(self):
         """Test that result.prints are converted to OutputEvents by handle_result."""
+        from agex.eval.objects import PrintAction
+
         state = Live()
         state["__event_log__"] = []
         result = ExecResult(prints=[("Hello", 42)])
@@ -173,18 +177,9 @@ class TestNamespaceBuilder:
         event_list = events(state)
         assert len(event_list) == 1
         assert isinstance(event_list[0], OutputEvent)
-        assert event_list[0].parts == ["Hello", 42]
-
-    def test_task_continue_raises(self):
-        from agex.agent.datatypes import TaskContinue
-
-        state = Live()
-        state["__event_log__"] = []
-        agent = Agent(name="ns_test")
-        ns, _, _ = build_namespace(state, agent, "ns_test")
-
-        with pytest.raises(TaskContinue):
-            ns["task_continue"]()
+        # Prints are wrapped in PrintAction so emission_id can travel
+        # alongside the observation for per-emission tool_result pairing.
+        assert event_list[0].parts == [PrintAction(args=("Hello", 42))]
 
 
 class TestResultHandler:
@@ -480,12 +475,11 @@ class TestTaskControlPicklability:
 
         from agex.eval.bridge.namespace import (
             _task_clarify,
-            _task_continue,
             _task_fail,
             _task_success,
         )
 
-        for fn in [_task_success, _task_fail, _task_clarify, _task_continue]:
+        for fn in [_task_success, _task_fail, _task_clarify]:
             roundtripped = pickle.loads(pickle.dumps(fn))
             assert callable(roundtripped)
 
@@ -505,36 +499,8 @@ class TestTaskControlPicklability:
         with pytest.raises(TypeError, match="Output validation failed"):
             handle_result(result, state, "test", set())
 
-    def test_task_continue_observations_create_event(self):
-        """task_continue observations are converted to OutputEvent in handle_result."""
-        from agex.agent.datatypes import TaskContinue
-
-        state = Live()
-        state["__event_log__"] = []
-
-        result = ExecResult(error=TaskContinue(observations=("progress", 50)))
-        with pytest.raises(TaskContinue):
-            handle_result(result, state, "test_agent", set())
-
-        event_list = events(state)
-        output_events = [e for e in event_list if isinstance(e, OutputEvent)]
-        assert len(output_events) == 1
-        assert output_events[0].parts == ["progress", 50]
-
-    def test_task_continue_no_observations_no_event(self):
-        """task_continue without observations creates no OutputEvent."""
-        from agex.agent.datatypes import TaskContinue
-
-        state = Live()
-        state["__event_log__"] = []
-
-        result = ExecResult(error=TaskContinue())
-        with pytest.raises(TaskContinue):
-            handle_result(result, state, "test_agent", set())
-
-        event_list = events(state)
-        output_events = [e for e in event_list if isinstance(e, OutputEvent)]
-        assert len(output_events) == 0
+    # task_continue tests removed — the builtin was dropped in the
+    # retooling; Python returning normally is now the implicit continue.
 
 
 class TestViewImage:
@@ -638,6 +604,8 @@ class TestExecuteSandboxed:
             execute_sandboxed('task_fail("oops")', agent, state)
 
     def test_print_creates_event(self):
+        from agex.eval.objects import PrintAction
+
         agent = Agent(name="exec_test")
         state = Live()
         state["__event_log__"] = []
@@ -645,7 +613,7 @@ class TestExecuteSandboxed:
         event_list = events(state)
         output_events = [e for e in event_list if isinstance(e, OutputEvent)]
         assert len(output_events) == 1
-        assert output_events[0].parts == ["Hello from sandbox"]
+        assert output_events[0].parts == [PrintAction(args=("Hello from sandbox",))]
 
     def test_state_persistence_across_calls(self):
         agent = Agent(name="exec_test")

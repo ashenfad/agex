@@ -1,30 +1,30 @@
 """Convert a stream of provider-agnostic :class:`ToolCallEvent`\\ s into
-:class:`TokenChunk`\\ s the agex :class:`ResponseBuilder` already knows
-how to consume.
+:class:`TokenChunk`\\ s the agex :class:`EmissionsBuilder` consumes.
 
-Two emission cadences:
+Each ``ToolCallStart`` bumps a per-turn ``emission_index`` counter so
+the builder can group chunks by emission even when multiple tool calls
+stream interleaved deltas.
+
+Two cadences:
 
 * **Action tools** (``python_action`` / ``terminal_action``) stream
   through in real time — each JSON string key (``title``, ``thinking``,
-  ``report``, ``code``/``commands``) emits content ``TokenChunk``\\ s
+  ``code``/``commands``, ``report``) emits content ``TokenChunk``\\ s
   as characters arrive and a closing ``TokenChunk`` when the value
-  finishes.  This matches the XML tokenizer's cadence so the UI can
-  stream agent text live.
+  finishes.  All chunks for a given call share its ``emission_index``.
 
 * **File tools** (``write_file`` / ``edit_file``) buffer the whole
   argument JSON until ``ToolCallEnd`` and then emit a single
-  ``TokenChunk(type="file_action", action=<built FileAction/EditAction>,
-  done=True)``.  The tool arguments are already structured — no reason
-  to re-serialize into the XML tokenizer's streaming shape just so the
-  ResponseBuilder can parse it back.  Buffering also avoids the
-  "content-before-path" ordering hazard; file contents don't need to
-  stream for a usable UI.
+  ``TokenChunk(type="emission", emission=<FileWriteEmission | FileEditEmission>,
+  done=True)``.  The builder just slots the prebuilt emission in place.
+  File contents don't need live streaming for a usable UI, and
+  buffering avoids the content-before-path ordering hazard.
 """
 
 import json
 from typing import AsyncIterator, Iterator
 
-from agex.agent.datatypes import EditAction, FileAction
+from agex.agent.emissions import FileEditEmission, FileWriteEmission
 from agex.llm.core import TokenChunk
 from agex.llm.formats.json_stream import JsonStringExtractor
 
@@ -36,29 +36,40 @@ from .schemas import (
     TOOL_WRITE_FILE,
 )
 
+# JSON-schema key → TokenChunk.type for action tools.  ``report`` was
+# the old user-facing-prose parameter; route it to the new ``text``
+# token type so the builder produces a :class:`TextEmission`.  The
+# schema field itself gets removed in Phase 3 along with the primer
+# slim-down.
 _PYTHON_KEY_MAP = {
     "title": "title",
     "thinking": "thinking",
-    "report": "report",
+    "report": "text",
     "code": "python",
 }
 
 _TERMINAL_KEY_MAP = {
     "title": "title",
     "thinking": "thinking",
-    "report": "report",
+    "report": "text",
     "commands": "terminal",
 }
 
 
 class _CallState:
     """Per-tool-call state: streaming extractor for action tools, raw
-    buffer for file tools."""
+    buffer for file tools.
 
-    __slots__ = ("tool_name", "_extractor", "_key_map", "_raw_buf")
+    ``emission_index`` is assigned at :class:`ToolCallStart` time from a
+    monotonic counter owned by the parser; all tokens emitted for this
+    call carry that same index.
+    """
 
-    def __init__(self, tool_name: str) -> None:
+    __slots__ = ("tool_name", "emission_index", "_extractor", "_key_map", "_raw_buf")
+
+    def __init__(self, tool_name: str, emission_index: int) -> None:
         self.tool_name = tool_name
+        self.emission_index = emission_index
         self._extractor: JsonStringExtractor | None = None
         self._key_map: dict[str, str] | None = None
         self._raw_buf: list[str] | None = None
@@ -80,6 +91,7 @@ class _CallState:
                     type=token_type,
                     content=delta.content,
                     done=delta.done,
+                    emission_index=self.emission_index,
                 )
         elif self._raw_buf is not None:
             self._raw_buf.append(chunk)
@@ -97,23 +109,22 @@ class _CallState:
             return
         if not isinstance(args, dict):
             return
-        action: FileAction | EditAction | None
+        emission = None
         if self.tool_name == TOOL_WRITE_FILE:
-            action = _build_write_file(args)
+            emission = _build_write_file(args)
         elif self.tool_name == TOOL_EDIT_FILE:
-            action = _build_edit_file(args)
-        else:
-            action = None
-        if action is not None:
+            emission = _build_edit_file(args)
+        if emission is not None:
             yield TokenChunk(
-                type="file_action",
+                type="emission",
                 content="",
                 done=True,
-                action=action,
+                emission_index=self.emission_index,
+                emission=emission,
             )
 
 
-def _build_write_file(args: dict) -> FileAction | None:
+def _build_write_file(args: dict) -> FileWriteEmission | None:
     path = args.get("path") or ""
     if not path:
         return None
@@ -121,10 +132,10 @@ def _build_write_file(args: dict) -> FileAction | None:
     mode = args.get("mode") or "write"
     if mode not in ("write", "append"):
         mode = "write"
-    return FileAction(path=path, content=content, mode=mode)  # type: ignore[arg-type]
+    return FileWriteEmission(path=path, content=content, mode=mode)  # type: ignore[arg-type]
 
 
-def _build_edit_file(args: dict) -> EditAction | None:
+def _build_edit_file(args: dict) -> FileEditEmission | None:
     path = args.get("path") or ""
     search = args.get("search")
     if not path or search is None:
@@ -140,7 +151,7 @@ def _build_edit_file(args: dict) -> EditAction | None:
         content = args["insert_before"]
     else:
         return None
-    return EditAction(
+    return FileEditEmission(
         path=path,
         search=search,
         content=content,
@@ -150,14 +161,17 @@ def _build_edit_file(args: dict) -> EditAction | None:
 
 
 class _ParserState:
-    """Tracks all open tool calls across an event stream."""
+    """Tracks open tool calls and assigns monotonic emission indices."""
 
     def __init__(self) -> None:
         self._calls: dict[str, _CallState] = {}
+        self._next_index: int = 0
 
     def handle(self, event: ToolCallEvent) -> Iterator[TokenChunk]:
         if isinstance(event, ToolCallStart):
-            self._calls[event.call_id] = _CallState(event.tool_name)
+            idx = self._next_index
+            self._next_index += 1
+            self._calls[event.call_id] = _CallState(event.tool_name, idx)
         elif isinstance(event, ToolCallArgDelta):
             state = self._calls.get(event.call_id)
             if state is not None:

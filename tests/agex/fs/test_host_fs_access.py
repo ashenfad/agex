@@ -6,7 +6,8 @@ to access the host filesystem even when VirtualFS or IsolatedFS is active.
 import pytest
 
 from agex import Agent, connect_fs, connect_state
-from agex.llm import Dummy, LLMResponse
+from agex.llm import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture
@@ -31,7 +32,7 @@ def test_function_with_host_fs_access_can_read_host(host_test_file):
 
     llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Reading the host file",
                 code=f"""content = read_host_file("{host_test_file}")
 task_success(content)""",
@@ -66,7 +67,7 @@ def test_function_without_host_fs_access_uses_vfs(host_test_file):
 
     llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Writing and reading from VFS",
                 code="""# Write to VFS
 with open("/test.txt", "w") as f:
@@ -115,7 +116,7 @@ def test_class_with_host_fs_access_methods_can_read_host(host_test_file):
 
     llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Reading via class method",
                 code=f"""reader = HostFileReader("{host_test_file}")
 content = reader.read_content()
@@ -154,7 +155,7 @@ def test_class_without_host_fs_access_uses_vfs(host_test_file):
 
     llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Using VFS",
                 code="""fm = FileManager()
 result = fm.write_and_read("/vfs.txt", "VFS content")
@@ -195,7 +196,7 @@ def test_agent_code_uses_vfs_not_host(host_test_file):
 
     llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Writing to and reading from VFS",
                 code="""# Agent writes to VFS
 with open("/agent_file.txt", "w") as f:
@@ -242,7 +243,7 @@ def test_vfs_virtual_files_still_work(host_test_file):
 
     llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Testing both VFS and host access",
                 code=f"""# Create a virtual file
 with open("/vfs_file.txt", "w") as f:

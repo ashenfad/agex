@@ -1,7 +1,6 @@
 """Tests for ChapterEvent rendering in markdown and XML formats."""
 
 from agex.agent.events import (
-    ActionEvent,
     ChapterEvent,
     FailEvent,
     SuccessEvent,
@@ -10,6 +9,7 @@ from agex.agent.events import (
 from agex.llm.formats.xml import render_events_as_xml
 from agex.render.events import render_events_as_markdown
 from agex.render.primitives import render_chapter
+from tests.agex._emissions import make_action_event
 
 
 class TestRenderChapter:
@@ -48,7 +48,7 @@ class TestChapterEventMarkdownRendering:
                 name="Early work",
                 message="Did some setup",
             ),
-            ActionEvent(
+            make_action_event(
                 agent_name="t", thinking="think", code="x = 1", title="Next step"
             ),
             SuccessEvent(agent_name="t", result=42),
@@ -93,7 +93,9 @@ class TestChapterEventXMLRendering:
     def test_chapter_in_xml_sequence(self):
         events = [
             ChapterEvent(agent_name="t", name="Setup", message="Done"),
-            ActionEvent(agent_name="t", thinking="think", code="x = 1", title="Act"),
+            make_action_event(
+                agent_name="t", thinking="think", code="x = 1", title="Act"
+            ),
             FailEvent(agent_name="t", message="oops"),
         ]
         messages = render_events_as_xml(events)

@@ -14,14 +14,14 @@ import pytest
 
 from agex import Agent, TaskClarify, TaskFail, TaskTimeout
 from agex.llm import Dummy
-from agex.llm.core import LLMResponse
+from tests.agex._emissions import make_response
 
 
 def test_successful_task_completion():
     """Test complete task execution with successful result."""
     # Define response that completes the task successfully
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to solve this math problem by adding the numbers and multiplying by 2.",
             code="sum_result = add(inputs.x, inputs.y)\nfinal_result = multiply(sum_result, 2)\ntask_success(final_result)",
         )
@@ -75,11 +75,11 @@ def test_task_with_parse_error_recovery():
     # First response is malformed (missing thinking section)
     # Second response is correct
     responses = [
-        LLMResponse(
+        make_response(
             thinking="",
             code="# This response has no thinking section - should trigger parse error\nresult = get_answer()",
         ),
-        LLMResponse(
+        make_response(
             thinking="I'll call the function to get the answer.",
             code="result = get_answer()\ntask_success(result)",
         ),
@@ -112,11 +112,11 @@ def test_task_with_evaluation_error_recovery():
     # First response has a syntax error
     # Second response is correct
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll try to compute something.",
             code="# This will cause a syntax error\nresult = 1 + ",
         ),
-        LLMResponse(
+        make_response(
             thinking="Let me fix that syntax error.",
             code="result = 1 + 1\ntask_success(result)",
         ),
@@ -141,7 +141,7 @@ def test_task_with_evaluation_error_recovery():
 def test_task_with_inputs_access():
     """Test that tasks can access their input parameters."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to process the input data.",
             code="message = inputs.text.upper()\ncount = inputs.repeat_count\nresult = message * count\ntask_success(result)",
         )
@@ -171,7 +171,7 @@ def test_task_timeout_after_max_iterations():
     """Test that tasks timeout if they exceed max iterations."""
     # Response that never calls task_success
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll do some work but not finish.",
             code='x = 1 + 1\nprint(f"Current value: {x}")',
         )
@@ -197,7 +197,7 @@ def test_task_timeout_after_max_iterations():
 def test_task_with_task_fail():
     """Test that TaskFail exceptions are properly propagated."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I cannot complete this task.",
             code='task_fail("Task is impossible to complete")',
         )
@@ -229,7 +229,7 @@ def test_task_with_task_clarify():
     """Test that TaskClarify exceptions are properly propagated."""
     clarification_message = "Please provide more details."
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I need more information to proceed.",
             code=f'task_clarify("{clarification_message}")',
         )
@@ -254,7 +254,7 @@ def test_task_with_task_clarify():
 def test_task_with_no_inputs():
     """Test tasks that don't require any input parameters."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="This is a simple task with no inputs.",
             code='result = "Hello, World!"\ntask_success(result)',
         )
@@ -279,7 +279,7 @@ def test_task_with_no_inputs():
 def test_task_with_complex_return_type():
     """Test tasks that return complex data structures."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll create a dictionary with the requested data.",
             code='result = {"name": inputs.name, "age": inputs.age, "status": "processed"}\ntask_success(result)',
         )
@@ -310,7 +310,7 @@ def test_task_with_complex_return_type():
 def test_agent_function_visibility_in_task():
     """Test that registered functions are available during task execution."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll use the factorial function to compute the result.",
             code="result = calculate_factorial(inputs.number)\ntask_success(result)",
         )
@@ -346,7 +346,7 @@ def test_agent_function_visibility_in_task():
 def test_task_with_no_return_type():
     """Test that tasks with no return type annotation show proper task_success() instruction."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="This task has no return type, so I'll just call task_success() with no arguments.",
             code="print('Task completed successfully')\ntask_success()",
         )

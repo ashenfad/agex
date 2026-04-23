@@ -2,11 +2,11 @@
 
 from agex.agent.datatypes import FileAction
 from agex.agent.events import (
-    ActionEvent,
     FileEvent,
     TaskStartEvent,
 )
 from agex.render.events import render_events_as_markdown
+from tests.agex._emissions import make_action_event
 
 
 class TestRenderEventsAsMarkdown:
@@ -64,7 +64,7 @@ class TestRenderEventsAsMarkdown:
                 inputs={},
                 message="Process file",
             ),
-            ActionEvent(
+            make_action_event(
                 agent_name="test_agent",
                 thinking="I'll read the file",
                 code="content = open('data.txt').read()",
@@ -88,7 +88,7 @@ class TestRenderEventsAsMarkdown:
     def test_action_event_markdown_with_mode(self):
         """Test ActionEvent rendering with mode attribute."""
         events = [
-            ActionEvent(
+            make_action_event(
                 agent_name="test_agent",
                 thinking="I'll append to the file",
                 code="pass",

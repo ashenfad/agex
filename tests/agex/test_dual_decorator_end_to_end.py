@@ -8,9 +8,9 @@ This module tests the complete dual-decorator workflow:
 """
 
 from agex import Agent, clear_agent_registry
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
 from agex.state import connect_state
+from tests.agex._emissions import make_response
 
 
 def test_dual_decorator_math_workflow():
@@ -44,21 +44,21 @@ def test_dual_decorator_math_workflow():
 
     # Set up dummy LLM responses
     calculator_responses = [
-        LLMResponse(
+        make_response(
             thinking='I need to evaluate the expression "15 + 25 * 2". Following order of operations, multiplication comes first.\n25 * 2 = 50\n15 + 50 = 65',
             code="result = 25 * 2  # 50\nresult = 15 + result  # 65\ntask_success(65.0)",
         )
     ]
 
     validator_responses = [
-        LLMResponse(
+        make_response(
             thinking='I need to check if 65.0 is a reasonable result for "15 + 25 * 2".\nLet me verify: 25 * 2 = 50, then 15 + 50 = 65. Yes, this is correct.',
             code='# Check the calculation step by step\nexpected = 15 + (25 * 2)  # Order of operations: multiply first\nprint(f"Expected result: {expected}")\nprint(f"Actual result: {inputs.result}")\n\n# The result is correct\nis_valid = (inputs.result == expected)\ntask_success(is_valid)',
         )
     ]
 
     orchestrator_responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to solve this math problem step by step:\n1. First calculate the expression using the calculator\n2. Then validate the result with the validator\n3. Return a summary",
             code='# Step 1: Calculate the expression\nexpression = "15 + 25 * 2"\ncalc_result = calculate(expression)\nprint(f"Calculator returned: {calc_result}")\n\n# Step 2: Validate the result\nis_valid = validate_result(expression, calc_result)\nprint(f"Validator returned: {is_valid}")\n\n# Step 3: Return summary\nsummary = {\n    "expression": expression,\n    "result": calc_result,\n    "validated": is_valid,\n    "status": "success" if is_valid else "error"\n}\n\ntask_success(summary)',
         )
@@ -117,21 +117,21 @@ def test_dual_decorator_state_sharing():
 
     # Set up responses
     processor_responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to clean the raw data by removing invalid entries and normalizing values.",
             code="# Clean the data\ncleaned_data = []\nfor item in inputs.raw_data:\n    if isinstance(item, (int, float)) and item > 0:\n        cleaned_data.append(float(item))\n\n# Store intermediate result in my namespace\ntask_success(cleaned_data)",
         )
     ]
 
     analyzer_responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to analyze the processed data and generate insights.",
             code='# Analyze the data\ndata = inputs.processed_data\nif data:\n    mean_value = sum(data) / len(data)\n    max_value = max(data)\n    min_value = min(data)\n    \n    insights = {\n        "count": len(data),\n        "mean": mean_value,\n        "max": max_value,\n        "min": min_value,\n        "range": max_value - min_value\n    }\nelse:\n    insights = {"error": "No valid data to analyze"}\n\ntask_success(insights)',
         )
     ]
 
     coordinator_responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to coordinate the data pipeline by calling the specialist functions in sequence.",
             code='# Step 1: Process the raw data\nprocessed = process_data(inputs.raw_data)\nprint(f"Data processor returned: {processed}")\n\n# Step 2: Analyze the processed data\nanalysis = analyze_data(processed)\nprint(f"Analyzer returned: {analysis}")\n\n# Step 3: Combine results\nfinal_result = {\n    "raw_count": len(inputs.raw_data),\n    "processed_count": len(processed),\n    "analysis": analysis,\n    "pipeline_status": "completed"\n}\n\ntask_success(final_result)',
         )
@@ -192,7 +192,7 @@ def test_hierarchical_namespace_state_is_correct():
     # Configure LLM responses
     worker.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="I will set the success flag and exit.",
                 code="success = True\ntask_success(True)",
             )
@@ -200,7 +200,7 @@ def test_hierarchical_namespace_state_is_correct():
     )
     orchestrator.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="I will call the do_work function.",
                 code="result = do_work()\ntask_success(result)",
             )
@@ -240,7 +240,7 @@ def test_dual_decorator_error_handling():
 
     # Set up responses
     risky_success_responses = [
-        LLMResponse(
+        make_response(
             thinking="The input says should_fail is False, so I should succeed.",
             code='if inputs.should_fail:\n    task_fail("Operation failed as requested")\nelse:\n    task_success("Operation completed successfully")',
         )
@@ -248,7 +248,7 @@ def test_dual_decorator_error_handling():
 
     # Orchestrator response
     orchestrator_responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to test the risky operation and handle any failures gracefully.",
             code='try:\n    # First test - should succeed\n    result1 = risky_operation(should_fail=False)\n    print(f"Success case: {result1}")\n    \n    # Compile results\n    results = {\n        "success_case": result1,\n        "test_completed": True\n    }\n    \n    task_success(results)\n    \nexcept Exception as e:\n    # Handle any errors gracefully\n    error_result = {\n        "error": str(e),\n        "test_completed": False\n    }\n    task_success(error_result)',
         )
@@ -296,21 +296,21 @@ def test_dual_decorator_namespace_isolation():
 
     # Set up responses
     agent_a_responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll store the data with a prefix for agent A.",
             code='result = f"A:{inputs.data}"\ntask_success(result)',
         )
     ]
 
     agent_b_responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll store the data with a prefix for agent B.",
             code='result = f"B:{inputs.data}"\ntask_success(result)',
         )
     ]
 
     coordinator_responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll test namespace isolation by calling both functions with the same data.",
             code='# Call both functions with the same data\nresult_a = store_in_a(inputs.test_data)\nresult_b = store_in_b(inputs.test_data)\n\n# Combine results\nfinal_result = {\n    "agent_a_result": result_a,\n    "agent_b_result": result_b,\n    "are_different": result_a != result_b\n}\n\ntask_success(final_result)',
         )
@@ -360,7 +360,7 @@ def test_sub_agent_registered_module_accessible():
     # Sub-agent uses `import math` then calls math.sqrt
     specialist.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Use math.sqrt",
                 code="import math\nresult = math.sqrt(inputs.x)\ntask_success(result)",
             )
@@ -368,7 +368,7 @@ def test_sub_agent_registered_module_accessible():
     )
     orchestrator.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Call compute",
                 code="result = compute(inputs.value)\ntask_success(result)",
             )
@@ -403,7 +403,7 @@ def test_sub_agent_import_alias_works():
 
     worker.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Use json.dumps with alias",
                 code="import json as j\nresult = j.dumps(inputs.data, sort_keys=True)\ntask_success(result)",
             )
@@ -411,7 +411,7 @@ def test_sub_agent_import_alias_works():
     )
     boss.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Call encode",
                 code="result = encode(inputs.payload)\ntask_success(result)",
             )
@@ -446,12 +446,12 @@ def test_sub_agent_unregistered_import_blocked():
     worker.llm = Dummy(
         [
             # First attempt: try importing subprocess (blocked)
-            LLMResponse(
+            make_response(
                 thinking="Try to import subprocess",
                 code='import subprocess\ntask_success("got subprocess")',
             ),
             # Second attempt: succeed without import
-            LLMResponse(
+            make_response(
                 thinking="Can't import, just return a string",
                 code='task_success("no import needed")',
             ),
@@ -459,7 +459,7 @@ def test_sub_agent_unregistered_import_blocked():
     )
     boss.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Call try_import",
                 code="result = try_import()\ntask_success(result)",
             )
@@ -500,7 +500,7 @@ def test_sub_agent_recursive_module_import():
     # Sub-agent imports numpy as np and uses np.arange
     data_maker.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Generate data using numpy",
                 code=(
                     "import numpy as np\n"
@@ -512,7 +512,7 @@ def test_sub_agent_recursive_module_import():
     )
     orchestrator.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Call make_data",
                 code="result = make_data(inputs.idea)\ntask_success(result)",
             )
@@ -619,7 +619,7 @@ task_success(result)
 
     data_maker.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Generate seasonal data using numpy",
                 code=data_maker_code,
             )
@@ -627,7 +627,7 @@ task_success(result)
     )
     orchestrator.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Call make_data",
                 code="result = make_data(inputs.idea)\ntask_success(result)",
             )
@@ -702,13 +702,13 @@ task_success(result)
 
     data_maker.llm = Dummy(
         [
-            LLMResponse(thinking="Try with inputs import", code=iter1_code),
-            LLMResponse(thinking="Fixed, just numpy", code=iter2_code),
+            make_response(thinking="Try with inputs import", code=iter1_code),
+            make_response(thinking="Fixed, just numpy", code=iter2_code),
         ]
     )
     orchestrator.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Call make_data",
                 code="result = make_data(inputs.idea)\ntask_success(result)",
             )
@@ -794,10 +794,10 @@ for i, arr in enumerate(result):
 task_success(result)
 """
 
-    data_maker.llm = Dummy([LLMResponse(thinking="Generate data", code=dm_code)])
+    data_maker.llm = Dummy([make_response(thinking="Generate data", code=dm_code)])
     orchestrator.llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Call make_data",
                 code="result = make_data(inputs.idea)\ntask_success(result)",
             )
@@ -947,9 +947,9 @@ fig.update_layout(title="Test")
 task_success(fig)
 """
 
-    data_maker.llm = Dummy([LLMResponse(thinking="Generate data", code=dm_code)])
-    plotty.llm = Dummy([LLMResponse(thinking="Plot it", code=plotty_code)])
-    orchestrator.llm = Dummy([LLMResponse(thinking="Orchestrate", code=orch_code)])
+    data_maker.llm = Dummy([make_response(thinking="Generate data", code=dm_code)])
+    plotty.llm = Dummy([make_response(thinking="Plot it", code=plotty_code)])
+    orchestrator.llm = Dummy([make_response(thinking="Orchestrate", code=orch_code)])
 
     from agex.agent.datatypes import TaskTimeout
 

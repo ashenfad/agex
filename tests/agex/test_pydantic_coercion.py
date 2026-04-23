@@ -4,7 +4,7 @@ import pytest
 
 from agex import Agent, TaskTimeout
 from agex.llm import Dummy
-from agex.llm.core import LLMResponse
+from tests.agex._emissions import make_response
 
 
 def test_pydantic_strict_mode():
@@ -20,7 +20,7 @@ def test_pydantic_strict_mode():
     default coercion behavior. This test ensures that such coercion is prevented.
     """
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I should return a dict.",
             code='task_success({"msg": "a shiny ring"})',
         )

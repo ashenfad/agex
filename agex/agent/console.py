@@ -1,5 +1,4 @@
 import os
-import re
 import shutil
 import sys
 from collections.abc import Iterable
@@ -262,23 +261,51 @@ def _format_event_lines(
         body_lines.append(_indent(detail_indent, f"Inputs: {preview}"))
 
     elif isinstance(event, ActionEvent):
+        from agex.agent.emissions import (
+            FileEditEmission,
+            FileWriteEmission,
+            PythonEmission,
+            TerminalEmission,
+            TextEmission,
+            ThinkingEmission,
+        )
+
+        # Aggregate emission content for a one-liner-per-section view.
+        thinking_pieces: list[str] = []
+        text_pieces: list[str] = []
+        file_paths: list[str] = []
+        code_pieces: list[str] = []
+        for em in event.emissions:
+            if isinstance(em, (PythonEmission, TerminalEmission)):
+                if em.thinking:
+                    thinking_pieces.append(em.thinking)
+                if isinstance(em, PythonEmission) and em.code:
+                    code_pieces.append(em.code)
+            elif isinstance(em, ThinkingEmission):
+                if em.text and not em.redacted:
+                    thinking_pieces.append(em.text)
+            elif isinstance(em, TextEmission):
+                if em.text:
+                    text_pieces.append(em.text)
+            elif isinstance(em, (FileWriteEmission, FileEditEmission)):
+                file_paths.append(em.path)
+
+        thinking_raw = "\n".join(thinking_pieces)
         if verbosity == "verbose":
-            # No truncation in verbose mode - show full thinking
-            thinking_text = _strip_newlines(event.thinking)
+            thinking_text = _strip_newlines(thinking_raw)
         else:
-            # Truncate in brief and normal modes
             thinking_text = _truncate(
-                _strip_newlines(event.thinking), 120 if verbosity != "brief" else 80
+                _strip_newlines(thinking_raw), 120 if verbosity != "brief" else 80
             )
         body_lines.append(_indent(detail_indent, f"Thinking: {thinking_text}"))
 
-        report_text = getattr(event, "report", "")
-        if report_text:
+        if text_pieces:
+            report_raw = "\n\n".join(text_pieces)
             if verbosity == "verbose":
-                report_display = _strip_newlines(report_text)
+                report_display = _strip_newlines(report_raw)
             else:
                 report_display = _truncate(
-                    _strip_newlines(report_text),
+                    _strip_newlines(report_raw),
                     120 if verbosity != "brief" else 80,
                 )
             report_line = f"Report: {report_display}"
@@ -286,13 +313,14 @@ def _format_event_lines(
                 report_line = _colorize(use_color, _Colors.green, report_line)
             body_lines.append(_indent(detail_indent, report_line))
 
-        if event.file_actions:
-            file_names = ", ".join(f"`{action.path}`" for action in event.file_actions)
+        if file_paths:
+            file_names = ", ".join(f"`{p}`" for p in file_paths)
             body_lines.append(_indent(detail_indent, f"Files: {file_names}"))
 
-        code_lines_total = event.code.count("\n") + 1 if event.code else 0
-        if verbosity == "verbose" and event.code:
-            shown_lines = event.code.splitlines()[:truncate_code_lines]
+        full_code = "\n".join(code_pieces)
+        code_lines_total = full_code.count("\n") + 1 if full_code else 0
+        if verbosity == "verbose" and full_code:
+            shown_lines = full_code.splitlines()[:truncate_code_lines]
             for line in shown_lines:
                 dimmed = _colorize(use_color, _Colors.dim, line)
                 body_lines.append(_indent(detail_indent, dimmed))
@@ -449,23 +477,23 @@ def pprint_tokens(
 
     use_color = _should_color(color, output_stream)
 
-    # Tool-use wire formats emit a single ``file_action`` token per file
-    # operation, carrying a fully built FileAction/EditAction in
-    # ``token.action``.  Handle it before the generic ``done`` shortcut
-    # so the summary actually renders.
-    if token.type == "file_action" and token.action is not None:
-        from agex.agent.datatypes import EditAction, FileAction
+    # File emissions arrive as a single ``emission`` token carrying a
+    # fully built FileWriteEmission / FileEditEmission.  Handle it
+    # before the generic ``done`` shortcut so the summary actually
+    # renders.
+    if token.type == "emission" and token.emission is not None:
+        from agex.agent.emissions import FileEditEmission, FileWriteEmission
 
-        action_obj = token.action
+        em = token.emission
         color_code = _Colors.magenta if use_color else ""
-        if isinstance(action_obj, FileAction):
-            label = "[APPEND]" if action_obj.mode == "append" else "[CREATE]"
-            line = f"📁 {action_obj.path} {label}\n"
-        elif isinstance(action_obj, EditAction):
-            scope = "[EDIT ALL]" if action_obj.match_all else "[EDIT]"
-            line = f"✏️ {action_obj.path} {scope} ({action_obj.operation})\n"
+        if isinstance(em, FileWriteEmission):
+            label = "[APPEND]" if em.mode == "append" else "[CREATE]"
+            line = f"📁 {em.path} {label}\n"
+        elif isinstance(em, FileEditEmission):
+            scope = "[EDIT ALL]" if em.match_all else "[EDIT]"
+            line = f"✏️ {em.path} {scope} ({em.operation})\n"
         else:
-            line = f"file_action: {action_obj!r}\n"
+            line = f"emission: {em!r}\n"
         if use_color and color_code:
             line = _colorize(use_color, color_code, line)
         output_stream.write(line)
@@ -480,39 +508,6 @@ def pprint_tokens(
 
     # Print content with color
     content = token.content
-    if token.type == "file" and token.content.startswith("path="):
-        # Parse metadata: "path=foo.py,mode=append"
-
-        path_match = re.search(r"path=([^,]+)", token.content)
-        mode_match = re.search(r"mode=([^,]+)", token.content)
-
-        if path_match:
-            path = path_match.group(1)
-            mode = mode_match.group(1) if mode_match else "write"
-            action = "[APPEND]" if mode == "append" else "[CREATE]"
-            content = f"📁 {path} {action}\n"
-
-    elif token.type == "edit":
-        if token.content.startswith("path="):
-            # Parse metadata: "path=foo.py,match_all=False"
-            # The XML wire format emits this as the first ``edit`` token;
-            # subsequent content tokens carry the XML-inline body
-            # (<SEARCH>.../<REPLACE>... etc.), which we suppress below.
-            path_match = re.search(r"path=([^,]+)", token.content)
-            match_all_match = re.search(r"match_all=([^,]+)", token.content)
-
-            if path_match:
-                path = path_match.group(1)
-                match_all = (
-                    match_all_match and match_all_match.group(1).lower() == "true"
-                )
-                action = "[EDIT ALL]" if match_all else "[EDIT]"
-                content = f"✏️ {path} {action}\n"
-        else:
-            # XML-inline edit body — raw <SEARCH>/<REPLACE>/<INSERT-*>
-            # tags that are noise to the reader. The header already
-            # labeled the edit; don't dump tags into the console.
-            return
 
     # Color based on token type and optionally prepend context
     prefix = ""
@@ -525,16 +520,12 @@ def pprint_tokens(
         color_code = _Colors.cyan if use_color else ""
     elif token.type == "thinking":
         color_code = _Colors.bright_blue if use_color else ""
-    elif token.type == "report":
-        # Distinct label at section start so reports are visually separable
-        # from thinking and code.  Green reads as "user-facing communication."
+    elif token.type == "text":
+        # User-facing prose — distinct label at section start so the
+        # stream is visually separable from thinking and code.
         if token.start:
             prefix = "\n💬 "
         color_code = _Colors.green if use_color else ""
-    elif token.type == "file":
-        color_code = _Colors.magenta if use_color else ""
-    elif token.type == "edit":
-        color_code = _Colors.magenta if use_color else ""
     elif token.type == "python":
         color_code = _Colors.yellow if use_color else ""
     elif token.type == "terminal":
@@ -543,7 +534,7 @@ def pprint_tokens(
         color_code = _Colors.cyan if use_color else ""
 
     # Final content assembly
-    if token.start and token.type in ("title", "report"):
+    if token.start and token.type in ("title", "text"):
         final_text = prefix + content
     else:
         final_text = content

@@ -107,8 +107,14 @@ def initialize_exec_state(
     return exec_state, versioned_state
 
 
-def check_for_task_call(code: str) -> bool:
-    """Check if code contains any task_* function calls."""
+def check_for_terminator_call(code: str) -> bool:
+    """Check if code contains any terminator function calls.
+
+    Used to decide whether to nudge the agent with a guidance reminder
+    when its Python returns without signaling completion.  With
+    ``task_continue`` gone, returning normally is the implicit
+    continue, so the reminder is purely advisory.
+    """
     if not code or not code.strip():
         return False
     return any(
@@ -117,9 +123,12 @@ def check_for_task_call(code: str) -> bool:
             "task_success(",
             "task_fail(",
             "task_clarify(",
-            "task_continue(",
         ]
     )
+
+
+# Back-compat alias; callers still import the old name.
+check_for_task_call = check_for_terminator_call
 
 
 def yield_new_events(
@@ -232,24 +241,43 @@ def clear_stale_cancel(
         exec_state.pop(cancel_key, None)
 
 
-def process_llm_response(
+def strip_python_fences(
     llm_response: "LLMResponse",
     strip_fence_fn: Callable[[str], str],
+) -> None:
+    """Strip markdown code fences from :class:`PythonEmission` code
+    blocks in-place.
+
+    Some models still wrap tool-call ``code`` arguments in
+    `````python ...`` fences.  Strip them before the
+    sandbox parses the source.
+    """
+    from agex.agent.emissions import PythonEmission
+
+    for em in llm_response.emissions:
+        if isinstance(em, PythonEmission) and em.code:
+            em.code = strip_fence_fn(em.code)
+
+
+def collect_python_refs(
+    llm_response: "LLMResponse",
     exec_state: MutableMapping[str, Any],
     accumulated_refs: set[str],
-) -> str:
-    """Post-process an LLM response: strip fences and find referenced state keys.
+) -> None:
+    """Extend ``accumulated_refs`` with state keys each PythonEmission
+    references.
 
-    Returns:
-        The code string to evaluate (may be empty).
+    ``safe_commit`` uses the union to detect in-place mutations at the
+    iteration boundary.  Silent-fail so a single malformed emission
+    doesn't break the whole turn.
     """
-    llm_response.code = strip_fence_fn(llm_response.code)
-    code_to_evaluate = llm_response.code
-    if code_to_evaluate:
-        from sandtrap import find_refs
+    from sandtrap import find_refs
 
-        try:
-            accumulated_refs |= find_refs(code_to_evaluate, namespace=exec_state)
-        except Exception:
-            pass
-    return code_to_evaluate
+    from agex.agent.emissions import PythonEmission
+
+    for em in llm_response.emissions:
+        if isinstance(em, PythonEmission) and em.code:
+            try:
+                accumulated_refs |= find_refs(em.code, namespace=exec_state)
+            except Exception:
+                pass

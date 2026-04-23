@@ -5,8 +5,8 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from agex import Agent, clear_agent_registry
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 _counter = 0
 
@@ -125,7 +125,7 @@ def test_skill_readable_in_task():
     """Agent can read a skill file via open() during task execution."""
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="Read the skill file.",
                 code=(
                     'with open("/skills/test-lib/SKILL.md") as f:\n'
@@ -154,7 +154,7 @@ def test_skill_listdir_visible_in_task():
     """The /skills directory is visible via os.listdir during task execution."""
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="List the skills directory.",
                 code=(
                     "import os\nentries = os.listdir('/skills')\ntask_success(entries)"
@@ -331,7 +331,7 @@ def test_skill_directory_siblings_readable_in_task():
     """Agent can read sibling files from a directory skill during task execution."""
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="Read the sibling file.",
                 code=(
                     'with open("/skills/my-dsl/types.md") as f:\n'

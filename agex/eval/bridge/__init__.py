@@ -87,9 +87,17 @@ def execute_sandboxed(
     on_event: Callable[[Any], None] | None = None,
     on_token: Callable[[Any], None] | None = None,
     file_path: str | None = None,
+    emission_id: str | None = None,
 ) -> None:
-    """Execute agent code synchronously in the sandtrap sandbox."""
+    """Execute agent code synchronously in the sandtrap sandbox.
+
+    ``emission_id`` is propagated via contextvar so PrintAction and
+    ImageAction parts emitted by this call trace back to the originating
+    PythonEmission — essential for per-emission tool_result pairing in
+    multi-emission turns.
+    """
     from .policy import (
+        _current_emission_id,
         _current_on_event,
         _current_on_token,
         _current_parent_log,
@@ -113,6 +121,7 @@ def execute_sandboxed(
     event_token = _current_on_event.set(on_event)
     token_token = _current_on_token.set(on_token)
     parent_log_token = _current_parent_log.set((state, agent.name))
+    emission_token = _current_emission_id.set(emission_id)
     try:
         with sb:
             result = sb.exec(program, namespace=namespace)
@@ -121,6 +130,7 @@ def execute_sandboxed(
         _current_on_event.reset(event_token)
         _current_on_token.reset(token_token)
         _current_parent_log.reset(parent_log_token)
+        _current_emission_id.reset(emission_token)
 
     handle_result(
         result,
@@ -144,12 +154,14 @@ async def aexecute_sandboxed(
     on_event: Callable[[Any], None] | None = None,
     on_token: Callable[[Any], None] | None = None,
     file_path: str | None = None,
+    emission_id: str | None = None,
 ) -> None:
     """Execute agent code asynchronously in the sandtrap sandbox.
 
     Uses sandbox.aexec() so ``await`` works natively in sandbox code.
     """
     from .policy import (
+        _current_emission_id,
         _current_on_event,
         _current_on_token,
         _current_parent_log,
@@ -185,6 +197,7 @@ async def aexecute_sandboxed(
     event_token = _current_on_event.set(on_event)
     token_token = _current_on_token.set(on_token)
     parent_log_token = _current_parent_log.set((state, agent.name))
+    emission_token = _current_emission_id.set(emission_id)
     try:
         with sb:
             result = await sb.aexec(program, namespace=namespace)
@@ -193,6 +206,7 @@ async def aexecute_sandboxed(
         _current_on_event.reset(event_token)
         _current_on_token.reset(token_token)
         _current_parent_log.reset(parent_log_token)
+        _current_emission_id.reset(emission_token)
 
     handle_result(
         result,

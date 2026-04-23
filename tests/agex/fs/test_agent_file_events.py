@@ -4,9 +4,9 @@ from agex import Agent
 from agex.agent.events import FileEvent
 from agex.fs import connect_fs
 from agex.llm import Dummy
-from agex.llm.core import LLMResponse
 from agex.state import connect_state
 from agex.state.log import get_events_from_log
+from tests.agex._emissions import make_response
 
 
 class TestAgentFileEvents:
@@ -16,7 +16,7 @@ class TestAgentFileEvents:
         """Test that agent writing a file emits FileEvent with source='agent'."""
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="I'll create a file",
                     code="""with open('output.txt', 'w') as f:
     f.write('Hello from agent!')
@@ -54,7 +54,7 @@ task_success('done')""",
         agent = Agent(
             llm=Dummy(
                 responses=[
-                    LLMResponse(
+                    make_response(
                         thinking="Update file",
                         code="""with open('data.txt', 'w') as f:
     f.write('updated')
@@ -92,7 +92,7 @@ task_success('done')""",
         agent = Agent(
             llm=Dummy(
                 responses=[
-                    LLMResponse(
+                    make_response(
                         thinking="Create files",
                         code="""with open('file1.txt', 'w') as f:
     f.write('one')
@@ -128,7 +128,7 @@ task_success('done')""",
         agent = Agent(
             llm=Dummy(
                 responses=[
-                    LLMResponse(
+                    make_response(
                         thinking="Just compute",
                         code="""result = 1 + 1
 task_success(result)""",

@@ -41,19 +41,6 @@ class TaskClarify(_AgentExit):
 
 
 @dataclass
-class TaskContinue(_AgentExit):
-    """DEPRECATED — slated for removal in Phase 2 of the retooling.
-
-    In the new emission-list wire format, Python completing without a
-    terminator is the implicit continue. Kept alive during Phase 1 so
-    legacy loop code still imports; the builtin no longer works from
-    agent code.
-    """
-
-    observations: tuple[Any, ...] = field(default_factory=tuple)
-
-
-@dataclass
 class TaskTimeout(_AgentExit):
     """Signal that task could not be completed within limits."""
 

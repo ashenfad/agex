@@ -1,7 +1,8 @@
 import pandas as pd
 
 from agex import Agent, connect_fs, connect_state
-from agex.llm import Dummy, LLMResponse
+from agex.llm import Dummy
+from tests.agex._emissions import make_response
 
 
 def test_pandas_vfs_integration():
@@ -9,7 +10,7 @@ def test_pandas_vfs_integration():
 
     # 1. Setup Agent with VFS and pandas
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to read the CSV, filter it, and save the result.",
             code="""
 import pandas as pd

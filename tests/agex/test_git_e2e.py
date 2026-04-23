@@ -17,7 +17,7 @@ from agex.agent.events import OutputEvent
 from agex.eval.objects import PrintAction
 from agex.git_cli import register_git
 from agex.llm import Dummy
-from agex.llm.core import LLMResponse
+from tests.agex._emissions import make_response
 
 
 def _collect_output_text(events):
@@ -58,7 +58,7 @@ class TestGitCommitAndLog:
         agent.llm = Dummy(
             responses=[
                 # Turn 1: write a file via FILE tag and commit via terminal
-                LLMResponse(
+                make_response(
                     thinking="I'll create a helper and commit it.",
                     code="",
                     file_actions=[
@@ -71,12 +71,12 @@ class TestGitCommitAndLog:
                     terminal="git commit -m 'add utils module'",
                 ),
                 # Turn 2: check git log
-                LLMResponse(
+                make_response(
                     thinking="Let me check the commit history.",
                     terminal="git log --oneline",
                 ),
                 # Turn 3: complete the task with the log output
-                LLMResponse(
+                make_response(
                     thinking="I can see my commit in the log.",
                     code="task_success('done')",
                 ),
@@ -103,32 +103,32 @@ class TestGitCommitAndLog:
         agent.llm = Dummy(
             responses=[
                 # Turn 1: write a file (safe_commit happens at turn boundary)
-                LLMResponse(
+                make_response(
                     thinking="Writing a file.",
                     terminal="echo 'version 1' > app.py",
                 ),
                 # Turn 2: commit with a message
-                LLMResponse(
+                make_response(
                     thinking="Committing.",
                     terminal="git commit -m 'first real commit'",
                 ),
                 # Turn 3: write another file (another safe_commit at boundary)
-                LLMResponse(
+                make_response(
                     thinking="More work.",
                     terminal="echo 'version 2' > app.py",
                 ),
                 # Turn 4: commit again
-                LLMResponse(
+                make_response(
                     thinking="Committing v2.",
                     terminal="git commit -m 'second commit'",
                 ),
                 # Turn 5: check git log — should only show agent-tagged commits
-                LLMResponse(
+                make_response(
                     thinking="Checking history.",
                     terminal="git log --oneline",
                 ),
                 # Turn 6: complete
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('checked')",
                 ),
@@ -168,19 +168,19 @@ class TestGitDiff:
         agent = _make_agent()
         agent.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Create v1.",
                     terminal="echo 'hello' > greet.py && git commit -m 'v1'",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Update to v2.",
                     terminal="echo 'world' > greet.py && git commit -m 'v2'",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Check what changed.",
                     terminal="git diff HEAD~1",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('diffed')",
                 ),
@@ -210,27 +210,27 @@ class TestGitReset:
         agent.llm = Dummy(
             responses=[
                 # Turn 1: create and commit v1
-                LLMResponse(
+                make_response(
                     thinking="Creating v1.",
                     terminal="echo 'good code' > app.py && git commit -m 'v1 good'",
                 ),
                 # Turn 2: create and commit v2 (bad change)
-                LLMResponse(
+                make_response(
                     thinking="Making a bad change.",
                     terminal="echo 'bad code' > app.py && git commit -m 'v2 bad'",
                 ),
                 # Turn 3: reset to v1
-                LLMResponse(
+                make_response(
                     thinking="That was wrong, let me reset.",
                     terminal="git reset --hard HEAD~1",
                 ),
                 # Turn 4: verify the file was restored, then commit the restore
-                LLMResponse(
+                make_response(
                     thinking="Check the restored file.",
                     terminal="cat app.py",
                 ),
                 # Turn 5: complete — the REPL still works after reset
-                LLMResponse(
+                make_response(
                     thinking="File is restored, task complete.",
                     code="task_success('restored')",
                 ),
@@ -261,31 +261,31 @@ class TestGitBranching:
         agent.llm = Dummy(
             responses=[
                 # Turn 1: set up main with a base file
-                LLMResponse(
+                make_response(
                     thinking="Setting up base.",
                     terminal="echo 'base' > main.py && git commit -m 'base'",
                 ),
                 # Turn 2: create experiment branch and add a file
-                LLMResponse(
+                make_response(
                     thinking="Branching for experiment.",
                     terminal="git checkout -b experiment && echo 'new feature' > feature.py && git commit -m 'add feature'",
                 ),
                 # Turn 3: switch back to main
-                LLMResponse(
+                make_response(
                     thinking="Back to main.",
                     terminal="git checkout main",
                 ),
                 # Turn 4: merge the experiment
-                LLMResponse(
+                make_response(
                     thinking="The experiment worked, merging.",
                     terminal="git merge experiment",
                 ),
                 # Turn 5: verify and complete
-                LLMResponse(
+                make_response(
                     thinking="Check that feature.py is on main now.",
                     terminal="cat feature.py",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Merge successful.",
                     code="task_success('merged')",
                 ),
@@ -311,23 +311,23 @@ class TestGitBranching:
         agent = _make_agent()
         agent.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Base setup.",
                     terminal="echo 'stable' > app.py && git commit -m 'stable base'",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Try something risky.",
                     terminal="git checkout -b risky && echo 'risky change' > app.py && git commit -m 'risky attempt'",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="That didn't work. Abandon.",
                     terminal="git checkout main && git branch -d risky",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Back on main, file should be stable.",
                     terminal="cat app.py && git log --oneline",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Good — stable code preserved.",
                     code="task_success('abandoned')",
                 ),
@@ -360,27 +360,27 @@ class TestGitWithPython:
         agent.llm = Dummy(
             responses=[
                 # Turn 1: write a script and commit
-                LLMResponse(
+                make_response(
                     thinking="Writing compute script.",
                     terminal="echo 'print(2 + 2)' > compute.py && git commit -m 'add compute'",
                 ),
                 # Turn 2: run the script
-                LLMResponse(
+                make_response(
                     thinking="Running the script.",
                     terminal="python compute.py",
                 ),
                 # Turn 3: update the script and commit
-                LLMResponse(
+                make_response(
                     thinking="Update to multiply instead.",
                     terminal="echo 'print(3 * 7)' > compute.py && git commit -m 'change to multiply'",
                 ),
                 # Turn 4: run updated script and diff
-                LLMResponse(
+                make_response(
                     thinking="Run updated and check diff.",
                     terminal="python compute.py && git diff HEAD~1",
                 ),
                 # Turn 5: complete
-                LLMResponse(
+                make_response(
                     thinking="Done iterating.",
                     code="task_success('iterated')",
                 ),
@@ -413,7 +413,7 @@ class TestGitAddSelective:
             responses=[
                 # Turn 1: write two files via FILE tags (applied before terminal runs),
                 # then add only a.py and commit in the same turn's terminal block.
-                LLMResponse(
+                make_response(
                     thinking="Creating two files, but only committing a.py.",
                     file_actions=[
                         {"path": "a.py", "content": "module A\n", "mode": "write"},
@@ -424,7 +424,7 @@ class TestGitAddSelective:
                 # Turn 2: now add and commit b.py (it's still in Staged after
                 # safe_commit ran — wait, safe_commit flushed it. So we write
                 # b.py again and commit it.)
-                LLMResponse(
+                make_response(
                     thinking="Now committing b.py.",
                     file_actions=[
                         {"path": "b.py", "content": "module B v2\n", "mode": "write"},
@@ -432,11 +432,11 @@ class TestGitAddSelective:
                     terminal="git add b.py && git commit -m 'add module B'",
                 ),
                 # Turn 3: log should show both commits
-                LLMResponse(
+                make_response(
                     thinking="Check history.",
                     terminal="git log --oneline",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('selective')",
                 ),

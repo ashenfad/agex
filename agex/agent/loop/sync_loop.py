@@ -17,7 +17,15 @@ if TYPE_CHECKING:
 from kvgit import Staged
 
 from agex.agent.chapter import CHAPTER_TASK
-from agex.agent.events import CancelledEvent
+from agex.agent.emissions import (
+    FileEditEmission,
+    FileWriteEmission,
+    PythonEmission,
+    TerminalEmission,
+    TextEmission,
+    ThinkingEmission,
+)
+from agex.agent.events import CancelledEvent, SystemNoteEvent
 from agex.eval.bridge import execute_sandboxed
 from agex.resource_limits import apply_resource_limits
 from agex.state import safe_commit
@@ -31,13 +39,13 @@ from .common import (
     Namespaced,
     TaskCancelled,
     TaskClarify,
-    TaskContinue,
     TaskFail,
     TaskSuccess,
     TaskTimeout,
     _AgentExit,
     add_event_to_log,
-    apply_optimistic_file_actions,
+    apply_file_edit,
+    apply_file_write,
     check_cancellation,
     check_for_task_call,
     create_action_event,
@@ -56,9 +64,10 @@ from .common import (
 )
 from .state_helpers import (
     clear_stale_cancel,
+    collect_python_refs,
     mount_chapters_overlay,
     prepare_task_loop,
-    process_llm_response,
+    strip_python_fences,
 )
 
 
@@ -78,6 +87,27 @@ def _run_coro(coro):
     except RuntimeError:
         pass
     asyncio.run(coro)
+
+
+def _last_python_code(emissions: list) -> str:
+    """Return the concatenation of all PythonEmission code bodies.
+
+    Used by ``check_for_task_call`` to decide whether a turn produced
+    an explicit terminator or implicitly continues.
+    """
+    return "\n".join(
+        em.code for em in emissions if isinstance(em, PythonEmission) and em.code
+    )
+
+
+def _emission_block_id(event_idx: int, emission_idx: int) -> str:
+    """Stable block id derived from position in the event log.
+
+    The renderer computes the same id from the unfiltered event index
+    so PrintAction / ImageAction parts emitted here pair cleanly to
+    their tool_use blocks at render time.
+    """
+    return f"em_{event_idx}_{emission_idx}"
 
 
 class SyncLoopMixin:
@@ -110,6 +140,131 @@ class SyncLoopMixin:
         if versioned_state is not None:
             safe_commit(versioned_state, referenced_keys=referenced_keys)
 
+    def _execute_emissions(
+        self,
+        action_event: ActionEvent,
+        event_idx: int,
+        exec_state,
+        versioned_state,
+        fs,
+        session: str,
+        on_event,
+        on_token,
+    ) -> tuple[bool, Exception | None]:
+        """Walk an ActionEvent's emissions sequentially.
+
+        Returns ``(ran_terminator, recoverable_error)``.  The caller
+        handles the terminator exception (already re-raised out of
+        this method) and the recoverable error (logged as an
+        OutputEvent, loop continues on next iteration).
+
+        Emissions execute in stream-arrival order.  PythonEmissions
+        share state transitively — each call's ``handle_result`` syncs
+        assignments back, and the next emission's ``build_namespace``
+        hydrates from the updated state.  On the first terminator, the
+        walk aborts; remaining emissions stay in the log but don't run.
+        """
+        recoverable_error: Exception | None = None
+
+        for j, emission in enumerate(action_event.emissions):
+            emission_id = _emission_block_id(event_idx, j)
+
+            if isinstance(emission, (TextEmission, ThinkingEmission)):
+                continue  # Logged, not executed.
+
+            if isinstance(emission, FileWriteEmission):
+                try:
+                    apply_file_write(self, emission, fs, exec_state, on_event=on_event)
+                    add_event_to_log(
+                        exec_state,
+                        SystemNoteEvent(
+                            agent_name="System",
+                            message=f"✓ write_file: {emission.path}",
+                        ),
+                        on_event=on_event,
+                    )
+                except Exception as e:
+                    recoverable_error = e
+                    error_output = create_error_output(
+                        self.name, e, emission_id=emission_id
+                    )
+                    add_event_to_log(exec_state, error_output, on_event=on_event)
+                    break
+
+            elif isinstance(emission, FileEditEmission):
+                try:
+                    apply_file_edit(emission, fs, exec_state, on_event=on_event)
+                    add_event_to_log(
+                        exec_state,
+                        SystemNoteEvent(
+                            agent_name="System",
+                            message=f"✓ edit_file: {emission.path}",
+                        ),
+                        on_event=on_event,
+                    )
+                except Exception as e:
+                    recoverable_error = e
+                    error_output = create_error_output(
+                        self.name, e, emission_id=emission_id
+                    )
+                    add_event_to_log(exec_state, error_output, on_event=on_event)
+                    break
+
+            elif isinstance(emission, PythonEmission):
+                code = emission.code or ""
+                if not code.strip():
+                    continue
+                try:
+                    with apply_resource_limits(self._resource_limits):
+                        execute_sandboxed(
+                            code,
+                            self,
+                            exec_state,
+                            self.eval_timeout_seconds,
+                            fs=fs,
+                            session=session,
+                            on_event=on_event,
+                            on_token=on_token,
+                            emission_id=emission_id,
+                        )
+                except (TaskSuccess, TaskClarify, TaskFail, LLMFail, _AgentExit):
+                    raise
+                except Exception as e:
+                    recoverable_error = e
+                    error_output = create_error_output(
+                        self.name, e, emission_id=emission_id
+                    )
+                    add_event_to_log(exec_state, error_output, on_event=on_event)
+                    break
+
+            elif isinstance(emission, TerminalEmission):
+                commands = emission.commands or ""
+                if not commands.strip():
+                    continue
+                from agex.agent.loop.event_factories import build_terminal_commands
+
+                terminal_commands = build_terminal_commands(
+                    self, fs, state=versioned_state, vfs=fs
+                )
+                try:
+                    with apply_resource_limits(self._resource_limits):
+                        execute_terminal(
+                            self.name,
+                            commands,
+                            fs,
+                            exec_state,
+                            on_event=on_event,
+                            commands=terminal_commands or None,
+                            emission_id=emission_id,
+                        )
+                except Exception as e:
+                    recoverable_error = e
+                    # execute_terminal already logs an OutputEvent for
+                    # ParseError / TerminalError; just break.
+                    break
+
+        return (False, recoverable_error)
+
     def _task_loop_generator(
         self,
         task_name: str,
@@ -125,10 +280,7 @@ class SyncLoopMixin:
         on_token: Callable[[Any], None] | None = None,
         setup: str | None = None,
     ):
-        """
-        Generator that yields events as they happen during task execution.
-        This is the core implementation used by both streaming and regular modes.
-        """
+        """Generator that yields events as they happen during task execution."""
         # Initialize state
         exec_state, versioned_state = initialize_exec_state(
             self.name, state, inputs_instance, return_type, session=session
@@ -154,12 +306,23 @@ class SyncLoopMixin:
         yield task_start_event
         events_yielded += 1
 
-        # Execute setup code if provided
+        # Execute setup code if provided — a synthetic "setup" ActionEvent
+        # with a single PythonEmission so rendering is consistent with
+        # normal turns.
         if setup:
+            setup_emission = PythonEmission(
+                code=setup,
+                title="Setup",
+            )
             setup_action_event = ActionEvent(
                 agent_name=self.name,
-                thinking="This code was automatically run to provide context for the task.",
-                code=setup,
+                emissions=[
+                    ThinkingEmission(
+                        text="This code was automatically run to provide "
+                        "context for the task."
+                    ),
+                    setup_emission,
+                ],
                 source="setup",
             )
             add_event_to_log(exec_state, setup_action_event, on_event=on_event)
@@ -172,6 +335,10 @@ class SyncLoopMixin:
                 if on_event is not None:
                     on_event(event)
 
+            # Use the same emission_id formula the renderer will use
+            # when this setup event gets re-rendered later.
+            setup_event_idx = len(events(exec_state)) - 1
+            setup_emission_id = _emission_block_id(setup_event_idx, 1)
             try:
                 with apply_resource_limits(self._resource_limits):
                     execute_sandboxed(
@@ -183,6 +350,7 @@ class SyncLoopMixin:
                         session=session,
                         on_event=setup_on_event,
                         on_token=on_token,
+                        emission_id=setup_emission_id,
                     )
             except BaseException:
                 pass
@@ -193,9 +361,7 @@ class SyncLoopMixin:
             events_yielded = len(events(exec_state))
 
         # Accumulate referenced state keys across iterations for mutation
-        # detection.  find_refs is called once per iteration and the results
-        # are unioned so that in-place mutations from earlier iterations are
-        # still detected at commit time.
+        # detection.
         accumulated_refs: set[str] = set()
         last_error: Exception | None = None
 
@@ -203,7 +369,6 @@ class SyncLoopMixin:
         for iteration in range(self.max_iterations):
             # Check for cancellation at the start of each iteration
             if check_cancellation(task_name, versioned_state, exec_state):
-                # Record CancelledEvent in the log FIRST
                 cancelled_event = CancelledEvent(
                     agent_name=self.name,
                     task_name=task_name,
@@ -212,7 +377,6 @@ class SyncLoopMixin:
                 add_event_to_log(exec_state, cancelled_event, on_event=on_event)
                 yield cancelled_event
 
-                # Commit AFTER adding the event so it's included
                 if versioned_state is not None:
                     safe_commit(versioned_state)
 
@@ -235,68 +399,33 @@ class SyncLoopMixin:
                 on_token,
                 transient_message=forefront_msg,
             )
-            code_to_evaluate = process_llm_response(
-                llm_response,
-                self._strip_markdown_code_fence,
-                exec_state,
-                accumulated_refs,
-            )
+            strip_python_fences(llm_response, self._strip_markdown_code_fence)
+            collect_python_refs(llm_response, exec_state, accumulated_refs)
 
             # Create and yield action event
             action_event = create_action_event(self.name, llm_response)
             add_event_to_log(exec_state, action_event, on_event=on_event)
             yield action_event
             events_yielded += 1
+            event_idx = len(events(exec_state)) - 1
 
-            # Evaluate terminal or code
+            # Walk the emissions.  Terminators (TaskSuccess / TaskFail /
+            # TaskClarify) bubble up as exceptions; other exceptions are
+            # caught inside _execute_emissions and surfaced as an
+            # OutputEvent so the agent can retry on the next iteration.
             try:
-                with apply_resource_limits(self._resource_limits):
-                    apply_optimistic_file_actions(
-                        self, llm_response, fs, exec_state, on_event=on_event
-                    )
-
-                    if llm_response.terminal:
-                        # Execute terminal script - implicitly continues
-                        from agex.agent.loop.event_factories import (
-                            build_terminal_commands,
-                        )
-
-                        terminal_commands = build_terminal_commands(
-                            self, fs, state=versioned_state, vfs=fs
-                        )
-                        execute_terminal(
-                            self.name,
-                            llm_response.terminal,
-                            fs,
-                            exec_state,
-                            on_event=on_event,
-                            commands=terminal_commands or None,
-                        )
-
-                        # Yield any events from terminal execution
-                        for event in yield_new_events(exec_state, events_yielded):
-                            yield event
-                        events_yielded = len(events(exec_state))
-
-                        # Persist changes from this iteration
-                        if versioned_state is not None:
-                            safe_commit(
-                                versioned_state, referenced_keys=accumulated_refs
-                            )
-
-                        continue  # Terminal implicitly continues to next iteration
-
-                    elif code_to_evaluate:
-                        execute_sandboxed(
-                            code_to_evaluate,
-                            self,
-                            exec_state,
-                            self.eval_timeout_seconds,
-                            fs=fs,
-                            session=session,
-                            on_event=on_event,
-                            on_token=on_token,
-                        )
+                _, recoverable_error = self._execute_emissions(
+                    action_event,
+                    event_idx,
+                    exec_state,
+                    versioned_state,
+                    fs,
+                    session,
+                    on_event,
+                    on_token,
+                )
+                if recoverable_error is not None:
+                    last_error = recoverable_error
 
             except TaskSuccess as task_signal:
                 success_event = create_success_event(self.name, task_signal.result)
@@ -312,17 +441,6 @@ class SyncLoopMixin:
                 )
                 return task_signal.result
 
-            except TaskContinue:
-                for event in yield_new_events(exec_state, events_yielded):
-                    yield event
-                events_yielded = len(events(exec_state))
-
-                # Persist changes from this iteration (including <file> writes)
-                if versioned_state is not None:
-                    safe_commit(versioned_state, referenced_keys=accumulated_refs)
-
-                continue
-
             except TaskClarify as task_clarify:
                 clarify_event = create_clarify_event(self.name, task_clarify.message)
                 yield from self._handle_terminal_condition(
@@ -335,7 +453,6 @@ class SyncLoopMixin:
                     on_event,
                     referenced_keys=accumulated_refs,
                 )
-
                 if isinstance(state, Namespaced):
                     raise EvalError(
                         f"Sub-agent needs clarification: {task_clarify.message}"
@@ -355,7 +472,6 @@ class SyncLoopMixin:
                     on_event,
                     referenced_keys=accumulated_refs,
                 )
-
                 if isinstance(state, Namespaced):
                     raise EvalError(f"Sub-agent failed: {task_fail.message}")
                 else:
@@ -370,23 +486,35 @@ class SyncLoopMixin:
                 events_yielded = len(events(exec_state))
                 raise
 
-            except Exception as e:
-                last_error = e
-                error_output = create_error_output(self.name, e)
-                add_event_to_log(exec_state, error_output, on_event=on_event)
-                yield error_output
+            # Yield any events produced during the emission walk.
+            for event in yield_new_events(exec_state, events_yielded):
+                yield event
+            events_yielded = len(events(exec_state))
+
+            # Persist changes from this iteration.
+            if versioned_state is not None:
+                safe_commit(versioned_state, referenced_keys=accumulated_refs)
+
+            # Nudge if the agent ran out of Python without signaling.
+            combined_code = _last_python_code(action_event.emissions)
+            if combined_code.strip() and not check_for_task_call(combined_code):
+                # Pick the last PythonEmission's id for the nudge so the
+                # renderer pairs it with the expected tool_result.
+                last_py_idx = None
+                for j, em in enumerate(action_event.emissions):
+                    if isinstance(em, PythonEmission) and (em.code or "").strip():
+                        last_py_idx = j
+                nudge_id = (
+                    _emission_block_id(event_idx, last_py_idx)
+                    if last_py_idx is not None
+                    else None
+                )
+                guidance_output = create_guidance_output(
+                    self.name, emission_id=nudge_id
+                )
+                add_event_to_log(exec_state, guidance_output, on_event=on_event)
+                yield guidance_output
                 events_yielded += 1
-
-            else:
-                for event in yield_new_events(exec_state, events_yielded):
-                    yield event
-                events_yielded = len(events(exec_state))
-
-                if not check_for_task_call(code_to_evaluate):
-                    guidance_output = create_guidance_output(self.name)
-                    add_event_to_log(exec_state, guidance_output, on_event=on_event)
-                    yield guidance_output
-                    events_yielded += 1
 
         msg = f"Task '{task_name}' exceeded maximum iterations ({self.max_iterations})"
         if last_error is not None:
@@ -408,16 +536,14 @@ class SyncLoopMixin:
         on_conflict: str = "retry",
         max_conflict_retries: int = 3,
     ):
-        """
-        Execute the agent task loop with automatic retry on concurrency conflicts.
-        """
+        """Execute the agent task loop with automatic retry on concurrency conflicts."""
         versioned_state, fs, fs_metadata_before = prepare_task_loop(
             self, state, session
         )
 
         for attempt in range(max_conflict_retries + 1):
             try:
-                file_events = []  # Track FileEvents for post-merge emission
+                file_events = []
                 generator = self._task_loop_generator(
                     task_name,
                     docstring,
@@ -436,7 +562,6 @@ class SyncLoopMixin:
                 try:
                     while True:
                         event = next(generator)
-                        # Track FileEvents but don't emit yet - wait for completion
                         from agex.agent.events import FileEvent
 
                         if isinstance(event, FileEvent):
@@ -466,7 +591,6 @@ class SyncLoopMixin:
                     versioned_state.refresh()
 
             except (TaskFail, TaskClarify, _AgentExit):
-                # Emit FileEvents before re-raising
                 for file_event in file_events:
                     if on_event:
                         on_event(file_event)

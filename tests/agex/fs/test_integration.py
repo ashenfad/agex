@@ -5,8 +5,8 @@ import shutil
 import pytest
 
 from agex import Agent, clear_agent_registry, connect_fs, connect_state, pprint_events
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ class TestAgentVFSIntegration:
         """Test that agent task can access files uploaded via agent.fs()."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll read the CSV file.",
                     code="""with open("data.csv", "r") as f:
     content = f.read()
@@ -86,7 +86,7 @@ task_success(content)""",
         """Test that agent can write files that persist in VFS."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll create the file.",
                     code="""with open("output.txt", "w") as f:
     f.write("Hello from agent!")
@@ -121,13 +121,13 @@ task_success("file created")""",
         """Test that VFS state persists across multiple task calls."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll append to the log.",
                     code="""with open("log.txt", "a") as f:
     f.write("First message\\n")
 task_success("appended")""",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="I'll append another message.",
                     code="""with open("log.txt", "a") as f:
     f.write("Second message\\n")
@@ -214,7 +214,7 @@ class TestVFSWithRealLibraries:
 
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll read the CSV with pandas.",
                     code="""import pandas as pd
 df = pd.read_csv("data.csv")
@@ -253,7 +253,7 @@ task_success(str(age_sum))""",
 
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll create a JSON file.",
                     code="""import json
 data = {"key": "value", "number": 42}
@@ -300,7 +300,7 @@ class TestRemoval:
 
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="",
                     code="""
 import os;
@@ -347,7 +347,7 @@ task_success("removed")
 
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="",
                     code="""
 import os;

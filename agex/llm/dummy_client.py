@@ -34,10 +34,16 @@ class Dummy(LLM):
         if responses:
             self.responses = responses
         else:
+            from agex.agent.emissions import PythonEmission
+
             self.responses = [
                 LLMResponse(
-                    thinking="I will use the provided tools.",
-                    code="print('Hello from Dummy')",
+                    emissions=[
+                        PythonEmission(
+                            code="print('Hello from Dummy')",
+                            thinking="I will use the provided tools.",
+                        )
+                    ]
                 )
             ]
         self.call_count = 0
@@ -132,11 +138,30 @@ class Dummy(LLM):
         # If the item is an exception, raise it to simulate client failure
         if isinstance(item, Exception):
             raise item
-        response = item.model_copy()
+        response = item.model_copy(deep=True)
 
-        # If we detected unsupported images, note it in the response
+        # If we detected unsupported images, prepend a note on the first
+        # thinking-carrying emission so the agent sees the hint.
         if has_unsupported_images:
-            response.thinking = f"[Dummy client detected unsupported image type during rendering.]\n{response.thinking}"
+            from agex.agent.emissions import (
+                PythonEmission,
+                TerminalEmission,
+                ThinkingEmission,
+            )
+
+            note = "[Dummy client detected unsupported image type during rendering.]"
+            annotated = False
+            for em in response.emissions:
+                if isinstance(em, (PythonEmission, TerminalEmission)):
+                    em.thinking = f"{note}\n{em.thinking or ''}"
+                    annotated = True
+                    break
+                if isinstance(em, ThinkingEmission):
+                    em.text = f"{note}\n{em.text}"
+                    annotated = True
+                    break
+            if not annotated:
+                response.emissions.insert(0, ThinkingEmission(text=note))
 
         return response
 
@@ -150,40 +175,10 @@ class Dummy(LLM):
         self, system: str, events: List[Event], **kwargs
     ) -> Iterator[TokenChunk]:
         """Stream the response as TokenChunks."""
-        # Get response using normal logic (handles call_count and logging)
+        from .core import _emissions_to_tokens
+
         response = self.complete(system, events, **kwargs)
-
-        # Stream interactions
-        if response.title:
-            yield TokenChunk(type="title", content=response.title, done=False)
-            yield TokenChunk(type="title", content="", done=True)
-
-        if response.thinking:
-            yield TokenChunk(type="thinking", content=response.thinking, done=False)
-            yield TokenChunk(type="thinking", content="", done=True)
-
-        if response.file_actions:
-            for action in response.file_actions:
-                yield TokenChunk(
-                    type="file", content=f'path="{action.path}"', done=False
-                )
-                if action.mode == "append":
-                    # Re-yield path with mode to simulate XML parsing of attributes
-                    yield TokenChunk(
-                        type="file",
-                        content=f'path="{action.path}" mode="append"',
-                        done=False,
-                    )
-                yield TokenChunk(type="file", content=action.content, done=False)
-                yield TokenChunk(type="file", content="", done=True)
-
-        if response.terminal:
-            yield TokenChunk(type="terminal", content=response.terminal, done=False)
-            yield TokenChunk(type="terminal", content="", done=True)
-
-        if response.code:
-            yield TokenChunk(type="python", content=response.code, done=False)
-            yield TokenChunk(type="python", content="", done=True)
+        yield from _emissions_to_tokens(response)
 
     async def acomplete_stream(
         self, system: str, events: List[Event], **kwargs

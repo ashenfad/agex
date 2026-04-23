@@ -3,8 +3,8 @@ import pytest
 from agex import Agent, connect_fs, connect_state
 from agex.agent.base import clear_agent_registry
 from agex.agent.console import pprint_events
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +34,7 @@ def test_cross_module_imports():
     fs.write("a.py", b"import b\ndef val(): return b.val() * 2")
 
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Test chained imports", code="import a\ntask_success(a.val())"
         )
     ]
@@ -66,7 +66,7 @@ class Point:
     agent.fs().write("geometry.py", code.encode())
 
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Use VFS class",
             code="import geometry\np = geometry.Point(3, 4)\ntask_success(p.dist())",
         )
@@ -96,7 +96,7 @@ def test_stdlib_shadowing_protection():
 
     # We expect the real math module because it's in the default whitelist
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Import math", code="import math\ntask_success(math.sqrt(4))"
         ),
         # If the first attempt failed (e.g. returned 'fake' and we asserted inside the agent),
@@ -125,8 +125,8 @@ def test_syntax_error_in_module():
     agent.fs().write("bad.py", b"def broken( return")
 
     responses = [
-        LLMResponse(thinking="Import bad module", code="import bad"),
-        LLMResponse(
+        make_response(thinking="Import bad module", code="import bad"),
+        make_response(
             thinking="I see it failed. I will give up.",
             code="task_fail('syntax error')",
         ),
@@ -150,8 +150,8 @@ def test_syntax_error_recovery():
     agent.fs().write("bad.py", b"def broken( return")
 
     responses = [
-        LLMResponse(thinking="Import bad module", code="import bad"),
-        LLMResponse(
+        make_response(thinking="Import bad module", code="import bad"),
+        make_response(
             thinking="I see it failed. I will give up.",
             code="task_fail('syntax error')",
         ),
@@ -174,8 +174,8 @@ def test_runtime_error_in_module_body():
     agent.fs().write("crash.py", b"x = 1 / 0")
 
     responses = [
-        LLMResponse(thinking="Import crashing module", code="import crash"),
-        LLMResponse(
+        make_response(thinking="Import crashing module", code="import crash"),
+        make_response(
             thinking="I see it crashed. I will give up.", code="task_fail('crashed')"
         ),
     ]
@@ -199,8 +199,8 @@ def test_circular_imports_detection():
     agent.fs().write("pong.py", b"import ping\ny=1")
 
     responses = [
-        LLMResponse(thinking="Import ping", code="import ping"),
-        LLMResponse(thinking="I see it failed.", code="task_fail('recursion')"),
+        make_response(thinking="Import ping", code="import ping"),
+        make_response(thinking="I see it failed.", code="task_fail('recursion')"),
     ]
     agent.llm.responses = responses
 

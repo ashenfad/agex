@@ -1,4 +1,12 @@
-"""Tests for XML parsing utilities (LLM-specific)."""
+"""Tests for XML parsing utilities (LLM-specific).
+
+The XML wire format is slated for deletion in Phase 3 of the retooling
+— the tokenizer still functions but the :class:`EmissionsBuilder` no
+longer consumes the old ``file`` / ``edit`` token types.  A handful of
+tests that asserted file_actions round-tripping through the builder
+are marked xfail here; the underlying tokenizer logic is still
+exercised by the surviving tests.
+"""
 
 import pytest
 
@@ -8,6 +16,20 @@ from agex.llm.formats.xml import (
     XMLResponse,
     parse_xml_response,
     tokenize_xml_stream,
+)
+from tests.agex._emissions import (
+    response_code,
+    response_file_actions,
+    response_thinking,
+    response_title,
+)
+
+# Mark the (few) builder-round-trip tests for file / edit blocks as
+# expected-fail; the shape they tested goes away with the XML format
+# in Phase 3.
+_xml_builder_gone = pytest.mark.xfail(
+    reason="XML → EmissionsBuilder file/edit path removed; Phase 3 deletes XML entirely",
+    strict=True,
 )
 
 
@@ -408,6 +430,7 @@ class TestImplicitCloseRecovery:
             builder.process_token(tok)
         return builder.build()
 
+    @_xml_builder_gone
     def test_unclosed_file_followed_by_thinking(self):
         """A <FILE> missing </FILE> should close when <THINKING> appears on
         a new line — the thinking content should go to the thinking section,
@@ -425,14 +448,14 @@ class TestImplicitCloseRecovery:
         ]
         resp = self._build(chunks)
         # Two separate file actions, both with clean bodies
-        assert len(resp.file_actions) == 2
-        assert resp.file_actions[0].path == "a.py"
-        assert resp.file_actions[0].content.strip() == "X = 1"
-        assert resp.file_actions[1].path == "b.py"
-        assert resp.file_actions[1].content.strip() == "Y = 2"
+        assert len(response_file_actions(resp)) == 2
+        assert response_file_actions(resp)[0].path == "a.py"
+        assert response_file_actions(resp)[0].content.strip() == "X = 1"
+        assert response_file_actions(resp)[1].path == "b.py"
+        assert response_file_actions(resp)[1].content.strip() == "Y = 2"
         # Recovered thinking should accumulate both segments
-        assert "reasoning" in resp.thinking
-        assert "now for file b" in resp.thinking
+        assert "reasoning" in response_thinking(resp)
+        assert "now for file b" in response_thinking(resp)
 
     def test_unclosed_title_followed_by_thinking(self):
         """An unclosed <TITLE> should close when <THINKING> appears next."""
@@ -442,9 +465,9 @@ class TestImplicitCloseRecovery:
             '<PYTHON>task_success("done")</PYTHON>'
         ]
         resp = self._build(chunks)
-        assert resp.title.strip() == "Planning step"
-        assert resp.thinking.strip() == "my reasoning"
-        assert "task_success" in resp.code
+        assert response_title(resp).strip() == "Planning step"
+        assert response_thinking(resp).strip() == "my reasoning"
+        assert "task_success" in response_code(resp)
 
     def test_unclosed_thinking_followed_by_python(self):
         """Unclosed <THINKING> should close when <PYTHON> appears."""
@@ -454,10 +477,11 @@ class TestImplicitCloseRecovery:
             '<PYTHON>task_success("done")</PYTHON>'
         ]
         resp = self._build(chunks)
-        assert resp.title == "T"
-        assert resp.thinking.strip() == "some reasoning"
-        assert "task_success" in resp.code
+        assert response_title(resp) == "T"
+        assert response_thinking(resp).strip() == "some reasoning"
+        assert "task_success" in response_code(resp)
 
+    @_xml_builder_gone
     def test_tag_inside_file_content_is_preserved(self):
         """A tag-like string mid-line inside a FILE body should NOT trigger
         implicit close — only line-start tags do.  This protects code that
@@ -471,10 +495,10 @@ class TestImplicitCloseRecovery:
             '<PYTHON>task_success("ok")</PYTHON>'
         ]
         resp = self._build(chunks)
-        assert len(resp.file_actions) == 1
-        assert resp.file_actions[0].path == "docs.py"
-        assert "<THINKING>" in resp.file_actions[0].content
-        assert "</THINKING>" in resp.file_actions[0].content
+        assert len(response_file_actions(resp)) == 1
+        assert response_file_actions(resp)[0].path == "docs.py"
+        assert "<THINKING>" in response_file_actions(resp)[0].content
+        assert "</THINKING>" in response_file_actions(resp)[0].content
 
     def test_indented_sibling_opener_still_triggers(self):
         """A sibling opener at line-start with leading whitespace should
@@ -485,9 +509,10 @@ class TestImplicitCloseRecovery:
             "    <PYTHON>task_success(1)</PYTHON>"
         ]
         resp = self._build(chunks)
-        assert resp.thinking.strip() == "reasoning"
-        assert "task_success(1)" in resp.code
+        assert response_thinking(resp).strip() == "reasoning"
+        assert "task_success(1)" in response_code(resp)
 
+    @_xml_builder_gone
     def test_edit_inner_tags_do_not_trigger_close(self):
         """Inside an <EDIT>, the <SEARCH>/<REPLACE> inner tags should NOT
         be treated as implicit-close triggers — they're legitimate children."""
@@ -501,8 +526,8 @@ class TestImplicitCloseRecovery:
             '<PYTHON>task_success("ok")</PYTHON>'
         ]
         resp = self._build(chunks)
-        assert len(resp.file_actions) == 1
-        action = resp.file_actions[0]
+        assert len(response_file_actions(resp)) == 1
+        action = response_file_actions(resp)[0]
         assert action.path == "file.py"
         assert action.search == "old_code"
         assert action.content == "new_code"
@@ -518,9 +543,9 @@ class TestImplicitCloseRecovery:
             '"done")</PYTHON>',
         ]
         resp = self._build(chunks)
-        assert resp.title == "T"
-        assert "partial reasoning more words" in resp.thinking
-        assert "task_success" in resp.code
+        assert response_title(resp) == "T"
+        assert "partial reasoning more words" in response_thinking(resp)
+        assert "task_success" in response_code(resp)
 
 
 class TestXMLResponse:
@@ -529,6 +554,8 @@ class TestXMLResponse:
     def test_basic_creation(self):
         """Test creating XMLResponse."""
         response = XMLResponse(thinking="My thinking", code="my_code()")
+        # XMLResponse is the legacy XML-format response type — still has
+        # the pre-retooling named fields; Phase 3 deletes it entirely.
         assert response.thinking == "My thinking"
         assert response.code == "my_code()"
         assert response.title == ""
@@ -965,6 +992,7 @@ class TestEditParsing:
         assert isinstance(edit, EditAction)
         assert edit.operation == "insert-after"
 
+    @_xml_builder_gone
     def test_streaming_edit_insert_after(self):
         """Test streaming tokenizer parses INSERT-AFTER tag."""
         from agex.llm.core import ResponseBuilder
@@ -991,8 +1019,8 @@ class TestEditParsing:
             builder.process_token(token)
 
         response = builder.build()
-        assert len(response.file_actions) == 1
-        edit = response.file_actions[0]
+        assert len(response_file_actions(response)) == 1
+        edit = response_file_actions(response)[0]
         assert isinstance(edit, EditAction)
         assert edit.operation == "insert-after"
 

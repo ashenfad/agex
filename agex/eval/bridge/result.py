@@ -20,10 +20,11 @@ from typing import Any, Callable
 from sandtrap import ExecResult
 from sandtrap.wrappers import ModuleRef
 
-from agex.agent.datatypes import TaskContinue, TaskSuccess
+from agex.agent.datatypes import TaskSuccess
 from agex.agent.events import OutputEvent
 from agex.eval.bridge.namespace import _is_internal_state_key
-from agex.eval.objects import ImageAction
+from agex.eval.bridge.policy import _current_emission_id
+from agex.eval.objects import ImageAction, PrintAction
 from agex.state.log import add_event_to_log
 
 
@@ -57,11 +58,12 @@ def handle_result(
                  without creating duplicate blobs for unchanged values).
 
     Raises:
-        _AgentExit subclasses: TaskSuccess, TaskFail, TaskContinue, etc.
+        _AgentExit subclasses: TaskSuccess, TaskFail, etc.
         Exception: Any regular exception from agent code.
     """
     skip = injected_keys or set()
     ids = pre_ids or {}
+    emission_id = _current_emission_id.get()
 
     # 1. Sync namespace values back to state — only write variables that
     #    were reassigned (different object identity) or newly created.
@@ -81,11 +83,6 @@ def handle_result(
             state[key] = value
 
     # 2. Detect deletions (key was in state before exec, not in namespace after).
-    #    Internal bookkeeping keys (__..., _event_...) are never hydrated
-    #    into the sandbox, so a well-behaved caller won't list them in
-    #    ``pre_keys``. Belt-and-suspenders: still filter them here, so
-    #    a buggy caller can't accidentally have us delete the event log's
-    #    backing store.
     post_keys = {k for k in result.namespace if not _is_internal_state_key(k)}
     for key in pre_keys - post_keys:
         if _is_internal_state_key(key):
@@ -93,35 +90,45 @@ def handle_result(
         if key in state:
             del state[key]
 
-    # 3. Convert print snapshots into OutputEvents
-    #    Intercept __AGEX_IMAGE__: prefixed prints and convert to ImageAction
+    # 3. Convert print snapshots into OutputEvents.  Each PrintAction
+    #    carries the current emission_id so the renderer can pair
+    #    observations per emission in a multi-emission turn.  Intercept
+    #    __AGEX_IMAGE__: prefixed prints and convert to ImageAction.
     _IMG_PREFIX = "__AGEX_IMAGE__:"
     for args in result.prints:
-        parts = list(args)
-        if (
-            len(parts) == 1
-            and isinstance(parts[0], str)
-            and parts[0].startswith(_IMG_PREFIX)
-        ):
+        tup = tuple(args)
+        if len(tup) == 1 and isinstance(tup[0], str) and tup[0].startswith(_IMG_PREFIX):
             try:
                 # Defer PIL until we actually need to decode an image —
                 # keeps ``import agex`` fast when the agent never prints
                 # __AGEX_IMAGE__ markers.
                 from PIL import Image  # noqa: PLC0415
 
-                b64 = parts[0][len(_IMG_PREFIX) :]
+                b64 = tup[0][len(_IMG_PREFIX) :]
                 img = Image.open(io.BytesIO(base64.b64decode(b64)))
                 event = OutputEvent(
-                    agent_name=agent_name, parts=[ImageAction(image=img)]
+                    agent_name=agent_name,
+                    parts=[ImageAction(image=img, emission_id=emission_id)],
                 )
             except Exception:
-                event = OutputEvent(agent_name=agent_name, parts=parts)
+                event = OutputEvent(
+                    agent_name=agent_name,
+                    parts=[PrintAction(args=tup, emission_id=emission_id)],
+                )
         else:
-            event = OutputEvent(agent_name=agent_name, parts=parts)
+            event = OutputEvent(
+                agent_name=agent_name,
+                parts=[PrintAction(args=tup, emission_id=emission_id)],
+            )
         add_event_to_log(state, event, on_event=on_event)
 
-    # 4. Convert __outputs__ entries (e.g. view_image) into OutputEvents
+    # 4. Convert __outputs__ entries (e.g. view_image) into OutputEvents.
     for item in result.namespace.get("__outputs__", []):
+        # Stamp the current emission_id if the ImageAction didn't
+        # already carry one (view_image reads the contextvar at call
+        # time, so this is just defence in depth).
+        if isinstance(item, ImageAction) and item.emission_id is None:
+            item.emission_id = emission_id
         event = OutputEvent(agent_name=agent_name, parts=[item])
         add_event_to_log(state, event, on_event=on_event)
 
@@ -130,17 +137,10 @@ def handle_result(
     if isinstance(result.error, TaskSuccess):
         _validate_task_result(result.error.result, state)
 
-    # 6. Convert task_continue observations to OutputEvent
-    if isinstance(result.error, TaskContinue) and result.error.observations:
-        event = OutputEvent(
-            agent_name=agent_name, parts=list(result.error.observations)
-        )
-        add_event_to_log(state, event, on_event=on_event)
-
-    # 7. Re-raise any error captured by sandtrap
-    # sandtrap catches ALL BaseException (except KeyboardInterrupt) and puts it
-    # in result.error. This includes _AgentExit subclasses (TaskSuccess, TaskFail,
-    # TaskContinue, TaskClarify) which are BaseException.
+    # 6. Re-raise any error captured by sandtrap.
+    # sandtrap catches ALL BaseException (except KeyboardInterrupt) and puts
+    # it in result.error. This includes _AgentExit subclasses (TaskSuccess,
+    # TaskFail, TaskClarify) which are BaseException.
     if result.error is not None:
         raise result.error
 

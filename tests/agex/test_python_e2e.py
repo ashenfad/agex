@@ -21,7 +21,7 @@ from agex.eval.objects import PrintAction
 from agex.git_cli import register_git
 from agex.helpers.stdlib import register_stdlib
 from agex.llm import Dummy
-from agex.llm.core import LLMResponse
+from tests.agex._emissions import make_response
 
 
 def _collect_output_text(events):
@@ -64,7 +64,7 @@ class TestBasicScriptExecution:
         agent.llm = Dummy(
             responses=[
                 # Turn 1: write a script
-                LLMResponse(
+                make_response(
                     thinking="I'll write a computation script.",
                     file_actions=[
                         {
@@ -76,7 +76,7 @@ class TestBasicScriptExecution:
                     terminal="python compute.py",
                 ),
                 # Turn 2: complete with the result from REPL
-                LLMResponse(
+                make_response(
                     thinking="The script printed the answer. Let me return it.",
                     code="task_success(12.0)",
                 ),
@@ -101,11 +101,11 @@ class TestBasicScriptExecution:
         agent = _make_agent()
         agent.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Quick math check.",
                     terminal="python -c 'print(7 * 6)'",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Got it.",
                     code="task_success(42)",
                 ),
@@ -133,7 +133,7 @@ class TestScriptIteration:
         agent.llm = Dummy(
             responses=[
                 # Turn 1: write and run v1
-                LLMResponse(
+                make_response(
                     thinking="Writing first version.",
                     file_actions=[
                         {
@@ -145,7 +145,7 @@ class TestScriptIteration:
                     terminal="python analyze.py",
                 ),
                 # Turn 2: edit and run v2
-                LLMResponse(
+                make_response(
                     thinking="Need the mean instead.",
                     file_actions=[
                         {
@@ -157,7 +157,7 @@ class TestScriptIteration:
                     terminal="python analyze.py",
                 ),
                 # Turn 3: complete
-                LLMResponse(
+                make_response(
                     thinking="Both results computed.",
                     code="task_success('iterated')",
                 ),
@@ -188,7 +188,7 @@ class TestREPLBridge:
         agent.llm = Dummy(
             responses=[
                 # Turn 1: write a module
-                LLMResponse(
+                make_response(
                     thinking="Writing the solver module.",
                     file_actions=[
                         {
@@ -200,7 +200,7 @@ class TestREPLBridge:
                     terminal="python -c 'from helpers.solver import solve; print(solve(5))'",
                 ),
                 # Turn 2: import from REPL and complete
-                LLMResponse(
+                make_response(
                     thinking="It works. Returning the result via REPL.",
                     code="from helpers.solver import solve\ntask_success(solve(5))",
                 ),
@@ -230,7 +230,7 @@ class TestNamespaceIsolation:
         agent.llm = Dummy(
             responses=[
                 # Turn 1: run a script that defines a variable
-                LLMResponse(
+                make_response(
                     thinking="Running script with a variable.",
                     file_actions=[
                         {
@@ -242,7 +242,7 @@ class TestNamespaceIsolation:
                     terminal="python setup.py",
                 ),
                 # Turn 2: try to access from REPL — should fail
-                LLMResponse(
+                make_response(
                     thinking="Checking if variable leaked.",
                     code="try:\n    print(secret_value)\n    task_success('leaked!')\nexcept NameError:\n    task_success('isolated')",
                 ),
@@ -265,12 +265,12 @@ class TestNamespaceIsolation:
         agent.llm = Dummy(
             responses=[
                 # Turn 1: define a variable in REPL
-                LLMResponse(
+                make_response(
                     thinking="Setting a REPL variable.",
                     code="repl_var = 'from_repl'\ntask_continue()",
                 ),
                 # Turn 2: try to access from script
-                LLMResponse(
+                make_response(
                     thinking="Checking if REPL var is visible in script.",
                     file_actions=[
                         {
@@ -282,7 +282,7 @@ class TestNamespaceIsolation:
                     terminal="python check.py",
                 ),
                 # Turn 3: complete
-                LLMResponse(
+                make_response(
                     thinking="Confirmed isolation.",
                     code="task_success('isolated')",
                 ),
@@ -311,7 +311,7 @@ class TestPipelineComposition:
         agent = _make_agent()
         agent.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Generate lines and filter.",
                     file_actions=[
                         {
@@ -322,7 +322,7 @@ class TestPipelineComposition:
                     ],
                     terminal="python gen.py | grep even",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Got the even numbers.",
                     code="task_success('filtered')",
                 ),
@@ -353,7 +353,7 @@ class TestPythonWithGit:
         agent.llm = Dummy(
             responses=[
                 # Turn 1: write v1 and commit
-                LLMResponse(
+                make_response(
                     thinking="Writing v1 of the processor.",
                     file_actions=[
                         {
@@ -365,7 +365,7 @@ class TestPythonWithGit:
                     terminal="python process.py && git commit -m 'v1: sum'",
                 ),
                 # Turn 2: update to v2 and commit
-                LLMResponse(
+                make_response(
                     thinking="Changing to product.",
                     file_actions=[
                         {
@@ -377,11 +377,11 @@ class TestPythonWithGit:
                     terminal="python process.py && git commit -m 'v2: product'",
                 ),
                 # Turn 3: check git diff and complete
-                LLMResponse(
+                make_response(
                     thinking="Let me see what changed.",
                     terminal="git diff HEAD~1 && git log --oneline",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Done.",
                     code="task_success('developed')",
                 ),

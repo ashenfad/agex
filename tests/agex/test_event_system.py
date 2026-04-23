@@ -17,11 +17,16 @@ from agex.agent.events import (
     SuccessEvent,
     TaskStartEvent,
 )
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
 from agex.state import _agex_decoder, _agex_encoder, connect_state, events
 from agex.state.kv import Memory
 from agex.state.log import add_event_to_log
+from tests.agex._emissions import (
+    event_code,
+    event_thinking,
+    make_action_event,
+    make_response,
+)
 
 
 class TestEventSystem:
@@ -36,7 +41,7 @@ class TestEventSystem:
         # Set up dummy LLM to complete the task
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll complete this simple task.",
                     code='task_success("completed")',
                 )
@@ -74,7 +79,7 @@ class TestEventSystem:
         """Test that ActionEvent captures agent thinking and code."""
         thinking_text = "I need to analyze this problem step by step."
         code_text = 'result = "analyzed"\ntask_success(result)'
-        llm = Dummy([LLMResponse(thinking=thinking_text, code=code_text)])
+        llm = Dummy([make_response(thinking=thinking_text, code=code_text)])
         config = connect_state(type="versioned", storage="memory")
         agent = Agent(name="thinking_agent", llm=llm, state=config)
 
@@ -94,14 +99,14 @@ class TestEventSystem:
         event = action_events[0]
 
         assert event.agent_name == "thinking_agent"
-        assert event.thinking == thinking_text
-        assert event.code == code_text
+        assert event_thinking(event) == thinking_text
+        assert event_code(event) == code_text
 
     def test_output_event_creation(self):
         """Test that OutputEvent is created for print() calls."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll test print output and complete.",
                     code='print("Hello World")\ntask_success("done")',
                 )
@@ -135,7 +140,7 @@ class TestEventSystem:
         expected_result = {"status": "completed", "value": 42}
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll return a successful result.",
                     code=f"task_success({expected_result})",
                 )
@@ -168,7 +173,7 @@ class TestEventSystem:
         fail_message = "This task cannot be completed"
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I cannot complete this task.",
                     code=f'task_fail("{fail_message}")',
                 )
@@ -208,7 +213,7 @@ class TestEventSystem:
         # Sub-agent LLMs
         llm1 = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="Agent one processing",
                     code="result = inputs.value * 2\ntask_success(result)",
                 )
@@ -216,7 +221,7 @@ class TestEventSystem:
         )
         llm2 = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="Agent two processing",
                     code="result = inputs.value + 10\ntask_success(result)",
                 )
@@ -226,7 +231,7 @@ class TestEventSystem:
         # Orchestrator LLM
         orchestrator_llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll call both sub-agents and return results",
                     code=(
                         "r1 = task_one(inputs.input_value)\n"
@@ -304,7 +309,7 @@ class TestEventSystem:
         )
         add_event_to_log(
             state,
-            ActionEvent(
+            make_action_event(
                 agent_name="filter_test_agent",
                 thinking="Thinking...",
                 code="print('hello')",
@@ -351,7 +356,7 @@ class TestEventSystem:
         """Test that a complete task generates all expected events in correct order."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll process this input and return a result.",
                     code='print(f"Processing: {inputs.input_data}")\nresult = inputs.input_data.upper()\nprint(f"Result: {result}")\ntask_success(result)',
                 )
@@ -400,7 +405,7 @@ class TestEventSystem:
         """Test that events are properly persisted and can be retrieved after state snapshots."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="Testing persistence", code='task_success("persisted")'
                 )
             ]
@@ -448,7 +453,7 @@ class TestEventSystem:
 
         specialist_llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="Specialist thinking",
                     code='print(f"Specialist processed: {inputs.data}")\ntask_success(inputs.data.upper())',
                 )
@@ -458,7 +463,7 @@ class TestEventSystem:
 
         orchestrator_llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="Orchestrator thinking",
                     code="result = specialist_task(inputs.data)\ntask_success(result)",
                 )

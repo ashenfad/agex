@@ -3,7 +3,8 @@ import pytest
 from agex import Agent, connect_fs, connect_state
 from agex.agent.base import clear_agent_registry
 from agex.eval.core import run_file_in_sandbox
-from agex.llm import Dummy, LLMResponse
+from agex.llm import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -180,7 +181,7 @@ def get_val():
         )
 
         agent.llm.responses = [
-            LLMResponse(
+            make_response(
                 thinking="test",
                 code="import pkg.main\ntask_success(pkg.main.get_val())",
             )
@@ -209,7 +210,7 @@ def get_shared():
         )
 
         agent.llm.responses = [
-            LLMResponse(
+            make_response(
                 thinking="test",
                 code="import pkg.sub.module\ntask_success(pkg.sub.module.get_shared())",
             )

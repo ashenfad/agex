@@ -8,8 +8,9 @@ These tests verify that:
 
 from agex import Agent, clear_agent_registry, events
 from agex.agent.events import ActionEvent, OutputEvent
-from agex.llm.dummy_client import Dummy, LLMResponse
+from agex.llm.dummy_client import Dummy
 from agex.state import connect_state
+from tests.agex._emissions import make_response
 
 
 def test_error_appears_immediately_in_first_iteration():
@@ -22,11 +23,11 @@ def test_error_appears_immediately_in_first_iteration():
     # Second response should see the error from the first response
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I'll try to compute something with a syntax error.",
                 code="result = 1 + ",  # This will cause a syntax error
             ),
-            LLMResponse(
+            make_response(
                 thinking="I can see the error now. Let me fix it.",
                 code="result = 1 + 1\ntask_success(result)",
             ),
@@ -94,11 +95,11 @@ def test_validation_error_shows_full_type():
     # Second response: "See" the error and return the correct type.
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I will try to return a list of strings.",
                 code="task_success(['a', 'b'])",
             ),
-            LLMResponse(
+            make_response(
                 thinking="I see the validation error. I'll return a list of ints now.",
                 code="task_success([1, 2])",
             ),

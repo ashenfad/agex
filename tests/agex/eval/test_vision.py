@@ -6,8 +6,9 @@ from typing import Any
 
 from agex.agent import Agent, clear_agent_registry
 from agex.agent.events import OutputEvent
-from agex.llm.dummy_client import Dummy, LLMResponse
+from agex.llm.dummy_client import Dummy
 from agex.state import connect_state
+from tests.agex._emissions import make_response
 
 # Try to import Pillow for creating a test image
 try:
@@ -30,11 +31,11 @@ def test_view_image_sends_image_in_output_event():
     # The second response will see the rendered image and finish the task.
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I will view the image provided in the inputs.",
                 code="view_image(inputs.img_to_view);task_continue();",
             ),
-            LLMResponse(
+            make_response(
                 thinking="I have now seen the image and will finish.",
                 code="task_success('done')",
             ),

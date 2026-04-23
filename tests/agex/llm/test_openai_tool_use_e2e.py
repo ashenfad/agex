@@ -11,12 +11,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agex.agent.datatypes import EditAction, FileAction
+from agex.agent.emissions import FileEditEmission, FileWriteEmission
 from agex.agent.events import TaskStartEvent
 from agex.llm.core import ResponseBuilder
 from agex.llm.formats import ToolUseWireFormat, XmlWireFormat
 from agex.llm.openai_client import OpenAI
 from agex.llm.pyfetch_openai import PyfetchOpenAI
+from tests.agex._emissions import (
+    make_action_event,
+    response_code,
+    response_file_actions,
+    response_thinking,
+    response_title,
+)
 
 
 def _mk_chunk(choices=None, usage=None):
@@ -118,9 +125,9 @@ class TestOpenAIToolUse:
         for t in tokens:
             builder.process_token(t)
         resp = builder.build()
-        assert resp.title == "t"
-        assert resp.thinking == "T"
-        assert resp.code == "print(1)"
+        assert response_title(resp) == "t"
+        assert response_thinking(resp) == "T"
+        assert response_code(resp) == "print(1)"
         assert resp.input_tokens == 12
         assert resp.output_tokens == 3
 
@@ -148,10 +155,10 @@ class TestOpenAIToolUse:
             builder.process_token(t)
         resp = builder.build()
 
-        assert resp.code == "import a"
-        assert len(resp.file_actions) == 1
-        fa = resp.file_actions[0]
-        assert isinstance(fa, FileAction)
+        assert response_code(resp) == "import a"
+        assert len(response_file_actions(resp)) == 1
+        fa = response_file_actions(resp)[0]
+        assert isinstance(fa, FileWriteEmission)
         assert fa.path == "/a.py"
         assert fa.content == "X = 1"
 
@@ -183,9 +190,9 @@ class TestOpenAIToolUse:
             builder.process_token(t)
         resp = builder.build()
 
-        assert len(resp.file_actions) == 1
-        ea = resp.file_actions[0]
-        assert isinstance(ea, EditAction)
+        assert len(response_file_actions(resp)) == 1
+        ea = response_file_actions(resp)[0]
+        assert isinstance(ea, FileEditEmission)
         assert ea.path == "/b.py"
         assert ea.search == "anchor"
         assert ea.content == "added"
@@ -289,8 +296,8 @@ async def test_pyfetch_openai_tool_use():
     for t in tokens:
         builder.process_token(t)
     resp = builder.build()
-    assert resp.title == "t"
-    assert resp.code == "print(1)"
+    assert response_title(resp) == "t"
+    assert response_code(resp) == "print(1)"
     assert resp.input_tokens == 20
     assert resp.output_tokens == 5
 
@@ -478,7 +485,7 @@ async def test_pyfetch_openai_cache_marker_lands_on_cacheable_block():
     to — the breakpoint silently disappeared every turn so OpenRouter
     only cached the system prompt. Must land on a block that actually
     receives a cache_control marker."""
-    from agex.agent.events import ActionEvent, OutputEvent
+    from agex.agent.events import OutputEvent
 
     args_json = json.dumps({"title": "t", "thinking": "T", "code": "x"})
     sse_lines = [
@@ -534,7 +541,7 @@ async def test_pyfetch_openai_cache_marker_lands_on_cacheable_block():
     # shape between turns).
     events = [
         TaskStartEvent(agent_name="a", task_name="t", inputs={}, message="do work"),
-        ActionEvent(
+        make_action_event(
             agent_name="a",
             title="t1",
             thinking="T1",
@@ -647,7 +654,7 @@ async def test_pyfetch_openai_cache_marker_lands_on_cacheable_block():
     for t in tokens:
         builder.process_token(t)
     resp = builder.build()
-    assert resp.title == "t"
-    assert resp.code == "print(1)"
+    assert response_title(resp) == "t"
+    assert response_code(resp) == "print(1)"
     assert resp.input_tokens == 20
     assert resp.output_tokens == 5

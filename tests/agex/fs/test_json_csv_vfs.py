@@ -1,13 +1,14 @@
 """Integration tests for json and csv modules with VirtualFS."""
 
 from agex import Agent, connect_fs, connect_state
-from agex.llm import Dummy, LLMResponse
+from agex.llm import Dummy
+from tests.agex._emissions import make_response
 
 
 def test_json_vfs_integration():
     """Test json module reading/writing files in VFS via agent code."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll read the JSON, modify it, and write it back.",
             code="""import json
 
@@ -66,7 +67,7 @@ task_success(f"Updated count to {data['count']}")
 def test_csv_vfs_integration():
     """Test csv module reading/writing files in VFS via agent code."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll read the CSV, filter rows, and write output.",
             code="""import csv
 
@@ -131,7 +132,7 @@ Diana,inactive,92"""
 def test_json_loads_dumps():
     """Test that json.loads/dumps work without file operations."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll use json.loads and json.dumps for string serialization.",
             code="""import json
 

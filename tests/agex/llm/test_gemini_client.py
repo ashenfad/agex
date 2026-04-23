@@ -6,6 +6,12 @@ from agex.agent.events import TaskStartEvent
 from agex.llm.core import TokenChunk
 from agex.llm.formats import XmlWireFormat
 from agex.llm.gemini_client import Gemini
+from tests.agex._emissions import (
+    response_code,
+    response_file_actions,
+    response_thinking,
+    response_title,
+)
 
 
 def test_gemini_client_initialization():
@@ -66,31 +72,44 @@ def test_gemini_client_complete_stream():
 
 def test_gemini_client_complete_wraps_stream():
     """Test that complete() calls complete_stream and accumulates result."""
+    from agex.agent.emissions import FileWriteEmission
+
     with (
         patch("google.genai.Client"),
         patch.object(Gemini, "complete_stream") as mock_stream,
     ):
-        # Mock stream tokens
+        # Mock stream tokens using the emission-era token shape:
+        # action-tool chunks stream char-by-char, file tools arrive as
+        # a single ``emission`` token carrying a prebuilt emission.
         mock_stream.return_value = [
-            TokenChunk(type="title", content="My Title", done=False),
-            TokenChunk(type="title", content="", done=True),
-            TokenChunk(type="thinking", content="Thinking...", done=False),
-            TokenChunk(type="thinking", content="", done=True),
-            TokenChunk(type="file", content="path=utils.py", done=False),
-            TokenChunk(type="file", content="x=1", done=False),
-            TokenChunk(type="file", content="", done=True),
-            TokenChunk(type="python", content="pass", done=False),
-            TokenChunk(type="python", content="", done=True),
+            TokenChunk(
+                type="emission",
+                content="",
+                done=True,
+                emission_index=0,
+                emission=FileWriteEmission(path="utils.py", content="x=1"),
+            ),
+            TokenChunk(type="title", content="My Title", done=False, emission_index=1),
+            TokenChunk(type="title", content="", done=True, emission_index=1),
+            TokenChunk(
+                type="thinking",
+                content="Thinking...",
+                done=False,
+                emission_index=1,
+            ),
+            TokenChunk(type="thinking", content="", done=True, emission_index=1),
+            TokenChunk(type="python", content="pass", done=False, emission_index=1),
+            TokenChunk(type="python", content="", done=True, emission_index=1),
         ]
 
         client = Gemini()
         response = client.complete("system", [])
 
-        assert response.title == "My Title"
-        assert response.thinking == "Thinking..."
-        assert response.file_actions[0].path == "utils.py"
-        assert response.file_actions[0].content == "x=1"
-        assert response.code == "pass"
+        assert response_title(response) == "My Title"
+        assert response_thinking(response) == "Thinking..."
+        assert response_file_actions(response)[0].path == "utils.py"
+        assert response_file_actions(response)[0].content == "x=1"
+        assert response_code(response) == "pass"
 
 
 def test_gemini_client_summarize_with_config():
@@ -171,5 +190,5 @@ async def test_gemini_acomplete_wraps_stream():
         client = Gemini()
         response = await client.acomplete("system", [])
 
-        assert response.thinking == "Thinking..."
-        assert response.code == "pass"
+        assert response_thinking(response) == "Thinking..."
+        assert response_code(response) == "pass"

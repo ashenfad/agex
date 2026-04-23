@@ -7,8 +7,8 @@ import pytest
 from agex.agent import Agent
 from agex.agent.base import clear_agent_registry
 from agex.host import execute_task, prepare_agent, run_remote_task, serialize_agent
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -23,7 +23,7 @@ class TestExecuteTask:
 
     def test_execute_task_runs_task(self):
         """Test that execute_task runs a task and returns result."""
-        llm = Dummy(responses=[LLMResponse(thinking="done", code="task_success(42)")])
+        llm = Dummy(responses=[make_response(thinking="done", code="task_success(42)")])
         agent = Agent(llm=llm)
 
         @agent.task
@@ -45,7 +45,9 @@ class TestExecuteTask:
 
     def test_execute_task_with_kwargs(self):
         """Test execute_task with keyword arguments."""
-        llm = Dummy(responses=[LLMResponse(thinking="done", code="task_success(100)")])
+        llm = Dummy(
+            responses=[make_response(thinking="done", code="task_success(100)")]
+        )
         agent = Agent(llm=llm)
 
         @agent.task
@@ -87,7 +89,7 @@ class TestExecuteTask:
 
     def test_execute_task_with_callbacks(self):
         """Test execute_task calls event/token callbacks."""
-        llm = Dummy(responses=[LLMResponse(thinking="done", code="task_success(1)")])
+        llm = Dummy(responses=[make_response(thinking="done", code="task_success(1)")])
         agent = Agent(llm=llm)
 
         @agent.task
@@ -119,7 +121,7 @@ class TestRunRemoteTask:
 
     def test_run_remote_task_combines_prepare_and_execute(self):
         """Test run_remote_task does everything in one call."""
-        llm = Dummy(responses=[LLMResponse(thinking="ok", code="task_success(99)")])
+        llm = Dummy(responses=[make_response(thinking="ok", code="task_success(99)")])
         agent = Agent(llm=llm)
 
         @agent.task

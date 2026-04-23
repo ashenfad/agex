@@ -4,8 +4,8 @@ import pytest
 
 from agex import Agent, clear_agent_registry, connect_state, events
 from agex.agent.events import ChapterEvent
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -21,13 +21,13 @@ class TestAutoChapterTrigger:
         should run the __chapter__ task and produce ChapterEvents."""
         responses = [
             # Response for the first "work" task — input_tokens above trigger
-            LLMResponse(
+            make_response(
                 thinking="Doing work.",
                 code="task_success('done')",
                 input_tokens=60000,
             ),
             # Response for the auto-triggered __chapter__ task
-            LLMResponse(
+            make_response(
                 thinking="Chaptering completed work.",
                 code=(
                     'task_success([Chapter(start=1, end=1, name="Work phase", '
@@ -62,7 +62,7 @@ class TestAutoChapterTrigger:
     def test_chaptering_does_not_fire_below_trigger(self):
         """When input_tokens is below the trigger, no chaptering should occur."""
         responses = [
-            LLMResponse(
+            make_response(
                 thinking="Small task.",
                 code="task_success('small')",
                 input_tokens=30000,
@@ -91,7 +91,7 @@ class TestAutoChapterTrigger:
     def test_chaptering_does_not_fire_without_trigger_set(self):
         """When chaptering_trigger is None, no chaptering should occur."""
         responses = [
-            LLMResponse(
+            make_response(
                 thinking="Work.",
                 code="task_success('done')",
                 input_tokens=100000,
@@ -120,12 +120,12 @@ class TestAutoChapterTrigger:
     def test_on_event_receives_chapter_events(self):
         """The on_event callback should receive ChapterEvents for live UI updates."""
         responses = [
-            LLMResponse(
+            make_response(
                 thinking="Doing work.",
                 code="task_success('done')",
                 input_tokens=60000,
             ),
-            LLMResponse(
+            make_response(
                 thinking="Chaptering.",
                 code=(
                     'task_success([Chapter(start=1, end=1, name="Phase 1", '

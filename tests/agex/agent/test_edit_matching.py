@@ -467,8 +467,10 @@ class TestApplyOptimisticFileActionsIntegration:
 
     @pytest.fixture
     def mock_llm_response(self):
-        """Factory for creating mock LLM responses."""
-        from agex.agent.datatypes import EditAction
+        """Factory for creating mock LLM responses whose ``file_actions``
+        contain a single :class:`FileEditEmission`.
+        """
+        from agex.agent.emissions import FileEditEmission
 
         class MockLLMResponse:
             def __init__(self, file_actions):
@@ -479,7 +481,7 @@ class TestApplyOptimisticFileActionsIntegration:
         ):
             return MockLLMResponse(
                 [
-                    EditAction(
+                    FileEditEmission(
                         path=path,
                         search=search,
                         content=content,
@@ -712,7 +714,7 @@ class TestApplyOptimisticFileActionsIntegration:
     def test_duplicate_edits_deduplicated_with_warning(self, mock_fs, mock_agent):
         """Identical EDIT blocks in one response should be deduplicated with
         a warning — defensive repetition would otherwise insert duplicates."""
-        from agex.agent.datatypes import EditAction
+        from agex.agent.emissions import FileEditEmission
         from agex.agent.events import SystemNoteEvent
         from agex.agent.loop.common import apply_optimistic_file_actions
 
@@ -720,19 +722,19 @@ class TestApplyOptimisticFileActionsIntegration:
 
         class MockResponse:
             file_actions = [
-                EditAction(
+                FileEditEmission(
                     path="test.py",
                     search="stateRef.current = state",
                     content="stateRef.current = state\n  saveTimer()",
                     operation="replace",
                 ),
-                EditAction(  # exact duplicate
+                FileEditEmission(  # exact duplicate
                     path="test.py",
                     search="stateRef.current = state",
                     content="stateRef.current = state\n  saveTimer()",
                     operation="replace",
                 ),
-                EditAction(  # another exact duplicate
+                FileEditEmission(  # another exact duplicate
                     path="test.py",
                     search="stateRef.current = state",
                     content="stateRef.current = state\n  saveTimer()",
@@ -765,17 +767,17 @@ class TestApplyOptimisticFileActionsIntegration:
         """Two DIFFERENT <EDIT> blocks targeting the same file in one response
         should both apply — the ResponseBuilder must not clobber the first
         edit's content when the second arrives."""
-        from agex.agent.datatypes import EditAction
+        from agex.agent.emissions import FileEditEmission
         from agex.agent.loop.common import apply_optimistic_file_actions
 
         mock_fs.files["app.js"] = b"const A = 1;\nconst B = 2;\n"
 
         class MockResponse:
             file_actions = [
-                EditAction(
+                FileEditEmission(
                     path="app.js", search="const A = 1;", content="const A = 10;"
                 ),
-                EditAction(
+                FileEditEmission(
                     path="app.js", search="const B = 2;", content="const B = 20;"
                 ),
             ]
@@ -788,16 +790,16 @@ class TestApplyOptimisticFileActionsIntegration:
 
     def test_non_duplicate_edits_all_applied(self, mock_fs, mock_agent):
         """Different EDITs targeting the same file should NOT be deduplicated."""
-        from agex.agent.datatypes import EditAction
+        from agex.agent.emissions import FileEditEmission
         from agex.agent.loop.common import apply_optimistic_file_actions
 
         mock_fs.files["test.py"] = b"A\nB\nC\n"
 
         class MockResponse:
             file_actions = [
-                EditAction(path="test.py", search="A", content="AA"),
-                EditAction(path="test.py", search="B", content="BB"),
-                EditAction(path="test.py", search="C", content="CC"),
+                FileEditEmission(path="test.py", search="A", content="AA"),
+                FileEditEmission(path="test.py", search="B", content="BB"),
+                FileEditEmission(path="test.py", search="C", content="CC"),
             ]
 
         apply_optimistic_file_actions(mock_agent, MockResponse(), mock_fs, {})
@@ -832,7 +834,7 @@ class TestApplyOptimisticFileActionsIntegration:
         """If a prior action in the same batch modified the file, the
         'already applied' heuristic should NOT fire — the replacement text
         appearing may be a coincidental substring of the sibling's content."""
-        from agex.agent.datatypes import EditAction
+        from agex.agent.emissions import FileEditEmission
         from agex.agent.loop.common import apply_optimistic_file_actions
         from agex.llm.core import ResponseParseError
 
@@ -842,7 +844,7 @@ class TestApplyOptimisticFileActionsIntegration:
         class MockResponse:
             file_actions = [
                 # Edit 1: succeeds, writes content that includes "btn"
-                EditAction(
+                FileEditEmission(
                     path="index.html",
                     search="<div>old</div>",
                     content='<div>new <button class="btn">Go</button></div>',
@@ -850,7 +852,7 @@ class TestApplyOptimisticFileActionsIntegration:
                 # Edit 2: search doesn't match, but its replacement "btn"
                 # IS in the file now (from edit 1). Without the fix, this
                 # would false-positive as "already applied".
-                EditAction(
+                FileEditEmission(
                     path="index.html",
                     search="<footer>missing</footer>",
                     content="btn",
@@ -866,17 +868,17 @@ class TestApplyOptimisticFileActionsIntegration:
         """A <FILE> write followed by an <EDIT> on the same path should NOT
         trigger 'already applied' — the FILE just created the content that
         the EDIT's replacement happens to match."""
-        from agex.agent.datatypes import EditAction, FileAction
+        from agex.agent.emissions import FileEditEmission, FileWriteEmission
         from agex.agent.loop.common import apply_optimistic_file_actions
         from agex.llm.core import ResponseParseError
 
         class MockResponse:
             file_actions = [
-                FileAction(
+                FileWriteEmission(
                     path="index.html",
                     content='<html><body><div class="shop">Shop</div></body></html>',
                 ),
-                EditAction(
+                FileEditEmission(
                     path="index.html",
                     search="<footer>old</footer>",
                     content="Shop",  # substring of the FILE content
@@ -912,15 +914,15 @@ class TestApplyOptimisticFileActionsIntegration:
 
     def test_multiple_file_writes_last_wins(self, mock_fs, mock_agent):
         """Multiple <FILE> writes to the same path should keep only the last."""
-        from agex.agent.datatypes import FileAction
+        from agex.agent.emissions import FileWriteEmission
         from agex.agent.events import SystemNoteEvent
         from agex.agent.loop.common import apply_optimistic_file_actions
 
         class MockResponse:
             file_actions = [
-                FileAction(path="engine.js", content="version 1"),
-                FileAction(path="entities.js", content="entities code"),
-                FileAction(path="engine.js", content="version 2"),
+                FileWriteEmission(path="engine.js", content="version 1"),
+                FileWriteEmission(path="entities.js", content="entities code"),
+                FileWriteEmission(path="engine.js", content="version 2"),
             ]
 
         captured = []
@@ -943,15 +945,15 @@ class TestApplyOptimisticFileActionsIntegration:
     def test_file_append_not_deduplicated(self, mock_fs, mock_agent):
         """FILE appends to the same path should NOT be deduplicated — appends
         are additive, not last-write-wins."""
-        from agex.agent.datatypes import FileAction
+        from agex.agent.emissions import FileWriteEmission
         from agex.agent.loop.common import apply_optimistic_file_actions
 
         mock_fs.files["log.txt"] = b"line 1\n"
 
         class MockResponse:
             file_actions = [
-                FileAction(path="log.txt", content="line 2\n", mode="append"),
-                FileAction(path="log.txt", content="line 3\n", mode="append"),
+                FileWriteEmission(path="log.txt", content="line 2\n", mode="append"),
+                FileWriteEmission(path="log.txt", content="line 3\n", mode="append"),
             ]
 
         apply_optimistic_file_actions(mock_agent, MockResponse(), mock_fs, {})
@@ -1007,7 +1009,7 @@ class TestApplyOptimisticFileActionsIntegration:
 
     def test_error_shows_batch_status(self, mock_fs, mock_agent):
         """Error should report which earlier actions succeeded."""
-        from agex.agent.datatypes import EditAction
+        from agex.agent.emissions import FileEditEmission
         from agex.agent.loop.common import apply_optimistic_file_actions
         from agex.llm.core import ResponseParseError
 
@@ -1015,11 +1017,11 @@ class TestApplyOptimisticFileActionsIntegration:
 
         class MockResponse:
             file_actions = [
-                EditAction(path="test.py", search="aaa", content="AAA"),
-                EditAction(path="test.py", search="nonexistent", content="XXX"),
+                FileEditEmission(path="test.py", search="aaa", content="AAA"),
+                FileEditEmission(path="test.py", search="nonexistent", content="XXX"),
             ]
 
-        with pytest.raises(ResponseParseError, match="already applied successfully"):
+        with pytest.raises(ResponseParseError, match="already modified: test.py"):
             apply_optimistic_file_actions(mock_agent, MockResponse(), mock_fs, {})
 
         # First edit should have been applied

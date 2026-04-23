@@ -11,7 +11,8 @@ import builtins as _builtins
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from agex.agent.datatypes import TaskClarify, TaskContinue, TaskFail, TaskSuccess
+from agex.agent.datatypes import TaskClarify, TaskFail, TaskSuccess
+from agex.eval.bridge.policy import _current_emission_id
 from agex.eval.objects import ImageAction
 
 if TYPE_CHECKING:
@@ -86,7 +87,6 @@ def build_namespace(
     namespace["task_success"] = _task_success
     namespace["task_fail"] = _task_fail
     namespace["task_clarify"] = _task_clarify
-    namespace["task_continue"] = _task_continue
 
     # 3. Inject __outputs__ list and picklable view_image.
     #    view_image appends to __outputs__; handle_result drains it into events.
@@ -100,7 +100,6 @@ def build_namespace(
         "task_success",
         "task_fail",
         "task_clarify",
-        "task_continue",
         "view_image",
     }
     # Add user state keys (excluding _event_* and other internal prefixed keys)
@@ -111,7 +110,6 @@ def build_namespace(
         "task_success",
         "task_fail",
         "task_clarify",
-        "task_continue",
         "view_image",
         "__outputs__",
         "dir",
@@ -133,11 +131,6 @@ def _task_fail(message=""):
 def _task_clarify(message=""):
     """Signal that more information is needed."""
     raise TaskClarify(message)
-
-
-def _task_continue(*observations):
-    """Signal continuation; observations are processed in handle_result."""
-    raise TaskContinue(observations=observations)
 
 
 class _AgentDir:
@@ -167,7 +160,11 @@ class _AgentDir:
 
 
 class _ViewImage:
-    """Picklable view_image() — appends to __outputs__ for cross-process support."""
+    """Picklable view_image() — appends to __outputs__ for cross-process support.
+
+    Reads the current ``emission_id`` contextvar so the :class:`ImageAction`
+    traces back to the PythonEmission whose execution called it.
+    """
 
     def __init__(self, outputs: list):
         self._outputs = outputs
@@ -175,4 +172,7 @@ class _ViewImage:
     def __call__(self, image: Any, detail: str = "high") -> None:
         if detail not in ("low", "high"):
             raise ValueError("detail must be 'low' or 'high'")
-        self._outputs.append(ImageAction(image=image, detail=detail))
+        emission_id = _current_emission_id.get()
+        self._outputs.append(
+            ImageAction(image=image, detail=detail, emission_id=emission_id)
+        )

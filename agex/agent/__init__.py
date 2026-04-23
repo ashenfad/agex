@@ -25,7 +25,6 @@ from .datatypes import (
     RegisteredFn,
     RegisteredItem,
     RegisteredModule,
-    TaskContinue,
     TaskFail,
     TaskSuccess,
     Visibility,
@@ -43,7 +42,6 @@ __all__ = [
     # Task control functions
     "TaskSuccess",
     "TaskFail",
-    "TaskContinue",
     # Registration types
     "MemberSpec",
     "RegisteredItem",

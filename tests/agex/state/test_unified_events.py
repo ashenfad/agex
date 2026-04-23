@@ -1,9 +1,10 @@
 from kvgit import Namespaced, Staged, VersionedKV
 
-from agex.agent.events import ActionEvent, OutputEvent, SuccessEvent, TaskStartEvent
+from agex.agent.events import OutputEvent, SuccessEvent, TaskStartEvent
 from agex.state import _agex_decoder, _agex_encoder, events
 from agex.state.kv import Memory
 from agex.state.log import add_event_to_log
+from tests.agex._emissions import make_action_event
 
 
 def _make_state():
@@ -29,7 +30,8 @@ class TestUnifiedEventsAPI:
             ),
         )
         add_event_to_log(
-            ns_root, ActionEvent(agent_name="root", thinking="planning", code="plan()")
+            ns_root,
+            make_action_event(agent_name="root", thinking="planning", code="plan()"),
         )
 
         # Add events to worker sub-namespace
@@ -65,7 +67,8 @@ class TestUnifiedEventsAPI:
             ),
         )
         add_event_to_log(
-            ns_root, ActionEvent(agent_name="root", thinking="planning", code="plan()")
+            ns_root,
+            make_action_event(agent_name="root", thinking="planning", code="plan()"),
         )
 
         # Add events to worker sub-namespace
@@ -106,7 +109,7 @@ class TestUnifiedEventsAPI:
         )
         add_event_to_log(
             ns_orch,
-            ActionEvent(
+            make_action_event(
                 agent_name="orchestrator", thinking="planning", code="orchestrate()"
             ),
         )
@@ -154,7 +157,7 @@ class TestUnifiedEventsAPI:
         live_state = Live()
         add_event_to_log(
             live_state,
-            ActionEvent(agent_name="live", thinking="thinking", code="code()"),
+            make_action_event(agent_name="live", thinking="thinking", code="code()"),
         )
 
         result = events(live_state)
@@ -181,7 +184,9 @@ class TestUnifiedEventsAPI:
         )
         add_event_to_log(
             ns_workers,
-            ActionEvent(agent_name="workers", thinking="managing", code="manage()"),
+            make_action_event(
+                agent_name="workers", thinking="managing", code="manage()"
+            ),
         )
         add_event_to_log(
             ns_worker1, SuccessEvent(agent_name="worker1", result="result1")
@@ -271,7 +276,7 @@ def test_events_chronological_sorting():
     event1 = TaskStartEvent(
         agent_name="agent1", task_name="task1", inputs={}, message="first"
     )
-    event2 = ActionEvent(agent_name="agent2", thinking="second", code="code2()")
+    event2 = make_action_event(agent_name="agent2", thinking="second", code="code2()")
     event3 = SuccessEvent(agent_name="agent3", result="third")
     event4 = OutputEvent(agent_name="agent4", parts=["fourth"])
 

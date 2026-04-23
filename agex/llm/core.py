@@ -13,7 +13,15 @@ from typing import (
 
 from pydantic import BaseModel, Field
 
-from agex.agent.datatypes import EditAction, FileAction
+from agex.agent.emissions import (
+    Emission,
+    FileEditEmission,
+    FileWriteEmission,
+    PythonEmission,
+    TerminalEmission,
+    TextEmission,
+    ThinkingEmission,
+)
 
 if TYPE_CHECKING:
     from collections.abc import MutableMapping
@@ -57,26 +65,24 @@ class TokenChunk:
 
     Not an Event — tokens are ephemeral and don't go in the state log.
 
-    Multi-emission turns distinguish their chunks via
-    ``emission_index``.  The first emission in a turn is index 0; each
-    new emission increments.  Framework-internal chunks (``output``,
-    ``error``) leave the index at 0.
+    One assistant turn contains one or more emissions.  Chunks are
+    grouped by ``emission_index`` (starts at 0, increments each time a
+    new emission begins in the stream).  The ``type`` tells the builder
+    which field of the emission this chunk belongs to:
 
-    Attributes:
-        type: Content kind.  ``title`` / ``thinking`` / ``text`` /
-            ``python`` / ``file`` / ``terminal`` carry streamed text in
-            ``content``.  ``text`` is new for this wire-format era — it
-            carries user-facing prose that the model emits as native
-            assistant text (was the old ``report`` narration).
-        content: The text content (incremental).
-        done: True when this emission's field is complete.
-        emission_index: Which emission within the current assistant
-            turn this chunk belongs to.  Starts at 0, increments on
-            each new emission.
-        input_tokens: Actual input token count from the API (set on
-            final chunk only).
-        output_tokens: Actual output token count from the API (set on
-            final chunk only).
+    - ``title`` / ``thinking`` — streamed narration for an action tool
+      call.  Same ``emission_index`` as the action; ``thinking`` becomes
+      a standalone :class:`ThinkingEmission` (inserted before the
+      action) and ``title`` attaches to the action emission.
+    - ``text`` — user-facing prose, a standalone :class:`TextEmission`.
+    - ``python`` / ``terminal`` — code or shell commands for the main
+      action emission at the same ``emission_index``.
+    - ``emission`` — a fully-built :class:`Emission` object delivered
+      in one shot via the ``emission`` field.  Used for file
+      operations (``write_file`` / ``edit_file``) whose args are
+      buffered by the parser and finalized together, and may be used
+      by provider adapters to emit pre-built Text/Thinking emissions
+      with signature metadata in Phase 4.
     """
 
     type: Literal[
@@ -84,12 +90,13 @@ class TokenChunk:
         "thinking",
         "text",
         "python",
-        "file",
         "terminal",
+        "emission",
     ]
-    content: str
+    content: str = ""
     done: bool = False
     emission_index: int = 0
+    emission: Emission | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
 
@@ -102,20 +109,22 @@ class StreamToken(TokenChunk):
     full_namespace: str = ""
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     start: bool = False
-    # ``action`` is inherited from TokenChunk.
 
 
 class LLMResponse(BaseModel):
-    """Structured LLM response with parsed title, thinking, code, and files sections."""
+    """Parsed assistant turn as an ordered list of emissions.
 
-    title: str = ""
-    thinking: str
-    report: str = ""
-    code: str | None = None
-    file_actions: list[FileAction | EditAction] = Field(default_factory=list)
-    terminal: str | None = None
+    The list preserves stream-arrival order so provider-native shapes
+    (Claude interleaved thinking, Gemini per-call thought_signature)
+    round-trip faithfully.
+    """
+
+    emissions: list[Emission] = Field(default_factory=list)
     input_tokens: int | None = None
     output_tokens: int | None = None
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class ResponseParseError(Exception):
@@ -129,8 +138,37 @@ class ResponseParseError(Exception):
         return self.message
 
 
-class ResponseBuilder:
-    """Helper to accumulate tokens from a stream into an LLMResponse."""
+class EmissionsBuilder:
+    """Assemble streamed :class:`TokenChunk`\\ s into an
+    :class:`LLMResponse`.
+
+    Chunks are grouped by ``emission_index``.  Within a group:
+
+    - ``emission`` typed chunks carry a fully-built :class:`Emission`
+      (used by file tools and provider-native adapters) and pass
+      through as-is.
+    - ``title`` / ``thinking`` / ``python`` / ``terminal`` / ``text``
+      chunks stream character-by-character and are concatenated when
+      the group is flushed into its final emission type:
+
+      =============================== ==============================
+      tokens present                  resulting emission(s)
+      =============================== ==============================
+      ``thinking`` + ``python``       ThinkingEmission, PythonEmission
+      ``thinking`` + ``terminal``     ThinkingEmission, TerminalEmission
+      ``python``                      PythonEmission
+      ``terminal``                    TerminalEmission
+      ``text``                        TextEmission
+      ``thinking`` only               ThinkingEmission
+      =============================== ==============================
+
+      ``title`` attaches to the Python/Terminal emission in the group
+      (as the UI label).  If a group contains ``thinking`` plus
+      ``python`` / ``terminal``, the narrated thinking becomes a
+      separate :class:`ThinkingEmission` inserted immediately before
+      the action emission — matching the shape native-thinking
+      providers will deliver in Phase 4.
+    """
 
     def __init__(
         self,
@@ -139,246 +177,110 @@ class ResponseBuilder:
     ):
         self.agent_name = agent_name
         self.exec_state = exec_state
-        self.title_parts: list[str] = []
-        self.thinking_parts: list[str] = []
-        self.report_parts: list[str] = []
-        self.code_parts: list[str] = []
-        self.terminal_parts: list[str] = []
-        self.file_parts: dict[str, list[str]] = {}
-        self.file_modes: dict[str, str] = {}
-        self.current_file_path: str | None = None
-        # Edit tracking
-        self.edit_parts: dict[str, list[str]] = {}
-        self.edit_metadata: dict[str, dict] = {}  # path -> {replace_all: bool}
-        self.current_edit_path: str | None = None
-        # Track ordering of file and edit actions
-        self.action_order: list[tuple[str, str, str]] = []  # [(type, key, path)]
-        # Pre-built file/edit actions supplied as "file_action" tokens
-        # (used by wire formats that receive actions already structured,
-        # e.g. tool-use).  Appended to file_actions at build() time, in
-        # arrival order, after any stream-assembled actions.
-        self.completed_actions: list[FileAction | EditAction] = []
-        # Token usage from the API response
+        # emission_index -> accumulator dict (keys: type -> list[str], or
+        # "_prebuilt" -> Emission)
+        self._slots: dict[int, dict[str, Any]] = {}
+        # Track seen (emission_index, type) pairs so ``start`` flag can
+        # flip on the first streamed chunk of each new field.
+        self._seen: set[tuple[int, str]] = set()
         self.input_tokens: int | None = None
         self.output_tokens: int | None = None
-        self.seen_sections: dict[str, bool] = {
-            "title": False,
-            "thinking": False,
-            "report": False,
-            "python": False,
-            "file": False,
-            "edit": False,
-            "terminal": False,
-        }
 
     def process_token(self, token: TokenChunk) -> StreamToken:
-        """Process a raw TokenChunk and return an enriched StreamToken."""
-        start_flag = (
-            not token.done
-            and token.type in self.seen_sections
-            and not self.seen_sections[token.type]
-        )
-        if start_flag and token.type in self.seen_sections:
-            if token.type not in ("file", "edit"):
-                self.seen_sections[token.type] = True
-
+        """Accumulate a chunk and return an enriched :class:`StreamToken`
+        for UI callbacks.
+        """
         # Capture usage data if present on this token
         if token.input_tokens is not None:
             self.input_tokens = token.input_tokens
         if token.output_tokens is not None:
             self.output_tokens = token.output_tokens
 
+        key = (token.emission_index, token.type)
+        start_flag = False
+        if not token.done and token.type != "emission":
+            if key not in self._seen:
+                start_flag = True
+                self._seen.add(key)
+
         enriched = StreamToken(
             type=token.type,
             content=token.content,
             done=token.done,
+            emission_index=token.emission_index,
+            emission=token.emission,
+            input_tokens=token.input_tokens,
+            output_tokens=token.output_tokens,
             agent_name=self.agent_name or "",
             full_namespace=getattr(self.exec_state, "namespace", self.agent_name or ""),
             timestamp=datetime.now(timezone.utc),
             start=start_flag,
-            action=token.action,
         )
 
-        # Structured file_action tokens carry a fully-built
-        # FileAction/EditAction — append directly, skip accumulation.
-        if token.type == "file_action":
-            if token.action is not None:
-                self.completed_actions.append(token.action)
+        slot = self._slots.setdefault(token.emission_index, {})
+
+        if token.type == "emission":
+            if token.emission is not None:
+                slot["_prebuilt"] = token.emission
             return enriched
 
-        if token.done:
-            if token.type == "file":
-                self.current_file_path = None
-            elif token.type == "edit":
-                self.current_edit_path = None
-            return enriched
-
-        if token.type == "title":
-            self.title_parts.append(token.content)
-        elif token.type == "thinking":
-            self.thinking_parts.append(token.content)
-        elif token.type == "report":
-            self.report_parts.append(token.content)
-        elif token.type == "python":
-            self.code_parts.append(token.content)
-        elif token.type == "terminal":
-            self.terminal_parts.append(token.content)
-        elif token.type == "file":
-            if token.content.startswith("path="):
-                # Parse path and mode from metadata: "path=foo.py,mode=append"
-                metadata = token.content
-                import re
-
-                from agex.llm.formats.xml import (
-                    validate_file_mode,
-                    validate_file_path,
-                )
-
-                path_match = re.search(r"path=([^,]+)", metadata)
-                mode_match = re.search(r"mode=([^,]+)", metadata)
-
-                if path_match:
-                    path = validate_file_path(path_match.group(1))
-                    mode_str = mode_match.group(1) if mode_match else "write"
-                    mode = validate_file_mode(mode_str, path)
-                    # Use a unique key per FILE block (not bare path) so
-                    # multiple writes to the same path don't clobber.
-                    file_key = f"{path}:{len(self.action_order)}"
-                    self.current_file_path = file_key
-                    self.file_parts[file_key] = []
-                    self.file_modes[file_key] = mode
-                    # Track ordering — consistent 3-tuple: (type, key, path)
-                    self.action_order.append(("file", file_key, path))
-            elif self.current_file_path:
-                self.file_parts[self.current_file_path].append(token.content)
-        elif token.type == "edit":
-            if token.content.startswith("path="):
-                # Parse path and metadata: "path=foo.py,match_all=False"
-                metadata = token.content
-                import re
-
-                from agex.llm.formats.xml import validate_file_path
-
-                path_match = re.search(r"path=([^,]+)", metadata)
-                match_all_match = re.search(r"match_all=([^,]+)", metadata)
-
-                if path_match:
-                    path = validate_file_path(path_match.group(1))
-                    match_all = (
-                        match_all_match is not None
-                        and match_all_match.group(1).lower() == "true"
-                    )
-                    # Use a unique key per edit (not bare path) so multiple
-                    # edits targeting the same file don't clobber each other.
-                    edit_key = f"{path}:{len(self.action_order)}"
-                    self.current_edit_path = edit_key
-                    self.edit_parts[edit_key] = []
-                    self.edit_metadata[edit_key] = {
-                        "match_all": match_all,
-                    }
-                    # Track ordering — store both the key (for dict lookup)
-                    # and the real path (for the EditAction).
-                    self.action_order.append(("edit", edit_key, path))
-            elif self.current_edit_path:
-                self.edit_parts[self.current_edit_path].append(token.content)
+        # Skip the boundary markers; only accumulate content chunks.
+        if not token.done:
+            slot.setdefault(token.type, []).append(token.content)
 
         return enriched
 
     def build(self) -> LLMResponse:
-        """Return the final LLMResponse."""
-        import re
+        """Flush accumulated chunks into an ordered emission list."""
+        emissions: list[Emission] = []
+        for idx in sorted(self._slots.keys()):
+            slot = self._slots[idx]
 
-        from agex.agent.datatypes import EditAction, FileAction
-        from agex.llm.formats.xml import (
-            TAG_INSERT_AFTER,
-            TAG_INSERT_BEFORE,
-            TAG_REPLACE,
-            TAG_SEARCH,
-            validate_edit_search,
-        )
+            prebuilt = slot.get("_prebuilt")
+            if prebuilt is not None:
+                emissions.append(prebuilt)
+                continue
 
-        file_actions: list[FileAction | EditAction] = []
+            title_str = "".join(slot.get("title", [])).strip() or None
+            thinking_str = "".join(slot.get("thinking", [])) or None
+            python_str = "".join(slot.get("python", []))
+            terminal_str = "".join(slot.get("terminal", []))
+            text_str = "".join(slot.get("text", []))
 
-        # Build actions in the order they appeared.
-        # All entries are 3-tuples: (type, unique_key, real_path).
-        for action_type, unique_key, real_path in self.action_order:
-            if action_type == "file":
-                parts = self.file_parts.get(unique_key, [])
-                content = "".join(parts)
-                mode = self.file_modes.get(unique_key, "write")
-                file_actions.append(
-                    FileAction(path=real_path, content=content, mode=mode)  # type: ignore[arg-type]
-                )
-            elif action_type == "edit":
-                parts = self.edit_parts.get(unique_key, [])
-                inner_content = "".join(parts)
-                metadata = self.edit_metadata.get(unique_key, {})
-                match_all = metadata.get("match_all", False)
-
-                # Parse SEARCH tag (required)
-                search_match = re.search(
-                    rf"<{TAG_SEARCH}>(.*?)</{TAG_SEARCH}>",
-                    inner_content,
-                    re.DOTALL | re.IGNORECASE,
-                )
-
-                # Parse operation tag - REPLACE, INSERT-AFTER, or INSERT-BEFORE
-                replace_match = re.search(
-                    rf"<{TAG_REPLACE}>(.*?)</{TAG_REPLACE}>",
-                    inner_content,
-                    re.DOTALL | re.IGNORECASE,
-                )
-                insert_after_match = re.search(
-                    rf"<{TAG_INSERT_AFTER}>(.*?)</{TAG_INSERT_AFTER}>",
-                    inner_content,
-                    re.DOTALL | re.IGNORECASE,
-                )
-                insert_before_match = re.search(
-                    rf"<{TAG_INSERT_BEFORE}>(.*?)</{TAG_INSERT_BEFORE}>",
-                    inner_content,
-                    re.DOTALL | re.IGNORECASE,
-                )
-
-                # Determine operation and content
-                if replace_match:
-                    operation = "replace"
-                    content = replace_match.group(1)
-                elif insert_after_match:
-                    operation = "insert-after"
-                    content = insert_after_match.group(1)
-                elif insert_before_match:
-                    operation = "insert-before"
-                    content = insert_before_match.group(1)
-                else:
-                    continue  # Skip if no operation tag found
-
-                if search_match:
-                    search = search_match.group(1)
-
-                    validate_edit_search(real_path, search)
-                    file_actions.append(
-                        EditAction(
-                            path=real_path,
-                            search=search,
-                            content=content,
-                            operation=operation,
-                            match_all=match_all,
-                        )
+            # Narration-via-schema thinking rides on the action emission
+            # for round-trip fidelity.  Standalone thinking (no
+            # accompanying code/commands/text) becomes its own
+            # :class:`ThinkingEmission` — that's the shape native-
+            # thinking providers will deliver in Phase 4.
+            if python_str:
+                emissions.append(
+                    PythonEmission(
+                        code=python_str, title=title_str, thinking=thinking_str
                     )
-
-        # Structured actions from "file_action" tokens (tool-use path).
-        file_actions.extend(self.completed_actions)
+                )
+            elif terminal_str:
+                emissions.append(
+                    TerminalEmission(
+                        commands=terminal_str, title=title_str, thinking=thinking_str
+                    )
+                )
+            elif text_str:
+                emissions.append(TextEmission(text=text_str))
+                if thinking_str:
+                    emissions.append(ThinkingEmission(text=thinking_str))
+            elif thinking_str:
+                emissions.append(ThinkingEmission(text=thinking_str))
 
         return LLMResponse(
-            title="".join(self.title_parts).strip(),
-            thinking="".join(self.thinking_parts),
-            report="".join(self.report_parts).strip(),
-            code="".join(self.code_parts),
-            file_actions=file_actions,
-            terminal="".join(self.terminal_parts) if self.terminal_parts else None,
+            emissions=emissions,
             input_tokens=self.input_tokens,
             output_tokens=self.output_tokens,
         )
+
+
+# Back-compat alias for callers that still import ``ResponseBuilder``.
+# TODO(Phase 3 cleanup): remove once all imports migrate.
+ResponseBuilder = EmissionsBuilder
 
 
 class LLM(ABC):
@@ -437,9 +339,9 @@ class LLM(ABC):
             **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
 
         Returns:
-            LLMResponse with parsed thinking, code, and files sections
+            LLMResponse with the emission list parsed from the stream
         """
-        builder = ResponseBuilder()
+        builder = EmissionsBuilder()
         for token in self.complete_stream(system, events, **kwargs):
             builder.process_token(token)
         return builder.build()
@@ -453,60 +355,19 @@ class LLM(ABC):
         This method enables real-time UI feedback by yielding tokens as they arrive.
         Implementations can choose to support streaming or raise NotImplementedError.
 
-        Default implementation: Falls back to complete() and yields buffered response.
-        Providers that support streaming should override this method.
-
-        Args:
-            system: System message content (primer + capabilities)
-            events: Conversation history as Event objects
-            **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
-
-        Yields:
-            TokenChunk objects as sections are parsed from the stream
-
-        Raises:
-            NotImplementedError: If streaming is not supported by this client
-            RuntimeError: If the completion request fails
-            ResponseParseError: If response doesn't match expected format
+        Default implementation: Falls back to complete() and yields
+        buffered emissions as a synthesized token stream.
         """
-        # Default fallback: buffer complete() response and yield as tokens
         response = self.complete(system, events, **kwargs)
-
-        # Yield title section first (if present)
-        if response.title:
-            yield TokenChunk(type="title", content=response.title, done=False)
-            yield TokenChunk(type="title", content="", done=True)
-
-        # Yield thinking section
-        if response.thinking:
-            yield TokenChunk(type="thinking", content=response.thinking, done=False)
-        yield TokenChunk(type="thinking", content="", done=True)
-
-        # Yield optional report section
-        if response.report:
-            yield TokenChunk(type="report", content=response.report, done=False)
-            yield TokenChunk(type="report", content="", done=True)
-
-        # Yield code section
-        if response.code:
-            yield TokenChunk(type="python", content=response.code, done=False)
-        yield TokenChunk(type="python", content="", done=True)
+        yield from _emissions_to_tokens(response)
 
     async def acomplete(
         self, system: str, events: list["Event"], **kwargs
     ) -> LLMResponse:
         """
         Async agent execution - convert events to structured response by consuming the stream.
-
-        Args:
-            system: System message content (primer + capabilities)
-            events: Conversation history as Event objects
-            **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
-
-        Returns:
-            LLMResponse with parsed thinking, code, and files sections
         """
-        builder = ResponseBuilder()
+        builder = EmissionsBuilder()
         async for token in self.acomplete_stream(system, events, **kwargs):
             builder.process_token(token)
         return builder.build()
@@ -514,39 +375,14 @@ class LLM(ABC):
     async def acomplete_stream(
         self, system: str, events: list["Event"], **kwargs
     ) -> AsyncIterator[TokenChunk]:
-        """
-        Async agent execution with token-level streaming support.
+        """Async counterpart to :meth:`complete_stream`.
 
-        Args:
-            system: System message content (primer + capabilities)
-            events: Conversation history as Event objects
-            **kwargs: Provider-specific arguments (temperature, max_tokens, etc.)
-
-        Yields:
-            TokenChunk objects as sections are parsed from the stream
+        Default implementation: buffer :meth:`acomplete` and replay as a
+        synthesized token stream.
         """
-        # Default fallback: buffer acomplete() response and yield as tokens
         response = await self.acomplete(system, events, **kwargs)
-
-        # Yield title section first (if present)
-        if response.title:
-            yield TokenChunk(type="title", content=response.title, done=False)
-            yield TokenChunk(type="title", content="", done=True)
-
-        # Yield thinking section
-        if response.thinking:
-            yield TokenChunk(type="thinking", content=response.thinking, done=False)
-        yield TokenChunk(type="thinking", content="", done=True)
-
-        # Yield optional report section
-        if response.report:
-            yield TokenChunk(type="report", content=response.report, done=False)
-            yield TokenChunk(type="report", content="", done=True)
-
-        # Yield code section
-        if response.code:
-            yield TokenChunk(type="python", content=response.code, done=False)
-        yield TokenChunk(type="python", content="", done=True)
+        for token in _emissions_to_tokens(response):
+            yield token
 
     def _prepare_summarization_content(
         self, content: str | list["Event"]
@@ -585,7 +421,7 @@ class LLM(ABC):
                 transcript_parts.append(f"[{role}]:\n{content_value}\n")
 
             transcript = "\n".join(transcript_parts)
-            framed_content = f"""You are an external observer summarizing a completed interaction. 
+            framed_content = f"""You are an external observer summarizing a completed interaction.
 DO NOT respond as if you are the agent in this conversation.
 DO NOT continue the conversation or take actions.
 
@@ -641,3 +477,76 @@ Write your summary of what happened in this interaction."""
             Provider name string (e.g., "OpenAI", "Anthropic", "Google Gemini")
         """
         ...
+
+
+def _emissions_to_tokens(response: LLMResponse) -> Iterator[TokenChunk]:
+    """Synthesize a token stream from a buffered :class:`LLMResponse`.
+
+    Used by the default :meth:`LLM.complete_stream` fallback for
+    clients that only implement :meth:`complete`.  Order matches the
+    original emission list; each streamed emission carries its own
+    ``emission_index``.
+    """
+    for i, em in enumerate(response.emissions):
+        if isinstance(em, TextEmission):
+            if em.text:
+                yield TokenChunk(
+                    type="text", content=em.text, done=False, emission_index=i
+                )
+            yield TokenChunk(type="text", content="", done=True, emission_index=i)
+        elif isinstance(em, ThinkingEmission):
+            if em.text:
+                yield TokenChunk(
+                    type="thinking", content=em.text, done=False, emission_index=i
+                )
+            yield TokenChunk(type="thinking", content="", done=True, emission_index=i)
+        elif isinstance(em, PythonEmission):
+            if em.title:
+                yield TokenChunk(
+                    type="title", content=em.title, done=False, emission_index=i
+                )
+                yield TokenChunk(type="title", content="", done=True, emission_index=i)
+            if em.thinking:
+                yield TokenChunk(
+                    type="thinking",
+                    content=em.thinking,
+                    done=False,
+                    emission_index=i,
+                )
+                yield TokenChunk(
+                    type="thinking", content="", done=True, emission_index=i
+                )
+            if em.code:
+                yield TokenChunk(
+                    type="python", content=em.code, done=False, emission_index=i
+                )
+            yield TokenChunk(type="python", content="", done=True, emission_index=i)
+        elif isinstance(em, TerminalEmission):
+            if em.title:
+                yield TokenChunk(
+                    type="title", content=em.title, done=False, emission_index=i
+                )
+                yield TokenChunk(type="title", content="", done=True, emission_index=i)
+            if em.thinking:
+                yield TokenChunk(
+                    type="thinking",
+                    content=em.thinking,
+                    done=False,
+                    emission_index=i,
+                )
+                yield TokenChunk(
+                    type="thinking", content="", done=True, emission_index=i
+                )
+            if em.commands:
+                yield TokenChunk(
+                    type="terminal", content=em.commands, done=False, emission_index=i
+                )
+            yield TokenChunk(type="terminal", content="", done=True, emission_index=i)
+        elif isinstance(em, (FileWriteEmission, FileEditEmission)):
+            yield TokenChunk(
+                type="emission",
+                content="",
+                done=True,
+                emission_index=i,
+                emission=em,
+            )
