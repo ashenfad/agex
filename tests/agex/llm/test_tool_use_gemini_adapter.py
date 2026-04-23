@@ -100,6 +100,30 @@ class TestTranslateMessagesToGemini:
         assert fc["name"] == "write_file"
         assert fc["args"] == {"path": "x", "content": "y"}
 
+    def test_assistant_text_plus_tool_use_both_replayed(self):
+        """A turn that mixed a TextEmission with a tool_use must put
+        both the text Part and the function_call Part into the
+        model-turn ``parts`` list, in order."""
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "working on it"},
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "python_action",
+                        "input": {"code": "pass"},
+                    },
+                ],
+            }
+        ]
+        out = translate_messages_to_gemini(msgs)
+        parts = out[0]["parts"]
+        assert parts[0] == {"text": "working on it"}
+        assert "function_call" in parts[1]
+        assert parts[1]["function_call"]["name"] == "python_action"
+
     def test_tool_use_without_signature_gets_dummy(self):
         """Gemini 3 validates that the first function_call part in each
         assistant turn carries a ``thought_signature``.  When our

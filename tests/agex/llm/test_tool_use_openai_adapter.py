@@ -53,6 +53,32 @@ class TestTranslateMessagesToOpenAI:
         out = translate_messages_to_openai(msgs)
         assert out == [{"role": "user", "content": "[1] task one"}]
 
+    def test_assistant_text_plus_tool_use_both_replayed(self):
+        """A turn that mixed a TextEmission with a PythonEmission must
+        come back out as an assistant message carrying both the
+        ``content`` string AND the ``tool_calls`` array — otherwise
+        the model's own prose disappears on replay."""
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "working on it"},
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "python_action",
+                        "input": {"code": "pass"},
+                    },
+                ],
+            }
+        ]
+        out = translate_messages_to_openai(msgs)
+        assert len(out) == 1
+        assert out[0]["role"] == "assistant"
+        assert out[0]["content"] == "working on it"
+        assert len(out[0]["tool_calls"]) == 1
+        assert out[0]["tool_calls"][0]["function"]["name"] == "python_action"
+
     def test_assistant_tool_use_becomes_tool_calls(self):
         msgs = [
             {
