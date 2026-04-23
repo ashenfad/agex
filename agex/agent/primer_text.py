@@ -2,12 +2,11 @@
 Builtin primer text for Agex agents.
 
 This module contains the comprehensive primer that explains the agent's
-environment and capabilities. It is wire-format-neutral: the concrete
-syntax for code blocks, file operations, reports, and task-control
-actions is supplied by each wire format's own primer (XML tags for
-``XmlWireFormat``, JSON-schema tools for ``ToolUseWireFormat``). This
-primer teaches the *concepts* — when to use each operation, their
-semantics, and the rules that apply to all formats.
+environment and capabilities.  It is wire-format-neutral: the concrete
+syntax for code blocks, file operations, and task-control actions is
+supplied by :class:`~agex.llm.formats.tool_use.ToolUseWireFormat`'s own
+primer.  This primer teaches the *concepts* — when to use each
+operation, their semantics, and the rules that apply.
 """
 
 BUILTIN_PRIMER = """# Agex Agent Environment

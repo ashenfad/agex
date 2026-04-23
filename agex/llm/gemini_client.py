@@ -16,7 +16,6 @@ from agex.llm.formats.tool_use.gemini_adapter import (
     translate_gemini_stream_to_events,
     translate_messages_to_gemini,
 )
-from agex.llm.formats.xml import TAG_TITLE
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +23,13 @@ CLIENT_CONFIG_KEYS = {"api_key", "vertexai"}
 
 GROUNDING_PRIMER_TEMPLATE = """
 # Grounding Tools Enabled
-You have access to gemini grounding tools. These tools are available external
-to agex. If you choose to use them, do so before the <TITLE>.
+You have access to Gemini grounding tools (google_search, url_context).
+These tools are available external to agex. If you choose to use them,
+do so before any agex tool_use call.
 
-When using them, please make a detailed summary of what you learn and include it in your
-<THINKING> section. This will enable you to remember the summary long-term.
+When using them, please make a detailed summary of what you learn and
+include it in your next thinking / reasoning step so you can recall
+the findings on later turns.
 """
 
 
@@ -112,13 +113,8 @@ class Gemini(LLM):
     def complete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> Iterator[TokenChunk]:
-        """Stream tokens from Gemini.
-
-        Dispatches on ``wire_format.tool_schema()``:
-
-        - ``None`` → text-stream path (XML-in-text formats).
-        - non-None → provider-native tool-calling path.
-        """
+        """Stream tokens from Gemini via the provider-native tool-use
+        path."""
         request_kwargs = {**self._kwargs, **kwargs}
         if "max_tokens" in request_kwargs:
             request_kwargs["max_output_tokens"] = request_kwargs.pop("max_tokens")
@@ -129,74 +125,11 @@ class Gemini(LLM):
         if grounding_primer:
             system_with_format = f"{grounding_primer}\n\n{system_with_format}"
 
-        tool_schemas = self._wire_format.tool_schema()
-        if tool_schemas is None:
-            yield from self._stream_text(
-                messages_dicts, system_with_format, request_kwargs
-            )
-        else:
-            yield from self._stream_tools(
-                messages_dicts, system_with_format, request_kwargs, tool_schemas
-            )
-
-    def _stream_text(
-        self,
-        messages_dicts: list[dict],
-        system_with_format: str,
-        request_kwargs: dict,
-    ) -> Iterator[TokenChunk]:
-        gemini_contents = self._convert_messages_to_gemini_format(messages_dicts)
-
-        # Pre-fill response (only if not grounding, as pre-fill can
-        # suppress grounding tools).
-        prefill_text = f"<{TAG_TITLE}>"
-        if not self._google_search and not self._url_context:
-            gemini_contents.append(
-                types.Content(role="model", parts=[types.Part(text=prefill_text)])
-            )
-
-        tools = self._grounding_tools()
-
-        config = types.GenerateContentConfig(
-            system_instruction=system_with_format,
-            tools=tools if tools else None,
-            **request_kwargs,
-        )
-
-        response_stream = self.client.models.generate_content_stream(
-            model=self._model,
-            contents=gemini_contents,
-            config=config,
-        )
-
-        usage_holder: dict[str, int | None] = {
-            "input_tokens": None,
-            "output_tokens": None,
-        }
-
-        def raw_chunks() -> Iterator[Any]:
-            if not self._google_search and not self._url_context:
-                yield prefill_text
-
-            for chunk in response_stream:
-                if chunk.usage_metadata is not None:
-                    usage_holder["input_tokens"] = (
-                        chunk.usage_metadata.prompt_token_count
-                    )
-                    usage_holder["output_tokens"] = (
-                        chunk.usage_metadata.candidates_token_count
-                    )
-                text = chunk.text or ""
-                yield text
-
-        yield from self._wire_format.parse_text_stream(raw_chunks())
-
-        yield TokenChunk(
-            type="thinking",
-            content="",
-            done=True,
-            input_tokens=usage_holder["input_tokens"],
-            output_tokens=usage_holder["output_tokens"],
+        yield from self._stream_tools(
+            messages_dicts,
+            system_with_format,
+            request_kwargs,
+            self._wire_format.tool_schema(),
         )
 
     def _stream_tools(
@@ -271,74 +204,13 @@ class Gemini(LLM):
         if grounding_primer:
             system_with_format = f"{grounding_primer}\n\n{system_with_format}"
 
-        tool_schemas = self._wire_format.tool_schema()
-        if tool_schemas is None:
-            async for t in self._astream_text(
-                messages_dicts, system_with_format, request_kwargs
-            ):
-                yield t
-        else:
-            async for t in self._astream_tools(
-                messages_dicts, system_with_format, request_kwargs, tool_schemas
-            ):
-                yield t
-
-    async def _astream_text(
-        self,
-        messages_dicts: list[dict],
-        system_with_format: str,
-        request_kwargs: dict,
-    ) -> AsyncIterator[TokenChunk]:
-        gemini_contents = self._convert_messages_to_gemini_format(messages_dicts)
-
-        prefill_text = f"<{TAG_TITLE}>"
-        if not self._google_search and not self._url_context:
-            gemini_contents.append(
-                types.Content(role="model", parts=[types.Part(text=prefill_text)])
-            )
-
-        tools = self._grounding_tools()
-
-        config = types.GenerateContentConfig(
-            system_instruction=system_with_format,
-            tools=tools if tools else None,
-            **request_kwargs,
-        )
-
-        response_stream = await self.client.aio.models.generate_content_stream(
-            model=self._model,
-            contents=gemini_contents,
-            config=config,
-        )
-
-        usage_holder: dict[str, int | None] = {
-            "input_tokens": None,
-            "output_tokens": None,
-        }
-
-        async def raw_chunks():
-            if not self._google_search and not self._url_context:
-                yield prefill_text
-            async for chunk in response_stream:
-                if chunk.usage_metadata is not None:
-                    usage_holder["input_tokens"] = (
-                        chunk.usage_metadata.prompt_token_count
-                    )
-                    usage_holder["output_tokens"] = (
-                        chunk.usage_metadata.candidates_token_count
-                    )
-                yield chunk.text or ""
-
-        async for token in self._wire_format.aparse_text_stream(raw_chunks()):
-            yield token
-
-        yield TokenChunk(
-            type="thinking",
-            content="",
-            done=True,
-            input_tokens=usage_holder["input_tokens"],
-            output_tokens=usage_holder["output_tokens"],
-        )
+        async for t in self._astream_tools(
+            messages_dicts,
+            system_with_format,
+            request_kwargs,
+            self._wire_format.tool_schema(),
+        ):
+            yield t
 
     async def _astream_tools(
         self,

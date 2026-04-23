@@ -2,9 +2,9 @@
 
 Concrete :class:`~agex.llm.formats.wire_format.WireFormat` implementation
 that expresses the agent's turn as a set of tool calls
-(``python_action``, ``terminal_action``, ``write_file``, ``edit_file``)
-rather than XML tags embedded in text.  Works with any provider that
-supports function/tool calling (Anthropic, OpenAI, Gemini).
+(``python_action``, ``terminal_action``, ``write_file``, ``edit_file``).
+Works with any provider that supports function/tool calling (Anthropic,
+OpenAI, Gemini).
 """
 
 from typing import AsyncIterator, Iterator
@@ -52,11 +52,6 @@ class ToolUseWireFormat:
     directly, so narration-via-schema becomes redundant.  Leave it
     off for providers that aren't emitting native thinking (older
     Claude, OpenRouter-to-chat-class models, etc.).
-
-    Text-stream parsing (:meth:`parse_text_stream` /
-    :meth:`aparse_text_stream`) is not supported and raises
-    :class:`NotImplementedError` — use :meth:`parse_tool_stream` /
-    :meth:`aparse_tool_stream` instead.
     """
 
     def __init__(self, native_thinking: bool = False):
@@ -68,20 +63,8 @@ class ToolUseWireFormat:
     def render_events(self, events: list[Event]) -> list[dict]:
         return render_events_as_tool_use(events)
 
-    def tool_schema(self) -> list[dict] | None:
+    def tool_schema(self) -> list[dict]:
         return agex_tool_schemas(native_thinking=self.native_thinking)
-
-    def parse_text_stream(self, raw: Iterator[str]) -> Iterator[TokenChunk]:
-        raise NotImplementedError(
-            "ToolUseWireFormat parses tool-call events, not text streams. "
-            "Use parse_tool_stream() instead."
-        )
-
-    def aparse_text_stream(self, raw: AsyncIterator[str]) -> AsyncIterator[TokenChunk]:
-        raise NotImplementedError(
-            "ToolUseWireFormat parses tool-call events, not text streams. "
-            "Use aparse_tool_stream() instead."
-        )
 
     def parse_tool_stream(self, raw: Iterator[ToolCallEvent]) -> Iterator[TokenChunk]:
         return parse_tool_events(raw)

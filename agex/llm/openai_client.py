@@ -120,60 +120,16 @@ class OpenAI(LLM):
     def complete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> Iterator[TokenChunk]:
-        """Stream tokens from OpenAI.
-
-        Dispatches on ``wire_format.tool_schema()``:
-
-        - ``None`` → text-stream path (XML-in-text formats).
-        - non-None → provider-native tool-calling path.
-        """
+        """Stream tokens from OpenAI via the provider-native tool-use
+        path."""
         request_kwargs = {**self._kwargs, **kwargs}
         messages_dicts = self._wire_format.render_events(events)
         system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         full_messages = [
             {"role": "system", "content": system_with_format}
         ] + messages_dicts
-
-        tool_schemas = self._wire_format.tool_schema()
-        if tool_schemas is None:
-            yield from self._stream_text(full_messages, request_kwargs)
-        else:
-            yield from self._stream_tools(full_messages, request_kwargs, tool_schemas)
-
-    def _stream_text(
-        self, full_messages: list[dict], request_kwargs: dict
-    ) -> Iterator[TokenChunk]:
-        stream = self.client.chat.completions.create(
-            model=self._model,
-            messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
-            stream=True,
-            stream_options={"include_usage": True},
-            **request_kwargs,
-        )
-
-        usage_holder: dict[str, int | None] = {
-            "input_tokens": None,
-            "output_tokens": None,
-        }
-
-        def raw_chunks() -> Iterator[str]:
-            for chunk in stream:
-                if chunk.usage is not None:
-                    usage_holder["input_tokens"] = chunk.usage.prompt_tokens
-                    usage_holder["output_tokens"] = chunk.usage.completion_tokens
-                if chunk.choices:
-                    delta = chunk.choices[0].delta
-                    if delta.content:
-                        yield delta.content
-
-        yield from self._wire_format.parse_text_stream(raw_chunks())
-
-        yield TokenChunk(
-            type="thinking",
-            content="",
-            done=True,
-            input_tokens=usage_holder["input_tokens"],
-            output_tokens=usage_holder["output_tokens"],
+        yield from self._stream_tools(
+            full_messages, request_kwargs, self._wire_format.tool_schema()
         )
 
     def _stream_tools(
@@ -224,53 +180,10 @@ class OpenAI(LLM):
         full_messages = [
             {"role": "system", "content": system_with_format}
         ] + messages_dicts
-
-        tool_schemas = self._wire_format.tool_schema()
-        if tool_schemas is None:
-            async for t in self._astream_text(full_messages, request_kwargs):
-                yield t
-        else:
-            async for t in self._astream_tools(
-                full_messages, request_kwargs, tool_schemas
-            ):
-                yield t
-
-    async def _astream_text(
-        self, full_messages: list[dict], request_kwargs: dict
-    ) -> AsyncIterator[TokenChunk]:
-        stream = await self.async_client.chat.completions.create(
-            model=self._model,
-            messages=[_format_message_for_openai(msg) for msg in full_messages],  # type: ignore
-            stream=True,
-            stream_options={"include_usage": True},
-            **request_kwargs,
-        )
-
-        usage_holder: dict[str, int | None] = {
-            "input_tokens": None,
-            "output_tokens": None,
-        }
-
-        async def raw_chunks():
-            async for chunk in stream:
-                if chunk.usage is not None:
-                    usage_holder["input_tokens"] = chunk.usage.prompt_tokens
-                    usage_holder["output_tokens"] = chunk.usage.completion_tokens
-                if chunk.choices:
-                    delta = chunk.choices[0].delta
-                    if delta.content:
-                        yield delta.content
-
-        async for token in self._wire_format.aparse_text_stream(raw_chunks()):
-            yield token
-
-        yield TokenChunk(
-            type="thinking",
-            content="",
-            done=True,
-            input_tokens=usage_holder["input_tokens"],
-            output_tokens=usage_holder["output_tokens"],
-        )
+        async for t in self._astream_tools(
+            full_messages, request_kwargs, self._wire_format.tool_schema()
+        ):
+            yield t
 
     async def _astream_tools(
         self,

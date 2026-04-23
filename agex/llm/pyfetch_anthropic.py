@@ -6,7 +6,6 @@ server proxy.  Requires the ``anthropic-dangerous-direct-browser-access``
 header (supported by Anthropic for trusted browser contexts).
 """
 
-import asyncio
 import json
 from typing import Any, AsyncIterator, Iterator, List
 
@@ -24,11 +23,6 @@ from agex.llm.formats.tool_use.anthropic_adapter import (
 ANTHROPIC_VERSION = "2023-06-01"
 CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
 MAX_TOKENS = 2**14
-
-# Flip to True to print raw SSE text deltas (pre-XML-tokenization) as they
-# arrive from the Anthropic API.  Useful for debugging what the model is
-# actually producing vs what the XML tokenizer extracts.
-DEBUG_RAW_STREAM = False
 
 
 def _is_network_error(exc: Exception) -> bool:
@@ -182,48 +176,25 @@ class PyfetchAnthropic(LLM):
         ]
 
         tool_schemas = self._wire_format.tool_schema()
-
-        if tool_schemas is None:
-            cache_idx = len(messages_dicts) - 2
-            conversation = [
-                _format_message_for_anthropic(m, cache=(i == cache_idx))
-                for i, m in enumerate(messages_dicts)
-            ]
-            body: dict[str, Any] = {
-                "model": self._model,
-                "system": system_blocks,
-                "messages": conversation,
-                "stream": True,
-                **request_kwargs,
-            }
-            tool_use_mode = False
-        else:
-            translated = translate_messages_to_anthropic(messages_dicts)
-            cache_idx = len(translated) - 2
-            conversation = apply_cache_control(
-                translated, cache_index=cache_idx, ttl="1h"
-            )
-            body = {
-                "model": self._model,
-                "system": system_blocks,
-                "messages": conversation,
-                "tools": schemas_to_anthropic_tools(tool_schemas),
-                "stream": True,
-                **request_kwargs,
-            }
-            tool_use_mode = True
+        translated = translate_messages_to_anthropic(messages_dicts)
+        cache_idx = len(translated) - 2
+        conversation = apply_cache_control(translated, cache_index=cache_idx, ttl="1h")
+        body: dict[str, Any] = {
+            "model": self._model,
+            "system": system_blocks,
+            "messages": conversation,
+            "tools": schemas_to_anthropic_tools(tool_schemas),
+            "stream": True,
+            **request_kwargs,
+        }
 
         headers = self._headers()
         url = f"{self._base_url}/messages"
 
         for attempt in range(self._STREAM_MAX_RETRIES):
             try:
-                if tool_use_mode:
-                    async for token in self._stream_once_tools(url, body, headers):
-                        yield token
-                else:
-                    async for token in self._stream_once(url, body, headers):
-                        yield token
+                async for token in self._stream_once_tools(url, body, headers):
+                    yield token
                 return  # success
             except Exception as exc:
                 is_network = _is_network_error(exc)
@@ -232,129 +203,6 @@ class PyfetchAnthropic(LLM):
                 import asyncio
 
                 await asyncio.sleep(1)
-
-    async def _stream_once(
-        self,
-        url: str,
-        body: dict,
-        headers: dict,
-    ) -> AsyncIterator[TokenChunk]:
-        """Single streaming attempt — separated for retry logic."""
-        from agex.llm.sse import parse_sse_events
-
-        response = self._adapter.fetch_stream(url, headers=headers, body=body)
-
-        usage_holder: dict[str, int | None] = {
-            "input_tokens": None,
-            "output_tokens": None,
-        }
-
-        sse_iter = parse_sse_events(response)
-
-        def _total_input(u: dict) -> int | None:
-            # With prompt caching, Anthropic splits input tokens into three
-            # buckets — sum them for the true total.
-            if "input_tokens" not in u:
-                return None
-            return (
-                int(u.get("input_tokens") or 0)
-                + int(u.get("cache_creation_input_tokens") or 0)
-                + int(u.get("cache_read_input_tokens") or 0)
-            )
-
-        def _update_usage(data: dict) -> None:
-            # message_start: usage is nested under message
-            msg = data.get("message")
-            if msg and isinstance(msg.get("usage"), dict):
-                u = msg["usage"]
-                total_in = _total_input(u)
-                if total_in is not None:
-                    usage_holder["input_tokens"] = total_in
-                if "output_tokens" in u:
-                    usage_holder["output_tokens"] = u["output_tokens"]
-            # message_delta: usage at top level, carries final output_tokens
-            if isinstance(data.get("usage"), dict):
-                u = data["usage"]
-                total_in = _total_input(u)
-                if total_in is not None:
-                    usage_holder["input_tokens"] = total_in
-                if "output_tokens" in u:
-                    usage_holder["output_tokens"] = u["output_tokens"]
-
-        async def raw_chunks() -> AsyncIterator[str]:
-            # Note: Anthropic's raw content_block_delta events include the
-            # prefill text, so we don't need to yield it manually (doing so
-            # would double the prefill and break XML tokenization).
-            async for payload in sse_iter:
-                if not payload.strip():
-                    continue
-                data = json.loads(payload)
-                evt_type = data.get("type")
-                if evt_type == "message_start":
-                    _update_usage(data)
-                elif evt_type == "content_block_start":
-                    if DEBUG_RAW_STREAM:
-                        idx = data.get("index")
-                        block = data.get("content_block", {})
-                        print(
-                            f"[anthropic block_start] index={idx} "
-                            f"type={block.get('type')}"
-                        )
-                elif evt_type == "content_block_stop":
-                    if DEBUG_RAW_STREAM:
-                        print(f"[anthropic block_stop] index={data.get('index')}")
-                elif evt_type == "content_block_delta":
-                    delta = data.get("delta", {})
-                    if delta.get("type") == "text_delta":
-                        text = delta.get("text")
-                        if text:
-                            if DEBUG_RAW_STREAM:
-                                idx = data.get("index")
-                                print(f"[anthropic raw idx={idx}] {text!r}")
-                            yield text
-                elif evt_type == "message_delta":
-                    _update_usage(data)
-                elif evt_type == "error":
-                    err = data.get("error", {})
-                    raise RuntimeError(
-                        f"Anthropic stream error: {err.get('message', err)}"
-                    )
-
-        async for token in self._wire_format.aparse_text_stream(raw_chunks()):
-            yield token
-
-        # XML tokenizer may stop early (after </PYTHON> or </TERMINAL>).
-        # Drain remaining SSE events to capture final usage — but bound
-        # the wait tightly so we don't hang on a model that keeps
-        # generating past our stop point.  Anthropic models sometimes
-        # hallucinate trailing content (e.g. a fake next user turn),
-        # and without a timeout the drain waits for every single
-        # byte up to max_tokens before yielding the final done token.
-        async def _drain() -> None:
-            async for payload in sse_iter:
-                if not payload.strip():
-                    continue
-                data = json.loads(payload)
-                if data.get("type") == "message_stop":
-                    return
-                if data.get("type") in ("message_start", "message_delta"):
-                    _update_usage(data)
-
-        try:
-            await asyncio.wait_for(_drain(), timeout=2.0)
-        except (asyncio.TimeoutError, Exception):
-            # Best-effort — partial usage is acceptable.  The orphaned
-            # SSE reader will be garbage-collected or closed when the
-            # underlying HTTP response finishes.
-            pass
-
-        yield TokenChunk(
-            type="thinking",
-            content="",
-            done=True,
-            input_tokens=usage_holder["input_tokens"],
-            output_tokens=usage_holder["output_tokens"],
-        )
 
     async def _stream_once_tools(
         self,

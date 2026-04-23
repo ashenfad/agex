@@ -67,8 +67,10 @@ class TestReportOnActionEvent:
         assert any(event_report(a) == "Working on it now" for a in actions)
 
     def test_action_event_report_rendered_in_history(self):
-        """Agent's own prior REPORT is rendered in its history on later turns."""
-        from agex.llm.formats.xml import render_events_as_xml
+        """Agent's own prior REPORT surfaces as an assistant text block
+        in rendered history so later turns can read their own prior
+        status updates."""
+        from agex.llm.formats.tool_use.renderer import render_events_as_tool_use
 
         clear_agent_registry()
         connect_state(type="versioned", storage="memory")
@@ -79,15 +81,14 @@ class TestReportOnActionEvent:
             report="Working on it now",
             code="print('x')",
         )
-        messages = render_events_as_xml([action_with_report])
-        assert len(messages) == 1
-        content = messages[0]["content"]
-        assert "<REPORT>Working on it now</REPORT>" in content
-        # Canonical ordering: REPORT between THINKING and PYTHON
-        thinking_pos = content.find("</THINKING>")
-        report_pos = content.find("<REPORT>")
-        python_pos = content.find("<PYTHON>")
-        assert thinking_pos < report_pos < python_pos
+        messages = render_events_as_tool_use([action_with_report])
+        assistant = next(m for m in messages if m["role"] == "assistant")
+        # The report becomes a ``text`` block in the assistant's
+        # content, alongside the python_action tool_use block.
+        text_blocks = [b for b in assistant["content"] if b.get("type") == "text"]
+        tool_uses = [b for b in assistant["content"] if b.get("type") == "tool_use"]
+        assert any(b["text"] == "Working on it now" for b in text_blocks)
+        assert tool_uses and tool_uses[0]["name"] == "python_action"
 
 
 class TestSubAgentReportPropagation:

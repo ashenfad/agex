@@ -14,7 +14,7 @@ import pytest
 from agex.agent.emissions import FileEditEmission, FileWriteEmission
 from agex.llm.anthropic_client import Anthropic
 from agex.llm.core import ResponseBuilder
-from agex.llm.formats import ToolUseWireFormat, XmlWireFormat
+from agex.llm.formats import ToolUseWireFormat
 from agex.llm.pyfetch_anthropic import PyfetchAnthropic
 from tests.agex._emissions import (
     response_code,
@@ -255,40 +255,6 @@ class TestAnthropicToolUse:
         assert ea.path == "/b.py"
         assert ea.operation == "insert-before"
         assert ea.content == "added"
-
-    def test_xml_format_still_works(self):
-        """Explicit XmlWireFormat path — tool-use API params should NOT
-        be in the call."""
-
-        class FakeTextStream:
-            def __init__(self, texts):
-                self._texts = texts
-
-            def __iter__(self):
-                return iter(self._texts)
-
-        cm = MagicMock()
-        cm.__enter__ = MagicMock(
-            return_value=MagicMock(
-                text_stream=FakeTextStream(
-                    ["<THINKING>T</THINKING><PYTHON>pass</PYTHON>"]
-                ),
-                get_final_message=MagicMock(
-                    return_value=MagicMock(
-                        usage=MagicMock(input_tokens=5, output_tokens=2)
-                    )
-                ),
-            )
-        )
-        cm.__exit__ = MagicMock(return_value=False)
-
-        client = Anthropic(api_key="test", wire_format=XmlWireFormat())
-        client.client = MagicMock()
-        client.client.messages.stream = MagicMock(return_value=cm)
-
-        list(client.complete_stream("sys", []))
-        call_kwargs = client.client.messages.stream.call_args.kwargs
-        assert "tools" not in call_kwargs
 
 
 @pytest.mark.asyncio

@@ -245,20 +245,21 @@ class TestTaskCancellation:
         state = agent.state()
         assert _get_cancel_sentinel(state, "my_task") is True
 
-    def test_cancelled_tag_rendering(self):
-        """Verify that cancellation is rendered in history with the correct XML tag."""
-        from agex.llm.formats.xml import TAG_CANCELLED
-
+    def test_cancelled_event_appears_in_rendered_history(self):
+        """After a cancelled run, the next run's rendered history must
+        surface the cancellation so the LLM sees why its prior turn
+        stopped."""
         llm = Dummy(
             responses=[
-                # Run 1: First iteration (task_continue), cancel set during this
+                # Run 1: first iteration continues implicitly; cancel
+                # lands during it.
                 make_response(thinking="Run 1 iter 0", code='print("working")'),
-                # Run 1: Won't complete due to cancel
+                # Run 1 second iteration would complete, but cancel
+                # detection fires first.
                 make_response(thinking="Run 1 iter 1", code='task_success("done")'),
-                # Run 2: Should see history of Run 1 cancellation
+                # Run 2: should see history of Run 1 cancellation.
                 make_response(thinking="Run 2", code='task_success("done")'),
-            ],
-            renderer="xml",  # Enable XML rendering for verification of tags
+            ]
         )
         agent = Agent(state=connect_state(type="versioned", storage="memory"), llm=llm)
 
@@ -273,25 +274,15 @@ class TestTaskCancellation:
                 state = agent.state()
                 _set_cancel_sentinel(state, "my_task")
 
-        # Run 1: Should raise TaskCancelled and log event
         with pytest.raises(TaskCancelled):
             my_task(on_event=on_event_set_cancel)
 
-        # Run 2: Should see the cancellation in history
+        # Run 2: should see the cancellation in history.
         my_task()
 
-        # Inspect messages sent to LLM in the last call
-        # all_rendered_messages is list of message lists
-        last_call_messages = llm.all_rendered_messages[-1]
-
-        # Convert messages to single string for search
-        history_text = str(last_call_messages)
-
-        # Verify XML tag is present
-        expected_tag = f"<{TAG_CANCELLED}>"
-        assert expected_tag in history_text, (
-            f"Expected {expected_tag} in history, got: {history_text}"
-        )
+        # Inspect messages sent to LLM in the last call.
+        history_text = str(llm.all_rendered_messages[-1])
+        assert "cancelled" in history_text.lower()
 
 
 class TestTaskCancellationAsync:

@@ -100,11 +100,6 @@ def _log_cache_diagnostics(
 
 CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
 
-# Flip to True to print raw SSE text deltas (pre-XML-tokenization) as they
-# arrive from the API.  Useful for debugging what the model is actually
-# producing vs what the XML tokenizer extracts.
-DEBUG_RAW_STREAM = False
-
 
 def _is_network_error(exc: Exception) -> bool:
     """Check if an exception is a transient network error worth retrying."""
@@ -270,12 +265,8 @@ class PyfetchOpenAI(LLM):
     ) -> AsyncIterator[TokenChunk]:
         """Stream tokens from an OpenAI-compatible endpoint via pyfetch.
 
-        Dispatches on ``wire_format.tool_schema()``:
-
-        - ``None`` → text-stream path (XML-in-text formats).
-        - non-None → provider-native tool-calling path.
-
-        Retries on network errors (e.g. connection drops on mobile).
+        Always uses the provider-native tool-use path.  Retries on
+        network errors (e.g. connection drops on mobile).
         """
         request_kwargs = {**self._kwargs, **kwargs}
 
@@ -283,71 +274,45 @@ class PyfetchOpenAI(LLM):
         system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         tool_schemas = self._wire_format.tool_schema()
 
-        if tool_schemas is None:
-            system_msg = _format_message_for_openai(
-                {"role": "system", "content": system_with_format}, cache=True
-            )
-            # Cache breakpoint on second-to-last message so system + history
-            # gets cached across turns.
-            cache_idx = len(messages_dicts) - 2
-            conversation = [
-                _format_message_for_openai(m, cache=(i == cache_idx))
-                for i, m in enumerate(messages_dicts)
-            ]
-            full_messages = [system_msg] + conversation
-            body: dict[str, Any] = {
-                "model": self._model,
-                "messages": full_messages,
-                "stream": True,
-                "stream_options": {"include_usage": True},
-                **request_kwargs,
-            }
-            tool_use_mode = False
-        else:
-            translated = translate_messages_to_openai(messages_dicts)
-            system_msg = _format_message_for_openai(
-                {"role": "system", "content": system_with_format}, cache=True
-            )
-            # Cache breakpoint on the LAST translated message.  In agex's
-            # tool-use flow the last message is always a tool result (or a
-            # user-text turn-boundary message), and the next turn's
-            # request appends *after* it without injecting a fresh user
-            # prompt — so caching the last message yields hits on every
-            # subsequent turn.  Using ``len-2`` (the chat-style default)
-            # would land on an assistant-with-tool_calls message whose
-            # ``content`` is None, and our cache helper has no content
-            # block to attach the marker to → the breakpoint silently
-            # disappeared and only the system prompt got cached.
-            cache_idx = len(translated) - 1
-            conversation = [
-                _format_message_for_openai(m, cache=(i == cache_idx))
-                for i, m in enumerate(translated)
-            ]
-            full_messages = [system_msg] + conversation
-            body = {
-                "model": self._model,
-                "messages": full_messages,
-                "tools": schemas_to_openai_tools(tool_schemas),
-                "tool_choice": "auto",
-                "stream": True,
-                "stream_options": {"include_usage": True},
-                **request_kwargs,
-            }
-            tool_use_mode = True
+        translated = translate_messages_to_openai(messages_dicts)
+        system_msg = _format_message_for_openai(
+            {"role": "system", "content": system_with_format}, cache=True
+        )
+        # Cache breakpoint on the LAST translated message.  In agex's
+        # tool-use flow the last message is always a tool result (or a
+        # user-text turn-boundary message), and the next turn's request
+        # appends *after* it without injecting a fresh user prompt — so
+        # caching the last message yields hits on every subsequent turn.
+        # Using ``len-2`` (the chat-style default) would land on an
+        # assistant-with-tool_calls message whose ``content`` is None,
+        # and our cache helper has no content block to attach the marker
+        # to → the breakpoint silently disappeared and only the system
+        # prompt got cached.
+        cache_idx = len(translated) - 1
+        conversation = [
+            _format_message_for_openai(m, cache=(i == cache_idx))
+            for i, m in enumerate(translated)
+        ]
+        full_messages = [system_msg] + conversation
+        body: dict[str, Any] = {
+            "model": self._model,
+            "messages": full_messages,
+            "tools": schemas_to_openai_tools(tool_schemas),
+            "tool_choice": "auto",
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            **request_kwargs,
+        }
 
         headers = self._headers()
         url = f"{self._base_url}/chat/completions"
 
         for attempt in range(self._STREAM_MAX_RETRIES):
             try:
-                if tool_use_mode:
-                    async for token in self._stream_once_tools(
-                        url, body, headers, cache_idx
-                    ):
-                        yield token
-                else:
-                    async for token in self._stream_once(url, body, headers):
-                        yield token
+                async for token in self._stream_once_tools(
+                    url, body, headers, cache_idx
+                ):
+                    yield token
                 return  # success
             except Exception as exc:
                 is_network = _is_network_error(exc)
@@ -355,78 +320,6 @@ class PyfetchOpenAI(LLM):
                     raise
                 # Brief pause before retry
                 await asyncio.sleep(1)
-
-    async def _stream_once(
-        self,
-        url: str,
-        body: dict,
-        headers: dict,
-    ) -> AsyncIterator[TokenChunk]:
-        """Single streaming attempt — separated for retry logic."""
-        from agex.llm.sse import parse_sse_events
-
-        response = self._adapter.fetch_stream(url, headers=headers, body=body)
-
-        usage_holder: dict[str, int | None] = {
-            "input_tokens": None,
-            "output_tokens": None,
-        }
-
-        sse_iter = parse_sse_events(response)
-
-        def _update_usage(data: dict) -> None:
-            usage = data.get("usage")
-            if usage:
-                usage_holder["input_tokens"] = usage.get("prompt_tokens")
-                usage_holder["output_tokens"] = usage.get("completion_tokens")
-
-        async def raw_chunks() -> AsyncIterator[str]:
-            async for payload in sse_iter:
-                if not payload.strip():
-                    continue
-                data = json.loads(payload)
-                _update_usage(data)
-                choices = data.get("choices", [])
-                if choices:
-                    delta = choices[0].get("delta", {})
-                    content = delta.get("content")
-                    if content:
-                        if DEBUG_RAW_STREAM:
-                            print(f"[openai raw] {content!r}")
-                        yield content
-
-        async for token in self._wire_format.aparse_text_stream(raw_chunks()):
-            yield token
-
-        # XML tokenizer may stop early (after </PYTHON> or </TERMINAL>).
-        # Drain remaining SSE events briefly to capture the usage chunk
-        # — but bound the wait tightly so a provider that stalls or
-        # keeps streaming (e.g. some OpenRouter routes not honoring
-        # stream_options, or a model that keeps generating past our
-        # stop point) can't hang the whole chat turn.
-        async def _drain() -> None:
-            async for payload in sse_iter:
-                if not payload.strip():
-                    continue
-                data = json.loads(payload)
-                _update_usage(data)
-                if usage_holder["input_tokens"] is not None:
-                    return
-
-        if usage_holder["input_tokens"] is None:
-            try:
-                await asyncio.wait_for(_drain(), timeout=2.0)
-            except (asyncio.TimeoutError, Exception):
-                # Best-effort — partial or missing usage is acceptable.
-                pass
-
-        yield TokenChunk(
-            type="thinking",
-            content="",
-            done=True,
-            input_tokens=usage_holder["input_tokens"],
-            output_tokens=usage_holder["output_tokens"],
-        )
 
     async def _stream_once_tools(
         self,
