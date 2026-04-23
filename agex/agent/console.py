@@ -477,6 +477,14 @@ def pprint_tokens(
 
     use_color = _should_color(color, output_stream)
 
+    # Signature tokens are invisible metadata — one per action-tool
+    # call, carrying only the provider signature bytes.  Drop them
+    # entirely; their done=True flag must NOT trigger the generic
+    # section-newline below, otherwise every action-tool call gains a
+    # blank line of whitespace in the console.
+    if token.type == "signature":
+        return
+
     # Prebuilt emissions arrive as a single ``emission`` token.  File
     # emissions render as a one-line summary; native-provider thinking
     # blocks (Gemini 3 thought parts, Claude thinking content) render
@@ -500,13 +508,16 @@ def pprint_tokens(
         elif isinstance(em, ThinkingEmission):
             if em.redacted:
                 line = "💭 [redacted thinking]\n"
-            elif em.text:
-                # Mirror the streaming ``thinking`` token's colour so
-                # native thought parts don't visually split from
-                # narration-via-schema thinking.
-                line = f"💭 {em.text}\n"
+            elif em.text and em.text.strip():
+                # Strip leading/trailing whitespace — native thought
+                # parts often arrive with padding newlines that would
+                # otherwise render as runs of blank lines between
+                # sections.  Mirror the streaming ``thinking`` token's
+                # colour so native thought parts don't visually split
+                # from narration-via-schema thinking.
+                line = f"💭 {em.text.strip()}\n"
             else:
-                return  # Nothing worth printing (signature-only part).
+                return  # Nothing worth printing (signature-only or whitespace).
             color_code = _Colors.bright_blue if use_color else ""
         else:
             line = f"emission: {em!r}\n"
