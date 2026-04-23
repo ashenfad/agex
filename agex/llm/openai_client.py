@@ -92,7 +92,14 @@ class OpenAI(LLM):
         self._model = model
         self._kwargs = completion_kwargs
         self._timeout_seconds = timeout_seconds
-        self._wire_format: WireFormat = wire_format or ToolUseWireFormat()
+        # GPT-5+ reasons server-side and delivers surfaced text
+        # natively; narration-via-schema is redundant.  Default
+        # ``native_thinking=True`` on the wire format.  Users on
+        # chat-class models who want narrated thinking can pass an
+        # explicit ``ToolUseWireFormat()``.
+        self._wire_format: WireFormat = wire_format or ToolUseWireFormat(
+            native_thinking=True
+        )
         self.client = openai.OpenAI(**client_kwargs)
         self.async_client = openai.AsyncOpenAI(**client_kwargs)
         self.tokenizer = get_tokenizer(model)
