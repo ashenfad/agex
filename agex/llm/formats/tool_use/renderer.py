@@ -115,49 +115,37 @@ def _tool_use_block_for(emission: Any, block_id: str) -> tuple[dict | None, str 
     Returns ``(block, tool_name)``.  ``(None, None)`` for
     non-actionable emissions (Text / Thinking).
     """
+
+    def _wrap(name: str, inp: dict) -> dict:
+        block: dict[str, Any] = {
+            "type": "tool_use",
+            "id": block_id,
+            "name": name,
+            "input": inp,
+        }
+        if emission.signature is not None:
+            block["signature"] = emission.signature
+        return block
+
     if isinstance(emission, PythonEmission):
         inp: dict[str, Any] = {"code": emission.code or ""}
         if emission.title:
             inp["title"] = emission.title
         if emission.thinking:
             inp["thinking"] = emission.thinking
-        return (
-            {
-                "type": "tool_use",
-                "id": block_id,
-                "name": TOOL_PYTHON,
-                "input": inp,
-            },
-            TOOL_PYTHON,
-        )
+        return _wrap(TOOL_PYTHON, inp), TOOL_PYTHON
     if isinstance(emission, TerminalEmission):
         inp = {"commands": emission.commands or ""}
         if emission.title:
             inp["title"] = emission.title
         if emission.thinking:
             inp["thinking"] = emission.thinking
-        return (
-            {
-                "type": "tool_use",
-                "id": block_id,
-                "name": TOOL_TERMINAL,
-                "input": inp,
-            },
-            TOOL_TERMINAL,
-        )
+        return _wrap(TOOL_TERMINAL, inp), TOOL_TERMINAL
     if isinstance(emission, FileWriteEmission):
         inp = {"path": emission.path, "content": emission.content}
         if emission.mode != "write":
             inp["mode"] = emission.mode
-        return (
-            {
-                "type": "tool_use",
-                "id": block_id,
-                "name": TOOL_WRITE_FILE,
-                "input": inp,
-            },
-            TOOL_WRITE_FILE,
-        )
+        return _wrap(TOOL_WRITE_FILE, inp), TOOL_WRITE_FILE
     if isinstance(emission, FileEditEmission):
         inp = {"path": emission.path, "search": emission.search}
         if emission.operation == "insert-after":
@@ -168,15 +156,7 @@ def _tool_use_block_for(emission: Any, block_id: str) -> tuple[dict | None, str 
             inp["replace"] = emission.content
         if emission.match_all:
             inp["match_all"] = True
-        return (
-            {
-                "type": "tool_use",
-                "id": block_id,
-                "name": TOOL_EDIT_FILE,
-                "input": inp,
-            },
-            TOOL_EDIT_FILE,
-        )
+        return _wrap(TOOL_EDIT_FILE, inp), TOOL_EDIT_FILE
     return None, None
 
 

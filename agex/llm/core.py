@@ -92,11 +92,13 @@ class TokenChunk:
         "python",
         "terminal",
         "emission",
+        "signature",
     ]
     content: str = ""
     done: bool = False
     emission_index: int = 0
     emission: Emission | None = None
+    signature: bytes | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
 
@@ -209,6 +211,7 @@ class EmissionsBuilder:
             done=token.done,
             emission_index=token.emission_index,
             emission=token.emission,
+            signature=token.signature,
             input_tokens=token.input_tokens,
             output_tokens=token.output_tokens,
             agent_name=self.agent_name or "",
@@ -224,6 +227,14 @@ class EmissionsBuilder:
                 slot["_prebuilt"] = token.emission
             return enriched
 
+        if token.type == "signature":
+            # Carried on its own token so it can arrive before the
+            # content tokens stream in (Gemini sends the signature at
+            # ToolCallStart time).
+            if token.signature is not None:
+                slot["_signature"] = token.signature
+            return enriched
+
         # Skip the boundary markers; only accumulate content chunks.
         if not token.done:
             slot.setdefault(token.type, []).append(token.content)
@@ -237,7 +248,10 @@ class EmissionsBuilder:
             slot = self._slots[idx]
 
             prebuilt = slot.get("_prebuilt")
+            signature = slot.get("_signature")
             if prebuilt is not None:
+                if signature is not None and hasattr(prebuilt, "signature"):
+                    prebuilt.signature = signature
                 emissions.append(prebuilt)
                 continue
 
@@ -251,25 +265,33 @@ class EmissionsBuilder:
             # for round-trip fidelity.  Standalone thinking (no
             # accompanying code/commands/text) becomes its own
             # :class:`ThinkingEmission` — that's the shape native-
-            # thinking providers will deliver in Phase 4.
+            # thinking providers deliver.
             if python_str:
                 emissions.append(
                     PythonEmission(
-                        code=python_str, title=title_str, thinking=thinking_str
+                        code=python_str,
+                        title=title_str,
+                        thinking=thinking_str,
+                        signature=signature,
                     )
                 )
             elif terminal_str:
                 emissions.append(
                     TerminalEmission(
-                        commands=terminal_str, title=title_str, thinking=thinking_str
+                        commands=terminal_str,
+                        title=title_str,
+                        thinking=thinking_str,
+                        signature=signature,
                     )
                 )
             elif text_str:
-                emissions.append(TextEmission(text=text_str))
+                emissions.append(TextEmission(text=text_str, signature=signature))
                 if thinking_str:
                     emissions.append(ThinkingEmission(text=thinking_str))
             elif thinking_str:
-                emissions.append(ThinkingEmission(text=thinking_str))
+                emissions.append(
+                    ThinkingEmission(text=thinking_str, signature=signature)
+                )
 
         return LLMResponse(
             emissions=emissions,

@@ -124,15 +124,20 @@ def translate_messages_to_gemini(messages: list[dict]) -> list[dict]:
                     tool_id = block["id"]
                     name = block["name"]
                     id_to_name[tool_id] = name
-                    parts.append(
-                        {
-                            "function_call": {
-                                "id": tool_id,
-                                "name": name,
-                                "args": block.get("input") or {},
-                            }
-                        }
-                    )
+                    fc: dict[str, Any] = {
+                        "id": tool_id,
+                        "name": name,
+                        "args": block.get("input") or {},
+                    }
+                    sig = block.get("signature")
+                    if sig is not None:
+                        # Gemini 3 requires thought_signature on every
+                        # function_call on subsequent turns — without
+                        # it the API 400s on the second call.  We
+                        # captured this when the stream first delivered
+                        # the call; replay it here.
+                        fc["thought_signature"] = sig
+                    parts.append({"function_call": fc})
                 elif btype == "tool_result":
                     tool_id = block["tool_use_id"]
                     name = id_to_name.get(tool_id, "")
@@ -187,7 +192,10 @@ def _call_id_for(fc: Any, counter: int) -> str:
 
 
 def _emit_function_call(
-    fc: Any, seen_ids: set[str], counter_cell: list[int]
+    fc: Any,
+    signature: bytes | None,
+    seen_ids: set[str],
+    counter_cell: list[int],
 ) -> Iterator[ToolCallEvent]:
     call_id = _call_id_for(fc, counter_cell[0])
     if call_id in seen_ids:
@@ -198,9 +206,32 @@ def _emit_function_call(
     counter_cell[0] += 1
     name = getattr(fc, "name", None) or ""
     args = getattr(fc, "args", None) or {}
-    yield ToolCallStart(call_id=call_id, tool_name=name)
+    yield ToolCallStart(call_id=call_id, tool_name=name, signature=signature)
     yield ToolCallArgDelta(call_id=call_id, argument_chunk=json.dumps(args))
     yield ToolCallEnd(call_id=call_id)
+
+
+def _iter_function_call_parts(chunk: Any) -> Iterator[tuple[Any, bytes | None]]:
+    """Yield ``(function_call, thought_signature)`` pairs from a chunk.
+
+    Gemini 3 attaches ``thought_signature`` to the ``Part`` that wraps
+    the ``function_call`` (bytes on the Part, not on the call itself).
+    Walk the candidate content parts to pick them up in lockstep.
+    ``chunk.function_calls`` flattens the calls but drops the parts, so
+    we work from ``candidates[*].content.parts`` directly.
+    """
+    candidates = getattr(chunk, "candidates", None) or []
+    for candidate in candidates:
+        content = getattr(candidate, "content", None)
+        if content is None:
+            continue
+        parts = getattr(content, "parts", None) or []
+        for part in parts:
+            fc = getattr(part, "function_call", None)
+            if fc is None:
+                continue
+            sig = getattr(part, "thought_signature", None)
+            yield fc, sig
 
 
 def translate_gemini_stream_to_events(
@@ -210,17 +241,19 @@ def translate_gemini_stream_to_events(
     """Translate a Gemini ``generate_content_stream`` response into
     :class:`ToolCallEvent`\\ s.
 
-    Each chunk is scanned for ``function_calls``; duplicates across
+    Each chunk is scanned for function_call parts; duplicates across
     chunks (distinguished by id) are deduplicated so a given tool call
-    produces exactly one Start/Delta/End triple.
+    produces exactly one Start/Delta/End triple.  ``thought_signature``
+    bytes on each part are forwarded on :class:`ToolCallStart` so the
+    wire format can round-trip them on the next turn (Gemini 3
+    rejects replayed function_calls that lack their signature).
     """
     seen_ids: set[str] = set()
     counter = [0]
     for chunk in chunks:
         _capture_usage(chunk, usage_holder)
-        fcs = getattr(chunk, "function_calls", None) or []
-        for fc in fcs:
-            yield from _emit_function_call(fc, seen_ids, counter)
+        for fc, sig in _iter_function_call_parts(chunk):
+            yield from _emit_function_call(fc, sig, seen_ids, counter)
 
 
 async def atranslate_gemini_stream_to_events(
@@ -232,7 +265,6 @@ async def atranslate_gemini_stream_to_events(
     counter = [0]
     async for chunk in chunks:
         _capture_usage(chunk, usage_holder)
-        fcs = getattr(chunk, "function_calls", None) or []
-        for fc in fcs:
-            for ev in _emit_function_call(fc, seen_ids, counter):
+        for fc, sig in _iter_function_call_parts(chunk):
+            for ev in _emit_function_call(fc, sig, seen_ids, counter):
                 yield ev
