@@ -72,6 +72,31 @@ def _image_part_to_gemini(part: dict) -> dict:
     }
 
 
+# Documented escape hatch for Gemini 3's thought-signature validator.
+# Per https://ai.google.dev/gemini-api/docs/thought-signatures, setting
+# ``thought_signature`` to this literal bypasses validation when the
+# original response didn't attach a signature where the validator now
+# requires one (the first function_call in each assistant turn).  The
+# validator is sometimes stricter than the response-shape guarantees:
+# Gemini 3 has been observed returning a first function_call with no
+# signature — and then 400ing the next turn because our faithful
+# replay of that same shape lacks one.  We apply the dummy to keep
+# runs from crashing; it comes with an accepted model-quality cost.
+_DUMMY_THOUGHT_SIGNATURE = b"context_engineering_is_the_way_to_go"
+
+
+def _ensure_first_function_call_signed(parts: list[dict]) -> None:
+    """Guarantee that the first function_call part in an assistant turn
+    carries a ``thought_signature``.  Mutates ``parts`` in place.
+    """
+    for part in parts:
+        if "function_call" not in part:
+            continue
+        if "thought_signature" not in part or part["thought_signature"] is None:
+            part["thought_signature"] = _DUMMY_THOUGHT_SIGNATURE
+        return
+
+
 def _tool_result_response_payload(content: Any) -> dict:
     """Wrap a tool_result's content in the ``{"result": ...}`` dict
     that Gemini's ``FunctionResponse.response`` expects.
@@ -181,6 +206,8 @@ def translate_messages_to_gemini(messages: list[dict]) -> list[dict]:
                 parts.append({"text": content})
 
         if parts:
+            if gemini_role == "model":
+                _ensure_first_function_call_signed(parts)
             out.append({"role": gemini_role, "parts": parts})
 
     return out
