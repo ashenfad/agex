@@ -73,18 +73,25 @@ def _content_parts_to_dicts(parts: List[ContentPart]) -> List[dict]:
 
 def _print_action_to_text(action: PrintAction) -> str:
     """Render a ``PrintAction`` (tuple of ``print()`` args) the same
-    way a terminal would — strings pass through verbatim, other types
-    go through :func:`render_value`.  This avoids the ``repr``-style
-    quote wrapping you get if you run strings through ``render_value``
-    and is what the LLM wants to see for stdout lines.
+    way a real ``print()`` does — ``str(arg)`` for each, joined by
+    spaces.
+
+    Avoids two prior bugs at once:
+
+    - ``render_value`` wraps strings in ``repr``-style quotes, so
+      ``print("hello")`` would otherwise show as ``'hello'`` in the
+      tool_result text.
+    - ``render_value`` defaults to a 2048-char budget per arg, which
+      silently truncated the LLM's view of large printed values
+      (e.g. a ``print(test_app(...))`` returning a long result list)
+      while the human-facing activity log used unbudgeted ``str(item)``
+      and showed the whole thing.
+
+    ``str()`` matches what the studio UI does and what Python's print
+    semantically does.  Aggregate token-budget protection is the
+    chaptering layer's job.
     """
-    bits: list[str] = []
-    for arg in action:
-        if isinstance(arg, str):
-            bits.append(arg)
-        else:
-            bits.append(render_value(arg))
-    return " ".join(bits)
+    return " ".join(str(arg) for arg in action)
 
 
 def _output_to_text(event: OutputEvent) -> tuple[str, list[ContentPart]]:
@@ -104,7 +111,11 @@ def _output_to_text(event: OutputEvent) -> tuple[str, list[ContentPart]]:
         elif isinstance(item, str):
             text_bits.append(item)
         else:
-            text_bits.append(render_value(item))
+            # Unknown part type — convert via ``str()`` so the LLM sees
+            # whatever the studio UI shows (which also uses ``str()``).
+            # Avoids the budget-driven truncation ``render_value`` would
+            # impose silently.
+            text_bits.append(str(item))
     # Route images through the existing budget-aware renderer so we
     # reuse its PNG-serialization / detail-level logic.
     rendered_images: list[ContentPart] = []
