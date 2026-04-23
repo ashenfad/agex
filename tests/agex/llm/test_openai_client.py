@@ -4,6 +4,7 @@ import pytest
 
 from agex.agent.events import TaskStartEvent
 from agex.llm.core import TokenChunk
+from agex.llm.formats import XmlWireFormat
 from agex.llm.openai_client import OpenAI
 
 
@@ -17,7 +18,7 @@ def test_openai_client_initialization():
 
 def test_openai_client_complete_stream():
     """Test that complete_stream properly converts events and streams tokens."""
-    client = OpenAI(api_key="test")
+    client = OpenAI(api_key="test", wire_format=XmlWireFormat())
 
     # Mock the openai stream
     mock_chunk = MagicMock()

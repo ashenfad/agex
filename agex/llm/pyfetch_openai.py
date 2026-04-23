@@ -13,7 +13,7 @@ from typing import Any, AsyncIterator, Iterator, List
 from agex.agent.events import Event
 from agex.llm.adapter import DefaultPyfetchAdapter, FetchAdapter
 from agex.llm.core import LLM, TokenChunk
-from agex.llm.formats import WireFormat, XmlWireFormat
+from agex.llm.formats import ToolUseWireFormat, WireFormat
 from agex.llm.formats.tool_use.openai_adapter import (
     atranslate_openai_stream_to_events,
     schemas_to_openai_tools,
@@ -216,7 +216,7 @@ class PyfetchOpenAI(LLM):
         # adapter, the adapter is expected to inject auth headers on the
         # way out (e.g., a JS bridge that reads the key from localStorage).
         self._adapter: FetchAdapter = fetch_adapter or DefaultPyfetchAdapter()
-        self._wire_format: WireFormat = wire_format or XmlWireFormat()
+        self._wire_format: WireFormat = wire_format or ToolUseWireFormat()
 
     def _headers(self) -> dict[str, str]:
         h: dict[str, str] = {"Content-Type": "application/json"}

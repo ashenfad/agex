@@ -7,7 +7,7 @@ from agex.llm.core import (
     LLM,
     TokenChunk,
 )
-from agex.llm.formats import WireFormat, XmlWireFormat
+from agex.llm.formats import ToolUseWireFormat, WireFormat
 from agex.llm.formats.tool_use.openai_adapter import (
     atranslate_openai_stream_to_events,
     schemas_to_openai_tools,
@@ -76,7 +76,7 @@ class OpenAI(LLM):
         self._model = model
         self._kwargs = completion_kwargs
         self._timeout_seconds = timeout_seconds
-        self._wire_format: WireFormat = wire_format or XmlWireFormat()
+        self._wire_format: WireFormat = wire_format or ToolUseWireFormat()
         self.client = openai.OpenAI(**client_kwargs)
         self.async_client = openai.AsyncOpenAI(**client_kwargs)
         self.tokenizer = get_tokenizer(model)

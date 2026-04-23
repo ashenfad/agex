@@ -14,7 +14,7 @@ import pytest
 from agex.agent.datatypes import EditAction, FileAction
 from agex.agent.events import TaskStartEvent
 from agex.llm.core import ResponseBuilder
-from agex.llm.formats import ToolUseWireFormat
+from agex.llm.formats import ToolUseWireFormat, XmlWireFormat
 from agex.llm.openai_client import OpenAI
 from agex.llm.pyfetch_openai import PyfetchOpenAI
 
@@ -200,7 +200,7 @@ class TestOpenAIToolUse:
         mock_chunk.choices[
             0
         ].delta.content = "<THINKING>T</THINKING><PYTHON>pass</PYTHON>"
-        client = OpenAI(api_key="test")  # Default XmlWireFormat.
+        client = OpenAI(api_key="test", wire_format=XmlWireFormat())
         with patch.object(
             client.client.chat.completions, "create", return_value=iter([mock_chunk])
         ) as mock_create:

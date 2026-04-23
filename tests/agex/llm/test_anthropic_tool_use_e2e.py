@@ -14,7 +14,7 @@ import pytest
 from agex.agent.datatypes import EditAction, FileAction
 from agex.llm.anthropic_client import Anthropic
 from agex.llm.core import ResponseBuilder
-from agex.llm.formats import ToolUseWireFormat
+from agex.llm.formats import ToolUseWireFormat, XmlWireFormat
 from agex.llm.pyfetch_anthropic import PyfetchAnthropic
 
 
@@ -251,7 +251,7 @@ class TestAnthropicToolUse:
         assert ea.content == "added"
 
     def test_xml_format_still_works(self):
-        """Default XmlWireFormat path — tool-use API params should NOT
+        """Explicit XmlWireFormat path — tool-use API params should NOT
         be in the call."""
 
         class FakeTextStream:
@@ -276,7 +276,7 @@ class TestAnthropicToolUse:
         )
         cm.__exit__ = MagicMock(return_value=False)
 
-        client = Anthropic(api_key="test")  # Default XmlWireFormat.
+        client = Anthropic(api_key="test", wire_format=XmlWireFormat())
         client.client = MagicMock()
         client.client.messages.stream = MagicMock(return_value=cm)
 

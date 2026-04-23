@@ -14,7 +14,7 @@ import pytest
 
 from agex.agent.datatypes import EditAction, FileAction
 from agex.llm.core import ResponseBuilder
-from agex.llm.formats import ToolUseWireFormat
+from agex.llm.formats import ToolUseWireFormat, XmlWireFormat
 from agex.llm.gemini_client import Gemini
 
 
@@ -194,7 +194,7 @@ class TestGeminiToolUse:
             assert has_fns
 
     def test_xml_format_still_works(self):
-        """Default XmlWireFormat — tool-use params NOT set."""
+        """Explicit XmlWireFormat — tool-use params NOT set."""
         with patch("google.genai.Client") as MockClient:
             mock_models = MockClient.return_value.models
             mock_chunk = MagicMock()
@@ -204,7 +204,7 @@ class TestGeminiToolUse:
             mock_chunk.usage_metadata = None
             mock_models.generate_content_stream.return_value = [mock_chunk]
 
-            client = Gemini()  # Default XmlWireFormat.
+            client = Gemini(wire_format=XmlWireFormat())
             list(client.complete_stream("sys", []))
 
             kwargs = mock_models.generate_content_stream.call_args.kwargs

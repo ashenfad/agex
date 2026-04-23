@@ -4,6 +4,7 @@ import pytest
 
 from agex.agent.events import TaskStartEvent
 from agex.llm.core import TokenChunk
+from agex.llm.formats import XmlWireFormat
 from agex.llm.gemini_client import Gemini
 
 
@@ -36,7 +37,7 @@ def test_gemini_client_complete_stream():
         mock_response_stream = [mock_chunk]
         mock_models.generate_content_stream.return_value = mock_response_stream
 
-        client = Gemini()
+        client = Gemini(wire_format=XmlWireFormat())
         system = "System prompt"
         events = [
             TaskStartEvent(
