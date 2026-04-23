@@ -75,6 +75,31 @@ class TestTranslateMessagesToAnthropic:
         out = translate_messages_to_anthropic(msgs)
         assert out == msgs
 
+    def test_assistant_text_plus_tool_use_both_replayed(self):
+        """A turn that mixed a TextEmission with a PythonEmission must
+        pass through as assistant content containing both the text
+        block and the tool_use block, in order — Anthropic natively
+        accepts interleaved text + tool_use."""
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "working on it"},
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "python_action",
+                        "input": {"code": "pass"},
+                    },
+                ],
+            }
+        ]
+        out = translate_messages_to_anthropic(msgs)
+        assert out[0]["role"] == "assistant"
+        assert out[0]["content"][0] == {"type": "text", "text": "working on it"}
+        assert out[0]["content"][1]["type"] == "tool_use"
+        assert out[0]["content"][1]["name"] == "python_action"
+
     def test_user_tool_result_with_string_content_passes_through(self):
         msgs = [
             {
