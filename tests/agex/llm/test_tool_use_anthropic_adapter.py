@@ -2,7 +2,12 @@
 
 import pytest
 
-from agex.llm.formats.tool_use import ToolCallArgDelta, ToolCallEnd, ToolCallStart
+from agex.llm.formats.tool_use import (
+    ThinkingPart,
+    ToolCallArgDelta,
+    ToolCallEnd,
+    ToolCallStart,
+)
 from agex.llm.formats.tool_use.anthropic_adapter import (
     apply_cache_control,
     atranslate_anthropic_stream_to_events,
@@ -400,6 +405,318 @@ class TestTranslateAnthropicStream:
             "ToolCallArgDelta",
             "ToolCallEnd",
         ]
+
+
+class TestThinkingBlocks:
+    """Claude's extended-thinking blocks arrive as their own
+    content-block type, with text streamed via ``thinking_delta`` and
+    signature bytes via ``signature_delta`` — both keyed by the same
+    content-block ``index``.  We must capture them, emit one
+    :class:`ThinkingPart` per block when the block closes, and
+    round-trip them on replay so Claude can continue coherently."""
+
+    def test_single_thinking_block_emits_thinking_part(self):
+        events = [
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": "Step 1. "},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": "Step 2."},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "signature_delta", "signature": "deadbeef"},
+            },
+            {"type": "content_block_stop", "index": 0},
+        ]
+        out = list(translate_anthropic_stream_to_events(iter(events)))
+        thinking_parts = [e for e in out if isinstance(e, ThinkingPart)]
+        assert len(thinking_parts) == 1
+        tp = thinking_parts[0]
+        assert tp.text == "Step 1. Step 2."
+        assert tp.signature == b"deadbeef"
+        assert tp.redacted is False
+
+    def test_redacted_thinking_preserves_data_payload(self):
+        """Redacted blocks ship the opaque signed payload as ``data``
+        on the initial block_start; no deltas.  We stash it in the
+        ``signature`` bytes so the renderer can round-trip it as
+        ``{"type": "redacted_thinking", "data": ...}``."""
+        events = [
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {
+                    "type": "redacted_thinking",
+                    "data": "opaque-encrypted-blob",
+                },
+            },
+            {"type": "content_block_stop", "index": 0},
+        ]
+        out = list(translate_anthropic_stream_to_events(iter(events)))
+        thinking_parts = [e for e in out if isinstance(e, ThinkingPart)]
+        assert len(thinking_parts) == 1
+        tp = thinking_parts[0]
+        assert tp.redacted is True
+        assert tp.text is None
+        assert tp.signature == b"opaque-encrypted-blob"
+
+    def test_thinking_interleaved_with_tool_uses(self):
+        """Claude 4.x extended thinking can interleave thinking blocks
+        with tool_use blocks.  Preserve stream order so the parser
+        assigns emission indices in the order the model emitted them."""
+        events = [
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "thinking"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": "plan A"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "signature_delta", "signature": "SIG_A"},
+            },
+            {"type": "content_block_stop", "index": 0},
+            {
+                "type": "content_block_start",
+                "index": 1,
+                "content_block": {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "python_action",
+                },
+            },
+            {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "input_json_delta", "partial_json": "{}"},
+            },
+            {"type": "content_block_stop", "index": 1},
+            {
+                "type": "content_block_start",
+                "index": 2,
+                "content_block": {"type": "thinking"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 2,
+                "delta": {"type": "thinking_delta", "thinking": "plan B"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 2,
+                "delta": {"type": "signature_delta", "signature": "SIG_B"},
+            },
+            {"type": "content_block_stop", "index": 2},
+        ]
+        out = list(translate_anthropic_stream_to_events(iter(events)))
+        # Preserve order: thinking → tool_use start/delta/end → thinking.
+        kinds = [type(e).__name__ for e in out]
+        assert kinds == [
+            "ThinkingPart",
+            "ToolCallStart",
+            "ToolCallArgDelta",
+            "ToolCallEnd",
+            "ThinkingPart",
+        ]
+        assert out[0].text == "plan A"
+        assert out[0].signature == b"SIG_A"
+        assert out[4].text == "plan B"
+        assert out[4].signature == b"SIG_B"
+
+    def test_dangling_thinking_gets_safety_emit(self):
+        """If the stream ends without a content_block_stop (shouldn't
+        happen, but defensive), we still emit the accumulated thinking
+        so the signature isn't silently lost."""
+        events = [
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "thinking"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": "hi"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "signature_delta", "signature": "SIG"},
+            },
+            # No content_block_stop.
+        ]
+        out = list(translate_anthropic_stream_to_events(iter(events)))
+        thinking_parts = [e for e in out if isinstance(e, ThinkingPart)]
+        assert len(thinking_parts) == 1
+        assert thinking_parts[0].text == "hi"
+
+
+class TestThinkingBlockReplay:
+    """``translate_messages_to_anthropic`` must turn our generic
+    ``thinking`` blocks (from signed ThinkingEmissions) back into
+    Anthropic's native ``thinking`` / ``redacted_thinking`` content
+    blocks — the Messages API requires them to be replayed verbatim
+    with their original signature for Claude to continue."""
+
+    def test_thinking_block_becomes_native_thinking(self):
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "thinking",
+                        "text": "my reasoning",
+                        "signature": b"deadbeef",
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "python_action",
+                        "input": {},
+                    },
+                ],
+            }
+        ]
+        out = translate_messages_to_anthropic(msgs)
+        blocks = out[0]["content"]
+        assert blocks[0] == {
+            "type": "thinking",
+            "thinking": "my reasoning",
+            "signature": "deadbeef",
+        }
+        # Tool use follows untouched.
+        assert blocks[1]["type"] == "tool_use"
+
+    def test_redacted_thinking_block_becomes_native_redacted(self):
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "thinking",
+                        "signature": b"opaque-blob",
+                        "redacted": True,
+                    },
+                ],
+            }
+        ]
+        out = translate_messages_to_anthropic(msgs)
+        assert out[0]["content"] == [
+            {"type": "redacted_thinking", "data": "opaque-blob"},
+        ]
+
+    def test_thinking_block_with_string_signature_passes_through(self):
+        """Sanity: if a caller happens to hand a string signature
+        (shouldn't happen from our pipeline — emissions always store
+        bytes — but be forgiving), we don't crash."""
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "thinking",
+                        "text": "hi",
+                        "signature": "already-a-string",
+                    },
+                ],
+            }
+        ]
+        out = translate_messages_to_anthropic(msgs)
+        assert out[0]["content"][0]["signature"] == "already-a-string"
+
+
+class TestThinkingFullRoundTrip:
+    """Stream → parser → builder → renderer → translate_messages_to_anthropic.
+    Signed Claude thinking blocks should survive every link and come
+    out the other side as ``{"type": "thinking", "thinking": ...,
+    "signature": ...}`` — the exact shape Claude requires on replay."""
+
+    def test_thinking_plus_tool_use_round_trip(self):
+        from agex.agent.emissions import PythonEmission, ThinkingEmission
+        from agex.agent.events import ActionEvent
+        from agex.llm.core import EmissionsBuilder
+        from agex.llm.formats.tool_use.parser import parse_tool_events
+
+        events = [
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "thinking"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": "planning..."},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "signature_delta", "signature": "S1G"},
+            },
+            {"type": "content_block_stop", "index": 0},
+            {
+                "type": "content_block_start",
+                "index": 1,
+                "content_block": {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "python_action",
+                },
+            },
+            {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "input_json_delta", "partial_json": '{"code":"x"}'},
+            },
+            {"type": "content_block_stop", "index": 1},
+        ]
+
+        tool_events = translate_anthropic_stream_to_events(iter(events))
+        tokens = list(parse_tool_events(tool_events))
+        builder = EmissionsBuilder()
+        for t in tokens:
+            builder.process_token(t)
+        response = builder.build()
+
+        # Emissions landed in order: thinking, then python.
+        assert len(response.emissions) == 2
+        assert isinstance(response.emissions[0], ThinkingEmission)
+        assert response.emissions[0].text == "planning..."
+        assert response.emissions[0].signature == b"S1G"
+        assert isinstance(response.emissions[1], PythonEmission)
+
+        # Render back and re-translate: thinking block comes out as
+        # Claude's native ``thinking`` shape with the signature
+        # preserved verbatim.
+        event = ActionEvent(agent_name="a", emissions=list(response.emissions))
+        from agex.llm.formats.tool_use.renderer import render_events_as_tool_use
+
+        rendered = render_events_as_tool_use([event])
+        anthropic_msgs = translate_messages_to_anthropic(rendered)
+        assistant = next(m for m in anthropic_msgs if m["role"] == "assistant")
+        blocks = assistant["content"]
+        assert blocks[0] == {
+            "type": "thinking",
+            "thinking": "planning...",
+            "signature": "S1G",
+        }
+        assert blocks[1]["type"] == "tool_use"
 
 
 @pytest.mark.asyncio
