@@ -378,6 +378,25 @@ def _format_event_lines(
                     _indent(detail_indent, f"Code: {code_lines_total} lines")
                 )
 
+        # No visible body means the turn carried only redacted /
+        # signature-only thinking parts (native-thinking providers
+        # sometimes emit these — a signed reasoning step with nothing
+        # user-visible).  Show a hint so the event isn't a silent
+        # headline that looks like a rendering bug.
+        if len(body_lines) == 0:
+            has_redacted_thinking = any(
+                isinstance(em, ThinkingEmission)
+                and (em.redacted or (em.signature is not None and not em.text))
+                for em in event.emissions
+            )
+            hint = (
+                "(signed thinking only — no user-visible content)"
+                if has_redacted_thinking
+                else "(no emissions)"
+            )
+            dim_hint = _colorize(use_color, _Colors.dim, hint)
+            body_lines.append(_indent(detail_indent, dim_hint))
+
     elif isinstance(event, OutputEvent):
         summary = _summarize_output_parts(event.parts, verbosity=verbosity)
         body_lines.append(_indent(detail_indent, f"Output: {summary}"))
