@@ -17,8 +17,45 @@ def test_openai_client_initialization():
     """Test that OpenAI client can be initialized."""
     with patch("openai.OpenAI"):
         client = OpenAI(api_key="test")
-        assert client.model == "gpt-4.1-nano"
+        assert client.model == "gpt-5-mini"
         assert client.provider_name == "OpenAI"
+
+
+def test_reasoning_effort_default_on_tool_use_path():
+    """Tool-use path should default reasoning_effort="low" when the
+    caller doesn't set it — the API's own default is "none" which
+    produces the wrong behaviour for agentic multi-step work."""
+    from agex.llm.formats import ToolUseWireFormat
+
+    client = OpenAI(api_key="test", wire_format=ToolUseWireFormat())
+
+    mock_stream = []  # empty is fine; we only care about the call kwargs
+    with patch.object(
+        client.client.chat.completions, "create", return_value=mock_stream
+    ) as create_mock:
+        list(client.complete_stream("sys", []))
+
+    call_kwargs = create_mock.call_args.kwargs
+    assert call_kwargs.get("reasoning_effort") == "low"
+
+
+def test_reasoning_effort_explicit_override_wins():
+    """Caller-supplied ``reasoning_effort`` takes precedence over the
+    default."""
+    from agex.llm.formats import ToolUseWireFormat
+
+    client = OpenAI(
+        api_key="test",
+        wire_format=ToolUseWireFormat(),
+        reasoning_effort="high",
+    )
+
+    with patch.object(
+        client.client.chat.completions, "create", return_value=[]
+    ) as create_mock:
+        list(client.complete_stream("sys", []))
+
+    assert create_mock.call_args.kwargs.get("reasoning_effort") == "high"
 
 
 def test_openai_client_complete_stream():

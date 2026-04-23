@@ -19,6 +19,22 @@ from agex.tokenizers import get_tokenizer
 # Define keys for client setup vs. completion
 CLIENT_CONFIG_KEYS = {"api_key", "base_url", "organization", "timeout", "max_retries"}
 
+# Default reasoning_effort.  GPT-5+ agex clients are assumed to run a
+# reasoning model; the API's own default is "none" which produces the
+# wrong behaviour for agentic multi-step tasks.  Users on a non-
+# reasoning model should override with ``reasoning_effort=None`` in
+# kwargs or pass their preferred value.
+_DEFAULT_REASONING_EFFORT = "low"
+
+
+def _with_reasoning_default(request_kwargs: dict) -> dict:
+    """Default ``reasoning_effort`` to ``"low"`` unless the caller set
+    it (including explicitly to ``None`` to opt out).
+    """
+    if "reasoning_effort" in request_kwargs:
+        return request_kwargs
+    return {**request_kwargs, "reasoning_effort": _DEFAULT_REASONING_EFFORT}
+
 
 def _format_message_for_openai(message: dict[str, Any]) -> dict:
     """
@@ -55,7 +71,7 @@ class OpenAI(LLM):
 
     def __init__(
         self,
-        model: str = "gpt-4.1-nano",
+        model: str = "gpt-5-mini",
         timeout_seconds: float = 90.0,
         wire_format: WireFormat | None = None,
         **kwargs,
@@ -161,6 +177,7 @@ class OpenAI(LLM):
     ) -> Iterator[TokenChunk]:
         translated = translate_messages_to_openai(full_messages)
         tools = schemas_to_openai_tools(tool_schemas)
+        request_kwargs = _with_reasoning_default(request_kwargs)
 
         stream = self.client.chat.completions.create(
             model=self._model,
@@ -256,6 +273,7 @@ class OpenAI(LLM):
     ) -> AsyncIterator[TokenChunk]:
         translated = translate_messages_to_openai(full_messages)
         tools = schemas_to_openai_tools(tool_schemas)
+        request_kwargs = _with_reasoning_default(request_kwargs)
 
         stream = await self.async_client.chat.completions.create(
             model=self._model,
