@@ -37,6 +37,19 @@ TASK_CONTROL_GUIDANCE = (
     "Otherwise your turn continues — just keep going on the next turn."
 )
 
+# Shown when a turn completed with only text/thinking — no tool_use.
+# Prose alone doesn't advance the task; the model needs to pick up a
+# lever (python_action / write_file / edit_file / terminal_action) to
+# make progress or finish.
+NO_PROGRESS_GUIDANCE = (
+    "⚠️ **No tools called last turn** — plain text doesn't execute "
+    "anything or finish the task.  If you know what to do, call a "
+    "tool this turn (write_file / edit_file / terminal_action / "
+    "python_action).  If you're done, call `task_success(result)` "
+    "inside python_action.  If you're stuck or need more info, call "
+    "`task_clarify(message)` or `task_fail(message)`."
+)
+
 
 def strip_namespace_prefix(keys: list[str], namespace_prefix: str) -> list[str]:
     """Strip namespace prefix from keys for user-facing messages."""
@@ -224,6 +237,16 @@ def create_guidance_output(
         agent_name=agent_name,
         parts=[PrintAction(args=(TASK_CONTROL_GUIDANCE,), emission_id=emission_id)],
     )
+
+
+def create_no_progress_guidance(agent_name: str) -> SystemNoteEvent:
+    """Create a :class:`SystemNoteEvent` nudging the agent to use a tool.
+
+    Emitted when a turn produced only text / thinking emissions — no
+    python_action, terminal_action, write_file, or edit_file.  Text
+    alone can't finish the task; the agent needs a lever.
+    """
+    return SystemNoteEvent(agent_name="System", message=NO_PROGRESS_GUIDANCE)
 
 
 def create_unsaved_warning(
