@@ -32,7 +32,13 @@ Three concerns:
 import json
 from typing import Any, AsyncIterator, Iterator
 
-from .events import ToolCallArgDelta, ToolCallEnd, ToolCallEvent, ToolCallStart
+from .events import (
+    ThinkingPart,
+    ToolCallArgDelta,
+    ToolCallEnd,
+    ToolCallEvent,
+    ToolCallStart,
+)
 
 # --- Schemas ----------------------------------------------------------
 
@@ -118,6 +124,20 @@ def translate_messages_to_gemini(messages: list[dict]) -> list[dict]:
                     text = block.get("text", "")
                     if text:
                         parts.append({"text": text})
+                elif btype == "thinking":
+                    # Round-trip a signed thought part.  Gemini's rules
+                    # require signatures returned in thought parts to
+                    # be returned in thought parts; the Part carries
+                    # ``thought=True``, ``thought_signature`` bytes,
+                    # and optionally the surfaced text.
+                    thought_part: dict[str, Any] = {"thought": True}
+                    thought_text = block.get("text")
+                    if thought_text:
+                        thought_part["text"] = thought_text
+                    thought_sig = block.get("signature")
+                    if thought_sig is not None:
+                        thought_part["thought_signature"] = thought_sig
+                    parts.append(thought_part)
                 elif btype == "image":
                     parts.append(_image_part_to_gemini(block))
                 elif btype == "tool_use":
@@ -214,14 +234,23 @@ def _emit_function_call(
     yield ToolCallEnd(call_id=call_id)
 
 
-def _iter_function_call_parts(chunk: Any) -> Iterator[tuple[Any, bytes | None]]:
-    """Yield ``(function_call, thought_signature)`` pairs from a chunk.
+def _iter_stream_parts(
+    chunk: Any,
+) -> Iterator[tuple[str, Any, bytes | None, str | None, bool]]:
+    """Walk Gemini candidate parts in order, yielding one tuple per
+    relevant part.
 
-    Gemini 3 attaches ``thought_signature`` to the ``Part`` that wraps
-    the ``function_call`` (bytes on the Part, not on the call itself).
-    Walk the candidate content parts to pick them up in lockstep.
-    ``chunk.function_calls`` flattens the calls but drops the parts, so
-    we work from ``candidates[*].content.parts`` directly.
+    Kind is ``"function_call"`` for parts carrying a ``function_call``
+    (returns the function_call + signature + None + False).  Kind is
+    ``"thought"`` for parts that carry a ``thought_signature``
+    (regardless of whether they also have ``thought=True`` or text
+    content) but no function_call — Gemini 3 uses these to sign
+    reasoning that preceded subsequent function calls, and the
+    signatures must round-trip at the same position on replay.
+
+    ``chunk.function_calls`` flattens calls but drops both their
+    Part-level signature and any sibling thought parts, so we work
+    from ``candidates[*].content.parts`` directly.
     """
     candidates = getattr(chunk, "candidates", None) or []
     for candidate in candidates:
@@ -231,10 +260,26 @@ def _iter_function_call_parts(chunk: Any) -> Iterator[tuple[Any, bytes | None]]:
         parts = getattr(content, "parts", None) or []
         for part in parts:
             fc = getattr(part, "function_call", None)
-            if fc is None:
-                continue
             sig = getattr(part, "thought_signature", None)
-            yield fc, sig
+            if fc is not None:
+                yield ("function_call", fc, sig, None, False)
+                continue
+            is_thought = bool(getattr(part, "thought", False))
+            text = getattr(part, "text", None) or None
+            if sig is not None or is_thought:
+                yield ("thought", None, sig, text, is_thought)
+
+
+def _maybe_emit_thinking(
+    sig: bytes | None, text: str | None, is_thought: bool
+) -> Iterator[ToolCallEvent]:
+    """Emit a :class:`ThinkingPart` if the part carries anything worth
+    preserving.  Purely empty thought parts (no signature, no text)
+    are dropped — nothing to round-trip.
+    """
+    if sig is None and not text:
+        return
+    yield ThinkingPart(signature=sig, text=text, redacted=bool(is_thought and not text))
 
 
 def translate_gemini_stream_to_events(
@@ -244,19 +289,22 @@ def translate_gemini_stream_to_events(
     """Translate a Gemini ``generate_content_stream`` response into
     :class:`ToolCallEvent`\\ s.
 
-    Each chunk is scanned for function_call parts; duplicates across
-    chunks (distinguished by id) are deduplicated so a given tool call
-    produces exactly one Start/Delta/End triple.  ``thought_signature``
-    bytes on each part are forwarded on :class:`ToolCallStart` so the
-    wire format can round-trip them on the next turn (Gemini 3
-    rejects replayed function_calls that lack their signature).
+    Each chunk's candidate parts are walked in order.  Function-call
+    parts produce a Start/ArgDelta/End triple; signed thought parts
+    produce a :class:`ThinkingPart` that the parser materializes into
+    a :class:`ThinkingEmission`.  Gemini 3 rejects subsequent turns
+    that don't replay signatures at the same position, so preserving
+    thought parts is load-bearing.
     """
     seen_ids: set[str] = set()
     counter = [0]
     for chunk in chunks:
         _capture_usage(chunk, usage_holder)
-        for fc, sig in _iter_function_call_parts(chunk):
-            yield from _emit_function_call(fc, sig, seen_ids, counter)
+        for kind, body, sig, text, is_thought in _iter_stream_parts(chunk):
+            if kind == "function_call":
+                yield from _emit_function_call(body, sig, seen_ids, counter)
+            else:  # "thought"
+                yield from _maybe_emit_thinking(sig, text, is_thought)
 
 
 async def atranslate_gemini_stream_to_events(
@@ -268,6 +316,10 @@ async def atranslate_gemini_stream_to_events(
     counter = [0]
     async for chunk in chunks:
         _capture_usage(chunk, usage_holder)
-        for fc, sig in _iter_function_call_parts(chunk):
-            for ev in _emit_function_call(fc, sig, seen_ids, counter):
-                yield ev
+        for kind, body, sig, text, is_thought in _iter_stream_parts(chunk):
+            if kind == "function_call":
+                for ev in _emit_function_call(body, sig, seen_ids, counter):
+                    yield ev
+            else:  # "thought"
+                for ev in _maybe_emit_thinking(sig, text, is_thought):
+                    yield ev

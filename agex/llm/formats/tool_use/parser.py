@@ -24,11 +24,17 @@ Two cadences:
 import json
 from typing import AsyncIterator, Iterator
 
-from agex.agent.emissions import FileEditEmission, FileWriteEmission
+from agex.agent.emissions import FileEditEmission, FileWriteEmission, ThinkingEmission
 from agex.llm.core import TokenChunk
 from agex.llm.formats.json_stream import JsonStringExtractor
 
-from .events import ToolCallArgDelta, ToolCallEnd, ToolCallEvent, ToolCallStart
+from .events import (
+    ThinkingPart,
+    ToolCallArgDelta,
+    ToolCallEnd,
+    ToolCallEvent,
+    ToolCallStart,
+)
 from .schemas import (
     ACTION_TOOLS,
     TOOL_EDIT_FILE,
@@ -184,6 +190,28 @@ class _ParserState:
         self._next_index: int = 0
 
     def handle(self, event: ToolCallEvent) -> Iterator[TokenChunk]:
+        if isinstance(event, ThinkingPart):
+            # Native-thinking providers may emit signed thought parts
+            # that must round-trip at their original position.  Give
+            # them their own emission_index so the renderer can place
+            # them among tool calls in the same order the model
+            # produced them.
+            if event.signature is None and not event.text and not event.redacted:
+                return
+            idx = self._next_index
+            self._next_index += 1
+            yield TokenChunk(
+                type="emission",
+                content="",
+                done=True,
+                emission_index=idx,
+                emission=ThinkingEmission(
+                    text=event.text or "",
+                    signature=event.signature,
+                    redacted=event.redacted,
+                ),
+            )
+            return
         if isinstance(event, ToolCallStart):
             idx = self._next_index
             self._next_index += 1

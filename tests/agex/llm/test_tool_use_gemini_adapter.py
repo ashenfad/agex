@@ -397,6 +397,111 @@ class TestTranslateGeminiStream:
         assert out == []
 
 
+def _thought_part(
+    *,
+    signature: bytes | None = None,
+    text: str | None = None,
+    thought: bool = True,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        function_call=None,
+        thought_signature=signature,
+        text=text,
+        thought=thought,
+    )
+
+
+class TestThoughtPartCapture:
+    """Gemini 3 ships signatures on Parts that have no function_call —
+    a ``thought`` Part with ``thought_signature`` bytes that signs
+    the subsequent function_calls.  Its docs require these to
+    round-trip at the same position.  Capture them as
+    :class:`ThinkingEmission`\\ s so the renderer can put them back."""
+
+    def test_signed_thought_part_becomes_thinking_emission(self):
+        from agex.agent.emissions import ThinkingEmission
+        from agex.llm.core import EmissionsBuilder
+        from agex.llm.formats.tool_use.parser import parse_tool_events
+
+        sig = b"THOUGHT_SIG"
+        chunks = [
+            _chunk(
+                _thought_part(signature=sig, text="planning the call", thought=True),
+                _fc_part(id="call_1", name="python_action", args={"code": "x"}),
+            )
+        ]
+        tool_events = translate_gemini_stream_to_events(iter(chunks))
+        tokens = list(parse_tool_events(tool_events))
+        builder = EmissionsBuilder()
+        for t in tokens:
+            builder.process_token(t)
+        response = builder.build()
+
+        # A ThinkingEmission precedes the PythonEmission.
+        assert len(response.emissions) >= 2
+        first = response.emissions[0]
+        assert isinstance(first, ThinkingEmission)
+        assert first.signature == sig
+        assert first.text == "planning the call"
+
+    def test_thought_part_replays_as_thought_part(self):
+        """Signed ThinkingEmissions render as ``thinking`` blocks on
+        the agent side; the Gemini translator then re-materializes
+        them as ``Part(thought=True, thought_signature=..., text=...)``
+        — the same shape Gemini originally delivered."""
+        sig = b"THOUGHT_SIG"
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "thinking",
+                        "text": "reasoning",
+                        "signature": sig,
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "python_action",
+                        "input": {"code": "x"},
+                    },
+                ],
+            }
+        ]
+        out = translate_messages_to_gemini(msgs)
+        parts = out[0]["parts"]
+        assert parts[0] == {
+            "thought": True,
+            "text": "reasoning",
+            "thought_signature": sig,
+        }
+        # Function call follows at its original position.
+        assert "function_call" in parts[1]
+
+    def test_unsigned_thought_part_dropped(self):
+        """A thought part with neither signature nor text has nothing
+        to round-trip; the adapter should drop it so we don't emit
+        empty ThinkingEmissions."""
+        from agex.llm.core import EmissionsBuilder
+        from agex.llm.formats.tool_use.parser import parse_tool_events
+
+        chunks = [
+            _chunk(
+                _thought_part(signature=None, text=None, thought=True),
+                _fc_part(id="c", name="python_action", args={}),
+            )
+        ]
+        tool_events = translate_gemini_stream_to_events(iter(chunks))
+        tokens = list(parse_tool_events(tool_events))
+        builder = EmissionsBuilder()
+        for t in tokens:
+            builder.process_token(t)
+        response = builder.build()
+        from agex.agent.emissions import ThinkingEmission
+
+        assert not any(isinstance(em, ThinkingEmission) for em in response.emissions)
+
+
 class TestSignatureFullRoundTrip:
     """The load-bearing scenario: stream carries a signature in, the
     emission stores it, and the renderer puts it back out on the
