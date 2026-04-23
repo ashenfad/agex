@@ -296,6 +296,90 @@ async def test_pyfetch_openai_tool_use():
 
 
 @pytest.mark.asyncio
+async def test_pyfetch_openai_logs_cache_diagnostics(caplog):
+    """Per-request the client emits one log line tagged
+    ``[agex.llm.cache]`` carrying the prefix hashes and the cached/
+    prompt token counts the provider reported. Lets us diff
+    consecutive turns to spot prefix drift vs. provider-side misses."""
+    args_json = json.dumps({"title": "t", "thinking": "T", "code": "x"})
+    sse_lines = [
+        "data: "
+        + json.dumps(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "python_action",
+                                        "arguments": args_json,
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            }
+        )
+        + "\n\n",
+        # Final usage chunk, including OpenRouter's cached-prompt detail.
+        "data: "
+        + json.dumps(
+            {
+                "choices": [],
+                "usage": {
+                    "prompt_tokens": 16967,
+                    "completion_tokens": 469,
+                    "prompt_tokens_details": {"cached_tokens": 11915},
+                },
+            }
+        )
+        + "\n\n",
+        "data: [DONE]\n\n",
+    ]
+
+    class FakeStream:
+        def __init__(self, lines):
+            self._lines = lines
+
+        def __aiter__(self):
+            async def gen():
+                for line in self._lines:
+                    yield line
+
+            return gen()
+
+    fake_adapter = MagicMock()
+    fake_adapter.fetch_stream = MagicMock(return_value=FakeStream(sse_lines))
+
+    client = PyfetchOpenAI(
+        model="anthropic/claude-sonnet-4",
+        api_key="sk-test",
+        fetch_adapter=fake_adapter,
+        wire_format=ToolUseWireFormat(),
+    )
+
+    with caplog.at_level("INFO", logger="agex.llm.pyfetch_openai"):
+        async for _ in client.acomplete_stream("sys", []):
+            pass
+
+    cache_logs = [r for r in caplog.records if "[agex.llm.cache]" in r.getMessage()]
+    assert len(cache_logs) == 1
+    msg = cache_logs[0].getMessage()
+    # The diagnostic must surface the actually-reported cache hit so
+    # consecutive turns can be eyeballed.
+    assert "cached_tokens=11915" in msg
+    assert "prompt_tokens=16967" in msg
+    # And the prefix hash so two requests can be diff'd.
+    assert "sys_hash=" in msg
+    assert "prefix_hash=" in msg
+
+
+@pytest.mark.asyncio
 async def test_pyfetch_openai_cache_marker_lands_on_cacheable_block():
     """Regression: in tool-use mode the prior cache_idx=len-2 landed
     on an assistant-with-tool_calls message whose content is None,

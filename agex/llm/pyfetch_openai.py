@@ -6,7 +6,9 @@ enabling direct browser-to-API calls without a server proxy.
 """
 
 import asyncio
+import hashlib
 import json
+import logging
 from typing import Any, AsyncIterator, Iterator, List
 
 from agex.agent.events import Event
@@ -18,6 +20,46 @@ from agex.llm.formats.tool_use.openai_adapter import (
     schemas_to_openai_tools,
     translate_messages_to_openai,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _hash12(s: str) -> str:
+    return hashlib.sha256(s.encode()).hexdigest()[:12]
+
+
+def _log_cache_diagnostics(
+    body: dict, cache_idx_in_conv: int, usage_holder: dict
+) -> None:
+    """Emit one log line per request comparing the prefix shape against
+    actual cache hits.  Lets us spot prefix drift between consecutive
+    turns: if ``sys_hash`` and ``prefix_hash`` are stable across two
+    requests but ``cached`` collapses to 0, the issue is downstream
+    (provider routing, marker miss).  If hashes differ, our content is
+    drifting.
+    """
+    msgs = body.get("messages", [])
+    sys_hash = _hash12(json.dumps(msgs[0], sort_keys=True)) if msgs else "<none>"
+    prefix_idx = 1 + cache_idx_in_conv  # +1 to account for the system msg
+    prefix_msgs = msgs[: prefix_idx + 1]
+    prefix_str = json.dumps(prefix_msgs, sort_keys=True)
+    prefix_hash = _hash12(prefix_str)
+
+    prompt = usage_holder.get("input_tokens")
+    cached = usage_holder.get("cached_tokens")
+    output = usage_holder.get("output_tokens")
+    logger.info(
+        "[agex.llm.cache] msgs=%d sys_hash=%s prefix_hash=%s "
+        "prefix_chars=%d prompt_tokens=%s cached_tokens=%s output_tokens=%s",
+        len(msgs),
+        sys_hash,
+        prefix_hash,
+        len(prefix_str),
+        prompt,
+        cached,
+        output,
+    )
+
 
 CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
 
@@ -262,7 +304,9 @@ class PyfetchOpenAI(LLM):
         for attempt in range(self._STREAM_MAX_RETRIES):
             try:
                 if tool_use_mode:
-                    async for token in self._stream_once_tools(url, body, headers):
+                    async for token in self._stream_once_tools(
+                        url, body, headers, cache_idx
+                    ):
                         yield token
                 else:
                     async for token in self._stream_once(url, body, headers):
@@ -352,12 +396,18 @@ class PyfetchOpenAI(LLM):
         url: str,
         body: dict,
         headers: dict,
+        cache_idx: int = -1,
     ) -> AsyncIterator[TokenChunk]:
         """Single tool-use streaming attempt.
 
         Reads SSE JSON chunks from the provider, translates them to
         :class:`ToolCallEvent`\\ s, and feeds those through the wire
         format's ``aparse_tool_stream``.
+
+        ``cache_idx`` is the index of the cache_control marker within
+        the conversation portion of ``body["messages"]`` (i.e. excluding
+        the leading system message); it's used only for logging
+        diagnostics about cache prefix placement.
         """
         from agex.llm.sse import parse_sse_events
 
@@ -366,6 +416,7 @@ class PyfetchOpenAI(LLM):
         usage_holder: dict[str, int | None] = {
             "input_tokens": None,
             "output_tokens": None,
+            "cached_tokens": None,
         }
 
         sse_iter = parse_sse_events(response)
@@ -382,6 +433,15 @@ class PyfetchOpenAI(LLM):
 
         async for token in self._wire_format.aparse_tool_stream(tool_events):
             yield token
+
+        # One log line per request — system + prefix hashes plus
+        # actual cache hit numbers, so consecutive turns can be
+        # diff'd to identify prefix drift vs. provider-side cache
+        # misses.
+        try:
+            _log_cache_diagnostics(body, cache_idx, usage_holder)
+        except Exception:
+            pass  # diagnostics must never affect the user's flow
 
         yield TokenChunk(
             type="thinking",
