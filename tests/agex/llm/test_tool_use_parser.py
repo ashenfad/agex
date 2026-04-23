@@ -162,8 +162,11 @@ class TestWriteFile:
             ToolCallStart("c1", TOOL_WRITE_FILE),
             *_chunked("c1", args, 5),
         ]
-        # Before End: no tokens emitted.
-        assert _tokens(events) == []
+        # Before End: UI streaming tokens flow, but no authoritative
+        # emission is built yet.
+        pre_end = _tokens(events)
+        assert pre_end  # streaming file_path / file_content tokens
+        assert all(t.type != "emission" for t in pre_end)
         emission = _single_emission(_tokens([*events, ToolCallEnd("c1")]))
         assert emission.path == "/a.py"
         assert emission.content == "x = 1"
@@ -189,7 +192,9 @@ class TestWriteFile:
                 ToolCallEnd("c1"),
             ]
         )
-        assert tokens == []
+        # UI may stream the content it sees, but nothing actionable is
+        # finalized — no emission token.
+        assert all(t.type != "emission" for t in tokens)
 
     def test_invalid_json_dropped(self):
         tokens = _tokens(
@@ -200,6 +205,28 @@ class TestWriteFile:
             ]
         )
         assert tokens == []
+
+    def test_streams_path_and_content_as_args_arrive(self):
+        """write_file args stream as file_path / file_content tokens
+        so callers can watch file writes happen, not just the final
+        buffered emission."""
+        args = json.dumps({"path": "/a.py", "content": "x = 1\n"})
+        events = [
+            ToolCallStart("c1", TOOL_WRITE_FILE),
+            *_chunked("c1", args, 3),
+            ToolCallEnd("c1"),
+        ]
+        tokens = _tokens(events)
+        path_content = "".join(
+            t.content for t in tokens if t.type == "file_path" and not t.done
+        )
+        content_content = "".join(
+            t.content for t in tokens if t.type == "file_content" and not t.done
+        )
+        assert path_content == "/a.py"
+        assert content_content == "x = 1\n"
+        # Authoritative emission still arrives at the end.
+        assert _single_emission(tokens).path == "/a.py"
 
 
 class TestEditFile:
@@ -283,7 +310,9 @@ class TestEditFile:
                 ToolCallEnd("c1"),
             ]
         )
-        assert tokens == []
+        # UI sees the partial args, but with no replace / insert_*,
+        # nothing actionable is finalized.
+        assert all(t.type != "emission" for t in tokens)
 
     def test_missing_search_dropped(self):
         args = json.dumps({"path": "/a.py", "replace": "Y"})
@@ -294,7 +323,32 @@ class TestEditFile:
                 ToolCallEnd("c1"),
             ]
         )
-        assert tokens == []
+        # Search is required for edits; UI can still stream what
+        # arrived, but no emission is built.
+        assert all(t.type != "emission" for t in tokens)
+
+    def test_streams_search_and_replacement_as_args_arrive(self):
+        """edit_file args stream as file_path / file_search /
+        file_content tokens before the final emission."""
+        args = json.dumps({"path": "/a.py", "search": "old", "replace": "new"})
+        events = [
+            ToolCallStart("c1", TOOL_EDIT_FILE),
+            *_chunked("c1", args, 4),
+            ToolCallEnd("c1"),
+        ]
+        tokens = _tokens(events)
+        path = "".join(
+            t.content for t in tokens if t.type == "file_path" and not t.done
+        )
+        search = "".join(
+            t.content for t in tokens if t.type == "file_search" and not t.done
+        )
+        content = "".join(
+            t.content for t in tokens if t.type == "file_content" and not t.done
+        )
+        assert path == "/a.py"
+        assert search == "old"
+        assert content == "new"
 
 
 class TestInterleaved:

@@ -485,10 +485,12 @@ def pprint_tokens(
     if token.type == "signature":
         return
 
-    # Prebuilt emissions arrive as a single ``emission`` token.  File
-    # emissions render as a one-line summary; native-provider thinking
-    # blocks (Gemini 3 thought parts, Claude thinking content) render
-    # as a 💭 block so the signed reasoning is visible.
+    # Prebuilt emissions arrive as a single ``emission`` token.  For
+    # file emissions the path + content already streamed via the
+    # ``file_*`` tokens, so we only echo the mode/operation trailer
+    # here (no duplication).  Native-provider thinking blocks (Gemini
+    # 3 thought parts, Claude thinking content) render as a 💭 block
+    # so the signed reasoning is visible.
     if token.type == "emission" and token.emission is not None:
         from agex.agent.emissions import (
             FileEditEmission,
@@ -498,12 +500,12 @@ def pprint_tokens(
 
         em = token.emission
         if isinstance(em, FileWriteEmission):
-            label = "[APPEND]" if em.mode == "append" else "[CREATE]"
-            line = f"📁 {em.path} {label}\n"
+            label = "append" if em.mode == "append" else "create"
+            line = f"  → {label}\n"
             color_code = _Colors.magenta if use_color else ""
         elif isinstance(em, FileEditEmission):
-            scope = "[EDIT ALL]" if em.match_all else "[EDIT]"
-            line = f"✏️ {em.path} {scope} ({em.operation})\n"
+            scope = " (match_all)" if em.match_all else ""
+            line = f"  → {em.operation}{scope}\n"
             color_code = _Colors.magenta if use_color else ""
         elif isinstance(em, ThinkingEmission):
             if em.redacted:
@@ -558,11 +560,31 @@ def pprint_tokens(
         color_code = _Colors.yellow if use_color else ""
     elif token.type == "terminal":
         color_code = _Colors.green if use_color else ""
+    elif token.type == "file_path":
+        # One emoji label per file tool call.  Content streams inline
+        # until done=True trips the generic newline branch above.
+        if token.start:
+            prefix = "\n📁 "
+        color_code = _Colors.magenta if use_color else ""
+    elif token.type == "file_search":
+        if token.start:
+            prefix = "🔍 "
+        color_code = _Colors.yellow if use_color else ""
+    elif token.type == "file_content":
+        if token.start:
+            prefix = "📝\n"
+        color_code = _Colors.dim if use_color else ""
     else:
         color_code = _Colors.cyan if use_color else ""
 
     # Final content assembly
-    if token.start and token.type in ("title", "text"):
+    if token.start and token.type in (
+        "title",
+        "text",
+        "file_path",
+        "file_search",
+        "file_content",
+    ):
         final_text = prefix + content
     else:
         final_text = content

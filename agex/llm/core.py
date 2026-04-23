@@ -77,6 +77,14 @@ class TokenChunk:
     - ``text`` — user-facing prose, a standalone :class:`TextEmission`.
     - ``python`` / ``terminal`` — code or shell commands for the main
       action emission at the same ``emission_index``.
+    - ``file_path`` / ``file_search`` / ``file_content`` — streamed
+      arg values for ``write_file`` / ``edit_file`` tool calls so the
+      UI can show file-write progress as it happens.  These are
+      UI-only; the authoritative :class:`FileWriteEmission` /
+      :class:`FileEditEmission` still arrives in a terminal
+      ``emission`` chunk at ``ToolCallEnd`` (it needs the full args
+      JSON to resolve non-string fields like ``mode`` and
+      ``match_all``).
     - ``emission`` — a fully-built :class:`Emission` object delivered
       in one shot via the ``emission`` field.  Used for file
       operations (``write_file`` / ``edit_file``) whose args are
@@ -91,6 +99,9 @@ class TokenChunk:
         "text",
         "python",
         "terminal",
+        "file_path",
+        "file_search",
+        "file_content",
         "emission",
         "signature",
     ]
@@ -233,6 +244,13 @@ class EmissionsBuilder:
             # ToolCallStart time).
             if token.signature is not None:
                 slot["_signature"] = token.signature
+            return enriched
+
+        # file_* tokens stream the write_file/edit_file args purely for
+        # UI visibility.  The authoritative emission still arrives as a
+        # prebuilt ``emission`` chunk at ToolCallEnd, so don't
+        # accumulate here.
+        if token.type in ("file_path", "file_search", "file_content"):
             return enriched
 
         # Skip the boundary markers; only accumulate content chunks.
@@ -559,7 +577,55 @@ def _emissions_to_tokens(response: LLMResponse) -> Iterator[TokenChunk]:
                     type="terminal", content=em.commands, done=False, emission_index=i
                 )
             yield TokenChunk(type="terminal", content="", done=True, emission_index=i)
-        elif isinstance(em, (FileWriteEmission, FileEditEmission)):
+        elif isinstance(em, FileWriteEmission):
+            if em.path:
+                yield TokenChunk(
+                    type="file_path", content=em.path, done=False, emission_index=i
+                )
+            yield TokenChunk(type="file_path", content="", done=True, emission_index=i)
+            if em.content:
+                yield TokenChunk(
+                    type="file_content",
+                    content=em.content,
+                    done=False,
+                    emission_index=i,
+                )
+            yield TokenChunk(
+                type="file_content", content="", done=True, emission_index=i
+            )
+            yield TokenChunk(
+                type="emission",
+                content="",
+                done=True,
+                emission_index=i,
+                emission=em,
+            )
+        elif isinstance(em, FileEditEmission):
+            if em.path:
+                yield TokenChunk(
+                    type="file_path", content=em.path, done=False, emission_index=i
+                )
+            yield TokenChunk(type="file_path", content="", done=True, emission_index=i)
+            if em.search:
+                yield TokenChunk(
+                    type="file_search",
+                    content=em.search,
+                    done=False,
+                    emission_index=i,
+                )
+            yield TokenChunk(
+                type="file_search", content="", done=True, emission_index=i
+            )
+            if em.content:
+                yield TokenChunk(
+                    type="file_content",
+                    content=em.content,
+                    done=False,
+                    emission_index=i,
+                )
+            yield TokenChunk(
+                type="file_content", content="", done=True, emission_index=i
+            )
             yield TokenChunk(
                 type="emission",
                 content="",

@@ -14,67 +14,88 @@ def _print(token):
     return buf.getvalue()
 
 
-class TestFileEmissionRendering:
-    """Tool-use wire formats emit a single ``emission`` token carrying a
-    fully built :class:`FileWriteEmission` / :class:`FileEditEmission`.
-    The helper should render a readable summary."""
+def _print_all(tokens):
+    buf = io.StringIO()
+    for token in tokens:
+        pprint_tokens(token, stream=buf, color="never")
+    return buf.getvalue()
+
+
+class TestFileStreamRendering:
+    """File tool args stream as ``file_path`` / ``file_search`` /
+    ``file_content`` tokens before the final ``emission`` token.  The
+    helper should render the path, content, and a mode/operation
+    trailer so debuggers can see what the agent wrote."""
 
     def test_write_file_create(self):
-        token = StreamToken(
-            type="emission",
-            content="",
-            done=True,
-            emission=FileWriteEmission(path="/helpers/x.py", content="X = 1"),
-        )
-        out = _print(token)
+        emission = FileWriteEmission(path="/helpers/x.py", content="X = 1")
+        tokens = [
+            StreamToken(type="file_path", content="/helpers/x.py", start=True),
+            StreamToken(type="file_path", content="", done=True),
+            StreamToken(type="file_content", content="X = 1", start=True),
+            StreamToken(type="file_content", content="", done=True),
+            StreamToken(type="emission", done=True, emission=emission),
+        ]
+        out = _print_all(tokens)
         assert "📁" in out
         assert "/helpers/x.py" in out
-        assert "[CREATE]" in out
+        assert "X = 1" in out
+        assert "create" in out
 
     def test_write_file_append(self):
-        token = StreamToken(
-            type="emission",
-            content="",
-            done=True,
-            emission=FileWriteEmission(path="/x.py", content="more", mode="append"),
-        )
-        out = _print(token)
-        assert "[APPEND]" in out
+        emission = FileWriteEmission(path="/x.py", content="more", mode="append")
+        tokens = [
+            StreamToken(type="file_path", content="/x.py", start=True),
+            StreamToken(type="file_path", content="", done=True),
+            StreamToken(type="file_content", content="more", start=True),
+            StreamToken(type="file_content", content="", done=True),
+            StreamToken(type="emission", done=True, emission=emission),
+        ]
+        out = _print_all(tokens)
+        assert "append" in out
 
     def test_edit_replace(self):
-        token = StreamToken(
-            type="emission",
-            content="",
-            done=True,
-            emission=FileEditEmission(
-                path="/a.py",
-                search="old",
-                content="new",
-                operation="replace",
-            ),
+        emission = FileEditEmission(
+            path="/a.py",
+            search="old",
+            content="new",
+            operation="replace",
         )
-        out = _print(token)
-        assert "✏️" in out
+        tokens = [
+            StreamToken(type="file_path", content="/a.py", start=True),
+            StreamToken(type="file_path", content="", done=True),
+            StreamToken(type="file_search", content="old", start=True),
+            StreamToken(type="file_search", content="", done=True),
+            StreamToken(type="file_content", content="new", start=True),
+            StreamToken(type="file_content", content="", done=True),
+            StreamToken(type="emission", done=True, emission=emission),
+        ]
+        out = _print_all(tokens)
         assert "/a.py" in out
-        assert "[EDIT]" in out
+        assert "old" in out
+        assert "new" in out
         assert "replace" in out
 
     def test_edit_insert_after_with_match_all(self):
-        token = StreamToken(
-            type="emission",
-            content="",
-            done=True,
-            emission=FileEditEmission(
-                path="/a.py",
-                search="x",
-                content="y",
-                operation="insert-after",
-                match_all=True,
-            ),
+        emission = FileEditEmission(
+            path="/a.py",
+            search="x",
+            content="y",
+            operation="insert-after",
+            match_all=True,
         )
-        out = _print(token)
-        assert "[EDIT ALL]" in out
+        tokens = [
+            StreamToken(type="file_path", content="/a.py", start=True),
+            StreamToken(type="file_path", content="", done=True),
+            StreamToken(type="file_search", content="x", start=True),
+            StreamToken(type="file_search", content="", done=True),
+            StreamToken(type="file_content", content="y", start=True),
+            StreamToken(type="file_content", content="", done=True),
+            StreamToken(type="emission", done=True, emission=emission),
+        ]
+        out = _print_all(tokens)
         assert "insert-after" in out
+        assert "match_all" in out
 
 
 class TestUnaffectedPaths:
