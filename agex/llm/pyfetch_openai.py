@@ -25,38 +25,68 @@ def _hash12(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()[:12]
 
 
+# Char-position checkpoints at which we hash the request prefix.
+# Consecutive request lines can be diffed at each checkpoint to see
+# where drift starts — e.g. if ck_4k is identical across two requests
+# but ck_16k differs, the content between 4k and 16k chars is drifting.
+_CACHE_CHECKPOINTS = (1024, 4096, 16384, 65536)
+
+
 def _log_cache_diagnostics(
     body: dict, cache_idx_in_conv: int, usage_holder: dict
 ) -> None:
-    """Emit one line per request comparing the prefix shape against
-    actual cache hits.  Lets us spot prefix drift between consecutive
-    turns: if ``sys_hash`` and ``prefix_hash`` are stable across two
-    requests but ``cached_tokens`` collapses to 0, the issue is
-    downstream (provider routing, marker miss).  If hashes differ,
-    our content is drifting.
+    """Emit one line per request capturing the prefix shape and the
+    provider-reported cache hit.
 
-    Uses ``print`` rather than the ``logging`` module so the line
-    actually surfaces in Pyodide's browser console — Python's
+    Hashes use ``sort_keys=False`` to match what the wire actually
+    serializes (``json.dumps(body)`` preserves insertion order), so
+    the hash reflects exactly what Anthropic/OpenRouter sees.  Dict
+    iteration order in Python 3.7+ is insertion order, so stable
+    construction gives stable hashes.
+
+    Hashes are computed at multiple fixed character positions so two
+    consecutive request lines can be diffed to pinpoint where any
+    prefix drift starts — a stable ``ck_4k`` but diverging ``ck_16k``
+    means the content between 4k and 16k chars is drifting.  A
+    diverging ``sys_hash`` means the system message itself is drifting.
+
+    Uses ``print`` rather than the ``logging`` module because Python's
     ``logger.info`` is a silent no-op without a handler, and the
     pyfetch clients are deployed into pages that don't configure one.
+    Pyodide routes stdout to ``console.log``.
     """
     msgs = body.get("messages", [])
-    sys_hash = _hash12(json.dumps(msgs[0], sort_keys=True)) if msgs else "<none>"
+    sys_str = json.dumps(msgs[0]) if msgs else ""
+    sys_hash = _hash12(sys_str) if sys_str else "<none>"
+
     prefix_idx = 1 + cache_idx_in_conv  # +1 to account for the system msg
     prefix_msgs = msgs[: prefix_idx + 1]
-    prefix_str = json.dumps(prefix_msgs, sort_keys=True)
+    prefix_str = json.dumps(prefix_msgs)
     prefix_hash = _hash12(prefix_str)
+
+    # Hash the prefix at each checkpoint (no-op for checkpoints beyond
+    # the prefix length — those just hash the whole thing).
+    checkpoint_hashes = [
+        f"ck_{ck // 1024}k={_hash12(prefix_str[:ck])}"
+        for ck in _CACHE_CHECKPOINTS
+        if ck < len(prefix_str)
+    ]
 
     prompt = usage_holder.get("input_tokens")
     cached = usage_holder.get("cached_tokens")
     output = usage_holder.get("output_tokens")
-    print(
-        f"[agex.llm.cache] msgs={len(msgs)} "
-        f"sys_hash={sys_hash} prefix_hash={prefix_hash} "
-        f"prefix_chars={len(prefix_str)} "
-        f"prompt_tokens={prompt} cached_tokens={cached} "
-        f"output_tokens={output}"
-    )
+    parts = [
+        "[agex.llm.cache]",
+        f"msgs={len(msgs)}",
+        f"sys_hash={sys_hash}",
+        *checkpoint_hashes,
+        f"prefix_hash={prefix_hash}",
+        f"prefix_chars={len(prefix_str)}",
+        f"prompt_tokens={prompt}",
+        f"cached_tokens={cached}",
+        f"output_tokens={output}",
+    ]
+    print(" ".join(parts))
 
 
 CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
