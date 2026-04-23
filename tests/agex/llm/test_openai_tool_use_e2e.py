@@ -255,6 +255,185 @@ async def test_pyfetch_openai_tool_use():
         "data: [DONE]\n\n",
     ]
 
+    class FakeStream:
+        def __init__(self, lines):
+            self._lines = lines
+
+        def __aiter__(self):
+            async def gen():
+                for line in self._lines:
+                    yield line
+
+            return gen()
+
+    fake_adapter = MagicMock()
+    fake_adapter.fetch_stream = MagicMock(return_value=FakeStream(sse_lines))
+
+    client = PyfetchOpenAI(
+        model="anthropic/claude-sonnet-4",
+        api_key="sk-test",
+        fetch_adapter=fake_adapter,
+        wire_format=ToolUseWireFormat(),
+    )
+
+    tokens = []
+    async for t in client.acomplete_stream("sys", []):
+        tokens.append(t)
+
+    body = fake_adapter.fetch_stream.call_args.kwargs["body"]
+    assert "tools" in body
+    assert body["tool_choice"] == "auto"
+
+    # Round-trip through ResponseBuilder.
+    builder = ResponseBuilder(agent_name="a")
+    for t in tokens:
+        builder.process_token(t)
+    resp = builder.build()
+    assert resp.title == "t"
+    assert resp.code == "print(1)"
+    assert resp.input_tokens == 20
+    assert resp.output_tokens == 5
+
+
+@pytest.mark.asyncio
+async def test_pyfetch_openai_cache_marker_lands_on_cacheable_block():
+    """Regression: in tool-use mode the prior cache_idx=len-2 landed
+    on an assistant-with-tool_calls message whose content is None,
+    and our cache helper has no content block to attach the marker
+    to — the breakpoint silently disappeared every turn so OpenRouter
+    only cached the system prompt. Must land on a block that actually
+    receives a cache_control marker."""
+    from agex.agent.events import ActionEvent, OutputEvent
+
+    args_json = json.dumps({"title": "t", "thinking": "T", "code": "x"})
+    sse_lines = [
+        "data: "
+        + json.dumps(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "python_action",
+                                        "arguments": args_json,
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            }
+        )
+        + "\n\n",
+        "data: [DONE]\n\n",
+    ]
+
+    class FakeStream:
+        def __init__(self, lines):
+            self._lines = lines
+
+        def __aiter__(self):
+            async def gen():
+                for line in self._lines:
+                    yield line
+
+            return gen()
+
+    fake_adapter = MagicMock()
+    fake_adapter.fetch_stream = MagicMock(return_value=FakeStream(sse_lines))
+
+    client = PyfetchOpenAI(
+        model="anthropic/claude-sonnet-4",
+        api_key="sk-test",
+        fetch_adapter=fake_adapter,
+        wire_format=ToolUseWireFormat(),
+    )
+
+    # Multi-turn-ish history: a TaskStart and one prior python_action
+    # round whose tool_result is the LAST message (this is the typical
+    # shape between turns).
+    events = [
+        TaskStartEvent(agent_name="a", task_name="t", inputs={}, message="do work"),
+        ActionEvent(
+            agent_name="a",
+            title="t1",
+            thinking="T1",
+            code="print('hi'); task_continue()",
+        ),
+        OutputEvent(agent_name="a", parts=["hi"]),
+    ]
+
+    tokens = []
+    async for t in client.acomplete_stream("sys", events):
+        tokens.append(t)
+
+    body = fake_adapter.fetch_stream.call_args.kwargs["body"]
+    msgs = body["messages"]
+
+    # System message should be cached.
+    sys_msg = msgs[0]
+    sys_blocks = sys_msg["content"] if isinstance(sys_msg["content"], list) else []
+    assert any(isinstance(b, dict) and b.get("cache_control") for b in sys_blocks), (
+        "system message should carry cache_control"
+    )
+
+    # AT LEAST ONE non-system message should also carry cache_control,
+    # otherwise we'd only cache the system prompt and miss the entire
+    # conversation history.
+    def _has_cache_control(msg):
+        c = msg.get("content")
+        if isinstance(c, list):
+            return any(isinstance(b, dict) and b.get("cache_control") for b in c)
+        return False
+
+    cached_non_system = [m for m in msgs[1:] if _has_cache_control(m)]
+    assert len(cached_non_system) >= 1, (
+        "no non-system message has cache_control — cache breakpoint lost"
+    )
+    """PyfetchOpenAI in tool-use mode: mock fetch_stream with canned SSE."""
+    args_json = json.dumps({"title": "t", "thinking": "T", "code": "print(1)"})
+
+    sse_lines = [
+        "data: "
+        + json.dumps(
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "python_action",
+                                        "arguments": args_json,
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            }
+        )
+        + "\n\n",
+        "data: "
+        + json.dumps(
+            {
+                "choices": [],
+                "usage": {"prompt_tokens": 20, "completion_tokens": 5},
+            }
+        )
+        + "\n\n",
+        "data: [DONE]\n\n",
+    ]
+
     # Fake fetch_stream: parse_sse_events consumes its return value
     # directly as an async iterator of str chunks.
     class FakeStream:

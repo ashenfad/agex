@@ -229,8 +229,17 @@ class PyfetchOpenAI(LLM):
             system_msg = _format_message_for_openai(
                 {"role": "system", "content": system_with_format}, cache=True
             )
-            # Cache breakpoint on second-to-last translated message.
-            cache_idx = len(translated) - 2
+            # Cache breakpoint on the LAST translated message.  In agex's
+            # tool-use flow the last message is always a tool result (or a
+            # user-text turn-boundary message), and the next turn's
+            # request appends *after* it without injecting a fresh user
+            # prompt — so caching the last message yields hits on every
+            # subsequent turn.  Using ``len-2`` (the chat-style default)
+            # would land on an assistant-with-tool_calls message whose
+            # ``content`` is None, and our cache helper has no content
+            # block to attach the marker to → the breakpoint silently
+            # disappeared and only the system prompt got cached.
+            cache_idx = len(translated) - 1
             conversation = [
                 _format_message_for_openai(m, cache=(i == cache_idx))
                 for i, m in enumerate(translated)
