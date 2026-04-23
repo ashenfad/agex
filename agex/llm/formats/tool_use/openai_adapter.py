@@ -209,9 +209,18 @@ def _capture_usage(chunk: dict, usage_holder: dict | None) -> None:
     if usage_holder is None:
         return
     usage = chunk.get("usage")
-    if usage:
-        usage_holder["input_tokens"] = usage.get("prompt_tokens")
-        usage_holder["output_tokens"] = usage.get("completion_tokens")
+    if not usage:
+        return
+    usage_holder["input_tokens"] = usage.get("prompt_tokens")
+    usage_holder["output_tokens"] = usage.get("completion_tokens")
+    # OpenRouter (and OpenAI for cached prompts) reports cache hit size
+    # under prompt_tokens_details.cached_tokens.  Surface it so the
+    # client can log per-request cache diagnostics.
+    details = usage.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        cached = details.get("cached_tokens")
+        if cached is not None:
+            usage_holder["cached_tokens"] = cached
 
 
 def translate_openai_stream_to_events(
