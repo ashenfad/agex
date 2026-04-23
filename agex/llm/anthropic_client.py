@@ -23,6 +23,22 @@ MAX_TOKENS = 2**14
 CACHE_TTL = "1h"
 
 
+def _ensure_tool_choice_any(request_kwargs: dict) -> dict:
+    """Default ``tool_choice`` to ``{"type": "any"}`` so Claude is
+    forced to call one of our tools each turn.  Tools are agex's real
+    API; prose alone doesn't advance the task.
+
+    Skipped when the caller opts into extended thinking (``thinking``
+    kwarg) — Anthropic rejects ``tool_choice != auto`` in that mode —
+    or when the caller already passed their own ``tool_choice``.
+    """
+    if "tool_choice" in request_kwargs:
+        return request_kwargs
+    if "thinking" in request_kwargs:
+        return request_kwargs
+    return {**request_kwargs, "tool_choice": {"type": "any"}}
+
+
 def _with_cache(messages: list[dict]) -> list[dict]:
     messages[-1]["cache_control"] = {"type": "ephemeral", "ttl": CACHE_TTL}
     return messages
@@ -150,6 +166,13 @@ class Anthropic(LLM):
             "output_tokens": None,
         }
 
+        # Tools are agex's real API — force a tool call each turn so
+        # the loop always makes progress.  Extended thinking is
+        # incompatible with ``tool_choice != auto``, so skip the force
+        # when callers opt into ``thinking``.  User-supplied
+        # ``tool_choice`` always wins.
+        request_kwargs = _ensure_tool_choice_any(request_kwargs)
+
         with self.client.messages.stream(
             model=self._model,
             system=[system_block],
@@ -210,6 +233,8 @@ class Anthropic(LLM):
             "input_tokens": None,
             "output_tokens": None,
         }
+
+        request_kwargs = _ensure_tool_choice_any(request_kwargs)
 
         async with self.async_client.messages.stream(
             model=self._model,

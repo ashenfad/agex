@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agex.llm.anthropic_client import Anthropic
+from agex.llm.anthropic_client import Anthropic, _ensure_tool_choice_any
 from agex.llm.core import TokenChunk
 from tests.agex._emissions import (
     response_code,
@@ -37,6 +37,27 @@ def test_anthropic_client_complete_wraps_stream():
         assert response_title(response) == "My Title"
         assert response_thinking(response) == "Thinking..."
         assert response_code(response) == "pass"
+
+
+class TestEnsureToolChoiceAny:
+    """Anthropic defaults to ``tool_choice={"type": "any"}`` so Claude
+    must call one of our tools each turn — agex's loop progresses
+    through tools, not prose."""
+
+    def test_absent_choice_defaults_to_any(self):
+        out = _ensure_tool_choice_any({})
+        assert out["tool_choice"] == {"type": "any"}
+
+    def test_user_supplied_choice_wins(self):
+        out = _ensure_tool_choice_any({"tool_choice": {"type": "auto"}})
+        assert out["tool_choice"] == {"type": "auto"}
+
+    def test_extended_thinking_skips_force(self):
+        """Claude rejects ``tool_choice != auto`` when extended thinking
+        is enabled; the helper must leave the kwargs alone."""
+        kwargs = {"thinking": {"type": "enabled", "budget_tokens": 1024}}
+        out = _ensure_tool_choice_any(kwargs)
+        assert "tool_choice" not in out
 
 
 @pytest.mark.asyncio

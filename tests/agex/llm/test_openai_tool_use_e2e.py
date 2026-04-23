@@ -108,10 +108,12 @@ class TestOpenAIToolUse:
             ]
             tokens = list(client.complete_stream(system, events))
 
-            # create() was called with tools= and tool_choice="auto".
+            # create() was called with tools= and tool_choice="required"
+            # (tools are agex's API — the loop needs a tool call each
+            # turn to make progress).
             call_kwargs = mock_create.call_args.kwargs
             assert "tools" in call_kwargs
-            assert call_kwargs["tool_choice"] == "auto"
+            assert call_kwargs["tool_choice"] == "required"
             assert len(call_kwargs["tools"]) == 4
             assert {t["function"]["name"] for t in call_kwargs["tools"]} == {
                 "python_action",
