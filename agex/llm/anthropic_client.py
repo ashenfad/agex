@@ -8,7 +8,7 @@ from agex.llm.core import (
     LLM,
     TokenChunk,
 )
-from agex.llm.formats import WireFormat, XmlWireFormat
+from agex.llm.formats import ToolUseWireFormat, WireFormat
 from agex.llm.formats.tool_use.anthropic_adapter import (
     apply_cache_control,
     atranslate_anthropic_stream_to_events,
@@ -90,7 +90,7 @@ class Anthropic(LLM):
         self._model = model
         self._kwargs = completion_kwargs
         self._timeout_seconds = timeout_seconds
-        self._wire_format: WireFormat = wire_format or XmlWireFormat()
+        self._wire_format: WireFormat = wire_format or ToolUseWireFormat()
         self.client = anthropic.Anthropic(**client_kwargs)
         self.async_client = anthropic.AsyncAnthropic(**client_kwargs)
 

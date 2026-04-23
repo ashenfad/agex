@@ -5,6 +5,7 @@ import pytest
 from agex.agent.events import TaskStartEvent
 from agex.llm.anthropic_client import Anthropic
 from agex.llm.core import TokenChunk
+from agex.llm.formats import XmlWireFormat
 
 
 def test_anthropic_client_initialization():
@@ -17,7 +18,7 @@ def test_anthropic_client_initialization():
 
 def test_anthropic_client_complete_stream():
     """Test that complete_stream properly converts events and streams tokens."""
-    client = Anthropic(api_key="test")
+    client = Anthropic(api_key="test", wire_format=XmlWireFormat())
 
     # Mock the anthropic stream
     mock_stream = MagicMock()
@@ -70,7 +71,7 @@ def test_anthropic_client_complete_wraps_stream():
 async def test_anthropic_acomplete_stream():
     """Test async acomplete_stream method."""
 
-    client = Anthropic(api_key="test")
+    client = Anthropic(api_key="test", wire_format=XmlWireFormat())
 
     # Build an async context manager that mimics messages.stream()
     mock_stream = MagicMock()

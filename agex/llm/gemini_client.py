@@ -9,7 +9,7 @@ from agex.llm.core import (
     LLM,
     TokenChunk,
 )
-from agex.llm.formats import WireFormat, XmlWireFormat
+from agex.llm.formats import ToolUseWireFormat, WireFormat
 from agex.llm.formats.tool_use.gemini_adapter import (
     atranslate_gemini_stream_to_events,
     schemas_to_gemini_function_declarations,
@@ -67,7 +67,7 @@ class Gemini(LLM):
         self._google_search = google_search
         self._url_context = url_context
         self._timeout_seconds = timeout_seconds
-        self._wire_format: WireFormat = wire_format or XmlWireFormat()
+        self._wire_format: WireFormat = wire_format or ToolUseWireFormat()
 
         # Wire timeout and disable SDK retries (agex handles retries)
         client_kwargs["http_options"] = types.HttpOptions(
