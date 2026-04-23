@@ -100,7 +100,15 @@ class TestTranslateMessagesToGemini:
         assert fc["name"] == "write_file"
         assert fc["args"] == {"path": "x", "content": "y"}
 
-    def test_tool_use_without_signature_omits_field(self):
+    def test_tool_use_without_signature_gets_dummy(self):
+        """Gemini 3 validates that the first function_call part in each
+        assistant turn carries a ``thought_signature``.  When our
+        captured emission had none (Gemini 3 sometimes returns a first
+        call without one), we must fall back to the documented dummy
+        signature — otherwise the next turn 400s with
+        ``Function call is missing a thought_signature in functionCall
+        parts``.
+        """
         msgs = [
             {
                 "role": "assistant",
@@ -116,8 +124,57 @@ class TestTranslateMessagesToGemini:
         ]
         out = translate_messages_to_gemini(msgs)
         part = out[0]["parts"][0]
-        assert "thought_signature" not in part
+        assert part["thought_signature"] == b"context_engineering_is_the_way_to_go"
         assert "thought_signature" not in part["function_call"]
+
+    def test_real_signature_on_first_fc_wins_over_dummy(self):
+        """When the first function_call has a captured signature, keep
+        it — don't overwrite with the dummy."""
+        real_sig = b"\x01\x02real-signature"
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "python_action",
+                        "input": {},
+                        "signature": real_sig,
+                    }
+                ],
+            }
+        ]
+        out = translate_messages_to_gemini(msgs)
+        assert out[0]["parts"][0]["thought_signature"] == real_sig
+
+    def test_parallel_fc_only_first_gets_dummy(self):
+        """Subsequent parallel function calls don't need signatures (per
+        Gemini 3 docs).  Only the first call in the turn is forced to
+        carry one."""
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "python_action",
+                        "input": {},
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_2",
+                        "name": "write_file",
+                        "input": {"path": "x", "content": "y"},
+                    },
+                ],
+            }
+        ]
+        out = translate_messages_to_gemini(msgs)
+        parts = out[0]["parts"]
+        assert parts[0]["thought_signature"] == b"context_engineering_is_the_way_to_go"
+        assert "thought_signature" not in parts[1]
 
     def test_tool_result_gets_name_from_preceding_tool_use(self):
         """The tool_result block only carries tool_use_id; translator
