@@ -477,23 +477,40 @@ def pprint_tokens(
 
     use_color = _should_color(color, output_stream)
 
-    # File emissions arrive as a single ``emission`` token carrying a
-    # fully built FileWriteEmission / FileEditEmission.  Handle it
-    # before the generic ``done`` shortcut so the summary actually
-    # renders.
+    # Prebuilt emissions arrive as a single ``emission`` token.  File
+    # emissions render as a one-line summary; native-provider thinking
+    # blocks (Gemini 3 thought parts, Claude thinking content) render
+    # as a 💭 block so the signed reasoning is visible.
     if token.type == "emission" and token.emission is not None:
-        from agex.agent.emissions import FileEditEmission, FileWriteEmission
+        from agex.agent.emissions import (
+            FileEditEmission,
+            FileWriteEmission,
+            ThinkingEmission,
+        )
 
         em = token.emission
-        color_code = _Colors.magenta if use_color else ""
         if isinstance(em, FileWriteEmission):
             label = "[APPEND]" if em.mode == "append" else "[CREATE]"
             line = f"📁 {em.path} {label}\n"
+            color_code = _Colors.magenta if use_color else ""
         elif isinstance(em, FileEditEmission):
             scope = "[EDIT ALL]" if em.match_all else "[EDIT]"
             line = f"✏️ {em.path} {scope} ({em.operation})\n"
+            color_code = _Colors.magenta if use_color else ""
+        elif isinstance(em, ThinkingEmission):
+            if em.redacted:
+                line = "💭 [redacted thinking]\n"
+            elif em.text:
+                # Mirror the streaming ``thinking`` token's colour so
+                # native thought parts don't visually split from
+                # narration-via-schema thinking.
+                line = f"💭 {em.text}\n"
+            else:
+                return  # Nothing worth printing (signature-only part).
+            color_code = _Colors.bright_blue if use_color else ""
         else:
             line = f"emission: {em!r}\n"
+            color_code = _Colors.magenta if use_color else ""
         if use_color and color_code:
             line = _colorize(use_color, color_code, line)
         output_stream.write(line)
