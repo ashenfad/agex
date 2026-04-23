@@ -30,9 +30,9 @@ from agex.state.log import get_events_from_log, replace_events_with_chapters
 
 from .async_loop import AsyncLoopMixin
 from .common import (
+    EmissionsBuilder,
     ErrorEvent,
     LLMFail,
-    ResponseBuilder,
     ResponseParseError,
     add_event_to_log,
     create_transient_event,
@@ -436,7 +436,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         while True:
             try:
                 if use_streaming:
-                    builder = ResponseBuilder(self.name, exec_state)
+                    builder = EmissionsBuilder(self.name, exec_state)
                     for token in self.llm.complete_stream(
                         system_message, messages_to_send
                     ):
@@ -495,7 +495,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         while True:
             try:
                 if use_streaming:
-                    builder = ResponseBuilder(self.name, exec_state)
+                    builder = EmissionsBuilder(self.name, exec_state)
                     async for token in self.llm.acomplete_stream(
                         system_message, messages_to_send
                     ):

@@ -52,7 +52,7 @@ from .common import (
     apply_file_edit,
     apply_file_write,
     check_cancellation,
-    check_for_task_call,
+    check_for_terminator_call,
     create_action_event,
     create_clarify_event,
     create_error_output,
@@ -503,7 +503,7 @@ class AsyncLoopMixin:
                 safe_commit(versioned_state, referenced_keys=accumulated_refs)
 
             combined_code = _last_python_code(action_event.emissions)
-            if combined_code.strip() and not check_for_task_call(combined_code):
+            if combined_code.strip() and not check_for_terminator_call(combined_code):
                 last_py_idx = None
                 for j, em in enumerate(action_event.emissions):
                     if isinstance(em, PythonEmission) and (em.code or "").strip():

@@ -430,7 +430,7 @@ class TestRegressionPrevention:
 
 
 class TestApplyOptimisticFileActionsIntegration:
-    """End-to-end tests for apply_optimistic_file_actions with EditAction."""
+    """End-to-end tests for apply_optimistic_file_actions with FileEditEmission."""
 
     @pytest.fixture
     def mock_fs(self):
@@ -765,7 +765,7 @@ class TestApplyOptimisticFileActionsIntegration:
 
     def test_two_different_edits_same_file_both_applied(self, mock_fs, mock_agent):
         """Two DIFFERENT <EDIT> blocks targeting the same file in one response
-        should both apply — the ResponseBuilder must not clobber the first
+        should both apply — the EmissionsBuilder must not clobber the first
         edit's content when the second arrives."""
         from agex.agent.emissions import FileEditEmission
         from agex.agent.loop.common import apply_optimistic_file_actions

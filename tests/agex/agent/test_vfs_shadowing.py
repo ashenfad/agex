@@ -1,6 +1,7 @@
 import pytest
 
-from agex import Agent, FileAction, clear_agent_registry, connect_fs
+from agex import Agent, clear_agent_registry, connect_fs
+from agex.agent.emissions import FileWriteEmission
 from agex.agent.events import SystemNoteEvent
 from agex.llm import Dummy
 from tests.agex._emissions import make_response
@@ -22,7 +23,7 @@ def test_vfs_shadowing_warning():
             make_response(
                 thinking="I will create a json.py file.",
                 file_actions=[
-                    FileAction(
+                    FileWriteEmission(
                         path="json.py", content="def loads(s): return 'shadowed'"
                     )
                 ],

@@ -3,7 +3,7 @@
 Mocks the OpenAI streaming API to return a canned sequence of
 ``ChatCompletionChunk``-shaped dicts and verifies that the client
 dispatches to the tool-use path, yields TokenChunks, and produces a
-valid :class:`LLMResponse` when run through :class:`ResponseBuilder`.
+valid :class:`LLMResponse` when run through :class:`EmissionsBuilder`.
 """
 
 import json
@@ -13,7 +13,7 @@ import pytest
 
 from agex.agent.emissions import FileEditEmission, FileWriteEmission
 from agex.agent.events import TaskStartEvent
-from agex.llm.core import ResponseBuilder
+from agex.llm.core import EmissionsBuilder
 from agex.llm.formats import ToolUseWireFormat
 from agex.llm.openai_client import OpenAI
 from agex.llm.pyfetch_openai import PyfetchOpenAI
@@ -120,8 +120,8 @@ class TestOpenAIToolUse:
                 "edit_file",
             }
 
-        # Feed tokens through ResponseBuilder to check end state.
-        builder = ResponseBuilder(agent_name="a")
+        # Feed tokens through EmissionsBuilder to check end state.
+        builder = EmissionsBuilder(agent_name="a")
         for t in tokens:
             builder.process_token(t)
         resp = builder.build()
@@ -150,7 +150,7 @@ class TestOpenAIToolUse:
         ):
             tokens = list(client.complete_stream("sys", []))
 
-        builder = ResponseBuilder(agent_name="a")
+        builder = EmissionsBuilder(agent_name="a")
         for t in tokens:
             builder.process_token(t)
         resp = builder.build()
@@ -185,7 +185,7 @@ class TestOpenAIToolUse:
         ):
             tokens = list(client.complete_stream("sys", []))
 
-        builder = ResponseBuilder(agent_name="a")
+        builder = EmissionsBuilder(agent_name="a")
         for t in tokens:
             builder.process_token(t)
         resp = builder.build()
@@ -275,8 +275,8 @@ async def test_pyfetch_openai_tool_use():
     assert "tools" in body
     assert body["tool_choice"] == "auto"
 
-    # Round-trip through ResponseBuilder.
-    builder = ResponseBuilder(agent_name="a")
+    # Round-trip through EmissionsBuilder.
+    builder = EmissionsBuilder(agent_name="a")
     for t in tokens:
         builder.process_token(t)
     resp = builder.build()
@@ -633,8 +633,8 @@ async def test_pyfetch_openai_cache_marker_lands_on_cacheable_block():
     assert "tools" in body
     assert body["tool_choice"] == "auto"
 
-    # Round-trip through ResponseBuilder.
-    builder = ResponseBuilder(agent_name="a")
+    # Round-trip through EmissionsBuilder.
+    builder = EmissionsBuilder(agent_name="a")
     for t in tokens:
         builder.process_token(t)
     resp = builder.build()

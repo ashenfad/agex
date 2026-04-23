@@ -1,6 +1,6 @@
 """Tests for markdown event rendering."""
 
-from agex.agent.datatypes import FileAction
+from agex.agent.emissions import FileWriteEmission
 from agex.agent.events import (
     FileEvent,
     TaskStartEvent,
@@ -93,7 +93,7 @@ class TestRenderEventsAsMarkdown:
                 thinking="I'll append to the file",
                 code="pass",
                 file_actions=[
-                    FileAction(path="utils.py", content="content", mode="append")
+                    FileWriteEmission(path="utils.py", content="content", mode="append")
                 ],
             )
         ]

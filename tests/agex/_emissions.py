@@ -106,10 +106,9 @@ def make_response(
 
     The legacy fields are translated into an emission list:
 
-    - ``file_actions`` (accepts dicts, :class:`FileWriteEmission` /
-      :class:`FileEditEmission`, or the deprecated ``FileAction`` /
-      ``EditAction`` classes still living in :mod:`agex.agent.datatypes`)
-      come first, each as its own emission.
+    - ``file_actions`` (accepts dicts or :class:`FileWriteEmission` /
+      :class:`FileEditEmission` instances) come first, each as its own
+      emission.
     - ``thinking`` + ``code`` → :class:`PythonEmission(code, thinking)`.
     - ``thinking`` + ``terminal`` → :class:`TerminalEmission(commands, thinking)`.
     - ``thinking`` alone → :class:`ThinkingEmission`.
@@ -188,21 +187,6 @@ def _coerce_file_action(fa):
             mode=fa.get("mode", "write"),
         )
 
-    # Deprecated FileAction / EditAction still live in datatypes until
-    # Phase 3 — accept them so fixtures that predate the new emission
-    # types keep working.
-    from agex.agent.datatypes import EditAction, FileAction
-
-    if isinstance(fa, FileAction):
-        return FileWriteEmission(path=fa.path, content=fa.content, mode=fa.mode)
-    if isinstance(fa, EditAction):
-        return FileEditEmission(
-            path=fa.path,
-            search=fa.search,
-            content=fa.content,
-            operation=fa.operation,
-            match_all=fa.match_all,
-        )
     raise TypeError(f"Cannot coerce {type(fa).__name__} into a file emission")
 
 

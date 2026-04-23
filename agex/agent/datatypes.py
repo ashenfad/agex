@@ -66,36 +66,6 @@ class LLMFail(_AgentExit):
     retries: int = 0
 
 
-@dataclass
-class FileAction:
-    """DEPRECATED — superseded by FileWriteEmission in agex.agent.emissions.
-
-    Kept alive during Phase 1 of the retooling so legacy code still
-    imports. Phase 2 rewrites the execution loop and renderer to use
-    FileWriteEmission directly, after which this goes away.
-    """
-
-    path: str
-    content: str
-    mode: Literal["write", "append"] = "write"
-
-
-@dataclass
-class EditAction:
-    """DEPRECATED — superseded by FileEditEmission in agex.agent.emissions.
-
-    Kept alive during Phase 1 of the retooling so legacy code still
-    imports. Phase 2 rewrites the execution loop and renderer to use
-    FileEditEmission directly, after which this goes away.
-    """
-
-    path: str
-    search: str
-    content: str
-    operation: Literal["replace", "insert-after", "insert-before"] = "replace"
-    match_all: bool = False
-
-
 class UnpicklableVariableError(Exception):
     """Raised when attempting to access a variable that was not persisted due to being unpicklable."""
 

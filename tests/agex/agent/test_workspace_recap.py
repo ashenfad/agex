@@ -1,6 +1,7 @@
 import pytest
 
-from agex import Agent, FileAction, clear_agent_registry, connect_fs, connect_state
+from agex import Agent, clear_agent_registry, connect_fs, connect_state
+from agex.agent.emissions import FileWriteEmission
 from agex.llm import Dummy
 from tests.agex._emissions import make_response
 
@@ -24,7 +25,7 @@ def test_workspace_recap_in_forefront():
         make_response(
             thinking="Iteration 1: Create utils.py",
             file_actions=[
-                FileAction(
+                FileWriteEmission(
                     path="utils.py",
                     content="""
 def add(a: int, b: int) -> int:

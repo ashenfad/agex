@@ -4,7 +4,7 @@ Mocks ``generate_content_stream`` to return a canned sequence of chunks
 whose ``function_calls`` property carries ``FunctionCall``-shaped objects,
 then verifies the client dispatches to the tool-use path, yields
 TokenChunks, and produces a correct :class:`LLMResponse` through
-:class:`ResponseBuilder`.
+:class:`EmissionsBuilder`.
 """
 
 from types import SimpleNamespace
@@ -13,7 +13,7 @@ from unittest.mock import patch
 import pytest
 
 from agex.agent.emissions import FileEditEmission, FileWriteEmission
-from agex.llm.core import ResponseBuilder
+from agex.llm.core import EmissionsBuilder
 from agex.llm.formats import ToolUseWireFormat
 from agex.llm.gemini_client import Gemini
 from tests.agex._emissions import (
@@ -100,7 +100,7 @@ class TestGeminiToolUse:
                     assert not any("<TITLE>" in t for t in texts)
 
             # Round-trip to LLMResponse.
-            builder = ResponseBuilder(agent_name="a")
+            builder = EmissionsBuilder(agent_name="a")
             for t in tokens:
                 builder.process_token(t)
             resp = builder.build()
@@ -132,7 +132,7 @@ class TestGeminiToolUse:
 
             client = Gemini(wire_format=ToolUseWireFormat())
             tokens = list(client.complete_stream("sys", []))
-            builder = ResponseBuilder(agent_name="a")
+            builder = EmissionsBuilder(agent_name="a")
             for t in tokens:
                 builder.process_token(t)
             resp = builder.build()
@@ -170,7 +170,7 @@ class TestGeminiToolUse:
 
             client = Gemini(wire_format=ToolUseWireFormat())
             tokens = list(client.complete_stream("sys", []))
-            builder = ResponseBuilder(agent_name="a")
+            builder = EmissionsBuilder(agent_name="a")
             for t in tokens:
                 builder.process_token(t)
             resp = builder.build()
@@ -246,7 +246,7 @@ async def test_gemini_async_tool_use():
         async for t in client.acomplete_stream("sys", []):
             tokens.append(t)
 
-        builder = ResponseBuilder(agent_name="a")
+        builder = EmissionsBuilder(agent_name="a")
         for t in tokens:
             builder.process_token(t)
         resp = builder.build()

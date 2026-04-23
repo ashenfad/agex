@@ -8,7 +8,7 @@ import pytest
 
 from agex import Agent, connect_fs, connect_state
 from agex.agent.base import clear_agent_registry
-from agex.agent.datatypes import FileAction
+from agex.agent.emissions import FileWriteEmission
 from agex.agent.events import ActionEvent, OutputEvent
 from agex.llm import Dummy
 from tests.agex._emissions import (
@@ -269,7 +269,9 @@ class TestTerminalWithFileActions:
                 make_response(
                     thinking="Write a file then list it.",
                     file_actions=[
-                        FileAction(path="/workspace/new.txt", content="new content")
+                        FileWriteEmission(
+                            path="/workspace/new.txt", content="new content"
+                        )
                     ],
                     terminal="ls /workspace",
                 ),

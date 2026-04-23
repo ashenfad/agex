@@ -47,7 +47,7 @@ from .common import (
     apply_file_edit,
     apply_file_write,
     check_cancellation,
-    check_for_task_call,
+    check_for_terminator_call,
     create_action_event,
     create_clarify_event,
     create_error_output,
@@ -92,7 +92,7 @@ def _run_coro(coro):
 def _last_python_code(emissions: list) -> str:
     """Return the concatenation of all PythonEmission code bodies.
 
-    Used by ``check_for_task_call`` to decide whether a turn produced
+    Used by ``check_for_terminator_call`` to decide whether a turn produced
     an explicit terminator or implicitly continues.
     """
     return "\n".join(
@@ -497,7 +497,7 @@ class SyncLoopMixin:
 
             # Nudge if the agent ran out of Python without signaling.
             combined_code = _last_python_code(action_event.emissions)
-            if combined_code.strip() and not check_for_task_call(combined_code):
+            if combined_code.strip() and not check_for_terminator_call(combined_code):
                 # Pick the last PythonEmission's id for the nudge so the
                 # renderer pairs it with the expected tool_result.
                 last_py_idx = None
