@@ -273,31 +273,46 @@ def _format_event_lines(
         # Aggregate emission content for a one-liner-per-section view.
         thinking_pieces: list[str] = []
         text_pieces: list[str] = []
-        file_paths: list[str] = []
+        file_summaries: list[str] = []
+        terminal_pieces: list[str] = []
         code_pieces: list[str] = []
+        has_python_emission = False
         for em in event.emissions:
-            if isinstance(em, (PythonEmission, TerminalEmission)):
+            if isinstance(em, PythonEmission):
+                has_python_emission = True
                 if em.thinking:
                     thinking_pieces.append(em.thinking)
-                if isinstance(em, PythonEmission) and em.code:
+                if em.code:
                     code_pieces.append(em.code)
+            elif isinstance(em, TerminalEmission):
+                if em.thinking:
+                    thinking_pieces.append(em.thinking)
+                if em.commands:
+                    terminal_pieces.append(em.commands)
             elif isinstance(em, ThinkingEmission):
                 if em.text and not em.redacted:
                     thinking_pieces.append(em.text)
             elif isinstance(em, TextEmission):
                 if em.text:
                     text_pieces.append(em.text)
-            elif isinstance(em, (FileWriteEmission, FileEditEmission)):
-                file_paths.append(em.path)
+            elif isinstance(em, FileWriteEmission):
+                tag = "append" if em.mode == "append" else "write"
+                file_summaries.append(f"`{em.path}` ({tag})")
+            elif isinstance(em, FileEditEmission):
+                scope = " match_all" if em.match_all else ""
+                file_summaries.append(f"`{em.path}` (edit {em.operation}{scope})")
 
-        thinking_raw = "\n".join(thinking_pieces)
-        if verbosity == "verbose":
-            thinking_text = _strip_newlines(thinking_raw)
-        else:
-            thinking_text = _truncate(
-                _strip_newlines(thinking_raw), 120 if verbosity != "brief" else 80
-            )
-        body_lines.append(_indent(detail_indent, f"Thinking: {thinking_text}"))
+        # Only emit the Thinking line if there was actually thinking —
+        # otherwise the label is noise.
+        if thinking_pieces:
+            thinking_raw = "\n".join(thinking_pieces)
+            if verbosity == "verbose":
+                thinking_text = _strip_newlines(thinking_raw)
+            else:
+                thinking_text = _truncate(
+                    _strip_newlines(thinking_raw), 120 if verbosity != "brief" else 80
+                )
+            body_lines.append(_indent(detail_indent, f"Thinking: {thinking_text}"))
 
         if text_pieces:
             report_raw = "\n\n".join(text_pieces)
@@ -313,25 +328,55 @@ def _format_event_lines(
                 report_line = _colorize(use_color, _Colors.green, report_line)
             body_lines.append(_indent(detail_indent, report_line))
 
-        if file_paths:
-            file_names = ", ".join(f"`{p}`" for p in file_paths)
-            body_lines.append(_indent(detail_indent, f"Files: {file_names}"))
+        if file_summaries:
+            body_lines.append(
+                _indent(detail_indent, f"Files: {', '.join(file_summaries)}")
+            )
 
-        full_code = "\n".join(code_pieces)
-        code_lines_total = full_code.count("\n") + 1 if full_code else 0
-        if verbosity == "verbose" and full_code:
-            shown_lines = full_code.splitlines()[:truncate_code_lines]
-            for line in shown_lines:
-                dimmed = _colorize(use_color, _Colors.dim, line)
-                body_lines.append(_indent(detail_indent, dimmed))
-            if len(shown_lines) < code_lines_total:
-                remaining = max(code_lines_total - len(shown_lines), 0)
-                more_word = "line" if remaining == 1 else "lines"
-                more_text = f"… (+{remaining} more {more_word})"
-                more_text = _colorize(use_color, _Colors.dim, more_text)
-                body_lines.append(_indent(detail_indent, more_text))
-        else:
-            body_lines.append(_indent(detail_indent, f"Code: {code_lines_total} lines"))
+        if terminal_pieces:
+            full_terminal = "\n".join(terminal_pieces)
+            term_lines_total = full_terminal.count("\n") + 1
+            if verbosity == "verbose":
+                shown = full_terminal.splitlines()[:truncate_code_lines]
+                body_lines.append(_indent(detail_indent, "Terminal:"))
+                for line in shown:
+                    dimmed = _colorize(use_color, _Colors.dim, line)
+                    body_lines.append(_indent(detail_indent + 2, dimmed))
+                if len(shown) < term_lines_total:
+                    remaining = term_lines_total - len(shown)
+                    more_word = "line" if remaining == 1 else "lines"
+                    more_text = f"… (+{remaining} more {more_word})"
+                    more_text = _colorize(use_color, _Colors.dim, more_text)
+                    body_lines.append(_indent(detail_indent + 2, more_text))
+            else:
+                first_line = full_terminal.splitlines()[0] if full_terminal else ""
+                extra = term_lines_total - 1
+                suffix = f" (+{extra} more)" if extra > 0 else ""
+                body_lines.append(
+                    _indent(detail_indent, f"Terminal: {first_line}{suffix}")
+                )
+
+        # Code section only renders when the turn contained a
+        # PythonEmission — suppressing a misleading "Code: 0 lines" on
+        # terminal-only / file-only turns.
+        if has_python_emission:
+            full_code = "\n".join(code_pieces)
+            code_lines_total = full_code.count("\n") + 1 if full_code else 0
+            if verbosity == "verbose" and full_code:
+                shown_lines = full_code.splitlines()[:truncate_code_lines]
+                for line in shown_lines:
+                    dimmed = _colorize(use_color, _Colors.dim, line)
+                    body_lines.append(_indent(detail_indent, dimmed))
+                if len(shown_lines) < code_lines_total:
+                    remaining = max(code_lines_total - len(shown_lines), 0)
+                    more_word = "line" if remaining == 1 else "lines"
+                    more_text = f"… (+{remaining} more {more_word})"
+                    more_text = _colorize(use_color, _Colors.dim, more_text)
+                    body_lines.append(_indent(detail_indent, more_text))
+            else:
+                body_lines.append(
+                    _indent(detail_indent, f"Code: {code_lines_total} lines")
+                )
 
     elif isinstance(event, OutputEvent):
         summary = _summarize_output_parts(event.parts, verbosity=verbosity)
