@@ -208,19 +208,39 @@ def _close_open(state: _StreamState) -> Iterator[ToolCallEvent]:
 def _capture_usage(chunk: dict, usage_holder: dict | None) -> None:
     if usage_holder is None:
         return
+
+    # Provider identity travels at the top of each OpenRouter chunk
+    # (usually only the first or last carries it).  Capture whenever
+    # we see it so the client can log which upstream actually served
+    # the request — sticky-routing diagnostics.
+    provider = chunk.get("provider")
+    if provider is not None:
+        usage_holder["provider"] = provider
+
     usage = chunk.get("usage")
     if not usage:
         return
     usage_holder["input_tokens"] = usage.get("prompt_tokens")
     usage_holder["output_tokens"] = usage.get("completion_tokens")
-    # OpenRouter (and OpenAI for cached prompts) reports cache hit size
-    # under prompt_tokens_details.cached_tokens.  Surface it so the
-    # client can log per-request cache diagnostics.
+
+    # OpenRouter / OpenAI report cache hit size under
+    # prompt_tokens_details.cached_tokens; some providers also surface
+    # cache_write_tokens (tokens written to cache on this request).
     details = usage.get("prompt_tokens_details")
     if isinstance(details, dict):
         cached = details.get("cached_tokens")
         if cached is not None:
             usage_holder["cached_tokens"] = cached
+        cache_write = details.get("cache_write_tokens")
+        if cache_write is not None:
+            usage_holder["cache_write_tokens"] = cache_write
+
+    # Top-level cache_discount (cost savings) is a useful at-a-glance
+    # signal that caching actually happened, especially when token
+    # counts alone don't tell the whole story.
+    discount = chunk.get("cache_discount")
+    if discount is not None:
+        usage_holder["cache_discount"] = discount
 
 
 def translate_openai_stream_to_events(

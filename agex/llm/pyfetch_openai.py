@@ -74,7 +74,10 @@ def _log_cache_diagnostics(
 
     prompt = usage_holder.get("input_tokens")
     cached = usage_holder.get("cached_tokens")
+    cache_write = usage_holder.get("cache_write_tokens")
+    cache_discount = usage_holder.get("cache_discount")
     output = usage_holder.get("output_tokens")
+    provider = usage_holder.get("provider")
     parts = [
         "[agex.llm.cache]",
         f"msgs={len(msgs)}",
@@ -84,8 +87,14 @@ def _log_cache_diagnostics(
         f"prefix_chars={len(prefix_str)}",
         f"prompt_tokens={prompt}",
         f"cached_tokens={cached}",
-        f"output_tokens={output}",
     ]
+    if cache_write is not None:
+        parts.append(f"cache_write_tokens={cache_write}")
+    if cache_discount is not None:
+        parts.append(f"cache_discount={cache_discount}")
+    parts.append(f"output_tokens={output}")
+    if provider is not None:
+        parts.append(f"provider={provider}")
     print(" ".join(parts))
 
 

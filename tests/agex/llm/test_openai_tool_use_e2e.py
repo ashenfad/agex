@@ -383,6 +383,94 @@ async def test_pyfetch_openai_logs_cache_diagnostics(capsys):
 
 
 @pytest.mark.asyncio
+async def test_pyfetch_openai_logs_provider_and_cache_write(capsys):
+    """When OpenRouter returns a top-level ``provider`` field and
+    ``cache_write_tokens`` / ``cache_discount`` in the usage object,
+    the diagnostic must surface them. Lets us spot when sticky routing
+    bounces between upstream providers (the leading hypothesis for
+    intermittent cache hits with stable prefixes)."""
+    args_json = json.dumps({"title": "t", "thinking": "T", "code": "x"})
+    sse_lines = [
+        "data: "
+        + json.dumps(
+            {
+                # OpenRouter typically attaches `provider` to the first
+                # chunk of the stream.
+                "provider": "Google Vertex",
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "python_action",
+                                        "arguments": args_json,
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            }
+        )
+        + "\n\n",
+        "data: "
+        + json.dumps(
+            {
+                "choices": [],
+                "usage": {
+                    "prompt_tokens": 12000,
+                    "completion_tokens": 50,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 8000,
+                        "cache_write_tokens": 3500,
+                    },
+                },
+                "cache_discount": 0.42,
+            }
+        )
+        + "\n\n",
+        "data: [DONE]\n\n",
+    ]
+
+    class FakeStream:
+        def __init__(self, lines):
+            self._lines = lines
+
+        def __aiter__(self):
+            async def gen():
+                for line in self._lines:
+                    yield line
+
+            return gen()
+
+    fake_adapter = MagicMock()
+    fake_adapter.fetch_stream = MagicMock(return_value=FakeStream(sse_lines))
+
+    client = PyfetchOpenAI(
+        model="google/gemini-2.5-pro",
+        api_key="sk-test",
+        fetch_adapter=fake_adapter,
+        wire_format=ToolUseWireFormat(),
+    )
+
+    async for _ in client.acomplete_stream("sys", []):
+        pass
+
+    captured = capsys.readouterr().out
+    cache_lines = [ln for ln in captured.splitlines() if "[agex.llm.cache]" in ln]
+    assert len(cache_lines) == 1
+    line = cache_lines[0]
+    assert "cached_tokens=8000" in line
+    assert "cache_write_tokens=3500" in line
+    assert "cache_discount=0.42" in line
+    assert "provider=Google Vertex" in line
+
+
+@pytest.mark.asyncio
 async def test_pyfetch_openai_cache_marker_lands_on_cacheable_block():
     """Regression: in tool-use mode the prior cache_idx=len-2 landed
     on an assistant-with-tool_calls message whose content is None,
