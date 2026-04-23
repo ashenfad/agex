@@ -6,21 +6,19 @@ that can't be expressed in a JSON Schema.
 """
 
 _PRIMER_BASE = """
-You drive agex tasks by calling tools, not by writing XML tags.
+Tools are the entire interface: every turn must call at least one of
+python_action, terminal_action, write_file, or edit_file.  Plain
+assistant text is not a reply channel — it doesn't execute anything,
+doesn't finish the task, and the provider is configured to require a
+tool call.  If you have a question, call ``task_clarify`` inside
+python_action; if you want to report, do it via ``print(...)`` in
+python_action so the output shows up in your next tool_result.
 
 Per turn you may call any combination of python_action, terminal_action,
 write_file, and edit_file — they execute in the order they appear.
 Python emissions share state: later python_action calls see variables
 assigned by earlier ones.  File tools run before subsequent python_action
 calls, so you can write a helper module and import it in the same turn.
-
-Tools are how you *do* things; plain assistant text is just a side
-channel for short status updates the user sees.  Text alone doesn't
-advance the task — it doesn't finish it, execute anything, or modify
-any files.  Every turn that's supposed to make progress must include
-at least one tool call.  In particular, the task only finishes when
-a python_action runs task_success / task_fail / task_clarify — you
-cannot finish a task by writing prose.
 
 Inside python_action's `code`:
 - task_success(value) finishes the task with `value` as the result.
@@ -49,10 +47,9 @@ from the user.
 """
 
 _NATIVE_THINKING_ADDENDUM = """
-Thinking and user-facing prose are native channels, not tool
-parameters.  Reason in your provider's native thinking blocks; any
-user-visible status update is just assistant text — no ``thinking``
-or ``report`` argument on the action tools.
+Your provider delivers reasoning as native thinking blocks; use them
+for step-by-step reasoning.  Tool calls are still the only way to
+advance or finish the task.
 """
 
 

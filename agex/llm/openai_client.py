@@ -146,7 +146,7 @@ class OpenAI(LLM):
             model=self._model,
             messages=[_format_message_for_openai(msg) for msg in translated],  # type: ignore
             tools=tools,  # type: ignore
-            tool_choice="auto",
+            tool_choice=request_kwargs.pop("tool_choice", "required"),
             stream=True,
             stream_options={"include_usage": True},
             **request_kwargs,
@@ -199,7 +199,7 @@ class OpenAI(LLM):
             model=self._model,
             messages=[_format_message_for_openai(msg) for msg in translated],  # type: ignore
             tools=tools,  # type: ignore
-            tool_choice="auto",
+            tool_choice=request_kwargs.pop("tool_choice", "required"),
             stream=True,
             stream_options={"include_usage": True},
             **request_kwargs,

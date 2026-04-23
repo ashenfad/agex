@@ -160,6 +160,22 @@ class Gemini(LLM):
                 "thinking_config": types.ThinkingConfig(include_thoughts=True),
             }
 
+        # Force the model to call one of our tools each turn.  Tools
+        # are agex's real API — every progress step and the terminator
+        # itself (task_success / task_fail / task_clarify inside
+        # python_action) goes through tool calls.  Letting the model
+        # reply with plain prose yields turns that don't advance the
+        # task; with ANY mode Gemini must call a function, keeping
+        # the loop progressing.  User-supplied ``tool_config`` still
+        # wins so callers who genuinely want chat-style can opt out.
+        if "tool_config" not in request_kwargs:
+            request_kwargs = {
+                **request_kwargs,
+                "tool_config": types.ToolConfig(
+                    function_calling_config=types.FunctionCallingConfig(mode="ANY")
+                ),
+            }
+
         config = types.GenerateContentConfig(
             system_instruction=system_with_format,
             tools=tools,
@@ -238,6 +254,15 @@ class Gemini(LLM):
             request_kwargs = {
                 **request_kwargs,
                 "thinking_config": types.ThinkingConfig(include_thoughts=True),
+            }
+
+        # Force tool use (see sync ``_stream_tools`` for rationale).
+        if "tool_config" not in request_kwargs:
+            request_kwargs = {
+                **request_kwargs,
+                "tool_config": types.ToolConfig(
+                    function_calling_config=types.FunctionCallingConfig(mode="ANY")
+                ),
             }
 
         config = types.GenerateContentConfig(
