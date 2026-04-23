@@ -172,11 +172,53 @@ _EDIT_FILE_SCHEMA: dict[str, Any] = {
 }
 
 
-def agex_tool_schemas() -> list[dict]:
-    """Return the full set of tools the agent may call."""
+def agex_tool_schemas(native_thinking: bool = False) -> list[dict]:
+    """Return the full set of tools the agent may call.
+
+    When ``native_thinking=True``, strip the ``thinking`` and
+    ``report`` parameters from ``python_action`` / ``terminal_action``
+    schemas.  The provider delivers thinking as native thought parts
+    (captured into :class:`ThinkingEmission`) and user-facing prose as
+    native text parts (captured into :class:`TextEmission`) — so we
+    stop asking the model to narrate redundantly through JSON args.
+    Narration-via-schema still works when the flag is off (phase-2
+    default), which is the right fallback for non-thinking models.
+    """
+    if native_thinking:
+        return [
+            _strip_narration_params(_PYTHON_SCHEMA),
+            _strip_narration_params(_TERMINAL_SCHEMA),
+            _WRITE_FILE_SCHEMA,
+            _EDIT_FILE_SCHEMA,
+        ]
     return [
         _PYTHON_SCHEMA,
         _TERMINAL_SCHEMA,
         _WRITE_FILE_SCHEMA,
         _EDIT_FILE_SCHEMA,
     ]
+
+
+def _strip_narration_params(schema: dict) -> dict:
+    """Return a copy of ``schema`` with ``thinking`` / ``report``
+    properties removed and the ``required`` list trimmed.  Used when
+    the provider supplies native thinking and native text blocks, so
+    narration-via-schema is redundant.
+    """
+    params = schema.get("parameters") or {}
+    new_props = {
+        k: v
+        for k, v in (params.get("properties") or {}).items()
+        if k not in ("thinking", "report")
+    }
+    new_required = [
+        r for r in (params.get("required") or []) if r not in ("thinking", "report")
+    ]
+    return {
+        **schema,
+        "parameters": {
+            **params,
+            "properties": new_props,
+            "required": new_required,
+        },
+    }

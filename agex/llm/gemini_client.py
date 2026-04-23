@@ -67,7 +67,13 @@ class Gemini(LLM):
         self._google_search = google_search
         self._url_context = url_context
         self._timeout_seconds = timeout_seconds
-        self._wire_format: WireFormat = wire_format or ToolUseWireFormat()
+        # Gemini 3 delivers signed thought parts natively — the tool-
+        # use adapter captures them as ThinkingEmission and round-trips
+        # them on replay.  Default the wire format to ``native_thinking
+        # =True`` so we stop asking the model to narrate in the schema.
+        self._wire_format: WireFormat = wire_format or ToolUseWireFormat(
+            native_thinking=True
+        )
 
         # Wire timeout and disable SDK retries (agex handles retries)
         client_kwargs["http_options"] = types.HttpOptions(
