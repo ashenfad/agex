@@ -57,18 +57,20 @@ class ToolCallEnd:
 
 @dataclass(frozen=True, slots=True)
 class TextPart:
-    """A user-facing text ``Part`` emitted alongside (or instead of)
-    tool calls.
+    """Plain assistant text emitted alongside (or instead of) tool calls.
 
-    Gemini 3 sometimes returns a plain text reply when it could have
-    used a tool — e.g., after a confusing tool_result it may switch
-    to narrating what went wrong instead of recovering via a new
-    tool call.  Dropping that text silently leaves the turn looking
-    empty and gives the model nothing to see on replay, which
-    encourages another round of the same.  Capturing it as a
-    :class:`~agex.agent.emissions.TextEmission` keeps the model's
-    output visible in the event log and round-trips it on the next
-    request.
+    Every provider can deliver user-facing prose mixed into a turn:
+    Anthropic ``text`` content blocks, OpenAI ``choices[].delta.content``
+    chunks, Gemini text ``Part``\\ s.  The old XML wire format had a
+    dedicated ``<report>`` channel for this; in the tool-use wire
+    format it arrives as a plain text block instead.  Dropping it
+    silently leaves turns looking empty and gives the model nothing
+    to see on replay, which reliably induces a loop of repeated
+    empty turns (observed: Gemini 3 Flash stalling six turns in a
+    row until we captured its text).  Translators buffer consecutive
+    text segments and emit a single :class:`TextPart`; the parser
+    materializes it as a :class:`~agex.agent.emissions.TextEmission`
+    so it round-trips in the event log.
     """
 
     text: str

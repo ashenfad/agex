@@ -14,6 +14,14 @@ Python emissions share state: later python_action calls see variables
 assigned by earlier ones.  File tools run before subsequent python_action
 calls, so you can write a helper module and import it in the same turn.
 
+Tools are how you *do* things; plain assistant text is just a side
+channel for short status updates the user sees.  Text alone doesn't
+advance the task — it doesn't finish it, execute anything, or modify
+any files.  Every turn that's supposed to make progress must include
+at least one tool call.  In particular, the task only finishes when
+a python_action runs task_success / task_fail / task_clarify — you
+cannot finish a task by writing prose.
+
 Inside python_action's `code`:
 - task_success(value) finishes the task with `value` as the result.
 - task_fail(msg) ends the task with an error message.

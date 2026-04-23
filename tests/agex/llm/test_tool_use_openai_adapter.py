@@ -340,6 +340,60 @@ class TestTranslateOpenAIStream:
             "ToolCallEnd",
         ]
 
+    def test_plain_text_content_becomes_textpart(self):
+        """Plain ``delta.content`` chunks (pure text response, no tool
+        calls) must surface as a TextPart so the turn isn't a silent
+        zero-emission black hole."""
+        from agex.llm.formats.tool_use.events import TextPart
+
+        chunks = [
+            {"choices": [{"delta": {"content": "I'll think "}}]},
+            {"choices": [{"delta": {"content": "about it."}}]},
+            {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        ]
+        events = list(translate_openai_stream_to_events(iter(chunks)))
+        texts = [e for e in events if isinstance(e, TextPart)]
+        assert len(texts) == 1
+        assert texts[0].text == "I'll think about it."
+
+    def test_text_alongside_tool_call(self):
+        """Text chunks + a tool call in the same turn: both surface."""
+        from agex.llm.formats.tool_use.events import TextPart
+
+        chunks = [
+            {"choices": [{"delta": {"content": "calling now: "}}]},
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "python_action",
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
+        ]
+        events = list(translate_openai_stream_to_events(iter(chunks)))
+        assert any(
+            isinstance(e, TextPart) and e.text == "calling now: " for e in events
+        )
+        # Text flushes after the tool call (buffered to stream end).
+        assert [type(e).__name__ for e in events] == [
+            "ToolCallStart",
+            "ToolCallArgDelta",
+            "ToolCallEnd",
+            "TextPart",
+        ]
+
     def test_sdk_model_dump_normalization(self):
         """Chunks with ``model_dump`` (pydantic models) should work too."""
 
