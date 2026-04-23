@@ -33,6 +33,7 @@ import json
 from typing import Any, AsyncIterator, Iterator
 
 from .events import (
+    TextPart,
     ThinkingPart,
     ToolCallArgDelta,
     ToolCallEnd,
@@ -287,6 +288,13 @@ def _iter_stream_parts(
             text = getattr(part, "text", None) or None
             if sig is not None or is_thought:
                 yield ("thought", None, sig, text, is_thought)
+                continue
+            # Plain assistant text — no fc, no thought flag, no
+            # signature.  We used to drop this; now surface it so the
+            # turn isn't a silent zero-emission black hole in the
+            # event log.
+            if text:
+                yield ("text", None, None, text, False)
 
 
 def _maybe_emit_thinking(
@@ -340,6 +348,13 @@ def _accumulate_part(
             entry["body"] = body
             if sig is not None:
                 entry["signature"] = sig
+    elif kind == "text":
+        # Consecutive plain-text parts get concatenated — Gemini may
+        # stream a single assistant message as several text parts.
+        if pending and pending[-1]["kind"] == "text":
+            pending[-1]["text"] = (pending[-1]["text"] or "") + (text or "")
+        else:
+            pending.append({"kind": "text", "text": text or ""})
     else:  # "thought"
         pending.append(
             {
@@ -357,6 +372,9 @@ def _flush_pending(pending: list[dict]) -> Iterator[ToolCallEvent]:
             yield from _emit_function_call(
                 item["call_id"], item["body"], item["signature"]
             )
+        elif item["kind"] == "text":
+            if item["text"]:
+                yield TextPart(text=item["text"])
         else:
             yield from _maybe_emit_thinking(
                 item["signature"], item["text"], item["is_thought"]

@@ -13,6 +13,7 @@ from agex.agent.events import Event
 from agex.llm.core import TokenChunk
 
 from .events import (
+    TextPart,
     ThinkingPart,
     ToolCallArgDelta,
     ToolCallEnd,
@@ -81,6 +82,7 @@ __all__ = [
     "ToolCallStart",
     "ToolCallArgDelta",
     "ToolCallEnd",
+    "TextPart",
     "ThinkingPart",
     "format_primer",
     "ACTION_TOOLS",

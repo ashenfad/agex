@@ -56,6 +56,25 @@ class ToolCallEnd:
 
 
 @dataclass(frozen=True, slots=True)
+class TextPart:
+    """A user-facing text ``Part`` emitted alongside (or instead of)
+    tool calls.
+
+    Gemini 3 sometimes returns a plain text reply when it could have
+    used a tool — e.g., after a confusing tool_result it may switch
+    to narrating what went wrong instead of recovering via a new
+    tool call.  Dropping that text silently leaves the turn looking
+    empty and gives the model nothing to see on replay, which
+    encourages another round of the same.  Capturing it as a
+    :class:`~agex.agent.emissions.TextEmission` keeps the model's
+    output visible in the event log and round-trips it on the next
+    request.
+    """
+
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class ThinkingPart:
     """A native-thinking ``Part`` delivered alongside tool calls.
 
@@ -74,4 +93,6 @@ class ThinkingPart:
     redacted: bool = False
 
 
-ToolCallEvent = Union[ToolCallStart, ToolCallArgDelta, ToolCallEnd, ThinkingPart]
+ToolCallEvent = Union[
+    ToolCallStart, ToolCallArgDelta, ToolCallEnd, TextPart, ThinkingPart
+]
