@@ -129,15 +129,18 @@ def translate_messages_to_gemini(messages: list[dict]) -> list[dict]:
                         "name": name,
                         "args": block.get("input") or {},
                     }
+                    part: dict[str, Any] = {"function_call": fc}
                     sig = block.get("signature")
                     if sig is not None:
                         # Gemini 3 requires thought_signature on every
                         # function_call on subsequent turns — without
-                        # it the API 400s on the second call.  We
-                        # captured this when the stream first delivered
-                        # the call; replay it here.
-                        fc["thought_signature"] = sig
-                    parts.append({"function_call": fc})
+                        # it the API 400s on the second call.  The
+                        # signature lives on the wrapping ``Part`` as a
+                        # sibling of ``function_call`` (NOT inside the
+                        # FunctionCall object itself — the SDK's
+                        # pydantic validator rejects the extra field).
+                        part["thought_signature"] = sig
+                    parts.append(part)
                 elif btype == "tool_result":
                     tool_id = block["tool_use_id"]
                     name = id_to_name.get(tool_id, "")

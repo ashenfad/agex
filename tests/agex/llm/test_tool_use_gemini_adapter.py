@@ -66,12 +66,14 @@ class TestTranslateMessagesToGemini:
             "args": {"title": "t"},
         }
 
-    def test_tool_use_signature_becomes_thought_signature(self):
+    def test_tool_use_signature_becomes_part_thought_signature(self):
         """When a rendered tool_use block carries a ``signature`` (the
         bytes captured from a previous Gemini turn), the translator
-        must put it onto the function_call as ``thought_signature`` —
-        Gemini 3 400s on function_calls missing their signature on
-        subsequent turns."""
+        must put it onto the wrapping ``Part`` as
+        ``thought_signature`` — a sibling of ``function_call``, not
+        inside it.  Gemini's SDK pydantic model rejects the field on
+        FunctionCall; it belongs on the Part.  Gemini 3 400s on
+        function_calls missing the signature on subsequent turns."""
         sig = b"\x01\x02opaque-signature"
         msgs = [
             {
@@ -88,8 +90,11 @@ class TestTranslateMessagesToGemini:
             }
         ]
         out = translate_messages_to_gemini(msgs)
-        fc = out[0]["parts"][0]["function_call"]
-        assert fc["thought_signature"] == sig
+        part = out[0]["parts"][0]
+        assert part["thought_signature"] == sig
+        # Signature must NOT leak into the function_call body.
+        fc = part["function_call"]
+        assert "thought_signature" not in fc
         # Round-trip sanity: id/name/args still present.
         assert fc["id"] == "toolu_1"
         assert fc["name"] == "write_file"
@@ -110,8 +115,9 @@ class TestTranslateMessagesToGemini:
             }
         ]
         out = translate_messages_to_gemini(msgs)
-        fc = out[0]["parts"][0]["function_call"]
-        assert "thought_signature" not in fc
+        part = out[0]["parts"][0]
+        assert "thought_signature" not in part
+        assert "thought_signature" not in part["function_call"]
 
     def test_tool_result_gets_name_from_preceding_tool_use(self):
         """The tool_result block only carries tool_use_id; translator
@@ -453,12 +459,18 @@ class TestSignatureFullRoundTrip:
         assert tool_uses[0]["signature"] == sig_file
         assert tool_uses[1]["signature"] == sig_py
 
-        # Gemini translator then turns that into function_call with
-        # thought_signature — the final step that silences the 400.
+        # Gemini translator then turns that into a Part whose
+        # ``thought_signature`` lives next to ``function_call`` — the
+        # final step that silences the 400.
         gemini_contents = translate_messages_to_gemini(rendered)
         model_turn = next(c for c in gemini_contents if c["role"] == "model")
-        fcs = [p["function_call"] for p in model_turn["parts"]]
-        assert [fc["thought_signature"] for fc in fcs] == [sig_file, sig_py]
+        assert [p["thought_signature"] for p in model_turn["parts"]] == [
+            sig_file,
+            sig_py,
+        ]
+        # Sigs must live on the Part, not inside the FunctionCall.
+        for p in model_turn["parts"]:
+            assert "thought_signature" not in p["function_call"]
 
 
 @pytest.mark.asyncio
