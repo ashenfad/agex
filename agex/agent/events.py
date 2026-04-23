@@ -4,13 +4,20 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from ..agent.datatypes import EditAction, FileAction
+from ..agent.emissions import (
+    Emission,
+    FileEditEmission,
+    FileWriteEmission,
+    PythonEmission,
+    TerminalEmission,
+    TextEmission,
+    ThinkingEmission,
+)
 from ..eval.objects import ImageAction, PrintAction
 from ..render.primitives import (
     HI_DETAIL_BUDGET,
     LOW_DETAIL_BUDGET,
     count_tokens,
-    render_action_markdown,
     render_chapter,
     render_fail,
     render_output_parts_full,
@@ -410,145 +417,123 @@ class TaskStartEvent(BaseEvent):
 
 
 class ActionEvent(BaseEvent):
-    """Fired when the agent decides on its next thought and action (code or terminal)."""
+    """A single assistant-turn response decomposed into ordered emissions.
 
-    title: str = ""
-    thinking: str
-    report: str = ""
-    code: str | None = None
-    terminal: str | None = None
-    file_actions: list[FileAction | EditAction] = Field(default_factory=list)
+    The emission list preserves the order the model produced things in,
+    so provider-native shapes (Anthropic's interleaved thinking, Gemini's
+    per-function_call thought_signatures) round-trip faithfully.
+    """
+
+    emissions: list[Emission] = Field(default_factory=list)
     input_tokens: int | None = None
     output_tokens: int | None = None
 
+    class Config:
+        arbitrary_types_allowed = True
+
     @model_validator(mode="after")
     def _compute_tokens(self):
-        _, tokens = render_action_markdown(
-            self.thinking,
-            self.code,
-            self.title,
-            self.file_actions,
-            self.terminal,
-            self.report,
-        )
+        # Rough token estimate: count chars across textual fields of each
+        # emission.  A proper renderer lives in Phase 2; this is a
+        # placeholder good enough for event-log bookkeeping.
+        chars = 0
+        for em in self.emissions:
+            if isinstance(em, (TextEmission, ThinkingEmission)):
+                chars += len(em.text)
+            elif isinstance(em, PythonEmission):
+                chars += len(em.code) + len(em.title or "")
+            elif isinstance(em, TerminalEmission):
+                chars += len(em.commands) + len(em.title or "")
+            elif isinstance(em, (FileWriteEmission, FileEditEmission)):
+                chars += len(em.content) + len(em.path) + len(em.title or "")
+                if isinstance(em, FileEditEmission):
+                    chars += len(em.search)
+        tokens = count_tokens("x" * chars) if chars else 0
         self.full_detail_tokens = tokens
-        self.low_detail_tokens = tokens  # No separate low-detail rendering
+        self.low_detail_tokens = tokens
         return self
 
+    def _emission_summary(self) -> str:
+        kinds = [type(e).__name__.removesuffix("Emission") for e in self.emissions]
+        return ", ".join(kinds) if kinds else "empty"
+
     def __str__(self) -> str:
-        """Detailed string with thinking and code/terminal preview."""
         base = super().__str__()
-        title_text = f"\n  Title: {self.title}" if self.title else ""
-        thinking_preview = (
-            self.thinking[:80] + "..." if len(self.thinking) > 80 else self.thinking
-        )
-
-        files_info = []
-        for action in self.file_actions:
-            if isinstance(action, EditAction):
-                match_all_str = ", match_all" if action.match_all else ""
-                op_str = (
-                    f", {action.operation}" if action.operation != "replace" else ""
-                )
-                files_info.append(f"{action.path} (edit{op_str}{match_all_str})")
-            else:
-                files_info.append(f"{action.path} ({action.mode})")
-
-        files_text = f"\n  Files: {files_info}" if files_info else ""
-
-        if self.terminal:
-            terminal_lines = self.terminal.count("\n") + 1
-            action_text = f"\n  Terminal: {terminal_lines} lines"
-        else:
-            code_lines = (self.code or "").count("\n") + 1
-            action_text = f"\n  Code: {code_lines} lines"
-
-        return f"{base}{title_text}\n  Thinking: {thinking_preview}{action_text}{files_text}"
+        return f"{base}\n  Emissions: [{self._emission_summary()}]"
 
     def _repr_markdown_(self) -> str:
-        """Rich markdown with code/terminal block."""
         base = super()._repr_markdown_()
-        title_section = f"**Title:** {self.title}\n\n" if self.title else ""
-
-        files_section = ""
-        if self.file_actions:
-            files_section = "**Files:**\n"
-            for action in self.file_actions:
-                if isinstance(action, EditAction):
-                    match_all_str = ", match_all" if action.match_all else ""
-                    op_str = (
-                        f", {action.operation}" if action.operation != "replace" else ""
-                    )
-                    files_section += (
-                        f" - `{action.path}` (edit{op_str}{match_all_str})\n"
-                    )
-                else:
-                    mode_suffix = f" ({action.mode})" if action.mode != "write" else ""
-                    files_section += f" - `{action.path}`{mode_suffix}\n"
-            files_section += "\n"
-
-        if self.terminal:
-            action_section = f"""**Terminal:**
-```bash
-{self.terminal}
-```"""
-        else:
-            action_section = f"""**Code:**
-```python
-{self.code or ""}
-```"""
-
-        return f"""{base}
-{title_section}**Thinking:** {self.thinking}
-
-{files_section}{action_section}"""
+        lines = [base, ""]
+        for i, em in enumerate(self.emissions):
+            kind = type(em).__name__
+            if isinstance(em, TextEmission):
+                lines.append(f"**[{i}] Text:** {em.text}")
+            elif isinstance(em, ThinkingEmission):
+                tag = "ThinkingEmission (redacted)" if em.redacted else "Thinking"
+                lines.append(f"**[{i}] {tag}:** {em.text}")
+            elif isinstance(em, PythonEmission):
+                lines.append(f"**[{i}] Python** {em.title or ''}")
+                lines.append(f"```python\n{em.code}\n```")
+            elif isinstance(em, TerminalEmission):
+                lines.append(f"**[{i}] Terminal** {em.title or ''}")
+                lines.append(f"```bash\n{em.commands}\n```")
+            elif isinstance(em, FileWriteEmission):
+                lines.append(
+                    f"**[{i}] WriteFile** `{em.path}` ({em.mode}) {em.title or ''}"
+                )
+            elif isinstance(em, FileEditEmission):
+                lines.append(
+                    f"**[{i}] EditFile** `{em.path}` ({em.operation}) {em.title or ''}"
+                )
+            else:
+                lines.append(f"**[{i}] {kind}**")
+        return "\n".join(lines)
 
     def _repr_html_(self) -> str:
-        """Rich HTML representation for IPython/Jupyter environments."""
         sections = []
-        if self.title:
-            sections.append(
-                _event_section("📝 Title:", html.escape(self.title), "#6f42c1")
-            )
-
-        # Create the thinking section
-        thinking_html = _render_markdown_html(self.thinking)
-        thinking_section = _event_section("💭 Thinking:", thinking_html, "#0366d6")
-
-        if self.file_actions:
-            file_links_parts = []
-            for action in self.file_actions:
-                if isinstance(action, EditAction):
-                    # Build combined label: (edit, insert-after, match_all)
-                    label_parts = ["edit"]
-                    if action.operation != "replace":
-                        label_parts.append(action.operation)
-                    if action.match_all:
-                        label_parts.append("match_all")
-                    label = ", ".join(label_parts)
-                    file_links_parts.append(
-                        f"<code>{action.path}</code> <small>({label})</small>"
+        for i, em in enumerate(self.emissions):
+            if isinstance(em, TextEmission):
+                sections.append(
+                    _event_section(
+                        f"💬 [{i}] Text",
+                        _render_markdown_html(em.text),
+                        "#6f42c1",
                     )
-                else:
-                    mode_suffix = (
-                        f" <small>({action.mode})</small>"
-                        if action.mode != "write"
-                        else ""
-                    )
-                    file_links_parts.append(f"<code>{action.path}</code>{mode_suffix}")
+                )
+            elif isinstance(em, ThinkingEmission):
+                header = f"💭 [{i}] Thinking"
+                if em.redacted:
+                    header += " (redacted)"
+                body = _render_markdown_html(em.text) if em.text else "<em>(empty)</em>"
+                sections.append(_event_section(header, body, "#0366d6"))
+            elif isinstance(em, PythonEmission):
+                title = (
+                    f"🐍 [{i}] Python: {em.title}" if em.title else f"🐍 [{i}] Python"
+                )
+                sections.append(_code_section(title, em.code, "#28a745"))
+            elif isinstance(em, TerminalEmission):
+                title = (
+                    f"💻 [{i}] Terminal: {em.title}"
+                    if em.title
+                    else f"💻 [{i}] Terminal"
+                )
+                sections.append(_code_section(title, em.commands, "#6f42c1"))
+            elif isinstance(em, FileWriteEmission):
+                title = (
+                    f"📁 [{i}] WriteFile: {em.path} ({em.mode})"
+                    if em.title is None
+                    else f"📁 [{i}] WriteFile: {em.path} — {em.title}"
+                )
+                sections.append(_code_section(title, em.content, "#28a745"))
+            elif isinstance(em, FileEditEmission):
+                title = f"✏️ [{i}] EditFile: {em.path} ({em.operation})"
+                if em.title:
+                    title += f" — {em.title}"
+                sections.append(_code_section(title, em.content, "#0366d6"))
 
-            file_links = ", ".join(file_links_parts)
-            sections.append(_event_section("📁 Files:", file_links, "#28a745"))
-
-        # Create the action section (terminal or code)
-        if self.terminal:
-            action_section = _code_section("💻 Terminal:", self.terminal, "#6f42c1")
-        else:
-            action_section = _code_section("🐍 Code:", self.code or "", "#28a745")
-
-        sections.extend([thinking_section, action_section])
-
-        content = "".join(sections)
+        content = "".join(sections) or _event_section(
+            "(empty)", "No emissions in this turn", "#6a737d"
+        )
 
         return _event_html_container(
             "🧠",

@@ -21,25 +21,51 @@ def _pil_image_cls():
         return None
 
 
-class PrintAction(tuple):
-    """Represents the un-rendered content of a print() call."""
+@dataclass
+class PrintAction:
+    """Un-rendered content of a ``print()`` call.
 
-    pass
+    ``args`` holds the positional arguments print() received; the
+    renderer joins them with spaces (matching Python's print semantics)
+    when producing text for the LLM.
+
+    ``emission_id`` traces this print back to the PythonEmission whose
+    execution produced it. Used by the renderer to pair per-emission
+    tool_results with the emission that generated them, so a multi-
+    action turn's observations don't get mashed together.
+    """
+
+    args: tuple = ()
+    emission_id: str | None = None
+
+    def __iter__(self):
+        return iter(self.args)
+
+    def __len__(self):
+        return len(self.args)
+
+    def __getitem__(self, idx):
+        return self.args[idx]
 
 
 @dataclass
 class ImageAction:
-    """Represents an un-rendered image from a view_image() call.
+    """An un-rendered image from a ``view_image()`` call.
 
     PIL Images are pickled as compressed PNG bytes to avoid storing
     raw pixel data (~100x smaller).
+
+    ``emission_id`` traces this image back to the emission whose
+    execution produced it (always a PythonEmission today, since
+    ``view_image`` is a sandbox builtin).
     """
 
     image: Any
     detail: Literal["low", "high"] = "high"
+    emission_id: str | None = None
 
     def __getstate__(self) -> dict:
-        state = {"detail": self.detail}
+        state = {"detail": self.detail, "emission_id": self.emission_id}
         img = self.image
         _Image = _pil_image_cls()
         if _Image is not None and isinstance(img, _Image.Image):
@@ -52,6 +78,7 @@ class ImageAction:
 
     def __setstate__(self, state: dict) -> None:
         self.detail = state["detail"]
+        self.emission_id = state.get("emission_id")
         if "_png_bytes" in state:
             from PIL import Image
 

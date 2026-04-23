@@ -42,7 +42,13 @@ class TaskClarify(_AgentExit):
 
 @dataclass
 class TaskContinue(_AgentExit):
-    """Signal that the agent wants to continue to the next iteration."""
+    """DEPRECATED — slated for removal in Phase 2 of the retooling.
+
+    In the new emission-list wire format, Python completing without a
+    terminator is the implicit continue. Kept alive during Phase 1 so
+    legacy loop code still imports; the builtin no longer works from
+    agent code.
+    """
 
     observations: tuple[Any, ...] = field(default_factory=tuple)
 
@@ -75,7 +81,12 @@ class LLMFail(_AgentExit):
 
 @dataclass
 class FileAction:
-    """Represents a file operation (write or append) requested by an agent."""
+    """DEPRECATED — superseded by FileWriteEmission in agex.agent.emissions.
+
+    Kept alive during Phase 1 of the retooling so legacy code still
+    imports. Phase 2 rewrites the execution loop and renderer to use
+    FileWriteEmission directly, after which this goes away.
+    """
 
     path: str
     content: str
@@ -84,12 +95,11 @@ class FileAction:
 
 @dataclass
 class EditAction:
-    """Represents a search/replace or insert edit operation requested by an agent.
+    """DEPRECATED — superseded by FileEditEmission in agex.agent.emissions.
 
-    The `operation` attribute controls how the edit is applied:
-    - "replace": Replace the search text entirely with the content
-    - "insert-after": Keep the search text and insert content after it
-    - "insert-before": Insert content before the search text, keeping the original
+    Kept alive during Phase 1 of the retooling so legacy code still
+    imports. Phase 2 rewrites the execution loop and renderer to use
+    FileEditEmission directly, after which this goes away.
     """
 
     path: str

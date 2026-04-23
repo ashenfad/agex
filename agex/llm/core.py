@@ -53,24 +53,26 @@ ContentPart = Union[TextPart, ImagePart]
 
 @dataclass
 class TokenChunk:
-    """
-    A piece of streamed content from the LLM.
+    """A piece of streamed content from the LLM.
 
-    Not an Event - tokens are ephemeral and don't go in the state log.
+    Not an Event — tokens are ephemeral and don't go in the state log.
+
+    Multi-emission turns distinguish their chunks via
+    ``emission_index``.  The first emission in a turn is index 0; each
+    new emission increments.  Framework-internal chunks (``output``,
+    ``error``) leave the index at 0.
 
     Attributes:
-        type: One of "title", "thinking", "report", "python", "file",
-            "edit", "terminal", or "file_action".  The first seven carry
-            streamed text in ``content``; "file_action" carries a fully
-            built :class:`FileAction` or :class:`EditAction` in
-            ``action`` and is emitted by wire formats (like tool-use)
-            that already have the file operation in structured form.
-        content: The text content (incremental).  Empty for
-            "file_action" tokens.
-        done: True when this section is complete.  Always True for
-            "file_action" tokens (one-shot).
-        action: The completed file operation, for "file_action" tokens.
-            None otherwise.
+        type: Content kind.  ``title`` / ``thinking`` / ``text`` /
+            ``python`` / ``file`` / ``terminal`` carry streamed text in
+            ``content``.  ``text`` is new for this wire-format era — it
+            carries user-facing prose that the model emits as native
+            assistant text (was the old ``report`` narration).
+        content: The text content (incremental).
+        done: True when this emission's field is complete.
+        emission_index: Which emission within the current assistant
+            turn this chunk belongs to.  Starts at 0, increments on
+            each new emission.
         input_tokens: Actual input token count from the API (set on
             final chunk only).
         output_tokens: Actual output token count from the API (set on
@@ -80,18 +82,16 @@ class TokenChunk:
     type: Literal[
         "title",
         "thinking",
-        "report",
+        "text",
         "python",
         "file",
-        "edit",
         "terminal",
-        "file_action",
     ]
     content: str
     done: bool = False
+    emission_index: int = 0
     input_tokens: int | None = None
     output_tokens: int | None = None
-    action: FileAction | EditAction | None = None
 
 
 @dataclass
