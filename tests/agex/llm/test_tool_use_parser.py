@@ -383,6 +383,24 @@ class TestInterleaved:
         assert tokens == []
 
 
+class TestTextPart:
+    def test_textpart_becomes_text_emission(self):
+        from agex.agent.emissions import TextEmission
+        from agex.llm.formats.tool_use.events import TextPart
+
+        tokens = _tokens([TextPart(text="plain reply")])
+        emission_tokens = [t for t in tokens if t.type == "emission"]
+        assert len(emission_tokens) == 1
+        emission = emission_tokens[0].emission
+        assert isinstance(emission, TextEmission)
+        assert emission.text == "plain reply"
+
+    def test_empty_textpart_dropped(self):
+        from agex.llm.formats.tool_use.events import TextPart
+
+        assert _tokens([TextPart(text="")]) == []
+
+
 @pytest.mark.asyncio
 async def test_async_parser():
     from agex.llm.formats.tool_use import aparse_tool_events

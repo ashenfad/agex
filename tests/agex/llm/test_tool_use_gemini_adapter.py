@@ -488,6 +488,46 @@ class TestTranslateGeminiStream:
         out = list(translate_gemini_stream_to_events(iter(chunks)))
         assert out == []
 
+    def test_plain_text_part_surfaces_as_textpart(self):
+        """A Gemini response that's just plain text (no function_call,
+        no thought=True, no thought_signature) used to be silently
+        dropped, leaving the turn as a zero-emission black hole and
+        putting the agent in a loop of empty turns.  Capture it as a
+        TextPart so it round-trips through the event log.
+        """
+        from agex.llm.formats.tool_use.events import TextPart
+
+        plain_text = SimpleNamespace(
+            function_call=None,
+            thought_signature=None,
+            text="I'd like to clarify the request.",
+            thought=None,
+        )
+        out = list(translate_gemini_stream_to_events(iter([_chunk(plain_text)])))
+        texts = [e for e in out if isinstance(e, TextPart)]
+        assert len(texts) == 1
+        assert texts[0].text == "I'd like to clarify the request."
+
+    def test_plain_text_parts_concatenate_across_chunks(self):
+        """Gemini may stream a single assistant text message as
+        multiple text parts across chunks.  Concatenate consecutive
+        text parts so the agent sees one coherent utterance."""
+        from agex.llm.formats.tool_use.events import TextPart
+
+        def _text(t):
+            return SimpleNamespace(
+                function_call=None,
+                thought_signature=None,
+                text=t,
+                thought=None,
+            )
+
+        chunks = [_chunk(_text("hello ")), _chunk(_text("world"))]
+        out = list(translate_gemini_stream_to_events(iter(chunks)))
+        texts = [e for e in out if isinstance(e, TextPart)]
+        assert len(texts) == 1
+        assert texts[0].text == "hello world"
+
 
 def _thought_part(
     *,
