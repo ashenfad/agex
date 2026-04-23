@@ -756,23 +756,6 @@ class TestTerminalTokenStreaming:
         result = output.getvalue()
         assert "ls -la" in result
 
-    def test_terminal_tokens_emitted_during_streaming(self):
-        """Test that terminal tokens are emitted during streaming."""
-        from agex.llm.formats.xml import tokenize_xml_stream
-
-        xml = "<THINKING>Exploring</THINKING><TERMINAL>find . -name '*.py'</TERMINAL>"
-        chunks = list(tokenize_xml_stream([xml]))
-
-        # Should have thinking and terminal tokens
-        token_types = [c.type for c in chunks]
-        assert "thinking" in token_types
-        assert "terminal" in token_types
-
-        # Find the terminal token
-        terminal_tokens = [c for c in chunks if c.type == "terminal" and c.content]
-        assert len(terminal_tokens) == 1
-        assert "find" in terminal_tokens[0].content
-
 
 class TestTerminalStreaming:
     """Tests for terminal event streaming."""

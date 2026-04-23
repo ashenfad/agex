@@ -1,11 +1,9 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from agex.agent.events import TaskStartEvent
 from agex.llm.anthropic_client import Anthropic
 from agex.llm.core import TokenChunk
-from agex.llm.formats import XmlWireFormat
 from tests.agex._emissions import (
     response_code,
     response_thinking,
@@ -21,40 +19,9 @@ def test_anthropic_client_initialization():
         assert client.provider_name == "Anthropic"
 
 
-def test_anthropic_client_complete_stream():
-    """Test that complete_stream properly converts events and streams tokens."""
-    client = Anthropic(api_key="test", wire_format=XmlWireFormat())
-
-    # Mock the anthropic stream
-    mock_stream = MagicMock()
-    # Anthropic stream has a __enter__ that returns an object with text_stream
-    # The pre-filled <TITLE> needs to be closed
-    mock_stream.__enter__.return_value.text_stream = [
-        "Test</TITLE><THINKING>Some thinking</THINKING>",
-        "<PYTHON>pass</PYTHON>",
-    ]
-
-    with patch.object(client.client.messages, "stream", return_value=mock_stream):
-        system = "You are a helpful assistant."
-        events = [
-            TaskStartEvent(
-                agent_name="test", task_name="test", inputs={}, message="Hello"
-            )
-        ]
-
-        # Consume generator
-        chunks = list(client.complete_stream(system, events))
-
-        assert len(chunks) > 0
-        # Should have thinking and python tokens
-        assert any(c.type == "thinking" for c in chunks)
-        assert any(c.type == "python" for c in chunks)
-
-
 def test_anthropic_client_complete_wraps_stream():
     """Test that complete() calls complete_stream and accumulates result."""
     with patch.object(Anthropic, "complete_stream") as mock_stream:
-        # Mock stream tokens
         mock_stream.return_value = [
             TokenChunk(type="title", content="My Title", done=False),
             TokenChunk(type="title", content="", done=True),
@@ -70,55 +37,6 @@ def test_anthropic_client_complete_wraps_stream():
         assert response_title(response) == "My Title"
         assert response_thinking(response) == "Thinking..."
         assert response_code(response) == "pass"
-
-
-@pytest.mark.asyncio
-async def test_anthropic_acomplete_stream():
-    """Test async acomplete_stream method."""
-
-    client = Anthropic(api_key="test", wire_format=XmlWireFormat())
-
-    # Build an async context manager that mimics messages.stream()
-    mock_stream = MagicMock()
-
-    # text_stream needs to be an async iterable
-    async def _async_text_stream():
-        for text in [
-            "Test</TITLE><THINKING>Some thinking</THINKING>",
-            "<PYTHON>pass</PYTHON>",
-        ]:
-            yield text
-
-    mock_stream.text_stream = _async_text_stream()
-    mock_stream.get_final_message = AsyncMock(
-        return_value=MagicMock(usage=MagicMock(input_tokens=10, output_tokens=5))
-    )
-
-    # Wrap as async context manager
-    async_cm = AsyncMock()
-    async_cm.__aenter__ = AsyncMock(return_value=mock_stream)
-    async_cm.__aexit__ = AsyncMock(return_value=False)
-
-    with patch.object(
-        client.async_client.messages,
-        "stream",
-        return_value=async_cm,
-    ):
-        events = [
-            TaskStartEvent(
-                agent_name="test", task_name="test", inputs={}, message="Hello"
-            )
-        ]
-
-        tokens = []
-        async for token in client.acomplete_stream("system", events):
-            tokens.append(token)
-
-        assert len(tokens) > 0
-        assert all(isinstance(t, TokenChunk) for t in tokens)
-        # Should have thinking and python tokens
-        assert any(c.type == "thinking" for c in tokens)
-        assert any(c.type == "python" for c in tokens)
 
 
 @pytest.mark.asyncio

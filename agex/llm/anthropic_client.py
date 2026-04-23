@@ -110,13 +110,8 @@ class Anthropic(LLM):
     def complete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> Iterator[TokenChunk]:
-        """Stream tokens from Anthropic.
-
-        Dispatches on ``wire_format.tool_schema()``:
-
-        - ``None`` → text-stream path (XML-in-text formats).
-        - non-None → provider-native tool-calling path.
-        """
+        """Stream tokens from Anthropic via the provider-native tool-use
+        path."""
         request_kwargs = {**self._kwargs, **kwargs}
         if "max_tokens" not in request_kwargs:
             request_kwargs["max_tokens"] = MAX_TOKENS
@@ -128,47 +123,12 @@ class Anthropic(LLM):
             text=system_with_format,
             cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
         )
-
-        tool_schemas = self._wire_format.tool_schema()
-        if tool_schemas is None:
-            yield from self._stream_text(messages_dicts, system_block, request_kwargs)
-        else:
-            yield from self._stream_tools(
-                messages_dicts, system_block, request_kwargs, tool_schemas
-            )
-
-    def _stream_text(
-        self,
-        messages_dicts: list[dict],
-        system_block: TextBlockParam,
-        request_kwargs: dict,
-    ) -> Iterator[TokenChunk]:
-        conversation_messages = [
-            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
-            for index, msg in enumerate(messages_dicts)
-        ]
-
-        with self.client.messages.stream(
-            model=self._model,
-            system=[system_block],
-            messages=conversation_messages,
-            **request_kwargs,
-        ) as stream:
-
-            def raw_chunks() -> Iterator[str]:
-                for text in stream.text_stream:
-                    yield text
-
-            yield from self._wire_format.parse_text_stream(raw_chunks())
-
-            message = stream.get_final_message()
-            yield TokenChunk(
-                type="thinking",
-                content="",
-                done=True,
-                input_tokens=message.usage.input_tokens,
-                output_tokens=message.usage.output_tokens,
-            )
+        yield from self._stream_tools(
+            messages_dicts,
+            system_block,
+            request_kwargs,
+            self._wire_format.tool_schema(),
+        )
 
     def _stream_tools(
         self,
@@ -225,52 +185,13 @@ class Anthropic(LLM):
             text=system_with_format,
             cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
         )
-
-        tool_schemas = self._wire_format.tool_schema()
-        if tool_schemas is None:
-            async for t in self._astream_text(
-                messages_dicts, system_block, request_kwargs
-            ):
-                yield t
-        else:
-            async for t in self._astream_tools(
-                messages_dicts, system_block, request_kwargs, tool_schemas
-            ):
-                yield t
-
-    async def _astream_text(
-        self,
-        messages_dicts: list[dict],
-        system_block: TextBlockParam,
-        request_kwargs: dict,
-    ) -> AsyncIterator[TokenChunk]:
-        conversation_messages = [
-            _format_message_for_anthropic(index == len(messages_dicts) - 1, msg)
-            for index, msg in enumerate(messages_dicts)
-        ]
-
-        async with self.async_client.messages.stream(
-            model=self._model,
-            system=[system_block],
-            messages=conversation_messages,
-            **request_kwargs,
-        ) as stream:
-
-            async def raw_chunks():
-                async for text in stream.text_stream:
-                    yield text
-
-            async for token in self._wire_format.aparse_text_stream(raw_chunks()):
-                yield token
-
-            message = await stream.get_final_message()
-            yield TokenChunk(
-                type="thinking",
-                content="",
-                done=True,
-                input_tokens=message.usage.input_tokens,
-                output_tokens=message.usage.output_tokens,
-            )
+        async for t in self._astream_tools(
+            messages_dicts,
+            system_block,
+            request_kwargs,
+            self._wire_format.tool_schema(),
+        ):
+            yield t
 
     async def _astream_tools(
         self,

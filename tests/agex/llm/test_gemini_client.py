@@ -1,10 +1,8 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from agex.agent.events import TaskStartEvent
 from agex.llm.core import TokenChunk
-from agex.llm.formats import XmlWireFormat
 from agex.llm.gemini_client import Gemini
 from tests.agex._emissions import (
     response_code,
@@ -28,46 +26,6 @@ def test_gemini_client_custom_model():
     with patch("google.genai.Client"):
         client = Gemini(model="gemini-1.5-pro")
         assert client.model == "gemini-1.5-pro"
-
-
-def test_gemini_client_complete_stream():
-    """Test that complete_stream properly converts events and streams tokens."""
-    with patch("google.genai.Client") as MockClient:
-        mock_models = MockClient.return_value.models
-
-        # Create a mock response stream
-        mock_chunk = MagicMock()
-        mock_chunk.text = (
-            "<TITLE>Test</TITLE><THINKING>Some thinking</THINKING><PYTHON>pass</PYTHON>"
-        )
-        mock_response_stream = [mock_chunk]
-        mock_models.generate_content_stream.return_value = mock_response_stream
-
-        client = Gemini(wire_format=XmlWireFormat())
-        system = "System prompt"
-        events = [
-            TaskStartEvent(
-                agent_name="test", task_name="test", inputs={}, message="Hello"
-            )
-        ]
-
-        # Use complete_stream and consume the generator
-        chunks = list(client.complete_stream(system, events))
-
-        # Verify generate_content_stream was called
-        mock_models.generate_content_stream.assert_called_once()
-        call_kwargs = mock_models.generate_content_stream.call_args.kwargs
-
-        # Verify pre-fill
-        gemini_contents = call_kwargs["contents"]
-        assert gemini_contents[-1].role == "model"
-        assert "<TITLE>" in gemini_contents[-1].parts[0].text
-
-        # Verify system format update
-        config = call_kwargs["config"]
-        assert "<TITLE>" in config.system_instruction
-
-        assert len(chunks) > 0
 
 
 def test_gemini_client_complete_wraps_stream():
@@ -137,39 +95,6 @@ def test_gemini_client_summarize_with_config():
 # =============================================================================
 # Async Tests
 # =============================================================================
-
-
-@pytest.mark.asyncio
-async def test_gemini_acomplete_stream():
-    """Test async acomplete_stream method."""
-    with patch("google.genai.Client") as MockClient:
-        mock_aio = MockClient.return_value.aio
-        mock_models = mock_aio.models
-
-        # Create async iterator for stream
-        async def mock_stream_iter():
-            chunks = [
-                MagicMock(text="<THINKING>"),
-                MagicMock(text="Some thinking</THINKING>"),
-            ]
-            for chunk in chunks:
-                yield chunk
-
-        mock_models.generate_content_stream = AsyncMock(return_value=mock_stream_iter())
-
-        client = Gemini()
-        events = [
-            TaskStartEvent(
-                agent_name="test", task_name="test", inputs={}, message="Hello"
-            )
-        ]
-
-        tokens = []
-        async for token in client.acomplete_stream("system", events):
-            tokens.append(token)
-
-        assert len(tokens) > 0
-        assert all(isinstance(t, TokenChunk) for t in tokens)
 
 
 @pytest.mark.asyncio

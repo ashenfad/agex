@@ -14,7 +14,7 @@ import pytest
 from agex.agent.emissions import FileEditEmission, FileWriteEmission
 from agex.agent.events import TaskStartEvent
 from agex.llm.core import ResponseBuilder
-from agex.llm.formats import ToolUseWireFormat, XmlWireFormat
+from agex.llm.formats import ToolUseWireFormat
 from agex.llm.openai_client import OpenAI
 from agex.llm.pyfetch_openai import PyfetchOpenAI
 from tests.agex._emissions import (
@@ -198,22 +198,6 @@ class TestOpenAIToolUse:
         assert ea.content == "added"
         assert ea.operation == "insert-after"
         assert ea.match_all is True
-
-    def test_xml_format_still_works(self):
-        """Default (no wire_format arg) still uses XML path."""
-        mock_chunk = MagicMock()
-        mock_chunk.usage = None
-        mock_chunk.choices = [MagicMock()]
-        mock_chunk.choices[
-            0
-        ].delta.content = "<THINKING>T</THINKING><PYTHON>pass</PYTHON>"
-        client = OpenAI(api_key="test", wire_format=XmlWireFormat())
-        with patch.object(
-            client.client.chat.completions, "create", return_value=iter([mock_chunk])
-        ) as mock_create:
-            list(client.complete_stream("sys", []))
-            # Tools should NOT be passed in XML mode.
-            assert "tools" not in mock_create.call_args.kwargs
 
 
 # ---------------------------------------------------------------------------

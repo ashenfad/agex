@@ -8,13 +8,13 @@ TokenChunks, and produces a correct :class:`LLMResponse` through
 """
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from agex.agent.emissions import FileEditEmission, FileWriteEmission
 from agex.llm.core import ResponseBuilder
-from agex.llm.formats import ToolUseWireFormat, XmlWireFormat
+from agex.llm.formats import ToolUseWireFormat
 from agex.llm.gemini_client import Gemini
 from tests.agex._emissions import (
     response_code,
@@ -211,27 +211,6 @@ class TestGeminiToolUse:
             has_fns = any(getattr(t, "function_declarations", None) for t in tools)
             assert has_search
             assert has_fns
-
-    def test_xml_format_still_works(self):
-        """Explicit XmlWireFormat — tool-use params NOT set."""
-        with patch("google.genai.Client") as MockClient:
-            mock_models = MockClient.return_value.models
-            mock_chunk = MagicMock()
-            mock_chunk.text = (
-                "<TITLE>t</TITLE><THINKING>T</THINKING><PYTHON>pass</PYTHON>"
-            )
-            mock_chunk.usage_metadata = None
-            mock_models.generate_content_stream.return_value = [mock_chunk]
-
-            client = Gemini(wire_format=XmlWireFormat())
-            list(client.complete_stream("sys", []))
-
-            kwargs = mock_models.generate_content_stream.call_args.kwargs
-            tools = kwargs["config"].tools
-            # No function_declarations in XML mode.
-            if tools is not None:
-                for t in tools:
-                    assert not getattr(t, "function_declarations", None)
 
 
 @pytest.mark.asyncio

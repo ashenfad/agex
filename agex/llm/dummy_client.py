@@ -54,9 +54,6 @@ class Dummy(LLM):
         self.summary_response: str | None = None
         self.summary_exception: Exception | None = None
 
-        # Renderer selection
-        self.renderer = kwargs.get("renderer", "markdown")
-
     def dump_config(self) -> dict:
         """Serialize client configuration for transport."""
         # Serialize LLMResponse objects; skip Exceptions (can't serialize)
@@ -92,19 +89,13 @@ class Dummy(LLM):
         self.all_systems.append(system)
         self.all_events.append(events)
 
-        # Exercise the rendering path
-        renderer_type = getattr(self, "renderer", "markdown")
-
+        # Exercise the rendering path so serialization / image-export
+        # failures surface the same way they would with a real client.
         has_unsupported_images = False
         try:
-            if renderer_type == "xml":
-                from agex.llm.formats.xml import render_events_as_xml
+            from agex.render.events import render_events_as_markdown
 
-                messages_dicts = render_events_as_xml(events)
-            else:
-                from agex.render.events import render_events_as_markdown
-
-                messages_dicts = render_events_as_markdown(events)
+            messages_dicts = render_events_as_markdown(events)
 
             # Store rendered messages for inspection
             self.all_rendered_messages = getattr(self, "all_rendered_messages", [])

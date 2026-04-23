@@ -1,12 +1,10 @@
-"""Tests for ChapterEvent rendering in markdown and XML formats."""
+"""Tests for ChapterEvent markdown rendering."""
 
 from agex.agent.events import (
     ChapterEvent,
-    FailEvent,
     SuccessEvent,
     TaskStartEvent,
 )
-from agex.llm.formats.xml import render_events_as_xml
 from agex.render.events import render_events_as_markdown
 from agex.render.primitives import render_chapter
 from tests.agex._emissions import make_action_event
@@ -74,32 +72,3 @@ class TestChapterEventMarkdownRendering:
         assert messages[0]["role"] == "assistant"
         assert "Phase 1" in messages[0]["content"]
         assert "Phase 2" in messages[0]["content"]
-
-
-class TestChapterEventXMLRendering:
-    def test_chapter_rendered_as_assistant_message(self):
-        events = [
-            ChapterEvent(
-                agent_name="t",
-                name="Exploration",
-                message="Found stuff",
-            )
-        ]
-        messages = render_events_as_xml(events)
-        assert len(messages) == 1
-        assert messages[0]["role"] == "assistant"
-        assert "Exploration" in messages[0]["content"]
-
-    def test_chapter_in_xml_sequence(self):
-        events = [
-            ChapterEvent(agent_name="t", name="Setup", message="Done"),
-            make_action_event(
-                agent_name="t", thinking="think", code="x = 1", title="Act"
-            ),
-            FailEvent(agent_name="t", message="oops"),
-        ]
-        messages = render_events_as_xml(events)
-        # Chapter+Action collapsed(assistant); FailEvent not rendered
-        assert len(messages) == 1
-        assert messages[0]["role"] == "assistant"
-        assert "Setup" in messages[0]["content"]

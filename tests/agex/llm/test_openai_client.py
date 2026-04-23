@@ -1,10 +1,8 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from agex.agent.events import TaskStartEvent
 from agex.llm.core import TokenChunk
-from agex.llm.formats import XmlWireFormat
 from agex.llm.openai_client import OpenAI
 from tests.agex._emissions import (
     response_code,
@@ -58,36 +56,6 @@ def test_reasoning_effort_explicit_override_wins():
     assert create_mock.call_args.kwargs.get("reasoning_effort") == "high"
 
 
-def test_openai_client_complete_stream():
-    """Test that complete_stream properly converts events and streams tokens."""
-    client = OpenAI(api_key="test", wire_format=XmlWireFormat())
-
-    # Mock the openai stream
-    mock_chunk = MagicMock()
-    mock_chunk.choices = [MagicMock()]
-    mock_chunk.choices[
-        0
-    ].delta.content = "<THINKING>Some thinking</THINKING><PYTHON>pass</PYTHON>"
-    mock_stream = [mock_chunk]
-
-    with patch.object(
-        client.client.chat.completions, "create", return_value=mock_stream
-    ):
-        system = "You are a helpful assistant."
-        events = [
-            TaskStartEvent(
-                agent_name="test", task_name="test", inputs={}, message="Hello"
-            )
-        ]
-
-        # Consume generator
-        chunks = list(client.complete_stream(system, events))
-
-        assert len(chunks) > 0
-        assert any(c.type == "thinking" for c in chunks)
-        assert any(c.type == "python" for c in chunks)
-
-
 def test_openai_client_complete_wraps_stream():
     """Test that complete() calls complete_stream and accumulates result."""
     with patch.object(OpenAI, "complete_stream") as mock_stream:
@@ -107,38 +75,6 @@ def test_openai_client_complete_wraps_stream():
         assert response_title(response) == "My Title"
         assert response_thinking(response) == "Thinking..."
         assert response_code(response) == "pass"
-
-
-@pytest.mark.asyncio
-async def test_openai_acomplete_stream():
-    """Test async acomplete_stream method."""
-    client = OpenAI(api_key="test")
-
-    # Mock the async stream
-    mock_chunk = MagicMock()
-    mock_chunk.choices = [MagicMock()]
-    mock_chunk.choices[0].delta.content = "<THINKING>Thinking</THINKING>"
-
-    async def mock_async_iter():
-        yield mock_chunk
-
-    with patch.object(
-        client.async_client.chat.completions,
-        "create",
-        AsyncMock(return_value=mock_async_iter()),
-    ):
-        events = [
-            TaskStartEvent(
-                agent_name="test", task_name="test", inputs={}, message="Hello"
-            )
-        ]
-
-        tokens = []
-        async for token in client.acomplete_stream("system", events):
-            tokens.append(token)
-
-        assert len(tokens) > 0
-        assert all(isinstance(t, TokenChunk) for t in tokens)
 
 
 @pytest.mark.asyncio

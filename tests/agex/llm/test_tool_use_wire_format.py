@@ -1,15 +1,12 @@
 """Conformance tests for :class:`ToolUseWireFormat` as a
 :class:`WireFormat` Protocol implementation."""
 
-import pytest
-
 from agex.llm.formats import (
     ToolCallArgDelta,
     ToolCallEnd,
     ToolCallStart,
     ToolUseWireFormat,
     WireFormat,
-    XmlWireFormat,
 )
 from agex.llm.formats.tool_use import TOOL_PYTHON
 
@@ -22,7 +19,6 @@ def test_satisfies_wire_format_protocol():
 def test_schema_returns_all_four_tools():
     fmt = ToolUseWireFormat()
     schema = fmt.tool_schema()
-    assert schema is not None
     names = {s["name"] for s in schema}
     assert names == {
         "python_action",
@@ -81,19 +77,6 @@ class TestNativeThinkingFlag:
         native_primer = ToolUseWireFormat(native_thinking=True).format_primer()
         assert native_primer.startswith(default_primer)
         assert len(native_primer) > len(default_primer)
-
-
-def test_parse_text_stream_raises_not_implemented():
-    fmt = ToolUseWireFormat()
-    with pytest.raises(NotImplementedError):
-        list(fmt.parse_text_stream(iter(["<PYTHON>x</PYTHON>"])))
-
-
-def test_xml_format_tool_stream_raises_not_implemented():
-    """Symmetric check: XmlWireFormat also refuses the other path."""
-    fmt = XmlWireFormat()
-    with pytest.raises(NotImplementedError):
-        list(fmt.parse_tool_stream(iter([])))
 
 
 def test_parse_tool_stream_end_to_end():
