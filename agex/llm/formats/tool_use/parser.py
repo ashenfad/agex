@@ -13,12 +13,17 @@ Two cadences:
   as characters arrive and a closing ``TokenChunk`` when the value
   finishes.  All chunks for a given call share its ``emission_index``.
 
-* **File tools** (``write_file`` / ``edit_file``) buffer the whole
-  argument JSON until ``ToolCallEnd`` and then emit a single
-  ``TokenChunk(type="emission", emission=<FileWriteEmission | FileEditEmission>,
-  done=True)``.  The builder just slots the prebuilt emission in place.
-  File contents don't need live streaming for a usable UI, and
-  buffering avoids the content-before-path ordering hazard.
+* **File tools** (``write_file`` / ``edit_file``) stream their string
+  args (``path``, ``content`` / ``search`` / ``replace`` /
+  ``insert_after`` / ``insert_before``) as ``file_path`` /
+  ``file_search`` / ``file_content`` ``TokenChunk``\\ s so callers
+  watching the stream can see what the model is writing.  The same
+  bytes are also buffered so that at ``ToolCallEnd`` the parser can
+  decode the full JSON (including non-string fields like ``mode`` and
+  ``match_all``) and emit the authoritative
+  ``TokenChunk(type="emission", emission=<FileWriteEmission |
+  FileEditEmission>, done=True)`` that the :class:`EmissionsBuilder`
+  slots into the final :class:`LLMResponse`.
 """
 
 import json
@@ -39,6 +44,7 @@ from .schemas import (
     ACTION_TOOLS,
     TOOL_EDIT_FILE,
     TOOL_PYTHON,
+    TOOL_TERMINAL,
     TOOL_WRITE_FILE,
 )
 
@@ -61,10 +67,27 @@ _TERMINAL_KEY_MAP = {
     "commands": "terminal",
 }
 
+# File tool string args stream as UI-only ``file_*`` tokens.  All three
+# edit-content keys (``replace``, ``insert_after``, ``insert_before``)
+# route to ``file_content`` — the operation itself is resolved at
+# finalize time from whichever key appeared.
+_WRITE_FILE_KEY_MAP = {
+    "path": "file_path",
+    "content": "file_content",
+}
+
+_EDIT_FILE_KEY_MAP = {
+    "path": "file_path",
+    "search": "file_search",
+    "replace": "file_content",
+    "insert_after": "file_content",
+    "insert_before": "file_content",
+}
+
 
 class _CallState:
-    """Per-tool-call state: streaming extractor for action tools, raw
-    buffer for file tools.
+    """Per-tool-call state: streaming extractor plus (for file tools) a
+    raw buffer so the full JSON can be re-parsed at finalize time.
 
     ``emission_index`` is assigned at :class:`ToolCallStart` time from a
     monotonic counter owned by the parser; all tokens emitted for this
@@ -90,31 +113,37 @@ class _CallState:
         self.tool_name = tool_name
         self.emission_index = emission_index
         self.signature = signature
-        self._extractor: JsonStringExtractor | None = None
-        self._key_map: dict[str, str] | None = None
-        self._raw_buf: list[str] | None = None
-        if tool_name in ACTION_TOOLS:
-            self._extractor = JsonStringExtractor()
-            self._key_map = (
-                _PYTHON_KEY_MAP if tool_name == TOOL_PYTHON else _TERMINAL_KEY_MAP
-            )
+        self._extractor = JsonStringExtractor()
+        if tool_name == TOOL_PYTHON:
+            self._key_map: dict[str, str] = _PYTHON_KEY_MAP
+        elif tool_name == TOOL_TERMINAL:
+            self._key_map = _TERMINAL_KEY_MAP
+        elif tool_name == TOOL_WRITE_FILE:
+            self._key_map = _WRITE_FILE_KEY_MAP
+        elif tool_name == TOOL_EDIT_FILE:
+            self._key_map = _EDIT_FILE_KEY_MAP
         else:
-            self._raw_buf = []
+            self._key_map = {}
+        # File tools also need the raw JSON at finalize time so
+        # non-string fields (mode, match_all) and operation selection
+        # survive into the built emission.
+        self._raw_buf: list[str] | None = (
+            [] if tool_name in (TOOL_WRITE_FILE, TOOL_EDIT_FILE) else None
+        )
 
     def feed_args(self, chunk: str) -> Iterator[TokenChunk]:
-        if self._extractor is not None and self._key_map is not None:
-            for delta in self._extractor.feed(chunk):
-                token_type = self._key_map.get(delta.key)
-                if token_type is None:
-                    continue
-                yield TokenChunk(
-                    type=token_type,
-                    content=delta.content,
-                    done=delta.done,
-                    emission_index=self.emission_index,
-                )
-        elif self._raw_buf is not None:
+        if self._raw_buf is not None:
             self._raw_buf.append(chunk)
+        for delta in self._extractor.feed(chunk):
+            token_type = self._key_map.get(delta.key)
+            if token_type is None:
+                continue
+            yield TokenChunk(
+                type=token_type,
+                content=delta.content,
+                done=delta.done,
+                emission_index=self.emission_index,
+            )
 
     def finalize(self) -> Iterator[TokenChunk]:
         if self._raw_buf is None:
