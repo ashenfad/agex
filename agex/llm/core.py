@@ -300,11 +300,6 @@ class EmissionsBuilder:
         )
 
 
-# Back-compat alias for callers that still import ``ResponseBuilder``.
-# TODO(Phase 3 cleanup): remove once all imports migrate.
-ResponseBuilder = EmissionsBuilder
-
-
 class LLM(ABC):
     """
     Abstract base class for LLM providers.

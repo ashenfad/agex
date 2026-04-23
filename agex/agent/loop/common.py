@@ -38,7 +38,6 @@ from agex.eval.objects import PrintAction
 from agex.llm.core import (
     EmissionsBuilder,
     LLMResponse,
-    ResponseBuilder,
     ResponseParseError,
     StreamToken,
 )
@@ -79,7 +78,7 @@ from .file_editing import (
 )
 from .state_helpers import (
     check_cancellation,
-    check_for_task_call,
+    check_for_terminator_call,
     initialize_exec_state,
     yield_new_events,
 )
@@ -101,7 +100,7 @@ __all__ = [
     "execute_terminal",
     # State helpers
     "initialize_exec_state",
-    "check_for_task_call",
+    "check_for_terminator_call",
     "strip_namespace_prefix",
     "yield_new_events",
     "maybe_file_event",
@@ -111,7 +110,6 @@ __all__ = [
     "apply_file_edit",
     "apply_optimistic_file_actions",
     "safe_commit",
-    "ResponseBuilder",
     "EmissionsBuilder",
     # Re-exports
     "ValidationError",

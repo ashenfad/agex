@@ -111,9 +111,9 @@ def check_for_terminator_call(code: str) -> bool:
     """Check if code contains any terminator function calls.
 
     Used to decide whether to nudge the agent with a guidance reminder
-    when its Python returns without signaling completion.  With
-    ``task_continue`` gone, returning normally is the implicit
-    continue, so the reminder is purely advisory.
+    when its Python returns without signaling completion.  Returning
+    normally is the implicit continue, so the reminder is purely
+    advisory.
     """
     if not code or not code.strip():
         return False
@@ -125,10 +125,6 @@ def check_for_terminator_call(code: str) -> bool:
             "task_clarify(",
         ]
     )
-
-
-# Back-compat alias; callers still import the old name.
-check_for_task_call = check_for_terminator_call
 
 
 def yield_new_events(

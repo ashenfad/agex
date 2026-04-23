@@ -3,7 +3,7 @@
 Mocks the Anthropic streaming API to return canned event sequences and
 verifies that each client dispatches to the tool-use path, yields
 TokenChunks, and produces a correct :class:`LLMResponse` when run
-through :class:`ResponseBuilder`.
+through :class:`EmissionsBuilder`.
 """
 
 import json
@@ -13,7 +13,7 @@ import pytest
 
 from agex.agent.emissions import FileEditEmission, FileWriteEmission
 from agex.llm.anthropic_client import Anthropic
-from agex.llm.core import ResponseBuilder
+from agex.llm.core import EmissionsBuilder
 from agex.llm.formats import ToolUseWireFormat
 from agex.llm.pyfetch_anthropic import PyfetchAnthropic
 from tests.agex._emissions import (
@@ -102,7 +102,7 @@ class TestAnthropicToolUse:
         assert all("input_schema" in t for t in tools)
 
         # Round-trip to LLMResponse.
-        builder = ResponseBuilder(agent_name="a")
+        builder = EmissionsBuilder(agent_name="a")
         for t in tokens:
             builder.process_token(t)
         resp = builder.build()
@@ -169,7 +169,7 @@ class TestAnthropicToolUse:
         client.client.messages.stream = MagicMock(return_value=_mk_cm(events))
 
         tokens = list(client.complete_stream("sys", []))
-        builder = ResponseBuilder(agent_name="a")
+        builder = EmissionsBuilder(agent_name="a")
         for t in tokens:
             builder.process_token(t)
         resp = builder.build()
@@ -244,7 +244,7 @@ class TestAnthropicToolUse:
         client.client.messages.stream = MagicMock(return_value=_mk_cm(events))
 
         tokens = list(client.complete_stream("sys", []))
-        builder = ResponseBuilder(agent_name="a")
+        builder = EmissionsBuilder(agent_name="a")
         for t in tokens:
             builder.process_token(t)
         resp = builder.build()
@@ -335,7 +335,7 @@ async def test_pyfetch_anthropic_tool_use():
     assert "tools" in body
     assert all("input_schema" in t for t in body["tools"])
 
-    builder = ResponseBuilder(agent_name="a")
+    builder = EmissionsBuilder(agent_name="a")
     for t in tokens:
         builder.process_token(t)
     resp = builder.build()

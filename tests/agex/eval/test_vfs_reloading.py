@@ -2,12 +2,12 @@ import pytest
 
 from agex import (
     Agent,
-    FileAction,
     clear_agent_registry,
     connect_fs,
     connect_state,
     pprint_events,
 )
+from agex.agent.emissions import FileWriteEmission
 from agex.llm import Dummy
 from tests.agex._emissions import make_response
 
@@ -30,7 +30,7 @@ def test_vfs_module_reloading():
     agent.llm.responses = [
         make_response(
             thinking="Create utils v1",
-            file_actions=[FileAction(path="utils.py", content="VAL = 1")],
+            file_actions=[FileWriteEmission(path="utils.py", content="VAL = 1")],
             code="import utils\ntask_success(utils.VAL)",
         )
     ]
@@ -46,7 +46,7 @@ def test_vfs_module_reloading():
     agent.llm.responses = [
         make_response(
             thinking="Update utils to v2",
-            file_actions=[FileAction(path="utils.py", content="VAL = 2")],
+            file_actions=[FileWriteEmission(path="utils.py", content="VAL = 2")],
             code="import utils\ntask_success(utils.VAL)",
         )
     ]

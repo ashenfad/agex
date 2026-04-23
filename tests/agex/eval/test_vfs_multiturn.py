@@ -2,12 +2,12 @@ import pytest
 
 from agex import (
     Agent,
-    FileAction,
     clear_agent_registry,
     connect_fs,
     connect_state,
     pprint_events,
 )
+from agex.agent.emissions import FileWriteEmission
 from agex.llm import Dummy
 from tests.agex._emissions import make_response
 
@@ -32,7 +32,7 @@ def test_vfs_import_multiturn(tmp_path):
     agent1.llm.responses = [
         make_response(
             thinking="I will create utils.py",
-            file_actions=[FileAction(path="utils.py", content="VAL = 42")],
+            file_actions=[FileWriteEmission(path="utils.py", content="VAL = 42")],
             code="import utils\ntask_success(utils.VAL)",
         )
     ]
@@ -77,8 +77,8 @@ def test_vfs_package_import_multiturn(tmp_path):
         make_response(
             thinking="I will create a package",
             file_actions=[
-                FileAction(path="pkg/__init__.py", content="X = 1"),
-                FileAction(path="pkg/mod.py", content="Y = 2"),
+                FileWriteEmission(path="pkg/__init__.py", content="X = 1"),
+                FileWriteEmission(path="pkg/mod.py", content="Y = 2"),
             ],
             code="import pkg.mod\ntask_success((pkg.X, pkg.mod.Y))",
         )
@@ -132,9 +132,9 @@ def test_vfs_from_parent_import_submodule_with_function(tmp_path):
         make_response(
             thinking="Creating package structure",
             file_actions=[
-                FileAction(path="app/__init__.py", content=""),
-                FileAction(path="app/logic/__init__.py", content=""),
-                FileAction(
+                FileWriteEmission(path="app/__init__.py", content=""),
+                FileWriteEmission(path="app/logic/__init__.py", content=""),
+                FileWriteEmission(
                     path="app/logic/providers.py",
                     content="def get_data():\n    return 'hello from providers'",
                 ),
@@ -183,8 +183,8 @@ def test_vfs_both_import_forms_equivalent(tmp_path):
         make_response(
             thinking="Creating module",
             file_actions=[
-                FileAction(path="myapp/__init__.py", content=""),
-                FileAction(
+                FileWriteEmission(path="myapp/__init__.py", content=""),
+                FileWriteEmission(
                     path="myapp/utils.py",
                     content="def helper():\n    return 42",
                 ),
@@ -251,7 +251,7 @@ def test_vfs_import_multiturn_live():
     agent.llm.responses = [
         make_response(
             thinking="I will create utils.py",
-            file_actions=[FileAction(path="utils.py", content="VAL = 42")],
+            file_actions=[FileWriteEmission(path="utils.py", content="VAL = 42")],
             code="import utils\ntask_success(utils.VAL)",
         )
     ]
