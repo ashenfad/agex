@@ -55,4 +55,23 @@ class ToolCallEnd:
     call_id: str
 
 
-ToolCallEvent = Union[ToolCallStart, ToolCallArgDelta, ToolCallEnd]
+@dataclass(frozen=True, slots=True)
+class ThinkingPart:
+    """A native-thinking ``Part`` delivered alongside tool calls.
+
+    Gemini 3 emits thought parts that carry a ``thought_signature``
+    even when no function_call accompanies the Part.  Gemini's rules
+    require such signatures to be replayed *at the same position* on
+    subsequent turns (docs: "if it was returned in a thought part, it
+    must be returned in a thought part").  The parser materializes
+    these as :class:`~agex.agent.emissions.ThinkingEmission`\\ s so
+    they ride through the emission list and the renderer can put them
+    back as thought parts when building the next request.
+    """
+
+    signature: bytes | None = None
+    text: str | None = None
+    redacted: bool = False
+
+
+ToolCallEvent = Union[ToolCallStart, ToolCallArgDelta, ToolCallEnd, ThinkingPart]

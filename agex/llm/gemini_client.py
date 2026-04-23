@@ -211,6 +211,16 @@ class Gemini(LLM):
             )
         )
 
+        # Surface signed thought parts so the adapter can capture
+        # thought_signatures — Gemini 3 requires them to be replayed
+        # at the same position on subsequent turns.  User-supplied
+        # ``thinking_config`` takes precedence if present.
+        if "thinking_config" not in request_kwargs:
+            request_kwargs = {
+                **request_kwargs,
+                "thinking_config": types.ThinkingConfig(include_thoughts=True),
+            }
+
         config = types.GenerateContentConfig(
             system_instruction=system_with_format,
             tools=tools,
@@ -341,6 +351,16 @@ class Gemini(LLM):
                 )
             )
         )
+
+        # Surface signed thought parts so the adapter can capture
+        # thought_signatures — Gemini 3 requires them to be replayed
+        # at the same position on subsequent turns.  User-supplied
+        # ``thinking_config`` takes precedence if present.
+        if "thinking_config" not in request_kwargs:
+            request_kwargs = {
+                **request_kwargs,
+                "thinking_config": types.ThinkingConfig(include_thoughts=True),
+            }
 
         config = types.GenerateContentConfig(
             system_instruction=system_with_format,

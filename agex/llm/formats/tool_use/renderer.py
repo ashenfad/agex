@@ -327,11 +327,25 @@ def render_events_as_tool_use(events: List[Event]) -> List[dict]:
                             {"type": "text", "text": emission.text}
                         )
                 elif isinstance(emission, ThinkingEmission):
-                    # Phase 2: render narrated thinking as text with a
-                    # visible tag.  Phase 4 will switch to provider
-                    # thinking blocks (with signature round-trip) for
-                    # native-thinking providers.
-                    if emission.text and not emission.redacted:
+                    # Native-thinking providers (Gemini 3, Claude 4.6+)
+                    # expect signed thought parts to round-trip at
+                    # their original position.  Emit a ``thinking``
+                    # block so the provider-specific translator can
+                    # reconstruct the right shape.  Translators that
+                    # don't understand ``thinking`` blocks can fall
+                    # back to ignoring them or rendering as text.
+                    if emission.signature is not None or emission.redacted:
+                        block: dict[str, Any] = {"type": "thinking"}
+                        if emission.text:
+                            block["text"] = emission.text
+                        if emission.signature is not None:
+                            block["signature"] = emission.signature
+                        if emission.redacted:
+                            block["redacted"] = True
+                        assistant_content.append(block)
+                    elif emission.text:
+                        # Unsigned narration — fall back to a plain
+                        # text block with a visible tag.
                         assistant_content.append(
                             {"type": "text", "text": f"[thinking] {emission.text}"}
                         )
