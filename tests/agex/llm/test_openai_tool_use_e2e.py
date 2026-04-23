@@ -376,7 +376,8 @@ async def test_pyfetch_openai_logs_cache_diagnostics(capsys):
     # consecutive turns can be eyeballed.
     assert "cached_tokens=11915" in line
     assert "prompt_tokens=16967" in line
-    # And the prefix hash so two requests can be diff'd.
+    # And the per-position hashes so two requests can be diff'd to find
+    # where (if anywhere) drift starts.
     assert "sys_hash=" in line
     assert "prefix_hash=" in line
 
