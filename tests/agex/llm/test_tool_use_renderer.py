@@ -293,6 +293,36 @@ class TestObservationPairing:
         assert content.startswith("terminal_action: output")
         assert "file1" in content
 
+    def test_print_large_non_string_arg_not_truncated(self):
+        """Regression: ``print(big_list)`` previously rendered through
+        ``render_value`` (default 2048-char budget) which silently
+        chopped the LLM's view of large printed values.  The studio
+        UI used ``str()`` directly and showed everything, so users saw
+        the full output in history but the agent's next-turn observation
+        was truncated.  Must use ``str()`` semantics, matching ``print()``."""
+        from agex.eval.objects import PrintAction
+
+        # Build a list whose str() is well over 2048 chars.
+        big_list = [{"i": i, "label": f"action_{i}", "ok": True} for i in range(200)]
+        big_str = str(big_list)
+        assert len(big_str) > 4000  # sanity: definitely over the old budget
+
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="print(test_app(...))",
+            ),
+            OutputEvent(agent_name="a", parts=[PrintAction((big_list,))]),
+        ]
+        msgs = render_events_as_tool_use(events)
+        content = _only(msgs[-1]["content"], "tool_result")[0]["content"]
+        # The full str() of the list should appear, including the very
+        # last entry — the failure mode was "trailing items lost."
+        assert "action_199" in content
+        assert "action_0" in content
+
     def test_print_string_args_unwrapped_no_repr_quotes(self):
         """Regression: previously ``PrintAction(('hello',))`` rendered as
         ``'hello'`` (repr-wrapped) in tool_result text, producing odd
