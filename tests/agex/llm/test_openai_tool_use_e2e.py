@@ -296,11 +296,13 @@ async def test_pyfetch_openai_tool_use():
 
 
 @pytest.mark.asyncio
-async def test_pyfetch_openai_logs_cache_diagnostics(caplog):
-    """Per-request the client emits one log line tagged
+async def test_pyfetch_openai_logs_cache_diagnostics(capsys):
+    """Per-request the client emits one line tagged
     ``[agex.llm.cache]`` carrying the prefix hashes and the cached/
     prompt token counts the provider reported. Lets us diff
-    consecutive turns to spot prefix drift vs. provider-side misses."""
+    consecutive turns to spot prefix drift vs. provider-side misses.
+    The line goes to stdout (not ``logging``) so Pyodide routes it
+    to the browser console."""
     args_json = json.dumps({"title": "t", "thinking": "T", "code": "x"})
     sse_lines = [
         "data: "
@@ -363,20 +365,20 @@ async def test_pyfetch_openai_logs_cache_diagnostics(caplog):
         wire_format=ToolUseWireFormat(),
     )
 
-    with caplog.at_level("INFO", logger="agex.llm.pyfetch_openai"):
-        async for _ in client.acomplete_stream("sys", []):
-            pass
+    async for _ in client.acomplete_stream("sys", []):
+        pass
 
-    cache_logs = [r for r in caplog.records if "[agex.llm.cache]" in r.getMessage()]
-    assert len(cache_logs) == 1
-    msg = cache_logs[0].getMessage()
+    captured = capsys.readouterr().out
+    cache_lines = [ln for ln in captured.splitlines() if "[agex.llm.cache]" in ln]
+    assert len(cache_lines) == 1
+    line = cache_lines[0]
     # The diagnostic must surface the actually-reported cache hit so
     # consecutive turns can be eyeballed.
-    assert "cached_tokens=11915" in msg
-    assert "prompt_tokens=16967" in msg
+    assert "cached_tokens=11915" in line
+    assert "prompt_tokens=16967" in line
     # And the prefix hash so two requests can be diff'd.
-    assert "sys_hash=" in msg
-    assert "prefix_hash=" in msg
+    assert "sys_hash=" in line
+    assert "prefix_hash=" in line
 
 
 @pytest.mark.asyncio

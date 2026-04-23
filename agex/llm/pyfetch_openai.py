@@ -8,7 +8,6 @@ enabling direct browser-to-API calls without a server proxy.
 import asyncio
 import hashlib
 import json
-import logging
 from typing import Any, AsyncIterator, Iterator, List
 
 from agex.agent.events import Event
@@ -21,8 +20,6 @@ from agex.llm.formats.tool_use.openai_adapter import (
     translate_messages_to_openai,
 )
 
-logger = logging.getLogger(__name__)
-
 
 def _hash12(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()[:12]
@@ -31,12 +28,17 @@ def _hash12(s: str) -> str:
 def _log_cache_diagnostics(
     body: dict, cache_idx_in_conv: int, usage_holder: dict
 ) -> None:
-    """Emit one log line per request comparing the prefix shape against
+    """Emit one line per request comparing the prefix shape against
     actual cache hits.  Lets us spot prefix drift between consecutive
     turns: if ``sys_hash`` and ``prefix_hash`` are stable across two
-    requests but ``cached`` collapses to 0, the issue is downstream
-    (provider routing, marker miss).  If hashes differ, our content is
-    drifting.
+    requests but ``cached_tokens`` collapses to 0, the issue is
+    downstream (provider routing, marker miss).  If hashes differ,
+    our content is drifting.
+
+    Uses ``print`` rather than the ``logging`` module so the line
+    actually surfaces in Pyodide's browser console — Python's
+    ``logger.info`` is a silent no-op without a handler, and the
+    pyfetch clients are deployed into pages that don't configure one.
     """
     msgs = body.get("messages", [])
     sys_hash = _hash12(json.dumps(msgs[0], sort_keys=True)) if msgs else "<none>"
@@ -48,16 +50,12 @@ def _log_cache_diagnostics(
     prompt = usage_holder.get("input_tokens")
     cached = usage_holder.get("cached_tokens")
     output = usage_holder.get("output_tokens")
-    logger.info(
-        "[agex.llm.cache] msgs=%d sys_hash=%s prefix_hash=%s "
-        "prefix_chars=%d prompt_tokens=%s cached_tokens=%s output_tokens=%s",
-        len(msgs),
-        sys_hash,
-        prefix_hash,
-        len(prefix_str),
-        prompt,
-        cached,
-        output,
+    print(
+        f"[agex.llm.cache] msgs={len(msgs)} "
+        f"sys_hash={sys_hash} prefix_hash={prefix_hash} "
+        f"prefix_chars={len(prefix_str)} "
+        f"prompt_tokens={prompt} cached_tokens={cached} "
+        f"output_tokens={output}"
     )
 
 
