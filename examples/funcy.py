@@ -10,7 +10,7 @@ https://asciinema.org/a/ZqYiNf6AJoskeVkcjPQAalgba
 import math
 from typing import Callable
 
-from agex import Agent, connect_llm, connect_state, pprint_events, pprint_tokens
+from agex import Agent, connect_llm, connect_state, pprint_events
 
 funcy_agent = Agent(
     name="funcy",
@@ -34,7 +34,7 @@ def main():
     print("\nPROMPT:", "a fn for the first prime larger than a given number.")
     fn = fn_builder(
         "a fn for the first prime larger than a given number.",
-        on_token=pprint_tokens,
+        # on_token=pprint_tokens,
         on_event=pprint_events,
     )
 
@@ -70,7 +70,11 @@ def main():
 
     # agent remembers existing conversation context and builds related function
     print("\nPROMPT:", "Okay, now make it the next lower prime.")
-    fn = fn_builder("Okay, now make it the next lower prime.", on_token=pprint_tokens)
+    fn = fn_builder(
+        "Okay, now make it the next lower prime.",
+        # on_token=pprint_tokens,
+        on_event=pprint_events,
+    )
     print("fn(500000) =", fn(500000), "\n")
     # 499979
 

@@ -247,12 +247,21 @@ def render_events_as_tool_use(events: List[Event]) -> List[dict]:
 
     def _build_tool_result(emission_id: str, tool_name: str) -> dict:
         synth = synth_by_emission.get(emission_id)
-        if synth is not None:
-            return _tool_result_block(emission_id, synth)
-
         text_bits, image_parts = obs_by_emission.get(emission_id, ([], []))
         is_terminator = emission_id == terminator_emission_id
         term_text = terminator_text if is_terminator else None
+
+        # File emissions record a synthesized "wrote X" / "edit applied"
+        # success line because the VFS apply itself produces no output
+        # on the happy path.  But a FAILED apply (e.g. edit_file with a
+        # non-matching search) logs its error via create_error_output,
+        # which lands in ``obs_by_emission[emission_id]``.  Using the
+        # synth blindly when observations exist would tell the agent
+        # the file was written even though it wasn't — so the synth
+        # only stands in when there are genuinely no observations.
+        if synth is not None and not text_bits and not image_parts:
+            content = synth if not term_text else f"{synth}\n{term_text}"
+            return _tool_result_block(emission_id, content)
 
         text_body = "\n".join(b for b in text_bits if b)
 

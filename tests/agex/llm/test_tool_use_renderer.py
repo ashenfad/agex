@@ -441,6 +441,63 @@ class TestObservationPairing:
             "edit_file: insert-after applied to /x.py (match_all)"
         )
 
+    def test_file_edit_error_surfaced_instead_of_synth(self):
+        """When an edit_file fails (search not matched), the loop
+        emits an error OutputEvent stamped with the emission_id.  The
+        renderer must surface that error in the tool_result rather
+        than the synthesized "edit_file: replace applied" success
+        line — otherwise the agent believes the edit succeeded and
+        proceeds with broken state."""
+        action = ActionEvent(
+            agent_name="a",
+            emissions=[
+                FileEditEmission(
+                    path="/x.py",
+                    search="nonexistent",
+                    content="new",
+                    operation="replace",
+                ),
+            ],
+        )
+        events = [
+            action,
+            OutputEvent(
+                agent_name="a",
+                parts=[
+                    PrintAction(
+                        args=("💥 ResponseParseError: EDIT search not found in /x.py",),
+                        emission_id="em_0_0",
+                    )
+                ],
+            ),
+        ]
+        msgs = render_events_as_tool_use(events)
+        result = _only(msgs[-1]["content"], "tool_result")[0]
+        assert "applied to /x.py" not in result["content"]
+        assert "EDIT search not found" in result["content"]
+
+    def test_file_write_error_surfaced_instead_of_synth(self):
+        action = ActionEvent(
+            agent_name="a",
+            emissions=[FileWriteEmission(path="/x.py", content="X")],
+        )
+        events = [
+            action,
+            OutputEvent(
+                agent_name="a",
+                parts=[
+                    PrintAction(
+                        args=("💥 OSError: read-only filesystem",),
+                        emission_id="em_0_0",
+                    )
+                ],
+            ),
+        ]
+        msgs = render_events_as_tool_use(events)
+        result = _only(msgs[-1]["content"], "tool_result")[0]
+        assert "wrote /x.py" not in result["content"]
+        assert "read-only filesystem" in result["content"]
+
     def test_success_event_result_prefixed_with_tool_name(self):
         events = [
             _python_action(code="task_success(42)"),
