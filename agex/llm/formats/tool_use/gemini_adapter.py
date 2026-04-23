@@ -215,18 +215,10 @@ def _call_id_for(fc: Any, counter: int) -> str:
 
 
 def _emit_function_call(
+    call_id: str,
     fc: Any,
     signature: bytes | None,
-    seen_ids: set[str],
-    counter_cell: list[int],
 ) -> Iterator[ToolCallEvent]:
-    call_id = _call_id_for(fc, counter_cell[0])
-    if call_id in seen_ids:
-        # Gemini sometimes re-yields the same call across chunks; ignore
-        # once we've already emitted Start/Delta/End for it.
-        return
-    seen_ids.add(call_id)
-    counter_cell[0] += 1
     name = getattr(fc, "name", None) or ""
     args = getattr(fc, "args", None) or {}
     yield ToolCallStart(call_id=call_id, tool_name=name, signature=signature)
@@ -282,6 +274,68 @@ def _maybe_emit_thinking(
     yield ThinkingPart(signature=sig, text=text, redacted=bool(is_thought and not text))
 
 
+def _accumulate_part(
+    kind: str,
+    body: Any,
+    sig: bytes | None,
+    text: str | None,
+    is_thought: bool,
+    pending: list[dict],
+    fc_index_by_id: dict[str, int],
+    counter_cell: list[int],
+) -> None:
+    """Record one walked Part into the pending buffer.
+
+    Function_call parts dedup by call_id: the first sighting claims a
+    slot in ``pending`` (preserving turn order); later sightings for
+    the same id update the signature (Gemini often sends the
+    ``thought_signature`` on a later streaming chunk than the one that
+    first surfaced the function_call).  Thought parts append a new
+    entry each time — their order is their whole payload, so we never
+    merge them.
+    """
+    if kind == "function_call":
+        call_id = _call_id_for(body, counter_cell[0])
+        existing = fc_index_by_id.get(call_id)
+        if existing is None:
+            counter_cell[0] += 1
+            fc_index_by_id[call_id] = len(pending)
+            pending.append(
+                {
+                    "kind": "fc",
+                    "call_id": call_id,
+                    "body": body,
+                    "signature": sig,
+                }
+            )
+        else:
+            entry = pending[existing]
+            entry["body"] = body
+            if sig is not None:
+                entry["signature"] = sig
+    else:  # "thought"
+        pending.append(
+            {
+                "kind": "thought",
+                "signature": sig,
+                "text": text,
+                "is_thought": is_thought,
+            }
+        )
+
+
+def _flush_pending(pending: list[dict]) -> Iterator[ToolCallEvent]:
+    for item in pending:
+        if item["kind"] == "fc":
+            yield from _emit_function_call(
+                item["call_id"], item["body"], item["signature"]
+            )
+        else:
+            yield from _maybe_emit_thinking(
+                item["signature"], item["text"], item["is_thought"]
+            )
+
+
 def translate_gemini_stream_to_events(
     chunks: Iterator[Any],
     usage_holder: dict | None = None,
@@ -289,22 +343,26 @@ def translate_gemini_stream_to_events(
     """Translate a Gemini ``generate_content_stream`` response into
     :class:`ToolCallEvent`\\ s.
 
-    Each chunk's candidate parts are walked in order.  Function-call
-    parts produce a Start/ArgDelta/End triple; signed thought parts
-    produce a :class:`ThinkingPart` that the parser materializes into
-    a :class:`ThinkingEmission`.  Gemini 3 rejects subsequent turns
-    that don't replay signatures at the same position, so preserving
-    thought parts is load-bearing.
+    Parts are buffered across all chunks and flushed in turn order at
+    stream end.  This is load-bearing: Gemini 3 sometimes surfaces a
+    function_call in one chunk without a ``thought_signature`` and
+    then delivers the signature on a later chunk referencing the same
+    call id.  Emitting the Start/ArgDelta/End triple on first sight
+    would leak out the event without the signature and then get stuck
+    with it — and Gemini 3 400s the very next turn with
+    ``Function call is missing a thought_signature in functionCall
+    parts``.  Buffering lets the latest-seen signature win.
     """
-    seen_ids: set[str] = set()
+    pending: list[dict] = []
+    fc_index_by_id: dict[str, int] = {}
     counter = [0]
     for chunk in chunks:
         _capture_usage(chunk, usage_holder)
         for kind, body, sig, text, is_thought in _iter_stream_parts(chunk):
-            if kind == "function_call":
-                yield from _emit_function_call(body, sig, seen_ids, counter)
-            else:  # "thought"
-                yield from _maybe_emit_thinking(sig, text, is_thought)
+            _accumulate_part(
+                kind, body, sig, text, is_thought, pending, fc_index_by_id, counter
+            )
+    yield from _flush_pending(pending)
 
 
 async def atranslate_gemini_stream_to_events(
@@ -312,14 +370,14 @@ async def atranslate_gemini_stream_to_events(
     usage_holder: dict | None = None,
 ) -> AsyncIterator[ToolCallEvent]:
     """Async counterpart to :func:`translate_gemini_stream_to_events`."""
-    seen_ids: set[str] = set()
+    pending: list[dict] = []
+    fc_index_by_id: dict[str, int] = {}
     counter = [0]
     async for chunk in chunks:
         _capture_usage(chunk, usage_holder)
         for kind, body, sig, text, is_thought in _iter_stream_parts(chunk):
-            if kind == "function_call":
-                for ev in _emit_function_call(body, sig, seen_ids, counter):
-                    yield ev
-            else:  # "thought"
-                for ev in _maybe_emit_thinking(sig, text, is_thought):
-                    yield ev
+            _accumulate_part(
+                kind, body, sig, text, is_thought, pending, fc_index_by_id, counter
+            )
+    for ev in _flush_pending(pending):
+        yield ev
