@@ -71,27 +71,38 @@ def _content_parts_to_dicts(parts: List[ContentPart]) -> List[dict]:
     return out
 
 
+# Defensive per-part cap.  An accidental ``print(huge_base64_blob)`` or
+# ``task_continue({"data": <megabyte_string>})`` would otherwise inflate
+# a single tool_result by a million-plus chars and blow the context
+# budget before chaptering ever runs.  32k chars ≈ 8k tokens — generous
+# enough that legitimate large outputs survive in full but small enough
+# that runaway values get clipped with a marker the LLM can read.
+_MAX_PART_CHARS = 32768
+
+
+def _truncate_str(s: str, max_chars: int = _MAX_PART_CHARS) -> str:
+    if len(s) <= max_chars:
+        return s
+    marker = f"\n... [truncated, original was {len(s)} chars]"
+    return s[: max_chars - len(marker)] + marker
+
+
 def _print_action_to_text(action: PrintAction) -> str:
     """Render a ``PrintAction`` (tuple of ``print()`` args) the same
     way a real ``print()`` does — ``str(arg)`` for each, joined by
     spaces.
 
-    Avoids two prior bugs at once:
+    Why ``str()`` instead of ``render_value``:
 
     - ``render_value`` wraps strings in ``repr``-style quotes, so
-      ``print("hello")`` would otherwise show as ``'hello'`` in the
-      tool_result text.
-    - ``render_value`` defaults to a 2048-char budget per arg, which
-      silently truncated the LLM's view of large printed values
-      (e.g. a ``print(test_app(...))`` returning a long result list)
-      while the human-facing activity log used unbudgeted ``str(item)``
-      and showed the whole thing.
+      ``print("hello")`` would otherwise show as ``'hello'``.
+    - The studio UI uses unbudgeted ``str(item)`` so the LLM-facing
+      view should match.
 
-    ``str()`` matches what the studio UI does and what Python's print
-    semantically does.  Aggregate token-budget protection is the
-    chaptering layer's job.
+    Each arg's str is bounded by ``_MAX_PART_CHARS`` as a defensive
+    cap against runaway values (huge base64 blobs, etc.).
     """
-    return " ".join(str(arg) for arg in action)
+    return " ".join(_truncate_str(str(arg)) for arg in action)
 
 
 def _output_to_text(event: OutputEvent) -> tuple[str, list[ContentPart]]:
@@ -99,7 +110,10 @@ def _output_to_text(event: OutputEvent) -> tuple[str, list[ContentPart]]:
 
     The text stream is built verbatim from :class:`PrintAction`\\ s so
     ``print("hello")`` appears as ``hello`` — not ``'hello'``.  Images
-    are rendered via the budget-aware path.
+    are rendered via the budget-aware path.  Non-print, non-image,
+    non-string parts (e.g. dicts handed to ``task_continue``) go
+    through ``render_value`` so we get reprobate's structure-aware
+    truncation rather than ``str()``-ing a megabyte blob whole.
     """
     text_bits: list[str] = []
     image_parts: list[Any] = []
@@ -109,13 +123,9 @@ def _output_to_text(event: OutputEvent) -> tuple[str, list[ContentPart]]:
         elif isinstance(item, ImageAction):
             image_parts.append(item)
         elif isinstance(item, str):
-            text_bits.append(item)
+            text_bits.append(_truncate_str(item))
         else:
-            # Unknown part type — convert via ``str()`` so the LLM sees
-            # whatever the studio UI shows (which also uses ``str()``).
-            # Avoids the budget-driven truncation ``render_value`` would
-            # impose silently.
-            text_bits.append(str(item))
+            text_bits.append(render_value(item, budget=_MAX_PART_CHARS))
     # Route images through the existing budget-aware renderer so we
     # reuse its PNG-serialization / detail-level logic.
     rendered_images: list[ContentPart] = []

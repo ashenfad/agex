@@ -463,6 +463,76 @@ class TestObservationPairing:
         # No repr-style wrapping.
         assert "'hi'" not in content
 
+    def test_print_huge_string_arg_is_truncated(self):
+        """Defensive cap: ``print(<1MB blob>)`` must not inline the full
+        blob into the tool_result. Real case: an agent's helper returned
+        a raw base64 screenshot in a dict; ``print(result)`` or
+        ``task_continue(result)`` caused a 670k-token prompt on the
+        next turn. The per-part cap keeps the renderer honest."""
+        from agex.eval.objects import PrintAction
+
+        big_blob = "A" * 200_000  # 200k chars, well over the 32k cap
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="print(big_blob)",
+            ),
+            OutputEvent(agent_name="a", parts=[PrintAction((big_blob,))]),
+        ]
+        msgs = render_events_as_tool_use(events)
+        content = _only(msgs[-1]["content"], "tool_result")[0]["content"]
+        # Must not contain the full blob.
+        assert len(content) < 100_000
+        # Must include a truncation marker so the LLM knows it was clipped.
+        assert "truncated" in content
+        # Must include the original size in the marker so the LLM can
+        # reason about how much got lost.
+        assert "200000" in content
+
+    def test_task_continue_huge_dict_observation_is_bounded(self):
+        """Defensive cap for the ``task_continue(huge_thing)`` path:
+        observations that aren't PrintActions (e.g. a dict handed to
+        ``task_continue``) must flow through ``render_value`` with a
+        bounded budget. This is the scenario that produced the 670k
+        prompt when a screenshot dict slipped through."""
+        huge_dict = {
+            "type": "screenshot",
+            "data": "iVBORw0KGgo" + ("A" * 500_000),
+        }
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="task_continue(result)",
+            ),
+            OutputEvent(agent_name="a", parts=[huge_dict]),
+        ]
+        msgs = render_events_as_tool_use(events)
+        content = _only(msgs[-1]["content"], "tool_result")[0]["content"]
+        # Must be bounded — well under the raw input size.
+        assert len(str(content)) < 100_000
+
+    def test_task_continue_huge_string_observation_is_truncated(self):
+        """Defensive cap for ``task_continue(huge_str)``: raw strings in
+        OutputEvent.parts must also be truncated."""
+        huge = "X" * 200_000
+        events = [
+            ActionEvent(
+                agent_name="a",
+                title="t",
+                thinking="T",
+                code="task_continue(s)",
+            ),
+            OutputEvent(agent_name="a", parts=[huge]),
+        ]
+        msgs = render_events_as_tool_use(events)
+        content = _only(msgs[-1]["content"], "tool_result")[0]["content"]
+        assert len(content) < 100_000
+        assert "truncated" in content
+
     def test_edit_file_result_names_operation_and_path(self):
         events = [
             ActionEvent(
