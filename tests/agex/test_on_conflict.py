@@ -9,14 +9,14 @@ from kvgit import Staged, VersionedKV
 
 from agex import Agent
 from agex.llm import Dummy
-from agex.llm.core import LLMResponse
 from agex.state import _agex_decoder, _agex_encoder, connect_state, kv
+from tests.agex._emissions import make_response
 
 
 def test_task_merges_on_success():
     """Test that successful task with versioned state completes correctly."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll store a value and complete.",
             code='x = 42\ntask_success("done")',
         )
@@ -38,11 +38,11 @@ def test_task_merges_on_success():
 def test_task_retry_on_conflict():
     """Test that on_conflict='retry' doesn't break normal operation."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="First attempt.",
             code='task_success("attempt1")',
         ),
-        LLMResponse(
+        make_response(
             thinking="Second attempt after retry.",
             code='task_success("attempt2")',
         ),
@@ -65,7 +65,7 @@ def test_task_retry_on_conflict():
 def test_task_abandon_on_conflict():
     """Test that on_conflict='abandon' works in normal case."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Background task work.",
             code='x = 1\ntask_success("background_result")',
         )
@@ -87,7 +87,7 @@ def test_task_abandon_on_conflict():
 def test_task_without_versioned_state_ignores_on_conflict():
     """Test that on_conflict is ignored when not using Versioned state."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Simple task.",
             code="task_success(42)",
         )
@@ -108,15 +108,15 @@ def test_task_without_versioned_state_ignores_on_conflict():
 def test_task_with_multiple_snapshots_merges_all():
     """Test that multiple snapshots within a task complete correctly."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="First step.",
             code='step1 = "done"\ntask_continue()',
         ),
-        LLMResponse(
+        make_response(
             thinking="Second step.",
             code='step2 = "done"\ntask_continue()',
         ),
-        LLMResponse(
+        make_response(
             thinking="Final step.",
             code='task_success("complete")',
         ),
@@ -155,11 +155,11 @@ def test_concurrent_tasks_with_actual_conflict():
 
     # Create two agents that will run concurrently with shared store
     agent1_responses = [
-        LLMResponse(
+        make_response(
             thinking="Agent 1 working.",
             code='data1 = "agent1_data"\ntask_success("agent1_done")',
         ),
-        LLMResponse(
+        make_response(
             thinking="Agent 1 retrying after conflict.",
             code='data1_retry = "agent1_retry"\ntask_success("agent1_retried")',
         ),
@@ -172,11 +172,11 @@ def test_concurrent_tasks_with_actual_conflict():
     agent1._host._session_cache["versioned:default"] = _make_shared(store)
 
     agent2_responses = [
-        LLMResponse(
+        make_response(
             thinking="Agent 2 working.",
             code='data2 = "agent2_data"\ntask_success("agent2_done")',
         ),
-        LLMResponse(
+        make_response(
             thinking="Agent 2 retrying after conflict.",
             code='data2_retry = "agent2_retry"\ntask_success("agent2_retried")',
         ),
@@ -245,7 +245,7 @@ def test_concurrent_abandon_strategy():
         )
 
     agent1_responses = [
-        LLMResponse(
+        make_response(
             thinking="Background task 1.",
             code='bg1 = "data"\ntask_success("bg1_done")',
         )
@@ -257,7 +257,7 @@ def test_concurrent_abandon_strategy():
     agent1._host._session_cache["versioned:default"] = _make_shared(store)
 
     agent2_responses = [
-        LLMResponse(
+        make_response(
             thinking="Background task 2.",
             code='bg2 = "data"\ntask_success("bg2_done")',
         )

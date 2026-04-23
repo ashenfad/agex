@@ -3,7 +3,6 @@
 from kvgit import store as kvgit_store
 
 from agex.agent.events import (
-    ActionEvent,
     ChapterEvent,
     OutputEvent,
     SuccessEvent,
@@ -12,6 +11,7 @@ from agex.agent.events import (
 from agex.fs.chapters_vfs import build_chapters_dict, create_chapters_fs
 from agex.state import _agex_decoder, _agex_encoder
 from agex.state.log import add_event_to_log, replace_events_with_chapters
+from tests.agex._emissions import make_action_event
 
 
 def _make_state():
@@ -38,7 +38,7 @@ def _chapter_with_events(state, name, message, events):
 class TestBuildChaptersDict:
     def test_no_chapters(self):
         events = [
-            ActionEvent(agent_name="t", thinking="t", code="x = 1"),
+            make_action_event(agent_name="t", thinking="t", code="x = 1"),
             SuccessEvent(agent_name="t", result=42),
         ]
         result = build_chapters_dict(events)
@@ -49,7 +49,7 @@ class TestBuildChaptersDict:
 
     def test_single_chapter(self):
         state = _make_state()
-        e1 = ActionEvent(
+        e1 = make_action_event(
             agent_name="t", thinking="explored", code="df.head()", title="Read"
         )
         ch = _chapter_with_events(state, "Data exploration", "Found 3 tables", [e1])
@@ -72,7 +72,7 @@ class TestBuildChaptersDict:
 
     def test_nested_chapters(self):
         state = _make_state()
-        inner_event = ActionEvent(agent_name="t", thinking="t", code="x")
+        inner_event = make_action_event(agent_name="t", thinking="t", code="x")
         add_event_to_log(state, inner_event)
 
         # Create inner chapter
@@ -96,7 +96,7 @@ class TestBuildChaptersDict:
 
     def test_non_chapter_events_ignored(self):
         events = [
-            ActionEvent(agent_name="t", thinking="t", code="x"),
+            make_action_event(agent_name="t", thinking="t", code="x"),
             ChapterEvent(agent_name="t", name="Work", message="Done"),
             SuccessEvent(agent_name="t", result=42),
         ]
@@ -123,7 +123,7 @@ class TestBuildChaptersDict:
         state = _make_state()
         events_inside = [
             TaskStartEvent(agent_name="t", task_name="sub", inputs={}, message="msg"),
-            ActionEvent(agent_name="t", thinking="t", code="x", title="Step"),
+            make_action_event(agent_name="t", thinking="t", code="x", title="Step"),
             OutputEvent(agent_name="t", parts=[]),
             SuccessEvent(agent_name="t", result="ok"),
         ]
@@ -140,7 +140,7 @@ class TestBuildChaptersDict:
 
 class TestCreateChaptersFS:
     def test_returns_none_without_chapters(self):
-        events = [ActionEvent(agent_name="t", thinking="t", code="x")]
+        events = [make_action_event(agent_name="t", thinking="t", code="x")]
         assert create_chapters_fs(events) is None
 
     def test_returns_none_for_empty(self):
@@ -148,7 +148,7 @@ class TestCreateChaptersFS:
 
     def test_creates_readable_fs(self):
         state = _make_state()
-        e1 = ActionEvent(agent_name="t", thinking="t", code="x")
+        e1 = make_action_event(agent_name="t", thinking="t", code="x")
         ch = _chapter_with_events(state, "Exploration", "Found stuff", [e1])
         fs = create_chapters_fs([ch], state)
         assert fs is not None

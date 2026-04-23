@@ -5,8 +5,8 @@ import pytest
 from agex import Agent
 from agex.agent.base import clear_agent_registry
 from agex.host import Local
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +24,7 @@ def test_local_is_default_host():
 
 def test_local_execute_runs_task():
     """Test that Local.execute runs the task loop."""
-    llm = Dummy(responses=[LLMResponse(thinking="done", code="task_success(42)")])
+    llm = Dummy(responses=[make_response(thinking="done", code="task_success(42)")])
     agent = Agent(llm=llm)
 
     @agent.task
@@ -41,7 +41,7 @@ def test_local_execute_runs_task():
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_local_aexecute_runs_async_task(anyio_backend):
     """Test that Local.aexecute runs async tasks."""
-    llm = Dummy(responses=[LLMResponse(thinking="done", code="task_success(42)")])
+    llm = Dummy(responses=[make_response(thinking="done", code="task_success(42)")])
     agent = Agent(llm=llm)
 
     @agent.task

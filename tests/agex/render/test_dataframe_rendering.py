@@ -9,8 +9,8 @@ import pandas as pd
 import pytest
 
 from agex import Agent
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.mark.skip(
@@ -29,7 +29,7 @@ def test_print_large_dataframe_shows_all_rows():
     # Set up dummy client
     client = Dummy()
     client.responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll print the dataframe",
             code='df = test_df()\nprint(df)\ntask_success("done")',
         ),
@@ -49,9 +49,9 @@ def test_print_large_dataframe_shows_all_rows():
     _ = analyze_data()
 
     # Check what was actually rendered for the LLM (uses the regular rendering path)
-    assert hasattr(
-        client, "all_rendered_messages"
-    ), "Client should track rendered messages"
+    assert hasattr(client, "all_rendered_messages"), (
+        "Client should track rendered messages"
+    )
     assert len(client.all_rendered_messages) >= 1, "Should have at least 1 LLM call"
 
     # Look through all rendered messages to find the printed DataFrame
@@ -78,14 +78,15 @@ def test_print_large_dataframe_shows_all_rows():
         if found_full_df:
             break
 
-    assert (
-        found_full_df
-    ), f"Agent should see all 200 rows via print(). Found {visible_rows} rows."
+    assert found_full_df, (
+        f"Agent should see all 200 rows via print(). Found {visible_rows} rows."
+    )
 
 
-def test_task_continue_large_dataframe_shows_all_rows():
-    """Test that task_continue(msg, df) with 200 rows shows all rows to the agent."""
-    # Create a 200-row DataFrame
+def test_implicit_continue_large_dataframe_shows_all_rows():
+    """A turn that prints a 200-row DataFrame and returns without a
+    terminator implicitly continues; the agent should see all rows on
+    the next turn."""
     df = pd.DataFrame(
         {
             "id": range(200),
@@ -94,20 +95,19 @@ def test_task_continue_large_dataframe_shows_all_rows():
         }
     )
 
-    # Set up dummy client
     client = Dummy()
     client.responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll send the dataframe",
-            code='task_continue("Here is the data", get_df())',
+            code='print("Here is the data", get_df())',
         ),
-        LLMResponse(
+        make_response(
             thinking="Got the data",
             code='task_success("done")',
         ),
     ]
 
-    agent = Agent(name="test_task_continue", llm=client, max_iterations=3)
+    agent = Agent(name="test_implicit_continue", llm=client, max_iterations=3)
 
     @agent.fn
     def get_df():
@@ -120,13 +120,11 @@ def test_task_continue_large_dataframe_shows_all_rows():
 
     _ = process_data()
 
-    # Check what was actually rendered for the LLM
-    assert hasattr(
-        client, "all_rendered_messages"
-    ), "Client should track rendered messages"
+    assert hasattr(client, "all_rendered_messages"), (
+        "Client should track rendered messages"
+    )
     assert len(client.all_rendered_messages) >= 2, "Should have at least 2 LLM calls"
 
-    # The second LLM call should contain the rendered DataFrame from task_continue
     second_call_messages = client.all_rendered_messages[1]
 
     found_full_df = False
@@ -135,9 +133,7 @@ def test_task_continue_large_dataframe_shows_all_rows():
     for msg in second_call_messages:
         content = str(msg.get("content", ""))
 
-        # Look for the DataFrame in the rendered OutputEvent
         if "id" in content and "name" in content and "category" in content:
-            # Count visible data rows
             lines = content.split("\n")
             data_lines = [line for line in lines if line.strip() and line[0].isdigit()]
             visible_rows = len(data_lines)
@@ -146,9 +142,10 @@ def test_task_continue_large_dataframe_shows_all_rows():
                 found_full_df = True
                 break
 
-    assert (
-        found_full_df
-    ), f"Agent should see all 200 rows in task_continue. Found {visible_rows} rows."
+    assert found_full_df, (
+        f"Agent should see all 200 rows after the print() continuation. "
+        f"Found {visible_rows} rows."
+    )
 
 
 def test_task_input_large_dataframe_shows_all_rows():
@@ -156,7 +153,7 @@ def test_task_input_large_dataframe_shows_all_rows():
     # Set up dummy client
     client = Dummy()
     client.responses = [
-        LLMResponse(
+        make_response(
             thinking="I can see the input dataframe",
             code='task_success("processed")',
         ),
@@ -218,7 +215,7 @@ def test_dataframe_respects_token_budget():
     # Set up dummy client
     client = Dummy()
     client.responses = [
-        LLMResponse(
+        make_response(
             thinking="I'll print a huge dataframe",
             code='df = get_huge_df()\nprint(df)\ntask_success("done")',
         ),
@@ -238,9 +235,9 @@ def test_dataframe_respects_token_budget():
     _ = analyze_big_data()
 
     # Check what was actually rendered for the LLM
-    assert hasattr(
-        client, "all_rendered_messages"
-    ), "Client should track rendered messages"
+    assert hasattr(client, "all_rendered_messages"), (
+        "Client should track rendered messages"
+    )
     found_df = False
     row_count = 0
 
@@ -262,6 +259,6 @@ def test_dataframe_respects_token_budget():
 
     assert found_df, "Should find the DataFrame in output"
     # Should be truncated (less than 500 rows) but still substantial
-    assert (
-        40 <= row_count < 500
-    ), f"Expected truncation for huge DF, got {row_count} rows"
+    assert 40 <= row_count < 500, (
+        f"Expected truncation for huge DF, got {row_count} rows"
+    )

@@ -1,10 +1,12 @@
 """Tool schemas for the agex tool-use wire format.
 
-Four tools cover what the XML format expressed as tags:
+Four tools cover the agent's turn-level actions:
 
-- ``python_action`` — run Python code (task-progress via ``task_success`` /
-  ``task_fail`` / ``task_clarify`` / ``task_continue`` calls in the code).
-- ``terminal_action`` — run shell commands (implicit ``task_continue``).
+- ``python_action`` — run Python code.  Task progress uses
+  ``task_success`` / ``task_fail`` / ``task_clarify`` calls inside the
+  code; returning normally is the implicit continue.
+- ``terminal_action`` — run shell commands.  Returning continues the
+  turn just like python_action.
 - ``write_file`` — write or append a file.
 - ``edit_file`` — surgical edit with search + replace / insert-after /
   insert-before.
@@ -33,8 +35,9 @@ _PYTHON_SCHEMA: dict[str, Any] = {
         "Run Python code. The task is driven by special calls inside the "
         "code: task_success(result) finishes successfully, task_fail(msg) "
         "finishes with an error, task_clarify(prompt) asks the caller a "
-        "question, and task_continue() advances to the next turn so you can "
-        "inspect output."
+        "question. If none of the above is called, the code returns "
+        "normally and the turn continues — printed output appears on the "
+        "next turn."
     ),
     "parameters": {
         "type": "object",
@@ -67,8 +70,8 @@ _PYTHON_SCHEMA: dict[str, Any] = {
 _TERMINAL_SCHEMA: dict[str, Any] = {
     "name": TOOL_TERMINAL,
     "description": (
-        "Run shell commands. Implicitly continues the task — use "
-        "python_action with task_success() / task_fail() to finish."
+        "Run shell commands. Does not signal task completion on its own — "
+        "use python_action with task_success() / task_fail() to finish."
     ),
     "parameters": {
         "type": "object",

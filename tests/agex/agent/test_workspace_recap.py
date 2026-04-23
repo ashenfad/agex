@@ -1,7 +1,8 @@
 import pytest
 
 from agex import Agent, FileAction, clear_agent_registry, connect_fs, connect_state
-from agex.llm import Dummy, LLMResponse
+from agex.llm import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -20,7 +21,7 @@ def test_workspace_recap_in_forefront():
 
     # Task 1: Create a module. We need 2 iterations to see the forefront message in the second one.
     agent.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="Iteration 1: Create utils.py",
             file_actions=[
                 FileAction(
@@ -39,7 +40,7 @@ class Processor:
             ],
             code="pass",  # Continue to iteration 2
         ),
-        LLMResponse(thinking="Iteration 2: Check context", code="task_success(True)"),
+        make_response(thinking="Iteration 2: Check context", code="task_success(True)"),
     ]
 
     @agent.task

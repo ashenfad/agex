@@ -3,7 +3,8 @@
 from agex import Agent, connect_fs, connect_state
 from agex.agent.base import clear_agent_registry
 from agex.agent.console import pprint_events
-from agex.llm import Dummy, LLMResponse
+from agex.llm import Dummy
+from tests.agex._emissions import make_response
 
 
 def test_vfs_module_survives_across_turns():
@@ -21,11 +22,11 @@ def test_vfs_module_survives_across_turns():
     agent.fs().write("utils.py", b"CONST = 42\ndef get_val(): return CONST")
 
     agent.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="Turn 1: import and use module",
             code='import utils\nresult = utils.get_val()\ntask_continue("got", result)',
         ),
-        LLMResponse(
+        make_response(
             thinking="Turn 2: use module again without re-importing",
             code="result2 = utils.get_val()\ntask_success(result2)",
         ),
@@ -55,11 +56,11 @@ def test_vfs_closure_survives_across_turns():
     agent.fs().write("utils.py", b"CONST = 42\ndef get_val(): return CONST")
 
     agent.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="Turn 1: define closure over module",
             code="import utils\ndef my_fn():\n    return utils.get_val()\ntask_continue(my_fn())",
         ),
-        LLMResponse(
+        make_response(
             thinking="Turn 2: call closure again",
             code="task_success(my_fn())",
         ),

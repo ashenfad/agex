@@ -60,10 +60,18 @@ class PythonEmission:
     Maps to the ``python_action`` tool call. In a multi-emission turn,
     PythonEmissions execute sequentially with a shared namespace (as
     if their code bodies were concatenated).
+
+    ``thinking`` carries narration-via-schema reasoning when the
+    provider doesn't emit native thinking blocks.  It rides on the
+    action emission for round-trip fidelity: a replayed turn shows the
+    same ``thinking`` argument the model originally produced.  Phase 4
+    drops this field and switches to a separate
+    :class:`ThinkingEmission` for native-thinking providers.
     """
 
     code: str
     title: str | None = None
+    thinking: str | None = None
     signature: bytes | None = None
 
 
@@ -74,10 +82,14 @@ class TerminalEmission:
     Maps to the ``terminal_action`` tool call. Each TerminalEmission
     executes as one shell invocation; multiple in a turn run in
     sequence.
+
+    ``thinking`` mirrors :class:`PythonEmission.thinking` — narration
+    lives on the action emission for round-trip fidelity.
     """
 
     commands: str
     title: str | None = None
+    thinking: str | None = None
     signature: bytes | None = None
 
 

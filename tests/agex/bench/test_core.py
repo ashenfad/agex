@@ -18,8 +18,8 @@ from agex.bench.core import (
     benchmark_pass_fail,
 )
 from agex.bench.types import NumericStats, PassFailStats, Stats, Trial, params
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 class TestTrialResult:
@@ -63,8 +63,8 @@ class TestBenchmarkPassFail:
 
         # Create agent with dummy responses
         dummy_responses = [
-            LLMResponse(thinking="Solving 2+2", code="task_success('4')"),
-            LLMResponse(thinking="Solving 1+1", code="task_success('2')"),
+            make_response(thinking="Solving 2+2", code="task_success('4')"),
+            make_response(thinking="Solving 1+1", code="task_success('2')"),
         ]
         client = Dummy(responses=dummy_responses)
 
@@ -103,8 +103,8 @@ class TestBenchmarkPassFail:
 
         # Responses where second one is wrong
         dummy_responses = [
-            LLMResponse(thinking="Solving 2+2", code="task_success('4')"),  # Correct
-            LLMResponse(thinking="Solving 1+1", code="task_success('3')"),  # Wrong!
+            make_response(thinking="Solving 2+2", code="task_success('4')"),  # Correct
+            make_response(thinking="Solving 1+1", code="task_success('3')"),  # Wrong!
         ]
         client = Dummy(responses=dummy_responses)
 
@@ -143,12 +143,12 @@ class TestBenchmarkPassFail:
 
         # Create two agents with different performance
         good_responses = [
-            LLMResponse(thinking="Good at math", code="task_success('4')"),
-            LLMResponse(thinking="Good at math", code="task_success('2')"),
+            make_response(thinking="Good at math", code="task_success('4')"),
+            make_response(thinking="Good at math", code="task_success('2')"),
         ]
         bad_responses = [
-            LLMResponse(thinking="Bad at math", code="task_success('wrong')"),
-            LLMResponse(thinking="Bad at math", code="task_success('wrong')"),
+            make_response(thinking="Bad at math", code="task_success('wrong')"),
+            make_response(thinking="Bad at math", code="task_success('wrong')"),
         ]
 
         good_agent = Agent(name="good_agent", llm=Dummy(responses=good_responses))
@@ -185,10 +185,10 @@ class TestBenchmarkNumeric:
 
         # Responses of different lengths for scoring
         dummy_responses = [
-            LLMResponse(
+            make_response(
                 thinking="Writing", code="task_success('Short story.')"
             ),  # 13 chars = 1.3
-            LLMResponse(
+            make_response(
                 thinking="Writing", code="task_success('Much longer story here!')"
             ),  # 24 chars = 2.4
         ]
@@ -244,8 +244,8 @@ class TestBenchmarkGeneric:
 
         # Simple task that returns input
         dummy_responses = [
-            LLMResponse(thinking="Echoing", code="task_success(inputs.text)"),
-            LLMResponse(thinking="Echoing", code="task_success(inputs.text)"),
+            make_response(thinking="Echoing", code="task_success(inputs.text)"),
+            make_response(thinking="Echoing", code="task_success(inputs.text)"),
         ]
         client = Dummy(responses=dummy_responses)
 
@@ -288,7 +288,9 @@ class TestBenchmarkGeneric:
         """Test handling of judge function errors."""
         clear_agent_registry()
 
-        dummy_responses = [LLMResponse(thinking="Test", code="task_success('result')")]
+        dummy_responses = [
+            make_response(thinking="Test", code="task_success('result')")
+        ]
         client = Dummy(responses=dummy_responses)
 
         agent = Agent(name="test_agent", llm=client)
@@ -314,7 +316,9 @@ class TestBenchmarkGeneric:
         """Test handling of aggregator errors."""
         clear_agent_registry()
 
-        dummy_responses = [LLMResponse(thinking="Test", code="task_success('result')")]
+        dummy_responses = [
+            make_response(thinking="Test", code="task_success('result')")
+        ]
         client = Dummy(responses=dummy_responses)
 
         agent = Agent(name="test_agent", llm=client)
@@ -345,7 +349,7 @@ class TestConcurrency:
         # Dummy cycles through responses using a shared counter, so
         # concurrent execution would get responses in unpredictable order.
         dummy_responses = [
-            LLMResponse(thinking="Echo input", code="task_success(input_val)"),
+            make_response(thinking="Echo input", code="task_success(input_val)"),
         ]
         client = Dummy(responses=dummy_responses)
 

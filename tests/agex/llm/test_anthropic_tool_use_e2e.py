@@ -11,11 +11,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agex.agent.datatypes import EditAction, FileAction
+from agex.agent.emissions import FileEditEmission, FileWriteEmission
 from agex.llm.anthropic_client import Anthropic
 from agex.llm.core import ResponseBuilder
 from agex.llm.formats import ToolUseWireFormat, XmlWireFormat
 from agex.llm.pyfetch_anthropic import PyfetchAnthropic
+from tests.agex._emissions import (
+    response_code,
+    response_file_actions,
+    response_thinking,
+    response_title,
+)
 
 
 def _mk_event(d: dict):
@@ -100,9 +106,9 @@ class TestAnthropicToolUse:
         for t in tokens:
             builder.process_token(t)
         resp = builder.build()
-        assert resp.title == "t"
-        assert resp.thinking == "T"
-        assert resp.code == "print(1)"
+        assert response_title(resp) == "t"
+        assert response_thinking(resp) == "T"
+        assert response_code(resp) == "print(1)"
         assert resp.input_tokens == 20
         assert resp.output_tokens == 7
 
@@ -168,10 +174,10 @@ class TestAnthropicToolUse:
             builder.process_token(t)
         resp = builder.build()
 
-        assert resp.code == "import a"
-        assert len(resp.file_actions) == 1
-        fa = resp.file_actions[0]
-        assert isinstance(fa, FileAction)
+        assert response_code(resp) == "import a"
+        assert len(response_file_actions(resp)) == 1
+        fa = response_file_actions(resp)[0]
+        assert isinstance(fa, FileWriteEmission)
         assert fa.path == "/a.py"
         assert fa.content == "X = 1"
 
@@ -243,9 +249,9 @@ class TestAnthropicToolUse:
             builder.process_token(t)
         resp = builder.build()
 
-        assert len(resp.file_actions) == 1
-        ea = resp.file_actions[0]
-        assert isinstance(ea, EditAction)
+        assert len(response_file_actions(resp)) == 1
+        ea = response_file_actions(resp)[0]
+        assert isinstance(ea, FileEditEmission)
         assert ea.path == "/b.py"
         assert ea.operation == "insert-before"
         assert ea.content == "added"
@@ -367,7 +373,7 @@ async def test_pyfetch_anthropic_tool_use():
     for t in tokens:
         builder.process_token(t)
     resp = builder.build()
-    assert resp.title == "t"
-    assert resp.code == "print(1)"
+    assert response_title(resp) == "t"
+    assert response_code(resp) == "print(1)"
     assert resp.input_tokens == 30
     assert resp.output_tokens == 9

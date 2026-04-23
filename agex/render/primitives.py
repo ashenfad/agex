@@ -13,7 +13,15 @@ from ``.images`` directly.
 
 from typing import Any
 
-from ..agent.datatypes import EditAction, FileAction
+from ..agent.emissions import (
+    Emission,
+    FileEditEmission,
+    FileWriteEmission,
+    PythonEmission,
+    TerminalEmission,
+    TextEmission,
+    ThinkingEmission,
+)
 from ..eval.objects import ImageAction, PrintAction
 from ..fs.slugify import slugify as _slugify
 from ..llm.core import ContentPart, ImagePart, TextPart
@@ -161,59 +169,76 @@ def count_tokens(text: str) -> int:
 
 
 def render_action_markdown(
-    thinking: str,
-    code: str | None = None,
-    title: str = "",
-    file_actions: list[FileAction | EditAction] | None = None,
-    terminal: str | None = None,
-    report: str = "",
+    emissions: list[Emission],
 ) -> tuple[str, int]:
-    """
-    Render an action event as markdown.
+    """Render an action event's emission list as markdown.
 
-    Args:
-        thinking: The agent's thinking/reasoning
-        code: Python code to execute (None if terminal used)
-        title: Optional title for the action
-        file_actions: List of file write/edit actions
-        terminal: Terminal script to execute (mutually exclusive with code)
-        report: Optional agent-to-caller message (rendered back to agent in history)
-
-    Returns:
-        (markdown_text, token_count)
+    Walks emissions in order and composes a single markdown document
+    that is semantically faithful to the old ``render_action_markdown``
+    output (title, thinking, report, file sections, code/terminal).
+    Used by the summarization path and any caller that wants a
+    human-readable transcript of a turn.
     """
+    title_parts: list[str] = []
+    thinking_parts: list[str] = []
+    text_parts: list[str] = []
+    file_sections: list[str] = []
+    code_sections: list[str] = []
+    terminal_sections: list[str] = []
+
+    for em in emissions:
+        if isinstance(em, TextEmission):
+            if em.text:
+                text_parts.append(em.text)
+        elif isinstance(em, ThinkingEmission):
+            if em.text and not em.redacted:
+                thinking_parts.append(em.text)
+        elif isinstance(em, PythonEmission):
+            if em.title:
+                title_parts.append(em.title)
+            if em.code:
+                code_sections.append(em.code)
+        elif isinstance(em, TerminalEmission):
+            if em.title:
+                title_parts.append(em.title)
+            if em.commands:
+                terminal_sections.append(em.commands)
+        elif isinstance(em, FileEditEmission):
+            match_all_str = " (match_all)" if em.match_all else ""
+            op_str = f" ({em.operation})" if em.operation != "replace" else ""
+            section = f"### EDIT {em.path}{op_str}{match_all_str}\n"
+            section += f"Search:\n```\n{em.search}\n```\n"
+            if em.operation == "insert-after":
+                label = "Insert After"
+            elif em.operation == "insert-before":
+                label = "Insert Before"
+            else:
+                label = "Replace"
+            section += f"{label}:\n```\n{em.content}\n```\n\n"
+            file_sections.append(section)
+        elif isinstance(em, FileWriteEmission):
+            mode_suffix = f" (mode: {em.mode})" if em.mode != "write" else ""
+            section = f"### {em.path}{mode_suffix}\n{em.content}\n\n"
+            file_sections.append(section)
+
+    title = "; ".join(title_parts)
+    thinking = "\n\n".join(thinking_parts)
+    report = "\n\n".join(text_parts)
+
     title_section = f"# {title}\n" if title else ""
     report_section = f"# Report\n{report}\n\n" if report else ""
     files_section = ""
+    if file_sections:
+        files_section = "## Files\n" + "".join(file_sections)
 
-    if file_actions:
-        files_section = "## Files\n"
-        for action in file_actions:
-            if isinstance(action, EditAction):
-                match_all_str = " (match_all)" if action.match_all else ""
-                op_str = (
-                    f" ({action.operation})" if action.operation != "replace" else ""
-                )
-                files_section += f"### EDIT {action.path}{op_str}{match_all_str}\n"
-                files_section += f"Search:\n```\n{action.search}\n```\n"
-                # Label based on operation
-                if action.operation == "insert-after":
-                    label = "Insert After"
-                elif action.operation == "insert-before":
-                    label = "Insert Before"
-                else:
-                    label = "Replace"
-                files_section += f"{label}:\n```\n{action.content}\n```\n\n"
-            else:
-                path, content, mode = action.path, action.content, action.mode
-                mode_suffix = f" (mode: {mode})" if mode != "write" else ""
-                files_section += f"### {path}{mode_suffix}\n{content}\n\n"
-
-    # Render terminal or code section
-    if terminal:
-        action_section = f"# Terminal\n```bash\n{terminal}\n```"
+    if terminal_sections:
+        joined = "\n".join(terminal_sections)
+        action_section = f"# Terminal\n```bash\n{joined}\n```"
+    elif code_sections:
+        joined = "\n".join(code_sections)
+        action_section = f"# Code\n```python\n{joined}\n```"
     else:
-        action_section = f"# Code\n```python\n{code or ''}\n```"
+        action_section = ""
 
     content = (
         f"{title_section}# Thinking\n{thinking}\n\n"

@@ -3,6 +3,7 @@ import pytest
 
 from agex import Agent, clear_agent_registry
 from agex.agent.datatypes import TaskTimeout
+from tests.agex._emissions import make_response
 
 
 def test_numpy_random_normal_without_recursive_fails():
@@ -10,12 +11,12 @@ def test_numpy_random_normal_without_recursive_fails():
     Without recursive registration, accessing numpy.random (a submodule)
     via attribute access should be blocked by the policy.
     """
-    from agex.llm.dummy_client import Dummy, LLMResponse
+    from agex.llm.dummy_client import Dummy
 
     clear_agent_registry()
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="import numpy and call numpy.random.normal",
                 code=(
                     "import numpy\n"
@@ -43,12 +44,12 @@ def test_numpy_random_normal_with_recursive_succeeds_dummy():
     With recursive registration, attribute resolution across submodules should work
     and the task should complete successfully.
     """
-    from agex.llm.dummy_client import Dummy, LLMResponse
+    from agex.llm.dummy_client import Dummy
 
     clear_agent_registry()
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="import numpy and call numpy.random.normal",
                 code=(
                     "import numpy\n"

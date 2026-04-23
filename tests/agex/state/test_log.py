@@ -10,6 +10,10 @@ from agex.state.log import (
     get_events_from_log,
     replace_events_with_chapters,
 )
+from tests.agex._emissions import (
+    event_thinking,
+    make_action_event,
+)
 
 
 def _make_state():
@@ -21,16 +25,16 @@ def test_add_and_get_events():
     state = _make_state()
 
     # Add some events
-    event1 = ActionEvent(agent_name="test", thinking="thought 1", code="x = 1")
-    event2 = ActionEvent(agent_name="test", thinking="thought 2", code="x = 2")
+    event1 = make_action_event(agent_name="test", thinking="thought 1", code="x = 1")
+    event2 = make_action_event(agent_name="test", thinking="thought 2", code="x = 2")
 
     add_event_to_log(state, event1)
     add_event_to_log(state, event2)
 
     events = get_events_from_log(state)
     assert len(events) == 2
-    assert events[0].thinking == "thought 1"
-    assert events[1].thinking == "thought 2"
+    assert event_thinking(events[0]) == "thought 1"
+    assert event_thinking(events[1]) == "thought 2"
 
 
 class TestDanglingRefDetection:
@@ -46,7 +50,7 @@ class TestDanglingRefDetection:
         state = _make_state()
         for i in range(n):
             add_event_to_log(
-                state, ActionEvent(agent_name="t", thinking=f"e{i}", code="x")
+                state, make_action_event(agent_name="t", thinking=f"e{i}", code="x")
             )
         return state
 
@@ -82,7 +86,7 @@ class TestDanglingRefDetection:
         caplog.clear()
         with caplog.at_level("WARNING", logger="agex.state.log"):
             add_event_to_log(
-                state, ActionEvent(agent_name="t", thinking="new", code="x")
+                state, make_action_event(agent_name="t", thinking="new", code="x")
             )
 
         recs = [r for r in caplog.records if "dangling event refs" in r.message]
@@ -109,7 +113,9 @@ def test_replace_events_with_chapters():
     for i in range(5):
         add_event_to_log(
             state,
-            ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}"),
+            make_action_event(
+                agent_name="test", thinking=f"thought {i}", code=f"x = {i}"
+            ),
         )
 
     events_before = get_events_from_log(state)
@@ -128,7 +134,7 @@ def test_replace_events_with_chapters():
 
     # First event unchanged
     assert isinstance(events_after[0], ActionEvent)
-    assert events_after[0].thinking == "thought 0"
+    assert event_thinking(events_after[0]) == "thought 0"
 
     # Second is the chapter
     assert isinstance(events_after[1], ChapterEvent)
@@ -138,14 +144,14 @@ def test_replace_events_with_chapters():
     # Resolve events and verify contents
     resolved = events_after[1].resolve_events(state)
     assert len(resolved) == 2
-    assert resolved[0].thinking == "thought 1"
-    assert resolved[1].thinking == "thought 2"
+    assert event_thinking(resolved[0]) == "thought 1"
+    assert event_thinking(resolved[1]) == "thought 2"
 
     # Remaining events unchanged
     assert isinstance(events_after[2], ActionEvent)
-    assert events_after[2].thinking == "thought 3"
+    assert event_thinking(events_after[2]) == "thought 3"
     assert isinstance(events_after[3], ActionEvent)
-    assert events_after[3].thinking == "thought 4"
+    assert event_thinking(events_after[3]) == "thought 4"
 
 
 def test_replace_events_multiple_chapters():
@@ -155,7 +161,9 @@ def test_replace_events_multiple_chapters():
     for i in range(6):
         add_event_to_log(
             state,
-            ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}"),
+            make_action_event(
+                agent_name="test", thinking=f"thought {i}", code=f"x = {i}"
+            ),
         )
 
     ch1 = ChapterEvent(
@@ -177,11 +185,11 @@ def test_replace_events_multiple_chapters():
     assert isinstance(events_after[0], ChapterEvent)
     assert events_after[0].name == "First batch"
     assert isinstance(events_after[1], ActionEvent)
-    assert events_after[1].thinking == "thought 2"
+    assert event_thinking(events_after[1]) == "thought 2"
     assert isinstance(events_after[2], ChapterEvent)
     assert events_after[2].name == "Second batch"
     assert isinstance(events_after[3], ActionEvent)
-    assert events_after[3].thinking == "thought 5"
+    assert event_thinking(events_after[3]) == "thought 5"
 
 
 def test_replace_events_overlapping_raises():
@@ -191,7 +199,9 @@ def test_replace_events_overlapping_raises():
     for i in range(5):
         add_event_to_log(
             state,
-            ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}"),
+            make_action_event(
+                agent_name="test", thinking=f"thought {i}", code=f"x = {i}"
+            ),
         )
 
     ch1 = ChapterEvent(agent_name="test", name="A", message="a")
@@ -208,7 +218,9 @@ def test_replace_events_out_of_bounds_raises():
     for i in range(3):
         add_event_to_log(
             state,
-            ActionEvent(agent_name="test", thinking=f"thought {i}", code=f"x = {i}"),
+            make_action_event(
+                agent_name="test", thinking=f"thought {i}", code=f"x = {i}"
+            ),
         )
 
     ch = ChapterEvent(agent_name="test", name="A", message="a")
@@ -223,7 +235,7 @@ def test_replace_events_empty_list():
 
     add_event_to_log(
         state,
-        ActionEvent(agent_name="test", thinking="thought", code="x = 1"),
+        make_action_event(agent_name="test", thinking="thought", code="x = 1"),
     )
 
     replace_events_with_chapters(state, [])
@@ -237,7 +249,7 @@ def test_add_event_returns_key():
     state = _make_state()
     key = add_event_to_log(
         state,
-        ActionEvent(agent_name="test", thinking="t", code="x"),
+        make_action_event(agent_name="test", thinking="t", code="x"),
     )
     assert key.startswith("_event_")
     assert key in state
@@ -253,7 +265,7 @@ def test_parent_ref_set_automatically():
     )
     add_event_to_log(
         state,
-        ActionEvent(agent_name="test", thinking="t", code="x"),
+        make_action_event(agent_name="test", thinking="t", code="x"),
     )
 
     events = get_events_from_log(state)
@@ -271,7 +283,7 @@ def test_parent_ref_tracks_latest_task():
     )
     add_event_to_log(
         state,
-        ActionEvent(agent_name="test", thinking="t1", code="x"),
+        make_action_event(agent_name="test", thinking="t1", code="x"),
     )
     task2_key = add_event_to_log(
         state,
@@ -279,7 +291,7 @@ def test_parent_ref_tracks_latest_task():
     )
     add_event_to_log(
         state,
-        ActionEvent(agent_name="test", thinking="t2", code="y"),
+        make_action_event(agent_name="test", thinking="t2", code="y"),
     )
 
     events = get_events_from_log(state)
@@ -303,7 +315,7 @@ def test_chapter_parent_ref_set():
     for i in range(3):
         add_event_to_log(
             state,
-            ActionEvent(agent_name="test", thinking=f"t{i}", code=f"x{i}"),
+            make_action_event(agent_name="test", thinking=f"t{i}", code=f"x{i}"),
         )
 
     # Now create a chapter — __current_task_ref__ points to the __chapter__ task

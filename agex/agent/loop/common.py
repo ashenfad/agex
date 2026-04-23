@@ -18,7 +18,6 @@ from agex.agent.datatypes import (
     LLMFail,
     TaskCancelled,
     TaskClarify,
-    TaskContinue,
     TaskFail,
     TaskSuccess,
     TaskTimeout,
@@ -36,7 +35,13 @@ from agex.agent.events import (
 )
 from agex.eval.error import EvalError
 from agex.eval.objects import PrintAction
-from agex.llm.core import LLMResponse, ResponseBuilder, ResponseParseError, StreamToken
+from agex.llm.core import (
+    EmissionsBuilder,
+    LLMResponse,
+    ResponseBuilder,
+    ResponseParseError,
+    StreamToken,
+)
 from agex.state import (
     ConcurrencyError,
     MergeConflict,
@@ -68,6 +73,8 @@ from .file_editing import (
     _adjust_replacement_indent,
     _build_trailing_ws_pattern,
     _find_indent_flexible_match,
+    apply_file_edit,
+    apply_file_write,
     apply_optimistic_file_actions,
 )
 from .state_helpers import (
@@ -99,14 +106,17 @@ __all__ = [
     "yield_new_events",
     "maybe_file_event",
     "maybe_add_file_event",
+    # File emission appliers
+    "apply_file_write",
+    "apply_file_edit",
     "apply_optimistic_file_actions",
     "safe_commit",
     "ResponseBuilder",
+    "EmissionsBuilder",
     # Re-exports
     "ValidationError",
     "LLMFail",
     "TaskClarify",
-    "TaskContinue",
     "TaskFail",
     "TaskSuccess",
     "TaskTimeout",

@@ -2,7 +2,8 @@ import pytest
 
 from agex import Agent, FileAction, clear_agent_registry, connect_fs
 from agex.agent.events import SystemNoteEvent
-from agex.llm import Dummy, LLMResponse
+from agex.llm import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -18,7 +19,7 @@ def test_vfs_shadowing_warning():
 
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I will create a json.py file.",
                 file_actions=[
                     FileAction(

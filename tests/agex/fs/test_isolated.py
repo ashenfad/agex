@@ -4,7 +4,8 @@ import pytest
 
 from agex import Agent, connect_fs, pprint_events
 from agex.fs import IsolatedFS
-from agex.llm import Dummy, LLMResponse
+from agex.llm import Dummy
+from tests.agex._emissions import make_response
 
 
 class TestIsolatedFSPathValidation:
@@ -239,7 +240,7 @@ class TestIsolatedFSAgentIntegration:
 
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="I'll read and transform the file",
                     code="""
 f = open('input.txt', 'r')
@@ -272,11 +273,11 @@ task_success('done')
         """Agent cannot access files outside root."""
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Try to escape",
                     code="open('/etc/passwd', 'r')",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="That failed, I'll give up",
                     code="task_success('failed to escape')",
                 ),
@@ -305,7 +306,7 @@ task_success('done')
 
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Create files",
                     code="""
 with open('new_file.txt', 'w') as f:

@@ -3,8 +3,8 @@ import pytest
 from agex import Agent, connect_fs, connect_state
 from agex.agent.base import clear_agent_registry
 from agex.agent.console import pprint_events
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +38,7 @@ def test_vfs_module_persistence_across_turns():
     # 2. Define a function that closes over the module and return it
     # This forces the system to pickle the function -> closure -> module
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Create closure",
             code="import utils\ndef my_closure(): return utils.get_val()\ntask_success(my_closure)",
         ),
@@ -86,7 +86,7 @@ def test_vfs_module_session_persistence():
         pass
 
     agent.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="Get module A",
             code="import config\ntask_success(config)",
         )
@@ -94,7 +94,7 @@ def test_vfs_module_session_persistence():
     mod_a = get_config(session="session_a", on_event=pprint_events)
 
     agent.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="Get module B",
             code="import config\ntask_success(config)",
         )

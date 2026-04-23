@@ -24,15 +24,17 @@ from agex.eval.objects import PrintAction
 from agex.llm.core import LLMResponse
 from agex.state.log import add_event_to_log
 
-# Task control guidance message (shown when agent forgets to signal completion)
+# Task control guidance message (shown when agent forgets to signal completion).
+# Python completing without a terminator implicitly continues the turn — this
+# reminder nudges the agent to wrap up with an explicit terminator when
+# iterations are running long.
 TASK_CONTROL_GUIDANCE = (
-    "💡 **Task Control Reminder**: Your code executed successfully, but you need to signal completion.\n\n"
-    "**Next steps:**\n"
-    "• `task_success(result)` - Complete the task with your final answer\n"
-    "• `task_continue(result)` - Observe your work and continue to another REPL iteration\n"
-    "• `task_fail(message)` - If you cannot complete the task\n"
-    "• `task_clarify(message)` - If you need more information\n\n"
-    "Your code ran without errors - now just add the appropriate task control function!"
+    "💡 **Task Control Reminder**: Your code executed successfully.  If this "
+    "completes the task, signal it explicitly:\n\n"
+    "• `task_success(result)` — complete the task with your final answer\n"
+    "• `task_fail(message)` — if you cannot complete the task\n"
+    "• `task_clarify(message)` — if you need more information from the caller\n\n"
+    "Otherwise your turn continues — just keep going on the next turn."
 )
 
 
@@ -74,12 +76,7 @@ def create_action_event(
     """Create an ActionEvent from an LLM response."""
     return ActionEvent(
         agent_name=agent_name,
-        title=llm_response.title,
-        thinking=llm_response.thinking,
-        report=llm_response.report,
-        code=llm_response.code,
-        terminal=llm_response.terminal,
-        file_actions=llm_response.file_actions,
+        emissions=list(llm_response.emissions),
         source=source,
         input_tokens=llm_response.input_tokens,
         output_tokens=llm_response.output_tokens,
@@ -101,11 +98,20 @@ def create_fail_event(agent_name: str, message: str) -> FailEvent:
     return FailEvent(agent_name=agent_name, message=message)
 
 
-def create_error_output(agent_name: str, exception: Exception) -> OutputEvent:
+def create_error_output(
+    agent_name: str,
+    exception: Exception,
+    emission_id: str | None = None,
+) -> OutputEvent:
     """Create an OutputEvent for an evaluation error."""
     return OutputEvent(
         agent_name=agent_name,
-        parts=[PrintAction([f"💥 {type(exception).__name__}: {exception}"])],
+        parts=[
+            PrintAction(
+                args=(f"💥 {type(exception).__name__}: {exception}",),
+                emission_id=emission_id,
+            )
+        ],
     )
 
 
@@ -147,6 +153,7 @@ def execute_terminal(
     exec_state: MutableMapping[str, Any],
     on_event: Callable[[BaseEvent], None] | None = None,
     commands: dict | None = None,
+    emission_id: str | None = None,
 ) -> str:
     """Execute terminal script and emit output event.
 
@@ -157,6 +164,8 @@ def execute_terminal(
         exec_state: Execution state for event logging
         on_event: Optional callback for event emission
         commands: Optional injected command handlers (e.g. python, git)
+        emission_id: Stamped onto PrintAction parts so the renderer
+            pairs terminal output back to this emission's tool_use.
 
     Returns:
         The stdout from terminal execution
@@ -172,7 +181,7 @@ def execute_terminal(
         if stdout:
             output_event = OutputEvent(
                 agent_name=agent_name,
-                parts=[PrintAction([stdout])],
+                parts=[PrintAction(args=(stdout,), emission_id=emission_id)],
             )
             add_event_to_log(exec_state, output_event, on_event=on_event)
 
@@ -183,7 +192,7 @@ def execute_terminal(
         error_text = f"💥 Terminal parse error: {e}\nCheck your command syntax!"
         error_event = OutputEvent(
             agent_name=agent_name,
-            parts=[PrintAction([error_text])],
+            parts=[PrintAction(args=(error_text,), emission_id=emission_id)],
         )
         add_event_to_log(exec_state, error_event, on_event=on_event)
         raise
@@ -200,17 +209,20 @@ def execute_terminal(
 
         error_event = OutputEvent(
             agent_name=agent_name,
-            parts=[PrintAction([error_text])],
+            parts=[PrintAction(args=(error_text,), emission_id=emission_id)],
         )
         add_event_to_log(exec_state, error_event, on_event=on_event)
         raise
 
 
-def create_guidance_output(agent_name: str) -> OutputEvent:
+def create_guidance_output(
+    agent_name: str,
+    emission_id: str | None = None,
+) -> OutputEvent:
     """Create an OutputEvent with task control guidance."""
     return OutputEvent(
         agent_name=agent_name,
-        parts=[PrintAction([TASK_CONTROL_GUIDANCE])],
+        parts=[PrintAction(args=(TASK_CONTROL_GUIDANCE,), emission_id=emission_id)],
     )
 
 
@@ -218,6 +230,7 @@ def create_unsaved_warning(
     agent_name: str,
     unsaved_keys: list[str],
     namespace_prefix: str,
+    emission_id: str | None = None,
 ) -> OutputEvent:
     """Create an OutputEvent warning about unsaved variables."""
     agent_visible_keys = strip_namespace_prefix(unsaved_keys, namespace_prefix)
@@ -227,7 +240,7 @@ def create_unsaved_warning(
     )
     return OutputEvent(
         agent_name=agent_name,
-        parts=[PrintAction([warning_message])],
+        parts=[PrintAction(args=(warning_message,), emission_id=emission_id)],
     )
 
 

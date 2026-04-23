@@ -24,6 +24,12 @@ from agex.state import _agex_decoder, _agex_encoder, connect_state
 from agex.state.kv import Memory
 from agex.state.live import Live
 from tests.agex import test_module
+from tests.agex._emissions import (
+    event_code,
+    event_thinking,
+    make_response,
+    response_file_actions,
+)
 
 
 def test_view_image_primer_text_is_always_visible():
@@ -37,7 +43,7 @@ def test_view_image_primer_text_is_always_visible():
     assert "Code is Action" in system_message
     assert "Persistent State" in system_message
     assert "Task Control Functions" in system_message
-    assert "task_continue" in system_message
+    assert "task_success" in system_message
 
 
 def test_agent_fn_registration_decorator():
@@ -110,7 +116,7 @@ def test_context_manager_bound_variable_is_cleaned_up():
 
     llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="Create a table via sqlite3 context manager.",
                 code="""with db as conn:
     conn.execute("CREATE TABLE IF NOT EXISTS users(id INTEGER)")
@@ -139,7 +145,9 @@ def test_helper_recap_skips_unpicklable_markers():
     """Recap should skip state entries that raise UnpicklableVariableError."""
     clear_agent_registry()
 
-    llm = Dummy([LLMResponse(thinking="Simple completion.", code='task_success("ok")')])
+    llm = Dummy(
+        [make_response(thinking="Simple completion.", code='task_success("ok")')]
+    )
     config = connect_state(type="versioned", storage="memory")
     agent = Agent(name="marker_agent", llm=llm, state=config)
 
@@ -658,7 +666,7 @@ def test_task_input_dataclass_pickling():
     # Create agent with dummy LLM client to avoid real API calls
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I will return the expected result",
                 code="task_success('test result')",
             )
@@ -709,11 +717,11 @@ def test_unserializable_object_in_state_is_handled_gracefully():
     # making the dictionary unserializable.
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="Mutating an object to make it unserializable.",
                 code="make_object_unserializable(my_object)",
             ),
-            LLMResponse(
+            make_response(
                 thinking="Now I will finish.",
                 code="task_success('done')",
             ),
@@ -769,7 +777,9 @@ def test_shallow_validation_on_large_input_list():
     clear_agent_registry()
     # The non-failing path of this test will enter the task loop.
     # We provide a single dummy response for it to consume.
-    llm = Dummy(responses=[LLMResponse(thinking="Looks good.", code="task_success(1)")])
+    llm = Dummy(
+        responses=[make_response(thinking="Looks good.", code="task_success(1)")]
+    )
     agent = Agent(name="test_agent", llm=llm)
 
     @agent.task("A task that accepts a large list.")
@@ -809,11 +819,11 @@ def test_shallow_validation_on_agent_output():
     llm = Dummy()
     # Using side_effect to ensure responses are consumed sequentially, even if the loop retries multiple times
     llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="I will try to return an invalid dictionary.",
             code="task_success(invalid_dict)",
         ),
-        LLMResponse(
+        make_response(
             thinking="That failed. I will return a valid dictionary now.",
             code="task_success(valid_dict)",
         ),
@@ -878,7 +888,7 @@ def test_task_setup_functionality():
     # Create agent
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I can see the setup variable and will complete the task",
                 code='task_success(f"Setup value: {setup_var}")',
             )
@@ -910,10 +920,10 @@ def test_task_setup_functionality():
     setup_event = event_list[1]
     assert isinstance(setup_event, ActionEvent)
     assert (
-        setup_event.thinking
+        event_thinking(setup_event)
         == "This code was automatically run to provide context for the task."
     )
-    assert setup_event.code == 'setup_var = "Hello from setup!"'
+    assert event_code(setup_event) == 'setup_var = "Hello from setup!"'
 
     # Check that setup variable is available in state
     setup_value = state.get("setup_var")  # No longer namespaced
@@ -927,7 +937,7 @@ def test_task_setup_error_handling():
     # Create agent
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I see there was an error in setup, but I can still complete the task",
                 code='task_success("completed despite setup error")',
             )
@@ -966,10 +976,10 @@ def test_task_setup_error_handling():
     # First ActionEvent should be the setup
     setup_event = action_events[0]
     assert (
-        setup_event.thinking
+        event_thinking(setup_event)
         == "This code was automatically run to provide context for the task."
     )
-    assert setup_event.code == "invalid_variable = undefined_function()"
+    assert event_code(setup_event) == "invalid_variable = undefined_function()"
 
 
 def test_task_without_setup():
@@ -979,7 +989,7 @@ def test_task_without_setup():
     # Create agent
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="Simple task completion",
                 code='task_success("completed without setup")',
             )
@@ -1010,7 +1020,7 @@ def test_task_without_setup():
     # No setup ActionEvent should be present
     action_events = [e for e in event_list if isinstance(e, ActionEvent)]
     assert len(action_events) == 1  # Only the agent's own action
-    assert action_events[0].thinking == "Simple task completion"
+    assert event_thinking(action_events[0]) == "Simple task completion"
 
 
 def test_setup_events_tagged_with_source():
@@ -1020,7 +1030,7 @@ def test_setup_events_tagged_with_source():
     # Create agent that uses task_continue in setup
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I can see the setup output and complete",
                 code='task_success("done")',
             )
@@ -1029,10 +1039,11 @@ def test_setup_events_tagged_with_source():
     config = connect_state(type="versioned", storage="memory")
     agent = Agent(name="setup_source_agent", llm=llm, state=config)
 
-    # Define task with setup that creates output
+    # Define task with setup that creates output (print replaces the
+    # retired task_continue-with-observations pattern).
     @agent.task(
         primer="Test source tagging",
-        setup='task_continue("Setup context loaded", {"data": [1, 2, 3]})',
+        setup='print("Setup context loaded", {"data": [1, 2, 3]})',
     )
     def test_task() -> str:  # type: ignore[return-value]
         """Test task with setup that produces output"""
@@ -1050,22 +1061,22 @@ def test_setup_events_tagged_with_source():
     setup_action = [
         e
         for e in event_list
-        if isinstance(e, ActionEvent) and "automatically run" in e.thinking
+        if isinstance(e, ActionEvent) and "automatically run" in event_thinking(e)
     ]
     assert len(setup_action) == 1
     assert setup_action[0].source == "setup"
 
-    # Find setup OutputEvents (from task_continue)
+    # Find setup OutputEvents (from the setup print).
     setup_outputs = [
         e for e in event_list if isinstance(e, OutputEvent) and e.source == "setup"
     ]
-    assert len(setup_outputs) >= 1  # At least one from task_continue
+    assert len(setup_outputs) >= 1
 
     # Find main execution ActionEvent
     main_actions = [
         e
         for e in event_list
-        if isinstance(e, ActionEvent) and "automatically run" not in e.thinking
+        if isinstance(e, ActionEvent) and "automatically run" not in event_thinking(e)
     ]
     assert len(main_actions) == 1
     assert main_actions[0].source == "main"  # Main events have default source
@@ -1095,7 +1106,7 @@ print(f"Setup complete: {setup_var}")
     config = connect_state(type="versioned", storage="memory")
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I will complete immediately", code='task_success("done")'
             )
         ]
@@ -1137,7 +1148,7 @@ print(f"Setup complete: {setup_var}")
     setup_action = event_list[1]
     assert isinstance(setup_action, ActionEvent)
     assert (
-        setup_action.thinking
+        event_thinking(setup_action)
         == "This code was automatically run to provide context for the task."
     )
 
@@ -1156,8 +1167,8 @@ print(f"Setup complete: {setup_var}")
     # Verify the last ActionEvent is the agent's actual response
     agent_action = event_list[4]
     assert isinstance(agent_action, ActionEvent)
-    assert agent_action.thinking == "I will complete immediately"
-    assert agent_action.code == 'task_success("done")'
+    assert event_thinking(agent_action) == "I will complete immediately"
+    assert event_code(agent_action) == 'task_success("done")'
 
 
 def test_agent_module_registration_with_instance_methods_and_name_override():
@@ -1201,7 +1212,7 @@ def test_recursive_module_registration_allows_submodule_imports():
     # Use dummy LLM to avoid real calls; simply succeed
     agent.llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="ok", code="from collections import abc\ntask_success(True)"
             )
         ]
@@ -1229,7 +1240,7 @@ def test_non_recursive_module_registration_fails_submodule_imports():
     # Dummy LLM won't be used because setup should fail before LLM runs
     agent.llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="should not run",
                 code="from collections import abc\ntask_success(None)",
             )
@@ -1295,48 +1306,61 @@ def test_recursive_module_registration_resolves_dataclass_fields():
 
 
 def test_vfs_append_integration():
-    """Test that mode='append' in <FILE> tag correctly appends to existing files."""
+    """Appending via ``FileWriteEmission(mode="append")`` concatenates
+    onto an existing VFS file."""
+    from agex.agent.emissions import FileWriteEmission, PythonEmission
     from agex.agent.loop.common import apply_optimistic_file_actions
-    from agex.llm.core import ResponseBuilder, TokenChunk
+    from agex.llm.core import EmissionsBuilder, TokenChunk
 
     llm = Dummy(provider="dummy")
     agent = Agent(llm=llm)
 
-    # Pre-create a file in VFS
     fs = agent.fs(session="test_session")
     fs.write("utils.py", b"def first(): return 1\n")
 
-    # Simulate an LLM response with mode="append"
-    builder = ResponseBuilder(agent_name="test_agent")
-
-    # Simulate stream tokens for an append operation
+    # The tool-use parser delivers file emissions as a single
+    # ``emission`` token; exercise the same path here by streaming a
+    # prebuilt emission into the builder alongside a Python emission.
+    builder = EmissionsBuilder(agent_name="test_agent")
     tokens = [
-        TokenChunk(type="thinking", content="Appending to utils.py"),
-        TokenChunk(type="thinking", content="", done=True),
-        TokenChunk(type="file", content="path=utils.py,mode=append"),
-        TokenChunk(type="file", content="def second(): return 2\n"),
-        TokenChunk(type="file", content="", done=True),
+        TokenChunk(
+            type="emission",
+            content="",
+            done=True,
+            emission_index=0,
+            emission=FileWriteEmission(
+                path="utils.py",
+                content="def second(): return 2\n",
+                mode="append",
+            ),
+        ),
+        TokenChunk(type="thinking", content="Appending to utils.py", emission_index=1),
+        TokenChunk(type="thinking", content="", done=True, emission_index=1),
         TokenChunk(
             type="python",
             content="import utils\ntask_success(utils.first() + utils.second())",
+            emission_index=1,
         ),
-        TokenChunk(type="python", content="", done=True),
+        TokenChunk(type="python", content="", done=True, emission_index=1),
     ]
-
     for t in tokens:
         builder.process_token(t)
 
-    response = builder.build()
+    response: LLMResponse = builder.build()
 
-    assert response.file_actions[0].path == "utils.py"
-    assert response.file_actions[0].content == "def second(): return 2\n"
-    assert response.file_actions[0].mode == "append"
+    file_em = response_file_actions(response)[0]
+    assert isinstance(file_em, FileWriteEmission)
+    assert file_em.path == "utils.py"
+    assert file_em.content == "def second(): return 2\n"
+    assert file_em.mode == "append"
 
-    # Now verify that applying this response actually appends
+    # Emission list also contains the Python code for the next turn.
+    py_ems = [em for em in response.emissions if isinstance(em, PythonEmission)]
+    assert py_ems and "task_success" in py_ems[0].code
+
     exec_state = Live()
     apply_optimistic_file_actions(agent, response, fs, exec_state)
 
-    # Verify content in VFS
     content = fs.read("utils.py").decode("utf-8")
     assert "def first()" in content
     assert "def second()" in content

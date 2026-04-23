@@ -16,9 +16,9 @@ from agex import Agent
 from agex.agent.base import clear_agent_registry
 from agex.host import HTTP
 from agex.host.http import RemoteExecutionError
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
 from agex.server import create_app
+from tests.agex._emissions import make_response
 
 
 def encode_args_kwargs(args=(), kwargs=None):
@@ -196,13 +196,14 @@ class TestActualTaskExecution:
 
     def test_simple_task_execution(self, tmp_path):
         """Test executing a simple task that returns a value."""
-        from agex.llm.core import LLMResponse
         from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
 
         # Create agent with task that returns 42
-        llm = Dummy(responses=[LLMResponse(thinking="Computing...", code="return 42")])
+        llm = Dummy(
+            responses=[make_response(thinking="Computing...", code="return 42")]
+        )
         agent = Agent()
         agent.llm = llm
 
@@ -240,7 +241,6 @@ class TestActualTaskExecution:
 
         import cloudpickle
 
-        from agex.llm.core import LLMResponse
         from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
@@ -248,7 +248,7 @@ class TestActualTaskExecution:
         # Create agent with task that returns a dict
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Building result...",
                     code='return {"name": "test", "values": [1, 2, 3]}',
                 )
@@ -295,7 +295,6 @@ class TestActualTaskExecution:
 
     def test_task_exception_propagation(self, tmp_path):
         """Test that exceptions in tasks are propagated to client."""
-        from agex.llm.core import LLMResponse
         from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
@@ -303,7 +302,7 @@ class TestActualTaskExecution:
         # Create agent with task that raises an exception
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="This will fail...",
                     code='raise ValueError("Something went wrong!")',
                 )
@@ -346,7 +345,6 @@ class TestActualTaskExecution:
         Note: This tests basic argument handling. Dynamic dataclasses created
         for inputs may have pickling limitations across process boundaries.
         """
-        from agex.llm.core import LLMResponse
         from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
@@ -355,7 +353,7 @@ class TestActualTaskExecution:
         # Use simple return to avoid dynamic dataclass pickling issues
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Computing sum...",
                     code="return 42",  # Simplified - just return constant
                 )
@@ -396,14 +394,13 @@ class TestHierarchicalAgentExecution:
 
     def test_hierarchical_agent_serialization(self, tmp_path):
         """Test that hierarchical agents are serialized correctly."""
-        from agex.llm.core import LLMResponse
         from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
 
         # Create worker agent
         worker_llm = Dummy(
-            responses=[LLMResponse(thinking="Working...", code="return 'done'")]
+            responses=[make_response(thinking="Working...", code="return 'done'")]
         )
         worker = Agent(name="worker")
         worker.llm = worker_llm
@@ -416,7 +413,7 @@ class TestHierarchicalAgentExecution:
         # Create orchestrator that uses worker
         orchestrator_llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Delegating to worker...",
                     code="result = do_work()\nreturn f'Worker said: {result}'",
                 )
@@ -461,7 +458,6 @@ class TestHTTPHostE2E:
 
     def test_http_host_full_roundtrip(self, tmp_path):
         """Test full roundtrip: HTTP host → TestClient → server → result."""
-        from agex.llm.core import LLMResponse
         from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
@@ -475,7 +471,7 @@ class TestHTTPHostE2E:
         """)
 
         # Create agent with task - provide enough responses for potential retries
-        llm = Dummy(responses=[LLMResponse(thinking="Computing...", code=PROG)] * 10)
+        llm = Dummy(responses=[make_response(thinking="Computing...", code=PROG)] * 10)
         agent = Agent()
         agent.llm = llm
 
@@ -519,14 +515,13 @@ class TestHTTPHostE2E:
 
     def test_http_host_complex_return(self, tmp_path):
         """Test complex return types through HTTP host."""
-        from agex.llm.core import LLMResponse
         from agex.llm.dummy_client import Dummy
 
         clear_agent_registry()
 
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Building...",
                     code='task_success({"items": [1, 2, 3], "status": "ok"})',
                 )
@@ -570,7 +565,7 @@ class TestHTTPHostE2E:
 
         # LLM response for async task
         llm = Dummy(
-            responses=[LLMResponse(thinking="Building...", code='task_success("ok")')]
+            responses=[make_response(thinking="Building...", code='task_success("ok")')]
         )
         agent = Agent()
         agent.llm = llm
@@ -607,7 +602,9 @@ class TestHTTPHostE2E:
 
         llm = Dummy(
             responses=[
-                LLMResponse(thinking="Failing...", code="task_fail('not gonna do it')")
+                make_response(
+                    thinking="Failing...", code="task_fail('not gonna do it')"
+                )
             ]
         )
         agent = Agent()

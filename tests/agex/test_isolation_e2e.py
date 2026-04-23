@@ -11,9 +11,9 @@ import pytest
 
 from agex import Agent, TaskFail, clear_agent_registry
 from agex.agent.events import OutputEvent, SuccessEvent
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
 from agex.state import connect_state, events
+from tests.agex._emissions import make_response
 
 # Process isolation requires fork-capable multiprocessing
 _skip_process = pytest.mark.skipif(
@@ -29,7 +29,7 @@ class TestIsolationNone:
         clear_agent_registry()
 
     def test_task_success(self):
-        llm = Dummy([LLMResponse(thinking="done", code='task_success("hello")')])
+        llm = Dummy([make_response(thinking="done", code='task_success("hello")')])
         config = connect_state(type="versioned", storage="memory")
         agent = Agent(name="none_ok", llm=llm, state=config, isolation="none")
 
@@ -42,7 +42,9 @@ class TestIsolationNone:
         assert result == "hello"
 
     def test_registered_function(self):
-        llm = Dummy([LLMResponse(thinking="call it", code="task_success(double(21))")])
+        llm = Dummy(
+            [make_response(thinking="call it", code="task_success(double(21))")]
+        )
         config = connect_state(type="versioned", storage="memory")
         agent = Agent(name="none_fn", llm=llm, state=config, isolation="none")
 
@@ -61,7 +63,7 @@ class TestIsolationNone:
     def test_dir_returns_user_names(self):
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="use dir",
                     code="x = 1\nnames = dir()\ntask_success(names)",
                 )
@@ -85,7 +87,7 @@ class TestIsolationNone:
     def test_help_output_captured(self):
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="use help",
                     code='help(int)\ntask_success("ok")',
                 )
@@ -115,7 +117,7 @@ class TestIsolationNone:
     def test_print_creates_output_event(self):
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="print then succeed",
                     code='print("hi")\ntask_success("ok")',
                 )
@@ -137,7 +139,7 @@ class TestIsolationNone:
             if isinstance(e, OutputEvent) and e.agent_name == "none_print"
         ]
         assert len(output) >= 1
-        assert output[0].parts == ["hi"]
+        assert output[0].parts[0].args == ("hi",)
 
 
 @_skip_process
@@ -150,7 +152,7 @@ class TestIsolationProcess:
     def test_task_success(self):
         """task_success travels across the process boundary."""
         llm = Dummy(
-            [LLMResponse(thinking="done", code='task_success("cross-process")')]
+            [make_response(thinking="done", code='task_success("cross-process")')]
         )
         config = connect_state(type="versioned", storage="memory")
         agent = Agent(
@@ -172,7 +174,7 @@ class TestIsolationProcess:
 
     def test_task_success_with_events(self):
         """Verify the full event chain: TaskStart → Action → Success."""
-        llm = Dummy([LLMResponse(thinking="solve", code="task_success(7 * 6)")])
+        llm = Dummy([make_response(thinking="solve", code="task_success(7 * 6)")])
         config = connect_state(type="versioned", storage="memory")
         agent = Agent(
             name="proc_events",
@@ -199,7 +201,9 @@ class TestIsolationProcess:
 
     def test_task_fail(self):
         """task_fail travels across the process boundary."""
-        llm = Dummy([LLMResponse(thinking="fail", code='task_fail("cannot proceed")')])
+        llm = Dummy(
+            [make_response(thinking="fail", code='task_fail("cannot proceed")')]
+        )
         config = connect_state(type="versioned", storage="memory")
         agent = Agent(
             name="proc_fail",
@@ -223,7 +227,7 @@ class TestIsolationProcess:
         """print() snapshots travel across the process boundary via result.prints."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="print and succeed",
                     code='print("from subprocess")\ntask_success("done")',
                 )
@@ -252,11 +256,13 @@ class TestIsolationProcess:
             if isinstance(e, OutputEvent) and e.agent_name == "proc_print"
         ]
         assert len(output) >= 1
-        assert output[0].parts == ["from subprocess"]
+        assert output[0].parts[0].args == ("from subprocess",)
 
     def test_registered_function(self):
         """Registered functions survive pickle and work cross-process."""
-        llm = Dummy([LLMResponse(thinking="call it", code="task_success(double(21))")])
+        llm = Dummy(
+            [make_response(thinking="call it", code="task_success(double(21))")]
+        )
         config = connect_state(type="versioned", storage="memory")
         agent = Agent(
             name="proc_fn",
@@ -283,11 +289,11 @@ class TestIsolationProcess:
         """task_continue works cross-process for multi-turn tasks."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="step 1",
                     code='x = 10\ntask_continue("computed x")',
                 ),
-                LLMResponse(
+                make_response(
                     thinking="step 2",
                     code="task_success(x * 2)",
                 ),
@@ -315,7 +321,7 @@ class TestIsolationProcess:
         """Namespace changes in the subprocess sync back to state."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="set a value",
                     code='answer = 42\ntask_success("ok")',
                 )
@@ -344,11 +350,11 @@ class TestIsolationProcess:
         """view_image works cross-process via __outputs__."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="view then succeed",
                     code='view_image("test_img", detail="low")\ntask_continue()',
                 ),
-                LLMResponse(
+                make_response(
                     thinking="done",
                     code='task_success("ok")',
                 ),
@@ -388,7 +394,7 @@ class TestIsolationProcess:
         """Sandbox-defined functions returned via task_success are reactivated."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="define and return a function",
                     code=("def double(n):\n    return n * 2\ntask_success(double)"),
                 )
@@ -417,7 +423,7 @@ class TestIsolationProcess:
         """Sandbox-defined functions inside a list are also reactivated."""
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="define and return functions in a list",
                     code=(
                         "def add1(n):\n"
@@ -541,11 +547,11 @@ class TestHierarchicalIsolation:
             pass
 
         specialist.llm = Dummy(
-            [LLMResponse(thinking="compute", code="task_success(42.0)")]
+            [make_response(thinking="compute", code="task_success(42.0)")]
         )
         orchestrator.llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="delegate",
                     code='result = compute("6 * 7")\ntask_success({"answer": result})',
                 )
@@ -589,7 +595,7 @@ class TestHierarchicalIsolation:
 
         specialist.llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="generate arrays",
                     code="import numpy as np\narr = np.arange(10, dtype=float)\ntask_success([arr])",
                 )
@@ -597,7 +603,7 @@ class TestHierarchicalIsolation:
         )
         orchestrator.llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="delegate",
                     code='data = make_data("test")\ntask_success(data)',
                 )
@@ -637,11 +643,11 @@ class TestHierarchicalIsolation:
             pass
 
         specialist.llm = Dummy(
-            [LLMResponse(thinking="compute", code="task_success(42.0)")]
+            [make_response(thinking="compute", code="task_success(42.0)")]
         )
         orchestrator.llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="delegate",
                     code='result = compute("6 * 7")\ntask_success({"answer": result})',
                 )
@@ -677,11 +683,11 @@ class TestAsyncSubAgentTask:
             pass
 
         specialist.llm = Dummy(
-            [LLMResponse(thinking="compute", code="task_success(42.0)")]
+            [make_response(thinking="compute", code="task_success(42.0)")]
         )
         orchestrator.llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="delegate",
                     code='result = compute("6 * 7")\ntask_success({"answer": result})',
                 )
@@ -717,14 +723,14 @@ class TestAsyncSubAgentTask:
             pass
 
         data_maker.llm = Dummy(
-            [LLMResponse(thinking="gen", code="task_success([1, 2, 3])")]
+            [make_response(thinking="gen", code="task_success([1, 2, 3])")]
         )
         plotter.llm = Dummy(
-            [LLMResponse(thinking="plot", code='task_success("plot.png")')]
+            [make_response(thinking="plot", code='task_success("plot.png")')]
         )
         orchestrator.llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="delegate to both",
                     code=(
                         'data = make_data("seasonal")\n'

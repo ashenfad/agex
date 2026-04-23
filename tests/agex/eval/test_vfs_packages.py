@@ -1,7 +1,8 @@
 import pytest
 
 from agex import Agent, clear_agent_registry, connect_fs, connect_state, pprint_events
-from agex.llm import Dummy, LLMResponse
+from agex.llm import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +29,7 @@ def test_import_nested_module():
 
     # 2. Test import pkg.mod
     agent.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="import", code="import pkg.mod\ntask_success(pkg.mod.get_val())"
         )
     ]
@@ -49,7 +50,7 @@ def test_import_package_with_init():
     agent.fs().write("pkg/mod.py", b"MOD_VAL = 2")
 
     agent.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="import",
             code="import pkg.mod\ntask_success((pkg.INIT_VAL, pkg.mod.MOD_VAL))",
         )
@@ -70,7 +71,7 @@ def test_from_import_submodule():
     agent.fs().write("pkg/mod.py", b"VAL = 100")
 
     agent.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="import", code="from pkg import mod\ntask_success(mod.VAL)"
         )
     ]
@@ -90,7 +91,7 @@ def test_from_import_function_from_submodule():
     agent.fs().write("pkg/mod.py", b"def func(): return 'hello'")
 
     agent.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="import", code="from pkg.mod import func\ntask_success(func())"
         )
     ]
@@ -111,7 +112,7 @@ def test_namespace_package():
     agent.fs().write("ns/mod.py", b"X = 1")
 
     agent.llm.responses = [
-        LLMResponse(thinking="import", code="import ns.mod\ntask_success(ns.mod.X)")
+        make_response(thinking="import", code="import ns.mod\ntask_success(ns.mod.X)")
     ]
 
     @agent.task

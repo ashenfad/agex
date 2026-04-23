@@ -2,7 +2,6 @@
 
 from agex.agent.datatypes import FileAction
 from agex.agent.events import (
-    ActionEvent,
     FailEvent,
     FileEvent,
     OutputEvent,
@@ -10,6 +9,7 @@ from agex.agent.events import (
     TaskStartEvent,
 )
 from agex.llm.formats.xml import render_events_as_xml
+from tests.agex._emissions import make_action_event
 
 
 class TestRenderEventsAsXML:
@@ -34,7 +34,7 @@ class TestRenderEventsAsXML:
     def test_action_event(self):
         """Test rendering ActionEvent."""
         events = [
-            ActionEvent(
+            make_action_event(
                 agent_name="test_agent",
                 title="Summing numbers",
                 thinking="I'll use sum() function",
@@ -59,7 +59,7 @@ class TestRenderEventsAsXML:
     def test_action_event_with_files(self):
         """Test rendering ActionEvent with files."""
         events = [
-            ActionEvent(
+            make_action_event(
                 agent_name="test_agent",
                 thinking="I'll create a file",
                 code="import utils",
@@ -109,7 +109,7 @@ class TestRenderEventsAsXML:
                 inputs={},
                 message="Do a task",
             ),
-            ActionEvent(
+            make_action_event(
                 agent_name="test_agent",
                 title="Executing plan",
                 thinking="My plan",

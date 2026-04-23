@@ -10,7 +10,8 @@ import math
 import pytest
 
 from agex import Agent, clear_agent_registry
-from agex.llm.dummy_client import Dummy, LLMResponse
+from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -23,7 +24,7 @@ def test_basic_agent_creation_in_agent():
     """Test that an agent can create another agent and return a task function."""
     # Set up LLM response
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to create a new agent and return a task function.",
             code="""
 # Create a new agent
@@ -71,7 +72,7 @@ def test_user_function_registration():
         pass  # Task functions must have empty bodies
 
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to create a new agent and register the helper function with it.",
             code="""
 # Create new agent - works fine with marker system
@@ -113,7 +114,7 @@ def test_module_security_inheritance():
     parent.module(math, include=["sin", "cos", "pi"], name="math")
 
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to create a new agent and give it limited math access.",
             code="""
 # Import the math module first
@@ -173,7 +174,7 @@ def test_comprehensive_dogfood_workflow():
         pass  # Task functions must have empty bodies
 
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to create a specialized geometry agent with inherited capabilities.",
             code="""
 # Import math module first
@@ -256,7 +257,7 @@ def test_agex_module_fingerprinting():
     """Test that modules get proper agent fingerprints."""
     # Create a simple function that returns the math module
     responses = [
-        LLMResponse(
+        make_response(
             thinking="I need to import math and return the math module.",
             code="""
 import math

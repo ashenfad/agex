@@ -4,8 +4,9 @@ import pytest
 
 from agex import Agent, clear_agent_registry
 from agex.agent.datatypes import LLMFail
-from agex.llm.core import LLMResponse, ResponseParseError
+from agex.llm.core import ResponseParseError
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 def test_llm_retries_then_success(monkeypatch):
@@ -18,7 +19,7 @@ def test_llm_retries_then_success(monkeypatch):
     responses = [
         ResponseParseError("network hiccup 1"),
         ResponseParseError("network hiccup 2"),
-        LLMResponse(thinking="ok", code="task_success(42)"),
+        make_response(thinking="ok", code="task_success(42)"),
     ]
     client = Dummy(responses=responses)
 

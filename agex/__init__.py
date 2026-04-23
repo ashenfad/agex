@@ -1,7 +1,21 @@
 from .agent import Agent, MemberSpec, TaskFail, clear_agent_registry
 from .agent.chapter import CHAPTER_TASK
 from .agent.console import pprint_events, pprint_tokens
-from .agent.datatypes import FileAction, TaskCancelled, TaskClarify, TaskTimeout
+from .agent.datatypes import (
+    EditAction,
+    FileAction,
+    TaskCancelled,
+    TaskClarify,
+    TaskTimeout,
+)
+from .agent.emissions import (
+    FileEditEmission,
+    FileWriteEmission,
+    PythonEmission,
+    TerminalEmission,
+    TextEmission,
+    ThinkingEmission,
+)
 from .agent.events import (
     ActionEvent,
     CancelledEvent,
@@ -45,8 +59,16 @@ __all__ = [
     "TaskClarify",
     "TaskTimeout",
     "TaskCancelled",
-    # File Actions
+    # Emissions (assistant-turn units)
+    "TextEmission",
+    "ThinkingEmission",
+    "PythonEmission",
+    "TerminalEmission",
+    "FileWriteEmission",
+    "FileEditEmission",
+    # Deprecated — kept for legacy test fixtures pending Phase 3 cleanup.
     "FileAction",
+    "EditAction",
     # Registration
     "MemberSpec",
     # Events

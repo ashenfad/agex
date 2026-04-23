@@ -4,15 +4,15 @@ import pytest
 
 from agex.agent import Agent
 from agex.agent.datatypes import TaskFail
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.mark.asyncio
 async def test_async_task_execution():
     """Test standard async task execution."""
     responses = [
-        LLMResponse(thinking="Thinking...", code="task_success('async_success')")
+        make_response(thinking="Thinking...", code="task_success('async_success')")
     ]
     client = Dummy(responses=responses)
     a = Agent(llm=client)
@@ -32,7 +32,7 @@ async def test_async_task_execution():
 async def test_async_streaming():
     """Test streaming with async task."""
     responses = [
-        LLMResponse(
+        make_response(
             title="My Title",
             thinking="Thinking...",
             code="task_success('stream_success')",
@@ -65,7 +65,7 @@ async def test_async_streaming():
 @pytest.mark.asyncio
 async def test_async_event_handler():
     """Test async event handler."""
-    responses = [LLMResponse(thinking="T", code="task_success('done')")]
+    responses = [make_response(thinking="T", code="task_success('done')")]
     client = Dummy(responses=responses)
     a = Agent(llm=client)
 
@@ -90,7 +90,7 @@ async def test_async_code_calling_async_function():
     Test that async sandbox code can await async registered functions.
     """
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Calling async user function",
             code="res = await my_async_fn(5)\ntask_success(res)",
         )
@@ -115,7 +115,7 @@ async def test_async_code_calling_async_function():
 @pytest.mark.asyncio
 async def test_async_task_failure_handling():
     """Test that task_fail works in async task."""
-    responses = [LLMResponse(thinking="Failing", code="task_fail('failed')")]
+    responses = [make_response(thinking="Failing", code="task_fail('failed')")]
     client = Dummy(responses=responses)
     a = Agent(llm=client)
 
@@ -135,7 +135,7 @@ async def test_async_task_clarify_handling():
     """Test that task_clarify works in async task."""
     from agex.agent.datatypes import TaskClarify
 
-    responses = [LLMResponse(thinking="Need info", code="task_clarify('what is x?')")]
+    responses = [make_response(thinking="Need info", code="task_clarify('what is x?')")]
     client = Dummy(responses=responses)
     a = Agent(llm=client)
 
@@ -154,8 +154,8 @@ async def test_async_task_clarify_handling():
 async def test_async_task_continue():
     """Test that task_continue works in async task (multiple iterations)."""
     responses = [
-        LLMResponse(thinking="First step", code="x = 1; task_continue()"),
-        LLMResponse(thinking="Second step", code="task_success(x + 1)"),
+        make_response(thinking="First step", code="x = 1; task_continue()"),
+        make_response(thinking="Second step", code="task_success(x + 1)"),
     ]
     client = Dummy(responses=responses)
     a = Agent(llm=client)
@@ -174,8 +174,8 @@ async def test_async_task_continue():
 async def test_async_task_error_recovery():
     """Test that evaluation errors are shown to agent and allow recovery."""
     responses = [
-        LLMResponse(thinking="Bad code", code="undefined_var"),  # Causes NameError
-        LLMResponse(thinking="Fixed", code="task_success('recovered')"),
+        make_response(thinking="Bad code", code="undefined_var"),  # Causes NameError
+        make_response(thinking="Fixed", code="task_success('recovered')"),
     ]
     client = Dummy(responses=responses)
     a = Agent(llm=client)
@@ -194,7 +194,7 @@ async def test_async_task_error_recovery():
 async def test_async_task_with_setup():
     """Test setup code execution in async task."""
     responses = [
-        LLMResponse(thinking="Using setup var", code="task_success(setup_value * 2)")
+        make_response(thinking="Using setup var", code="task_success(setup_value * 2)")
     ]
     client = Dummy(responses=responses)
     a = Agent(llm=client)
@@ -215,9 +215,9 @@ async def test_async_task_timeout():
 
     # Agent never calls task_success
     responses = [
-        LLMResponse(thinking="Step", code="x = 1"),
-        LLMResponse(thinking="Step", code="x = 2"),
-        LLMResponse(thinking="Step", code="x = 3"),
+        make_response(thinking="Step", code="x = 1"),
+        make_response(thinking="Step", code="x = 2"),
+        make_response(thinking="Step", code="x = 3"),
     ]
     client = Dummy(responses=responses)
     a = Agent(llm=client, max_iterations=2)
@@ -235,7 +235,7 @@ async def test_async_task_timeout():
 async def test_async_recursive_task():
     """Test async task calling a registered async function."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Calling async helper",
             code="result = await async_helper(5)\ntask_success(result)",
         )
@@ -268,12 +268,12 @@ async def test_async_fn_error_propagation():
     """Test that errors from async registered functions propagate correctly to agent."""
     responses = [
         # First attempt calls the async fn which raises
-        LLMResponse(
+        make_response(
             thinking="Calling risky function",
             code="result = await risky_async_fn()",
         ),
         # Agent sees the error and recovers
-        LLMResponse(
+        make_response(
             thinking="Got error, using fallback",
             code="task_success('recovered_from_async_error')",
         ),
@@ -301,7 +301,7 @@ async def test_async_fn_error_propagation():
 async def test_async_fn_returns_none():
     """Test async function returning None is handled correctly."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Calling async fn",
             code="result = await async_void_fn()\ntask_success('done' if result is None else 'unexpected')",
         )
@@ -328,7 +328,7 @@ async def test_async_fn_returns_none():
 async def test_async_fn_complex_return_type():
     """Test async function returning complex types."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Calling async fn",
             code="data = await fetch_complex_data()\ntask_success(data['items'][0])",
         )
@@ -355,7 +355,7 @@ async def test_async_fn_complex_return_type():
 async def test_multiple_async_fn_calls():
     """Test multiple async function calls in sequence."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Calling multiple async functions",
             code="a = await async_add(1)\nb = await async_add(a)\nc = await async_add(b)\ntask_success(c)",
         )
@@ -382,7 +382,7 @@ async def test_multiple_async_fn_calls():
 async def test_async_fn_with_exception_type_preserved():
     """Test that specific exception types from async functions are preserved."""
     responses = [
-        LLMResponse(
+        make_response(
             thinking="Calling fn that raises KeyError",
             code="""
 try:
@@ -420,12 +420,12 @@ def test_sync_task_async_fn_error_surfaces():
     """
     responses = [
         # Agent tries to call async fn — close the coroutine to avoid GC warning
-        LLMResponse(
+        make_response(
             thinking="Calling async function",
             code="result = async_fn_not_available()\nif hasattr(result, 'close'): result.close()",
         ),
         # Agent sees error and uses fallback
-        LLMResponse(
+        make_response(
             thinking="Got error about async fn, using fallback",
             code="task_success('used_sync_fallback')",
         ),

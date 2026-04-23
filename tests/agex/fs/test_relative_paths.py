@@ -2,15 +2,15 @@
 
 from agex import Agent, connect_fs, connect_state
 from agex.helpers import register_stdlib
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 def test_relative_path_with_os_exists_and_open():
     """Test exact agent code pattern: os.path.exists + open with relative path."""
     llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="I'll check and read the file.",
                 code="""import os
 dom_path = 'debug/dom.html'

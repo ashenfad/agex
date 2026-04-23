@@ -60,12 +60,16 @@ def _report_tap(on_event, agent_name):
         # without it, a grandparent's tap would also collect a
         # grandchild's reports via the callback chain and
         # double-emit into the wrong parent's log.
-        if (
-            isinstance(event, ActionEvent)
-            and getattr(event, "report", "")
-            and event.agent_name == agent_name
-        ):
-            collected.append(event.report)
+        if isinstance(event, ActionEvent) and event.agent_name == agent_name:
+            from agex.agent.emissions import TextEmission
+
+            texts = [
+                em.text
+                for em in event.emissions
+                if isinstance(em, TextEmission) and em.text
+            ]
+            if texts:
+                collected.append("\n\n".join(texts))
         if on_event is not None:
             return call_sync_or_async(on_event, event)
         return None

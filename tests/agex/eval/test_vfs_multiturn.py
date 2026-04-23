@@ -8,7 +8,8 @@ from agex import (
     connect_state,
     pprint_events,
 )
-from agex.llm import Dummy, LLMResponse
+from agex.llm import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +30,7 @@ def test_vfs_import_multiturn(tmp_path):
 
     # Task 1: Create and import a module
     agent1.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="I will create utils.py",
             file_actions=[FileAction(path="utils.py", content="VAL = 42")],
             code="import utils\ntask_success(utils.VAL)",
@@ -49,7 +50,7 @@ def test_vfs_import_multiturn(tmp_path):
     print(f"DEBUG: agent2 fingerprint: {agent2.fingerprint}")
 
     agent2.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="I will import utils again",
             code="import utils\ntask_success(utils.VAL)",
         )
@@ -73,7 +74,7 @@ def test_vfs_package_import_multiturn(tmp_path):
 
     # Task 1: Create a package and import it
     agent1.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="I will create a package",
             file_actions=[
                 FileAction(path="pkg/__init__.py", content="X = 1"),
@@ -95,7 +96,7 @@ def test_vfs_package_import_multiturn(tmp_path):
     agent2 = Agent(llm=Dummy(), fs=fs, state=state_config, name="my_agent")
 
     agent2.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="Import again",
             code="import pkg.mod\ntask_success((pkg.X, pkg.mod.Y))",
         )
@@ -128,7 +129,7 @@ def test_vfs_from_parent_import_submodule_with_function(tmp_path):
 
     # Task 1: Create package with submodule containing a function, import it
     agent1.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="Creating package structure",
             file_actions=[
                 FileAction(path="app/__init__.py", content=""),
@@ -154,7 +155,7 @@ def test_vfs_from_parent_import_submodule_with_function(tmp_path):
     agent2 = Agent(llm=Dummy(), fs=fs, state=state_config, name="my_agent")
 
     agent2.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="Import using from...import syntax",
             code="from app.logic import providers\ntask_success(providers.get_data())",
         )
@@ -179,7 +180,7 @@ def test_vfs_both_import_forms_equivalent(tmp_path):
 
     # Task 1: Create the module structure
     agent1.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="Creating module",
             file_actions=[
                 FileAction(path="myapp/__init__.py", content=""),
@@ -204,7 +205,7 @@ def test_vfs_both_import_forms_equivalent(tmp_path):
     agent2 = Agent(llm=Dummy(), fs=fs, state=state_config, name="my_agent")
 
     agent2.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="Import with alias",
             code="import myapp.utils as utils\ntask_success(utils.helper())",
         )
@@ -222,7 +223,7 @@ def test_vfs_both_import_forms_equivalent(tmp_path):
     agent3 = Agent(llm=Dummy(), fs=fs, state=state_config, name="my_agent")
 
     agent3.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="Import with from...import",
             code="from myapp import utils\ntask_success(utils.helper())",
         )
@@ -248,7 +249,7 @@ def test_vfs_import_multiturn_live():
     # Task 1: Create and import a module
 
     agent.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="I will create utils.py",
             file_actions=[FileAction(path="utils.py", content="VAL = 42")],
             code="import utils\ntask_success(utils.VAL)",
@@ -266,7 +267,7 @@ def test_vfs_import_multiturn_live():
     # Task 2: Import it again in the same session
 
     agent.llm.responses = [
-        LLMResponse(
+        make_response(
             thinking="I will import utils again",
             code="import utils\ntask_success(utils.VAL)",
         )

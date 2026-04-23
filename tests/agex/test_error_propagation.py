@@ -5,8 +5,8 @@ import pytest
 from agex import Agent
 from agex.agent.base import clear_agent_registry
 from agex.agent.datatypes import TaskClarify, TaskFail, TaskTimeout
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 @pytest.fixture(autouse=True)
@@ -21,7 +21,7 @@ def test_top_level_agent_raises_task_clarify():
     """Test that a top-level agent's TaskClarify is raised normally."""
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I need more information.",
                 code="task_clarify('Please provide more details.')",
             )
@@ -50,7 +50,7 @@ def test_sub_agent_converts_task_clarify_to_eval_error():
     """Test that a sub-agent's TaskClarify becomes an EvalError in the parent's stdout."""
     sub_agent_llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I need more information.",
                 code="task_clarify('Please provide more details.')",
             )
@@ -64,7 +64,7 @@ def test_sub_agent_converts_task_clarify_to_eval_error():
 
     parent_agent_llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I will call the sub-agent and see what happens.",
                 code="result = sub_task()",
             )
@@ -121,14 +121,16 @@ def test_sub_agent_converts_task_clarify_to_eval_error():
             if found_eval_error:
                 break
 
-        assert found_eval_error, f"Expected to find EvalError message in OutputEvents. Events: {[str(e) for e in output_events]}"
+        assert found_eval_error, (
+            f"Expected to find EvalError message in OutputEvents. Events: {[str(e) for e in output_events]}"
+        )
 
 
 def test_top_level_agent_raises_task_fail():
     """Test that a top-level agent's TaskFail is raised normally."""
     llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I cannot complete this task.",
                 code="task_fail('Invalid input format.')",
             )
@@ -157,7 +159,7 @@ def test_sub_agent_converts_task_fail_to_eval_error():
     """Test that a sub-agent's TaskFail becomes an EvalError in the parent's stdout."""
     sub_agent_llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I cannot complete this task.",
                 code="task_fail('Invalid input format.')",
             )
@@ -171,7 +173,7 @@ def test_sub_agent_converts_task_fail_to_eval_error():
 
     parent_agent_llm = Dummy(
         responses=[
-            LLMResponse(
+            make_response(
                 thinking="I will call the sub-agent and see what happens.",
                 code="result = sub_task()",
             )
@@ -225,4 +227,6 @@ def test_sub_agent_converts_task_fail_to_eval_error():
             if found_eval_error:
                 break
 
-        assert found_eval_error, f"Expected to find EvalError message in OutputEvents. Events: {[str(e) for e in output_events]}"
+        assert found_eval_error, (
+            f"Expected to find EvalError message in OutputEvents. Events: {[str(e) for e in output_events]}"
+        )

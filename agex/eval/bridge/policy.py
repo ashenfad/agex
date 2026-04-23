@@ -38,6 +38,14 @@ _current_parent_log: contextvars.ContextVar[
     tuple[MutableMapping[str, Any], str] | None
 ] = contextvars.ContextVar("_current_parent_log", default=None)
 
+# The emission_id of the currently executing emission.  Propagated to
+# PrintAction / ImageAction parts so the renderer can pair per-emission
+# tool_results.  None outside a Python/Terminal emission (e.g. during
+# setup code).
+_current_emission_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "_current_emission_id", default=None
+)
+
 
 def _translate_configure(
     agex_configure: dict[str, "AgexMemberSpec"],

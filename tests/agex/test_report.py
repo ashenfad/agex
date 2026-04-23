@@ -14,10 +14,14 @@ from contextlib import redirect_stderr, redirect_stdout
 from agex import Agent, clear_agent_registry
 from agex.agent.events import ActionEvent, OutputEvent
 from agex.eval.objects import PrintAction
-from agex.llm.core import LLMResponse
 from agex.llm.dummy_client import Dummy
 from agex.state import connect_state
 from agex.state.log import get_events_from_log
+from tests.agex._emissions import (
+    event_report,
+    make_action_event,
+    make_response,
+)
 
 
 def _output_event_texts(events):
@@ -46,7 +50,7 @@ class TestReportOnActionEvent:
 
         agent.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="I'll tell the user what I'm doing.",
                     report="Working on it now",
                     code="task_success('done')",
@@ -60,7 +64,7 @@ class TestReportOnActionEvent:
 
         actions = [e for e in collected if isinstance(e, ActionEvent)]
         assert len(actions) >= 1
-        assert any(a.report == "Working on it now" for a in actions)
+        assert any(event_report(a) == "Working on it now" for a in actions)
 
     def test_action_event_report_rendered_in_history(self):
         """Agent's own prior REPORT is rendered in its history on later turns."""
@@ -69,7 +73,7 @@ class TestReportOnActionEvent:
         clear_agent_registry()
         connect_state(type="versioned", storage="memory")
 
-        action_with_report = ActionEvent(
+        action_with_report = make_action_event(
             agent_name="history_agent",
             thinking="working",
             report="Working on it now",
@@ -113,7 +117,7 @@ class TestSubAgentReportPropagation:
 
         child.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="doing work",
                     report="Halfway done",
                     code="task_success('child_result')",
@@ -122,7 +126,7 @@ class TestSubAgentReportPropagation:
         )
         parent.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="call the child",
                     code="r = do_child_work()\ntask_success(r)",
                 )
@@ -166,7 +170,7 @@ class TestSubAgentReportPropagation:
 
         a.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="alpha",
                     report="alpha ran",
                     code="task_success('A')",
@@ -175,7 +179,7 @@ class TestSubAgentReportPropagation:
         )
         b.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="beta",
                     report="beta ran",
                     code="task_success('B')",
@@ -184,7 +188,7 @@ class TestSubAgentReportPropagation:
         )
         parent.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="call both",
                     code="x = alpha_work()\ny = beta_work()\ntask_success(x + y)",
                 )
@@ -226,7 +230,7 @@ class TestSubAgentReportPropagation:
 
         c.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="c",
                     report="C says hi",
                     code="task_success('c_result')",
@@ -235,7 +239,7 @@ class TestSubAgentReportPropagation:
         )
         b.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="b calls c",
                     code="r = c_work()\ntask_success(r)",
                 )
@@ -243,7 +247,7 @@ class TestSubAgentReportPropagation:
         )
         a.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="a calls b",
                     code="r = b_work()\ntask_success(r)",
                 )
@@ -288,7 +292,7 @@ class TestSubAgentReportPropagation:
 
         c.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="c",
                     report="C says hi",
                     code="task_success('c_result')",
@@ -297,7 +301,7 @@ class TestSubAgentReportPropagation:
         )
         b.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="b calls c",
                     report="Summary of C's work",
                     code="r = c_work()\ntask_success(r)",
@@ -306,7 +310,7 @@ class TestSubAgentReportPropagation:
         )
         a.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="a calls b",
                     code="r = b_work()\ntask_success(r)",
                 )
@@ -327,7 +331,7 @@ class TestSubAgentReportPropagation:
 
         child.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="reporting then failing",
                     report="Got partial data",
                     code="task_fail('could not finish')",
@@ -336,7 +340,7 @@ class TestSubAgentReportPropagation:
         )
         parent.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="call child",
                     code="try:\n    do_child_work()\nexcept Exception as e:\n    pass\ntask_success('parent done')",
                 )
@@ -355,7 +359,7 @@ class TestConsoleHelpers:
     def test_pprint_events_shows_report_on_action_event(self):
         from agex.agent.console import pprint_events
 
-        ev = ActionEvent(
+        ev = make_action_event(
             agent_name="a",
             thinking="thinking text",
             report="user-visible report text",
@@ -370,7 +374,7 @@ class TestConsoleHelpers:
     def test_pprint_events_omits_report_line_when_absent(self):
         from agex.agent.console import pprint_events
 
-        ev = ActionEvent(agent_name="a", thinking="t", code="pass")
+        ev = make_action_event(agent_name="a", thinking="t", code="pass")
         buf = io.StringIO()
         pprint_events(ev, color="never", show_delta=False, stream=buf)
         out = buf.getvalue()
@@ -436,7 +440,7 @@ class TestTopLevelReportNoStdout:
 
         child.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="c",
                     report="Top-level child reporting in",
                     code="task_success('ok')",
@@ -445,7 +449,7 @@ class TestTopLevelReportNoStdout:
         )
         parent.llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="p",
                     code="r = child_work()\ntask_success(r)",
                 )

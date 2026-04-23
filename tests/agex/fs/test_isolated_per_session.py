@@ -1,7 +1,8 @@
 """Tests for per-session isolation in isolated filesystem."""
 
 from agex import Agent, connect_fs, connect_state
-from agex.llm import Dummy, LLMResponse
+from agex.llm import Dummy
+from tests.agex._emissions import make_response
 
 
 class TestIsolatedFSPerSession:
@@ -11,7 +12,7 @@ class TestIsolatedFSPerSession:
         """Multiple sessions share same root when per_session=False."""
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Write to file",
                     code="with open('shared.txt', 'w') as f: f.write('data')\ntask_success('done')",
                 )
@@ -44,11 +45,11 @@ class TestIsolatedFSPerSession:
         """Each session gets isolated subdirectory when per_session=True."""
         llm = Dummy(
             responses=[
-                LLMResponse(
+                make_response(
                     thinking="Write to file",
                     code="with open('data.txt', 'w') as f: f.write('session1')\ntask_success('done')",
                 ),
-                LLMResponse(
+                make_response(
                     thinking="Write to file",
                     code="with open('data.txt', 'w') as f: f.write('session2')\ntask_success('done')",
                 ),

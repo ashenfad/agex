@@ -11,7 +11,8 @@ import tempfile
 from pathlib import Path
 
 from agex import Agent
-from agex.llm.dummy_client import Dummy, LLMResponse
+from agex.llm.dummy_client import Dummy
+from tests.agex._emissions import make_response
 
 
 class DatabaseManager:
@@ -80,7 +81,7 @@ def test_basic_with_statement():
     # Configure dummy LLM
     llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="I'll use a with statement to test the context manager.",
                 code="""
 with ctx as value:
@@ -143,7 +144,7 @@ def test_database_with_statement():
         # Configure dummy LLM
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll use a with statement for safe database operations.",
                     code="""
 # Query existing users
@@ -229,7 +230,7 @@ def test_with_statement_exception_handling():
         # Configure dummy LLM
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll test exception handling with database rollback using a simpler constraint violation.",
                     code="""
 # Get initial state
@@ -317,7 +318,7 @@ def test_nested_with_statements():
     # Configure dummy LLM
     llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="I'll test nested with statements for resource management.",
                 code="""
 results = []
@@ -386,7 +387,7 @@ def test_with_statement_raw_sqlite_connection():
         # Configure dummy LLM
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll use the raw SQLite connection with a with statement.",
                     code="""
 # SQLite connections support the context manager protocol
@@ -477,7 +478,7 @@ def test_unpicklable_marker_system():
         # Configure dummy LLM for single-turn use (works perfectly)
         llm = Dummy(
             [
-                LLMResponse(
+                make_response(
                     thinking="I'll directly assign and use cursors - the new system handles unpicklables gracefully.",
                     code="""
 # New pattern: Just assign and use naturally!
@@ -540,7 +541,7 @@ def test_sqlite_context_manager_method_access():
     # Configure agent to use the exact pattern that was failing
     llm = Dummy(
         [
-            LLMResponse(
+            make_response(
                 thinking="I'll recreate the exact failing scenario from db_direct.py",
                 code="""
 # This is the exact pattern that was failing before the fix:

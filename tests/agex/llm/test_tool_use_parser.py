@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agex.agent.datatypes import EditAction, FileAction
+from agex.agent.emissions import FileEditEmission, FileWriteEmission
 from agex.llm.core import TokenChunk
 from agex.llm.formats.tool_use import (
     TOOL_EDIT_FILE,
@@ -37,8 +37,9 @@ class TestPythonAction:
         ]
         tokens = _tokens(events)
 
-        # Collect per-type content by concatenating the non-done deltas,
-        # and verify each type emits a terminal done=True TokenChunk.
+        # All tokens for the first call carry emission_index=0.
+        assert all(t.emission_index == 0 for t in tokens)
+
         by_type: dict[str, list[TokenChunk]] = {}
         for t in tokens:
             by_type.setdefault(t.type, []).append(t)
@@ -49,7 +50,10 @@ class TestPythonAction:
         for type_name in ("title", "thinking", "python"):
             assert by_type[type_name][-1].done is True
 
-    def test_with_report(self):
+    def test_report_maps_to_text_token(self):
+        """The legacy ``report`` schema param streams as ``text`` tokens
+        so the builder produces a TextEmission.
+        """
         args = json.dumps(
             {
                 "title": "t",
@@ -65,16 +69,15 @@ class TestPythonAction:
                 ToolCallEnd("c1"),
             ]
         )
-        report_content = "".join(
-            t.content for t in tokens if t.type == "report" and not t.done
+        text_content = "".join(
+            t.content for t in tokens if t.type == "text" and not t.done
         )
-        assert report_content == "Working..."
+        assert text_content == "Working..."
 
     def test_streaming_cadence_per_chunk(self):
         """Each chunk containing string content should emit at least one
         content delta, so the UI can render incrementally."""
         args = json.dumps({"title": "t", "thinking": "step by step", "code": "x"})
-        # Deliberately chop into tiny pieces.
         chunks = _chunked("c1", args, 3)
         tokens = _tokens([ToolCallStart("c1", TOOL_PYTHON), *chunks, ToolCallEnd("c1")])
         thinking_content_deltas = [
@@ -99,19 +102,18 @@ class TestTerminalAction:
             t.content for t in tokens if t.type == "terminal" and not t.done
         )
         assert commands == "ls -la\necho hi"
-        # No python tokens for terminal action.
         assert not any(t.type == "python" for t in tokens)
 
 
-def _single_action(tokens):
-    """Assert exactly one file_action TokenChunk and return the action."""
-    file_actions = [t for t in tokens if t.type == "file_action"]
-    assert len(file_actions) == 1
-    token = file_actions[0]
+def _single_emission(tokens):
+    """Assert exactly one ``emission`` TokenChunk and return its payload."""
+    emission_tokens = [t for t in tokens if t.type == "emission"]
+    assert len(emission_tokens) == 1
+    token = emission_tokens[0]
     assert token.done is True
     assert token.content == ""
-    assert token.action is not None
-    return token.action
+    assert token.emission is not None
+    return token.emission
 
 
 class TestWriteFile:
@@ -124,11 +126,11 @@ class TestWriteFile:
                 ToolCallEnd("c1"),
             ]
         )
-        action = _single_action(tokens)
-        assert isinstance(action, FileAction)
-        assert action.path == "/helpers/x.py"
-        assert action.content == "def f(): pass\n"
-        assert action.mode == "write"
+        emission = _single_emission(tokens)
+        assert isinstance(emission, FileWriteEmission)
+        assert emission.path == "/helpers/x.py"
+        assert emission.content == "def f(): pass\n"
+        assert emission.mode == "write"
 
     def test_append_mode(self):
         args = json.dumps({"path": "/x.py", "content": "extra\n", "mode": "append"})
@@ -139,8 +141,8 @@ class TestWriteFile:
                 ToolCallEnd("c1"),
             ]
         )
-        action = _single_action(tokens)
-        assert action.mode == "append"
+        emission = _single_emission(tokens)
+        assert emission.mode == "append"
 
     def test_invalid_mode_coerces_to_write(self):
         args = json.dumps({"path": "/x.py", "content": "x", "mode": "garbage"})
@@ -151,8 +153,8 @@ class TestWriteFile:
                 ToolCallEnd("c1"),
             ]
         )
-        action = _single_action(tokens)
-        assert action.mode == "write"
+        emission = _single_emission(tokens)
+        assert emission.mode == "write"
 
     def test_batched_across_chunks(self):
         args = json.dumps({"path": "/a.py", "content": "x = 1"})
@@ -162,10 +164,9 @@ class TestWriteFile:
         ]
         # Before End: no tokens emitted.
         assert _tokens(events) == []
-        # Adding End produces the action.
-        action = _single_action(_tokens([*events, ToolCallEnd("c1")]))
-        assert action.path == "/a.py"
-        assert action.content == "x = 1"
+        emission = _single_emission(_tokens([*events, ToolCallEnd("c1")]))
+        assert emission.path == "/a.py"
+        assert emission.content == "x = 1"
 
     def test_empty_content(self):
         args = json.dumps({"path": "/a.py", "content": ""})
@@ -176,8 +177,8 @@ class TestWriteFile:
                 ToolCallEnd("c1"),
             ]
         )
-        action = _single_action(tokens)
-        assert action.content == ""
+        emission = _single_emission(tokens)
+        assert emission.content == ""
 
     def test_missing_path_dropped(self):
         args = json.dumps({"content": "x = 1"})
@@ -217,17 +218,17 @@ class TestEditFile:
                 ToolCallEnd("c1"),
             ]
         )
-        action = _single_action(tokens)
-        assert isinstance(action, EditAction)
-        assert action.path == "/a.py"
-        assert action.search == "old_fn"
-        assert action.content == "new_fn"
-        assert action.operation == "replace"
-        assert action.match_all is False
+        emission = _single_emission(tokens)
+        assert isinstance(emission, FileEditEmission)
+        assert emission.path == "/a.py"
+        assert emission.search == "old_fn"
+        assert emission.content == "new_fn"
+        assert emission.operation == "replace"
+        assert emission.match_all is False
 
     def test_insert_after(self):
         args = json.dumps({"path": "/a.py", "search": "X", "insert_after": "Y"})
-        action = _single_action(
+        emission = _single_emission(
             _tokens(
                 [
                     ToolCallStart("c1", TOOL_EDIT_FILE),
@@ -236,12 +237,12 @@ class TestEditFile:
                 ]
             )
         )
-        assert action.operation == "insert-after"
-        assert action.content == "Y"
+        assert emission.operation == "insert-after"
+        assert emission.content == "Y"
 
     def test_insert_before(self):
         args = json.dumps({"path": "/a.py", "search": "X", "insert_before": "Z"})
-        action = _single_action(
+        emission = _single_emission(
             _tokens(
                 [
                     ToolCallStart("c1", TOOL_EDIT_FILE),
@@ -250,8 +251,8 @@ class TestEditFile:
                 ]
             )
         )
-        assert action.operation == "insert-before"
-        assert action.content == "Z"
+        assert emission.operation == "insert-before"
+        assert emission.content == "Z"
 
     def test_match_all_true(self):
         args = json.dumps(
@@ -262,7 +263,7 @@ class TestEditFile:
                 "match_all": True,
             }
         )
-        action = _single_action(
+        emission = _single_emission(
             _tokens(
                 [
                     ToolCallStart("c1", TOOL_EDIT_FILE),
@@ -271,7 +272,7 @@ class TestEditFile:
                 ]
             )
         )
-        assert action.match_all is True
+        assert emission.match_all is True
 
     def test_no_operation_dropped(self):
         args = json.dumps({"path": "/a.py", "search": "X"})
@@ -297,8 +298,8 @@ class TestEditFile:
 
 
 class TestInterleaved:
-    def test_multiple_calls_same_stream(self):
-        """Two tool calls in one stream — parser routes by call_id."""
+    def test_multiple_calls_get_distinct_emission_indices(self):
+        """Each ToolCallStart bumps the per-turn emission_index counter."""
         py_args = json.dumps({"title": "t", "thinking": "T", "code": "x"})
         file_args = json.dumps({"path": "/a.py", "content": "hi"})
 
@@ -311,11 +312,12 @@ class TestInterleaved:
             ToolCallEnd("c2"),
         ]
         tokens = _tokens(events)
-        # File action comes before python tokens (file call finishes first).
-        types = [t.type for t in tokens]
-        first_python_idx = types.index("python")
-        file_action_idx = types.index("file_action")
-        assert file_action_idx < first_python_idx
+
+        # File emission is index 0; python tokens are index 1.
+        emission_token = next(t for t in tokens if t.type == "emission")
+        python_tokens = [t for t in tokens if t.type == "python"]
+        assert emission_token.emission_index == 0
+        assert all(t.emission_index == 1 for t in python_tokens)
 
     def test_unknown_call_id_ignored(self):
         tokens = _tokens(

@@ -243,7 +243,7 @@ def _run_code(
         # Check for task_* usage — give a helpful error
         if isinstance(result.error, NameError) and any(
             name in str(result.error)
-            for name in ("task_success", "task_fail", "task_clarify", "task_continue")
+            for name in ("task_success", "task_fail", "task_clarify")
         ):
             raise TerminalError(
                 f"{result.error}\n"
