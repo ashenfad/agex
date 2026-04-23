@@ -26,7 +26,13 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Iterator
 
-from .events import ToolCallArgDelta, ToolCallEnd, ToolCallEvent, ToolCallStart
+from .events import (
+    TextPart,
+    ToolCallArgDelta,
+    ToolCallEnd,
+    ToolCallEvent,
+    ToolCallStart,
+)
 
 # --- Schemas ----------------------------------------------------------
 
@@ -163,9 +169,13 @@ def translate_messages_to_openai(messages: list[dict]) -> list[dict]:
 
 @dataclass
 class _StreamState:
-    """Per-stream translator state: tracks open tool calls by index."""
+    """Per-stream translator state: tracks open tool calls by index
+    and accumulates any plain-text ``delta.content`` chunks so they
+    can be flushed as a :class:`TextPart` at stream end.
+    """
 
     open_calls: dict[int, str] = field(default_factory=dict)
+    text_buf: list[str] = field(default_factory=list)
 
 
 def _as_dict(chunk: Any) -> dict:
@@ -179,6 +189,14 @@ def _as_dict(chunk: Any) -> dict:
 
 
 def _handle_delta(state: _StreamState, delta: dict) -> Iterator[ToolCallEvent]:
+    # Plain assistant text arrives as ``delta.content`` string chunks
+    # when the model mixes prose with tool calls (or replies with just
+    # prose).  Buffer and flush as a single TextPart at stream end so
+    # we don't emit many tiny fragments.
+    content = delta.get("content")
+    if isinstance(content, str) and content:
+        state.text_buf.append(content)
+
     tool_calls = delta.get("tool_calls") or []
     for tc in tool_calls:
         idx = tc.get("index")
@@ -203,6 +221,11 @@ def _close_open(state: _StreamState) -> Iterator[ToolCallEvent]:
     for call_id in state.open_calls.values():
         yield ToolCallEnd(call_id=call_id)
     state.open_calls.clear()
+    if state.text_buf:
+        text = "".join(state.text_buf)
+        state.text_buf.clear()
+        if text:
+            yield TextPart(text=text)
 
 
 def _capture_usage(chunk: dict, usage_holder: dict | None) -> None:

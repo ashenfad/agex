@@ -283,10 +283,13 @@ class TestTranslateAnthropicStream:
         assert [s.call_id for s in starts] == ["toolu_a", "toolu_b"]
         assert [e.call_id for e in ends] == ["toolu_a", "toolu_b"]
 
-    def test_text_content_block_ignored(self):
-        """Model sometimes emits a text block before/alongside tool_use —
-        we ignore text entirely in this adapter (callers that need it
-        should use the text path)."""
+    def test_text_content_block_captured_as_textpart(self):
+        """Claude can emit a text block alongside tool_use blocks (and
+        providers in general may respond with plain text).  Capture
+        it as a TextPart so the turn isn't blank in the event log and
+        the model sees its own words on the next request."""
+        from agex.llm.formats.tool_use.events import TextPart
+
         events = [
             {
                 "type": "content_block_start",
@@ -296,7 +299,12 @@ class TestTranslateAnthropicStream:
             {
                 "type": "content_block_delta",
                 "index": 0,
-                "delta": {"type": "text_delta", "text": "hello"},
+                "delta": {"type": "text_delta", "text": "hello "},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": "world"},
             },
             {"type": "content_block_stop", "index": 0},
             {
@@ -316,12 +324,11 @@ class TestTranslateAnthropicStream:
             {"type": "content_block_stop", "index": 1},
         ]
         out = list(translate_anthropic_stream_to_events(iter(events)))
-        # Only tool_use events emitted; text block is silent.
-        assert [type(e).__name__ for e in out] == [
-            "ToolCallStart",
-            "ToolCallArgDelta",
-            "ToolCallEnd",
-        ]
+        texts = [e for e in out if isinstance(e, TextPart)]
+        assert len(texts) == 1
+        assert texts[0].text == "hello world"
+        tool_events = [type(e).__name__ for e in out if not isinstance(e, TextPart)]
+        assert tool_events == ["ToolCallStart", "ToolCallArgDelta", "ToolCallEnd"]
 
     def test_usage_sums_cache_buckets(self):
         events = [

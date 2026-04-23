@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Iterator
 
 from .events import (
+    TextPart,
     ThinkingPart,
     ToolCallArgDelta,
     ToolCallEnd,
@@ -200,12 +201,15 @@ class _ThinkingState:
 @dataclass
 class _StreamState:
     """Per-stream translator state.  Tracks open tool-use blocks by
-    content-block ``index`` → ``tool_use.id`` and open thinking
-    blocks by content-block ``index`` → :class:`_ThinkingState`.
+    content-block ``index`` → ``tool_use.id``, open thinking blocks
+    by content-block ``index`` → :class:`_ThinkingState`, and open
+    plain-text blocks by content-block ``index`` → accumulated text
+    (Claude streams text blocks as their own ``text_delta`` bursts).
     """
 
     open_by_index: dict[int, str] = field(default_factory=dict)
     thinking_by_index: dict[int, _ThinkingState] = field(default_factory=dict)
+    text_by_index: dict[int, str] = field(default_factory=dict)
 
 
 def _as_dict(event: Any) -> dict:
@@ -277,6 +281,11 @@ def _handle_event(state: _StreamState, event_dict: dict) -> Iterator[ToolCallEve
             state.thinking_by_index[idx] = _ThinkingState(
                 redacted=True, data=block.get("data", "") or ""
             )
+        elif btype == "text":
+            # Plain assistant text — Claude can mix these in with
+            # tool_use blocks.  Accumulate ``text_delta`` chunks and
+            # flush on block_stop as a TextPart.
+            state.text_by_index[idx] = block.get("text", "") or ""
     elif etype == "content_block_delta":
         idx = event_dict.get("index")
         delta = event_dict.get("delta") or {}
@@ -292,6 +301,8 @@ def _handle_event(state: _StreamState, event_dict: dict) -> Iterator[ToolCallEve
             state.thinking_by_index[idx].text += delta.get("thinking", "") or ""
         elif dtype == "signature_delta" and idx in state.thinking_by_index:
             state.thinking_by_index[idx].signature += delta.get("signature", "") or ""
+        elif dtype == "text_delta" and idx in state.text_by_index:
+            state.text_by_index[idx] += delta.get("text", "") or ""
     elif etype == "content_block_stop":
         idx = event_dict.get("index")
         if idx is None:
@@ -303,6 +314,10 @@ def _handle_event(state: _StreamState, event_dict: dict) -> Iterator[ToolCallEve
         thinking = state.thinking_by_index.pop(idx, None)
         if thinking is not None:
             yield from _emit_thinking_part(thinking)
+            return
+        text = state.text_by_index.pop(idx, None)
+        if text:
+            yield TextPart(text=text)
 
 
 def _emit_thinking_part(thinking: _ThinkingState) -> Iterator[ToolCallEvent]:
