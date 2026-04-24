@@ -283,7 +283,16 @@ module my_mod:
     assert output.strip() == expected
 
 
-def test_render_low_vis_module_is_empty(dummy_module):
+def test_render_low_vis_module_is_hidden(dummy_module):
+    """Low-vis modules with no promoted members are not rendered at all.
+
+    Previously we emitted a ``module my_mod:\\n    ...`` stub so the
+    agent knew the module existed.  We stopped doing that because
+    (a) it wastes primer tokens, and (b) it couples the system-message
+    hash to any mid-session auto-registration of low-viz modules
+    (e.g. submodules picked up recursively), which would break the
+    provider prompt cache at task boundaries.
+    """
     agent = Agent()
     agent.module(
         dummy_module,
@@ -293,17 +302,8 @@ def test_render_low_vis_module_is_empty(dummy_module):
         configure={"func_med": MemberSpec(visibility="medium")},
     )
     output = render_definitions(agent)
-    expected = """# Available modules (import before using):
-
-module my_mod:
-    ...
-
-# To use the modules above, import them as you would any Python module:
-# - import some_module
-# - import some_module as alias
-# Note: you may not have full access to these modules or classes.
-# If you do not, you will see this as an error in your stdout (such as a 'no attribute' error)."""
-    assert output.strip() == expected
+    # Low-vis non-promoted module produces no output at all.
+    assert output.strip() == ""
 
 
 def test_render_low_vis_module_promoted_by_high_vis_func(dummy_module):
@@ -535,7 +535,13 @@ def test_render_object_with_medium_visibility():
 
 
 def test_render_object_with_low_visibility():
-    """Test object rendering with low visibility."""
+    """Low-vis objects with no promoted members are hidden entirely.
+
+    Matches ``test_render_low_vis_module_is_hidden`` — low-vis
+    non-promoted entries no longer emit a stub (``object db:\\n    ...``)
+    because that wasted primer tokens and coupled the system-message
+    hash to any mid-session re-registration of low-viz namespaces.
+    """
     agent = Agent(primer="Test agent.")
     db = MockDatabaseConnection("test_db")
 
@@ -543,10 +549,7 @@ def test_render_object_with_low_visibility():
 
     rendered = render_definitions(agent)
 
-    # Low visibility objects should be rendered with ellipsis (showing they exist but hiding contents)
-    assert "object db:" in rendered
-    assert "    ..." in rendered
-    # Should not show any methods or properties
+    assert "object db:" not in rendered
     assert "def query(" not in rendered
     assert "connection_id: ..." not in rendered
 

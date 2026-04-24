@@ -30,7 +30,7 @@ CLIENT_CONFIG_KEYS = {"api_key", "base_url", "organization", "timeout", "max_ret
 # wrong behaviour for agentic multi-step tasks.  Users on a non-
 # reasoning model should override with ``reasoning_effort=None`` in
 # kwargs or pass their preferred value.
-_DEFAULT_REASONING_EFFORT = "low"
+_DEFAULT_REASONING_EFFORT = "medium"
 
 
 def _is_reasoning_model(model: str) -> bool:

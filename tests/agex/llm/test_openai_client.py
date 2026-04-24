@@ -64,7 +64,7 @@ def test_reasoning_effort_explicit_opt_in_chat_path():
 
 
 def test_reasoning_default_on_responses_path():
-    """Responses path defaults the nested ``reasoning={"effort": "low"}``
+    """Responses path defaults the nested ``reasoning={"effort": "medium"}``
     block and enables encrypted-content round-trip."""
     from agex.llm.formats import ToolUseWireFormat
 
@@ -81,7 +81,7 @@ def test_reasoning_default_on_responses_path():
         list(client.complete_stream("sys", []))
 
     kwargs = create_mock.call_args.kwargs
-    assert kwargs.get("reasoning") == {"effort": "low"}
+    assert kwargs.get("reasoning") == {"effort": "medium"}
     assert kwargs.get("store") is False
     assert "reasoning.encrypted_content" in kwargs.get("include", [])
     assert kwargs.get("tool_choice") == "required"

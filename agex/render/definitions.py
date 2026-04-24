@@ -508,9 +508,14 @@ def _render_module(name: str, spec: RegisteredModule, full: bool = False) -> str
     if spec.visibility == "low" and is_promoted:
         effective_visibility = "medium"
 
-    # If a module is low-vis and not promoted, just show that it exists.
+    # If a module is low-vis and not promoted, hide it entirely.
+    # Previously we emitted ``module <name>:\n    ...`` as a hint that
+    # the module existed, but that (a) wastes primer tokens and (b)
+    # couples the cache key to any auto-registered low-viz module
+    # (e.g. submodules picked up recursively) — so any mid-session
+    # addition would break the provider prompt cache.
     if not full and effective_visibility == "low":
-        return f"module {name}:\n    ..."
+        return ""
 
     output = [f"module {name}:"]
     indent = "    "
@@ -634,9 +639,12 @@ def _render_object(
     if spec.visibility == "low" and is_promoted:
         effective_visibility = "medium"
 
-    # If an object is low-vis and not promoted, just show that it exists.
+    # If an object is low-vis and not promoted, hide it entirely.
+    # See the matching comment in ``_render_module`` — same rationale:
+    # skips primer tokens and keeps the system-message hash stable
+    # even if helpers register or mutate low-viz instances mid-session.
     if not full and effective_visibility == "low":
-        return f"object {name}:\n    ..."
+        return ""
 
     output = [f"object {name}:"]
     indent = "    "

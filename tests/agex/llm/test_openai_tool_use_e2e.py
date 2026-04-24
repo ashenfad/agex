@@ -282,11 +282,19 @@ async def test_pyfetch_openai_tool_use():
 
     body = fake_adapter.fetch_stream.call_args.kwargs["body"]
     assert "tools" in body
-    assert body["tool_choice"] == "required"
+    # With reasoning on, ``tool_choice`` drops from ``required`` to
+    # ``auto`` — Anthropic's extended thinking is incompatible with a
+    # forced tool call, and OpenRouter forwards the flag verbatim.
+    assert body["tool_choice"] == "auto"
     # Default ``native_thinking=True`` should inject OpenRouter's
-    # unified reasoning block so Claude/Gemini/DeepSeek emit real
-    # reasoning the adapter can capture.
-    assert body["reasoning"] == {"enabled": True, "effort": "low"}
+    # unified reasoning block.  For ``anthropic/*`` models we use the
+    # Anthropic-native budget shape (``max_tokens``) rather than
+    # OpenAI-native ``effort``, since OpenRouter's effort→budget
+    # conversion is unreliable on the Anthropic route.
+    assert body["reasoning"] == {"enabled": True, "max_tokens": 2048}
+    # OpenRouter-only capability filter — pin to Anthropic direct so
+    # Bedrock/Vertex don't silently drop reasoning.
+    assert body["provider"] == {"order": ["Anthropic"], "allow_fallbacks": False}
 
     # Round-trip through EmissionsBuilder.
     builder = EmissionsBuilder(agent_name="a")
