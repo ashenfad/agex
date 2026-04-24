@@ -107,6 +107,44 @@ def test_nudge_silent_on_raised_error():
     assert _guidance_outputs(events) == []
 
 
+def test_empty_code_tool_call_stays_python_emission_not_thinking():
+    """When a model calls python_action with filled thinking but empty
+    ``code``, the builder must keep a :class:`PythonEmission` — not
+    silently demote to :class:`ThinkingEmission`.  Otherwise the
+    no-progress nudge fires with "plain text doesn't execute anything",
+    which is wrong: the model *did* call a tool (it just left the body
+    blank).
+    """
+    import json
+
+    from agex.agent.emissions import PythonEmission
+    from agex.llm.core import EmissionsBuilder
+    from agex.llm.formats.tool_use import (
+        TOOL_PYTHON,
+        ToolCallArgDelta,
+        ToolCallEnd,
+        ToolCallStart,
+        parse_tool_events,
+    )
+
+    args = json.dumps({"title": "Plan", "thinking": "I want to...", "code": ""})
+    events = [
+        ToolCallStart("c1", TOOL_PYTHON),
+        ToolCallArgDelta("c1", args),
+        ToolCallEnd("c1"),
+    ]
+    builder = EmissionsBuilder()
+    for tok in parse_tool_events(iter(events)):
+        builder.process_token(tok)
+    resp = builder.build()
+    assert len(resp.emissions) == 1
+    em = resp.emissions[0]
+    assert isinstance(em, PythonEmission)
+    assert em.code == ""
+    assert em.thinking == "I want to..."
+    assert em.title == "Plan"
+
+
 def test_nudge_silent_on_terminator_call():
     """Explicit task_success — no silent-python condition, no nudge."""
     llm = Dummy(responses=[make_response(thinking="done", code="task_success(42)")])

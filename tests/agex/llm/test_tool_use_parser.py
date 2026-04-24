@@ -85,6 +85,22 @@ class TestPythonAction:
         ]
         assert len(thinking_content_deltas) >= 2
 
+    def test_tool_start_marker_emitted_for_python_action(self):
+        """The parser emits a ``tool_start`` marker on every
+        python_action so the builder knows the turn called a tool even
+        if the content arg is empty."""
+        tokens = _tokens(
+            [
+                ToolCallStart("c1", TOOL_PYTHON),
+                ToolCallArgDelta("c1", json.dumps({"code": ""})),
+                ToolCallEnd("c1"),
+            ]
+        )
+        starts = [t for t in tokens if t.type == "tool_start"]
+        assert len(starts) == 1
+        assert starts[0].content == "python_action"
+        assert starts[0].emission_index == 0
+
 
 class TestTerminalAction:
     def test_commands_field_maps_to_terminal_token(self):
