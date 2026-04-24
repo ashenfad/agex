@@ -2,7 +2,11 @@ from unittest.mock import patch
 
 import pytest
 
-from agex.llm.anthropic_client import Anthropic, _ensure_tool_choice_any
+from agex.llm.anthropic_client import (
+    Anthropic,
+    _ensure_extended_thinking,
+    _ensure_tool_choice_any,
+)
 from agex.llm.core import TokenChunk
 from tests.agex._emissions import (
     response_code,
@@ -58,6 +62,36 @@ class TestEnsureToolChoiceAny:
         kwargs = {"thinking": {"type": "enabled", "budget_tokens": 1024}}
         out = _ensure_tool_choice_any(kwargs)
         assert "tool_choice" not in out
+
+
+class TestNativeThinkingDefaults:
+    """Anthropic now defaults to ``native_thinking=True`` so ``thinking``
+    isn't a schema parameter Claude can fill while leaving ``code``
+    empty.  Enabling it requires the ``thinking`` request kwarg AND
+    means ``tool_choice=any`` must be skipped (the API rejects the
+    combination)."""
+
+    def test_default_wire_format_is_native_thinking(self):
+        with patch("anthropic.Anthropic"):
+            client = Anthropic(api_key="test")
+        assert getattr(client._wire_format, "native_thinking", False) is True
+
+    def test_ensure_extended_thinking_defaults_the_block(self):
+        out = _ensure_extended_thinking({})
+        assert out["thinking"] == {"type": "enabled", "budget_tokens": 2048}
+
+    def test_ensure_extended_thinking_respects_user_kwarg(self):
+        out = _ensure_extended_thinking({"thinking": {"type": "disabled"}})
+        assert out["thinking"] == {"type": "disabled"}
+
+    def test_native_thinking_disables_tool_choice_any_via_helper(self):
+        """End-to-end: enabling thinking lands in kwargs first, so the
+        subsequent ``_ensure_tool_choice_any`` call sees it and skips
+        forcing (which would fail at the API)."""
+        kwargs = _ensure_extended_thinking({})
+        kwargs = _ensure_tool_choice_any(kwargs)
+        assert "thinking" in kwargs
+        assert "tool_choice" not in kwargs
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,7 @@ from typing import Any, AsyncIterator, Iterator, List
 
 from agex.agent.events import Event
 from agex.llm.adapter import DefaultPyfetchAdapter, FetchAdapter
+from agex.llm.anthropic_client import _ensure_extended_thinking
 from agex.llm.core import LLM, TokenChunk
 from agex.llm.formats import ToolUseWireFormat, WireFormat
 from agex.llm.formats.tool_use.anthropic_adapter import (
@@ -101,7 +102,15 @@ class PyfetchAnthropic(LLM):
         # adapter, the adapter is expected to inject auth headers on the
         # way out (e.g., a JS bridge that reads the key from localStorage).
         self._adapter: FetchAdapter = fetch_adapter or DefaultPyfetchAdapter()
-        self._wire_format: WireFormat = wire_format or ToolUseWireFormat()
+        # Claude 4+ supports extended thinking natively; flip the
+        # default so ``thinking`` isn't a schema parameter the model
+        # can fill without following through on ``code``.  See
+        # ``anthropic_client`` for the matching ``thinking`` request
+        # kwarg plumbing — pyfetch-anthropic injects it in
+        # ``acomplete_stream`` below.
+        self._wire_format: WireFormat = wire_format or ToolUseWireFormat(
+            native_thinking=True
+        )
 
     def _headers(self) -> dict[str, str]:
         h: dict[str, str] = {
@@ -163,6 +172,8 @@ class PyfetchAnthropic(LLM):
         request_kwargs = {**self._kwargs, **kwargs}
         if "max_tokens" not in request_kwargs:
             request_kwargs["max_tokens"] = MAX_TOKENS
+        if getattr(self._wire_format, "native_thinking", False):
+            request_kwargs = _ensure_extended_thinking(request_kwargs)
 
         messages_dicts = self._wire_format.render_events(events)
 
