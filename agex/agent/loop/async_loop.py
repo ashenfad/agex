@@ -29,7 +29,7 @@ from agex.agent.emissions import (
     TextEmission,
     ThinkingEmission,
 )
-from agex.agent.events import CancelledEvent, SystemNoteEvent
+from agex.agent.events import CancelledEvent, OutputEvent, SystemNoteEvent
 from agex.agent.utils import call_sync_or_async
 from agex.eval.bridge import aexecute_sandboxed, execute_sandboxed
 from agex.resource_limits import apply_resource_limits
@@ -504,27 +504,40 @@ class AsyncLoopMixin:
             if versioned_state is not None:
                 safe_commit(versioned_state, referenced_keys=accumulated_refs)
 
+            # Silent-python nudge — see sync_loop for the rationale.
             combined_code = _last_python_code(action_event.emissions)
             if combined_code.strip() and not check_for_terminator_call(combined_code):
-                last_py_idx = None
-                for j, em in enumerate(action_event.emissions):
-                    if isinstance(em, PythonEmission) and (em.code or "").strip():
-                        last_py_idx = j
-                nudge_id = (
-                    _emission_block_id(event_idx, last_py_idx)
-                    if last_py_idx is not None
-                    else None
+                py_ids = {
+                    _emission_block_id(event_idx, j)
+                    for j, em in enumerate(action_event.emissions)
+                    if isinstance(em, PythonEmission) and (em.code or "").strip()
+                }
+                new_events = events(exec_state)[event_idx + 1 :]
+                had_observation = any(
+                    isinstance(ev, OutputEvent)
+                    and any(getattr(p, "emission_id", None) in py_ids for p in ev.parts)
+                    for ev in new_events
                 )
-                guidance_output = create_guidance_output(
-                    self.name, emission_id=nudge_id
-                )
-                add_event_to_log(exec_state, guidance_output, on_event=None)
-                if on_event:
-                    res = call_sync_or_async(on_event, guidance_output)
-                    if inspect.isawaitable(res):
-                        await res
-                yield guidance_output
-                events_yielded += 1
+                if not had_observation:
+                    last_py_idx = None
+                    for j, em in enumerate(action_event.emissions):
+                        if isinstance(em, PythonEmission) and (em.code or "").strip():
+                            last_py_idx = j
+                    nudge_id = (
+                        _emission_block_id(event_idx, last_py_idx)
+                        if last_py_idx is not None
+                        else None
+                    )
+                    guidance_output = create_guidance_output(
+                        self.name, emission_id=nudge_id
+                    )
+                    add_event_to_log(exec_state, guidance_output, on_event=None)
+                    if on_event:
+                        res = call_sync_or_async(on_event, guidance_output)
+                        if inspect.isawaitable(res):
+                            await res
+                    yield guidance_output
+                    events_yielded += 1
             elif not any(
                 isinstance(em, ACTION_EMISSION_TYPES) for em in action_event.emissions
             ):

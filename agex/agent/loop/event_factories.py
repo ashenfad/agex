@@ -29,12 +29,13 @@ from agex.state.log import add_event_to_log
 # reminder nudges the agent to wrap up with an explicit terminator when
 # iterations are running long.
 TASK_CONTROL_GUIDANCE = (
-    "💡 **Task Control Reminder**: Your code executed successfully.  If this "
-    "completes the task, signal it explicitly:\n\n"
+    "💡 **Silent turn** — your python_action ran without printing "
+    "anything, so there's nothing to observe next turn.  If you're "
+    "done, finish explicitly inside python_action:\n\n"
     "• `task_success(result)` — complete the task with your final answer\n"
     "• `task_fail(message)` — if you cannot complete the task\n"
     "• `task_clarify(message)` — if you need more information from the caller\n\n"
-    "Otherwise your turn continues — just keep going on the next turn."
+    "Otherwise keep going — your turn continues normally on the next iteration."
 )
 
 # Shown when a turn completed with only text/thinking — no tool_use.
