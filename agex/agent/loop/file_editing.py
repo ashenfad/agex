@@ -244,7 +244,6 @@ def apply_optimistic_file_actions(
                 action.path,
                 action.search,
                 action.content,
-                action.operation,
                 action.match_all,
             )
             if key in seen_edits:
@@ -468,48 +467,23 @@ def apply_file_edit(
         new_content = existing_content
 
         for start_pos, end_pos, matched_text in reversed(matches_to_apply):
-            adjusted_content = _adjust_replacement_indent(
+            replacement = _adjust_replacement_indent(
                 emission.content, emission.search, matched_text
             )
-
-            if emission.operation == "insert-after":
-                replacement = matched_text + adjusted_content
-            elif emission.operation == "insert-before":
-                replacement = adjusted_content + matched_text
-            else:  # "replace"
-                replacement = adjusted_content
-
             new_content = new_content[:start_pos] + replacement + new_content[end_pos:]
 
     elif match_mode == "trailing_ws":
         pattern = _build_trailing_ws_pattern(emission.search)
-
-        def make_replacement(match: re.Match) -> str:
-            matched_text = match.group(0)
-            if emission.operation == "insert-after":
-                return matched_text + emission.content
-            elif emission.operation == "insert-before":
-                return emission.content + matched_text
-            else:  # "replace"
-                return emission.content
-
         if emission.match_all:
-            new_content = pattern.sub(make_replacement, existing_content)
+            new_content = pattern.sub(emission.content, existing_content)
         else:
-            new_content = pattern.sub(make_replacement, existing_content, count=1)
+            new_content = pattern.sub(emission.content, existing_content, count=1)
     else:
         # Exact matching
-        if emission.operation == "insert-after":
-            replacement = emission.search + emission.content
-        elif emission.operation == "insert-before":
-            replacement = emission.content + emission.search
-        else:  # "replace"
-            replacement = emission.content
-
         if emission.match_all:
-            new_content = existing_content.replace(emission.search, replacement)
+            new_content = existing_content.replace(emission.search, emission.content)
         else:
-            new_content = existing_content.replace(emission.search, replacement, 1)
+            new_content = existing_content.replace(emission.search, emission.content, 1)
 
     target_fs.write(path, new_content.encode("utf-8"), mode="w")
     return True

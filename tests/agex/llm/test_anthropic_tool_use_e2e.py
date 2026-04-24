@@ -181,12 +181,12 @@ class TestAnthropicToolUse:
         assert fa.path == "/a.py"
         assert fa.content == "X = 1"
 
-    def test_edit_file_insert_before(self):
+    def test_edit_file_replace(self):
         edit_args = json.dumps(
             {
                 "path": "/b.py",
                 "search": "anchor",
-                "insert_before": "added",
+                "replace": "added anchor",
             }
         )
         py_args = json.dumps({"title": "t", "thinking": "T", "code": "pass"})
@@ -253,8 +253,8 @@ class TestAnthropicToolUse:
         ea = response_file_actions(resp)[0]
         assert isinstance(ea, FileEditEmission)
         assert ea.path == "/b.py"
-        assert ea.operation == "insert-before"
-        assert ea.content == "added"
+        assert ea.search == "anchor"
+        assert ea.content == "added anchor"
 
 
 @pytest.mark.asyncio

@@ -482,9 +482,7 @@ class ActionEvent(BaseEvent):
                     f"**[{i}] WriteFile** `{em.path}` ({em.mode}) {em.title or ''}"
                 )
             elif isinstance(em, FileEditEmission):
-                lines.append(
-                    f"**[{i}] EditFile** `{em.path}` ({em.operation}) {em.title or ''}"
-                )
+                lines.append(f"**[{i}] EditFile** `{em.path}` {em.title or ''}")
             else:
                 lines.append(f"**[{i}] {kind}**")
         return "\n".join(lines)
@@ -526,7 +524,7 @@ class ActionEvent(BaseEvent):
                 )
                 sections.append(_code_section(title, em.content, "#28a745"))
             elif isinstance(em, FileEditEmission):
-                title = f"✏️ [{i}] EditFile: {em.path} ({em.operation})"
+                title = f"✏️ [{i}] EditFile: {em.path}"
                 if em.title:
                     title += f" — {em.title}"
                 sections.append(_code_section(title, em.content, "#0366d6"))

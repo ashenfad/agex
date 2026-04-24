@@ -476,16 +476,13 @@ class TestApplyOptimisticFileActionsIntegration:
             def __init__(self, file_actions):
                 self.file_actions = file_actions
 
-        def create(
-            search, content, path="test.py", operation="replace", match_all=False
-        ):
+        def create(search, content, path="test.py", match_all=False):
             return MockLLMResponse(
                 [
                     FileEditEmission(
                         path=path,
                         search=search,
                         content=content,
-                        operation=operation,
                         match_all=match_all,
                     )
                 ]
@@ -555,15 +552,20 @@ class TestApplyOptimisticFileActionsIntegration:
         assert "\tdef bar():" in result
         assert "\t\treturn 1" in result
 
-    def test_indent_flexible_insert_after(self, mock_fs, mock_agent, mock_llm_response):
-        """Test insert-after with indent adjustment."""
+    def test_indent_flexible_insert_via_replace(
+        self, mock_fs, mock_agent, mock_llm_response
+    ):
+        """Insert-after is now expressed as replace-with-anchor: include
+        the anchor itself in ``content`` to keep it and add new text.
+        Indent-flexible matching still reindents the replacement."""
         from agex.agent.loop.common import apply_optimistic_file_actions
 
         mock_fs.files["test.py"] = b"class Foo:\n    def method(self):\n        pass"
         response = mock_llm_response(
             search="def method(self):\n    pass",
-            content="\n\ndef new_method(self):\n    return 42",
-            operation="insert-after",
+            content=(
+                "def method(self):\n    pass\n\ndef new_method(self):\n    return 42"
+            ),
         )
 
         apply_optimistic_file_actions(mock_agent, response, mock_fs, {})
@@ -726,19 +728,16 @@ class TestApplyOptimisticFileActionsIntegration:
                     path="test.py",
                     search="stateRef.current = state",
                     content="stateRef.current = state\n  saveTimer()",
-                    operation="replace",
                 ),
                 FileEditEmission(  # exact duplicate
                     path="test.py",
                     search="stateRef.current = state",
                     content="stateRef.current = state\n  saveTimer()",
-                    operation="replace",
                 ),
                 FileEditEmission(  # another exact duplicate
                     path="test.py",
                     search="stateRef.current = state",
                     content="stateRef.current = state\n  saveTimer()",
-                    operation="replace",
                 ),
             ]
 

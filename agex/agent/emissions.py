@@ -109,19 +109,18 @@ class FileWriteEmission:
 
 @dataclass
 class FileEditEmission:
-    """A file edit (search+replace / insert) requested by the agent.
+    """A file edit (search + replace) requested by the agent.
 
-    Maps to the ``edit_file`` tool call. Operation semantics:
-
-    - ``replace``: swap the search text for ``content``.
-    - ``insert-after``: keep the search text, append ``content`` after it.
-    - ``insert-before``: keep the search text, prepend ``content`` before it.
+    Maps to the ``edit_file`` tool call: swap ``search`` for ``content``.
+    Inserting relative to an anchor is expressed as a replace whose
+    ``content`` includes the anchor — e.g. to append ``new_fn`` after
+    ``old_fn``, search for ``old_fn`` and replace with
+    ``old_fn\\nnew_fn``.
     """
 
     path: str
     search: str
     content: str
-    operation: Literal["replace", "insert-after", "insert-before"] = "replace"
     match_all: bool = False
     title: str | None = None
     signature: bytes | None = None

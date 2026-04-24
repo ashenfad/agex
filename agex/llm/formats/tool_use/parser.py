@@ -14,10 +14,10 @@ Two cadences:
   finishes.  All chunks for a given call share its ``emission_index``.
 
 * **File tools** (``write_file`` / ``edit_file``) stream their string
-  args (``path``, ``content`` / ``search`` / ``replace`` /
-  ``insert_after`` / ``insert_before``) as ``file_path`` /
-  ``file_search`` / ``file_content`` ``TokenChunk``\\ s so callers
-  watching the stream can see what the model is writing.  The same
+  args (``path``, ``content`` / ``search`` / ``replace``) as
+  ``file_path`` / ``file_search`` / ``file_content``
+  ``TokenChunk``\\ s so callers watching the stream can see what the
+  model is writing.  The same
   bytes are also buffered so that at ``ToolCallEnd`` the parser can
   decode the full JSON (including non-string fields like ``mode`` and
   ``match_all``) and emit the authoritative
@@ -73,10 +73,7 @@ _TERMINAL_KEY_MAP = {
     "commands": "terminal",
 }
 
-# File tool string args stream as UI-only ``file_*`` tokens.  All three
-# edit-content keys (``replace``, ``insert_after``, ``insert_before``)
-# route to ``file_content`` — the operation itself is resolved at
-# finalize time from whichever key appeared.
+# File tool string args stream as UI-only ``file_*`` tokens.
 _WRITE_FILE_KEY_MAP = {
     "path": "file_path",
     "content": "file_content",
@@ -86,8 +83,6 @@ _EDIT_FILE_KEY_MAP = {
     "path": "file_path",
     "search": "file_search",
     "replace": "file_content",
-    "insert_after": "file_content",
-    "insert_before": "file_content",
 }
 
 
@@ -131,8 +126,8 @@ class _CallState:
         else:
             self._key_map = {}
         # File tools also need the raw JSON at finalize time so
-        # non-string fields (mode, match_all) and operation selection
-        # survive into the built emission.
+        # non-string fields (mode, match_all) survive into the built
+        # emission.
         self._raw_buf: list[str] | None = (
             [] if tool_name in (TOOL_WRITE_FILE, TOOL_EDIT_FILE) else None
         )
@@ -195,24 +190,12 @@ def _build_write_file(args: dict) -> FileWriteEmission | None:
 def _build_edit_file(args: dict) -> FileEditEmission | None:
     path = args.get("path") or ""
     search = args.get("search")
-    if not path or search is None:
-        return None
-    if "replace" in args:
-        operation = "replace"
-        content = args["replace"]
-    elif "insert_after" in args:
-        operation = "insert-after"
-        content = args["insert_after"]
-    elif "insert_before" in args:
-        operation = "insert-before"
-        content = args["insert_before"]
-    else:
+    if not path or search is None or "replace" not in args:
         return None
     return FileEditEmission(
         path=path,
         search=search,
-        content=content,
-        operation=operation,  # type: ignore[arg-type]
+        content=args["replace"],
         match_all=bool(args.get("match_all", False)),
     )
 

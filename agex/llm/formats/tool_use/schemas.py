@@ -8,8 +8,7 @@ Four tools cover the agent's turn-level actions:
 - ``terminal_action`` — run shell commands.  Returning continues the
   turn just like python_action.
 - ``write_file`` — write or append a file.
-- ``edit_file`` — surgical edit with search + replace / insert-after /
-  insert-before.
+- ``edit_file`` — surgical edit: search + replace.
 
 Each schema is returned as a provider-agnostic dict. Clients translate to
 their provider's exact shape (OpenAI ``function.parameters``, Anthropic
@@ -131,15 +130,16 @@ _WRITE_FILE_SCHEMA: dict[str, Any] = {
 _EDIT_FILE_SCHEMA: dict[str, Any] = {
     "name": TOOL_EDIT_FILE,
     "description": (
-        "Surgical edit. 'search' must match the file exactly (including "
-        "whitespace) and occur once unless match_all=true. Provide EXACTLY "
-        "one of 'replace', 'insert_after', or 'insert_before'. Prefer "
-        "insert_after/insert_before over a replace that repeats the search "
-        "text — the latter makes duplicates more likely if re-run."
+        "Surgical search-and-replace. 'search' must match the file exactly "
+        "(including whitespace) and occur once unless match_all=true; its "
+        "text is swapped for 'replace'. To insert new content around an "
+        "anchor, include the anchor in 'replace' — e.g. append a function "
+        "after 'def foo():' by searching for 'def foo():\\n<body>' and "
+        "replacing with the same block plus the new function underneath."
     ),
     "parameters": {
         "type": "object",
-        "required": ["path", "search"],
+        "required": ["path", "search", "replace"],
         "properties": {
             "path": {
                 "type": "string",
@@ -151,15 +151,7 @@ _EDIT_FILE_SCHEMA: dict[str, Any] = {
             },
             "replace": {
                 "type": "string",
-                "description": "Replacement text. Replaces 'search' entirely.",
-            },
-            "insert_after": {
-                "type": "string",
-                "description": "Text inserted after 'search' (kept verbatim).",
-            },
-            "insert_before": {
-                "type": "string",
-                "description": "Text inserted before 'search' (kept verbatim).",
+                "description": "Replacement text. Swapped in for 'search'.",
             },
             "match_all": {
                 "type": "boolean",

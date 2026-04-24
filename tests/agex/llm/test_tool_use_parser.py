@@ -250,36 +250,7 @@ class TestEditFile:
         assert emission.path == "/a.py"
         assert emission.search == "old_fn"
         assert emission.content == "new_fn"
-        assert emission.operation == "replace"
         assert emission.match_all is False
-
-    def test_insert_after(self):
-        args = json.dumps({"path": "/a.py", "search": "X", "insert_after": "Y"})
-        emission = _single_emission(
-            _tokens(
-                [
-                    ToolCallStart("c1", TOOL_EDIT_FILE),
-                    ToolCallArgDelta("c1", args),
-                    ToolCallEnd("c1"),
-                ]
-            )
-        )
-        assert emission.operation == "insert-after"
-        assert emission.content == "Y"
-
-    def test_insert_before(self):
-        args = json.dumps({"path": "/a.py", "search": "X", "insert_before": "Z"})
-        emission = _single_emission(
-            _tokens(
-                [
-                    ToolCallStart("c1", TOOL_EDIT_FILE),
-                    ToolCallArgDelta("c1", args),
-                    ToolCallEnd("c1"),
-                ]
-            )
-        )
-        assert emission.operation == "insert-before"
-        assert emission.content == "Z"
 
     def test_match_all_true(self):
         args = json.dumps(
@@ -301,7 +272,7 @@ class TestEditFile:
         )
         assert emission.match_all is True
 
-    def test_no_operation_dropped(self):
+    def test_missing_replace_dropped(self):
         args = json.dumps({"path": "/a.py", "search": "X"})
         tokens = _tokens(
             [
@@ -310,8 +281,8 @@ class TestEditFile:
                 ToolCallEnd("c1"),
             ]
         )
-        # UI sees the partial args, but with no replace / insert_*,
-        # nothing actionable is finalized.
+        # UI sees the partial args, but without ``replace``, nothing
+        # actionable is finalized.
         assert all(t.type != "emission" for t in tokens)
 
     def test_missing_search_dropped(self):

@@ -179,7 +179,6 @@ class TestGeminiToolUse:
             ea = response_file_actions(resp)[0]
             assert isinstance(ea, FileEditEmission)
             assert ea.path == "/b.py"
-            assert ea.operation == "replace"
             assert ea.content == "y"
 
     def test_grounding_tools_coexist_with_function_declarations(self):

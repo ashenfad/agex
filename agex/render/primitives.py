@@ -205,16 +205,9 @@ def render_action_markdown(
                 terminal_sections.append(em.commands)
         elif isinstance(em, FileEditEmission):
             match_all_str = " (match_all)" if em.match_all else ""
-            op_str = f" ({em.operation})" if em.operation != "replace" else ""
-            section = f"### EDIT {em.path}{op_str}{match_all_str}\n"
+            section = f"### EDIT {em.path}{match_all_str}\n"
             section += f"Search:\n```\n{em.search}\n```\n"
-            if em.operation == "insert-after":
-                label = "Insert After"
-            elif em.operation == "insert-before":
-                label = "Insert Before"
-            else:
-                label = "Replace"
-            section += f"{label}:\n```\n{em.content}\n```\n\n"
+            section += f"Replace:\n```\n{em.content}\n```\n\n"
             file_sections.append(section)
         elif isinstance(em, FileWriteEmission):
             mode_suffix = f" (mode: {em.mode})" if em.mode != "write" else ""

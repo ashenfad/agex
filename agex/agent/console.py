@@ -302,7 +302,7 @@ def _format_event_lines(
                 file_summaries.append(f"`{em.path}` ({tag})")
             elif isinstance(em, FileEditEmission):
                 scope = " match_all" if em.match_all else ""
-                file_summaries.append(f"`{em.path}` (edit {em.operation}{scope})")
+                file_summaries.append(f"`{em.path}` (edit{scope})")
 
         # Only emit the Thinking line if there was actually thinking —
         # otherwise the label is noise.
@@ -571,7 +571,7 @@ def pprint_tokens(
             color_code = _Colors.magenta if use_color else ""
         elif isinstance(em, FileEditEmission):
             scope = " (match_all)" if em.match_all else ""
-            line = f"  → {em.operation}{scope}\n"
+            line = f"  → replace{scope}\n"
             color_code = _Colors.magenta if use_color else ""
         elif isinstance(em, ThinkingEmission):
             if em.redacted:
