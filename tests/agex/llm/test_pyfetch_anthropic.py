@@ -102,6 +102,61 @@ def test_sync_stream_raises():
 
 
 # ---------------------------------------------------------------------------
+# tool_choice + extended-thinking compatibility
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureToolChoiceAny:
+    """Unit coverage for the SDK-parity helper that forces tool
+    calling when extended thinking isn't in play.
+
+    The rule is three-way: user-supplied ``tool_choice`` always wins;
+    presence of ``thinking`` skips the force (Anthropic rejects
+    ``tool_choice != auto`` with extended thinking enabled); otherwise
+    default to ``{"type": "any"}`` so the model can't stall the agent
+    loop by emitting plain assistant text.
+    """
+
+    def test_forces_any_when_no_thinking(self):
+        from agex.llm.pyfetch_anthropic import _ensure_tool_choice_any
+
+        out = _ensure_tool_choice_any({"max_tokens": 1024})
+        assert out["tool_choice"] == {"type": "any"}
+        assert out["max_tokens"] == 1024  # unchanged
+
+    def test_skips_when_thinking_present(self):
+        """Extended thinking + forced tool_choice is an API 400 —
+        leave tool_choice unset so it defaults to ``auto`` server-side."""
+        from agex.llm.pyfetch_anthropic import _ensure_tool_choice_any
+
+        kwargs = {"thinking": {"type": "enabled", "budget_tokens": 2048}}
+        out = _ensure_tool_choice_any(kwargs)
+        assert "tool_choice" not in out
+        # Original kwargs should round-trip untouched.
+        assert out["thinking"] == kwargs["thinking"]
+
+    def test_user_tool_choice_wins_over_default(self):
+        from agex.llm.pyfetch_anthropic import _ensure_tool_choice_any
+
+        out = _ensure_tool_choice_any({"tool_choice": "auto"})
+        assert out["tool_choice"] == "auto"
+
+    def test_user_tool_choice_wins_even_with_thinking(self):
+        """If a caller explicitly sets ``tool_choice`` alongside
+        ``thinking``, they own the incompatibility — don't second-
+        guess them."""
+        from agex.llm.pyfetch_anthropic import _ensure_tool_choice_any
+
+        out = _ensure_tool_choice_any(
+            {
+                "tool_choice": {"type": "tool", "name": "python_action"},
+                "thinking": {"type": "enabled", "budget_tokens": 2048},
+            }
+        )
+        assert out["tool_choice"] == {"type": "tool", "name": "python_action"}
+
+
+# ---------------------------------------------------------------------------
 # SSE → content extraction
 # ---------------------------------------------------------------------------
 
