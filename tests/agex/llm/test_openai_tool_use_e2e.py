@@ -267,11 +267,13 @@ async def test_pyfetch_openai_tool_use():
     fake_adapter = MagicMock()
     fake_adapter.fetch_stream = MagicMock(return_value=FakeStream(sse_lines))
 
+    # Rely on the client's default wire_format (native_thinking=True
+    # after the OpenRouter-reasoning migration) so this test also
+    # pins the default ``body["reasoning"]`` injection.
     client = PyfetchOpenAI(
         model="anthropic/claude-sonnet-4",
         api_key="sk-test",
         fetch_adapter=fake_adapter,
-        wire_format=ToolUseWireFormat(),
     )
 
     tokens = []
@@ -281,6 +283,10 @@ async def test_pyfetch_openai_tool_use():
     body = fake_adapter.fetch_stream.call_args.kwargs["body"]
     assert "tools" in body
     assert body["tool_choice"] == "required"
+    # Default ``native_thinking=True`` should inject OpenRouter's
+    # unified reasoning block so Claude/Gemini/DeepSeek emit real
+    # reasoning the adapter can capture.
+    assert body["reasoning"] == {"enabled": True, "effort": "low"}
 
     # Round-trip through EmissionsBuilder.
     builder = EmissionsBuilder(agent_name="a")
@@ -291,6 +297,131 @@ async def test_pyfetch_openai_tool_use():
     assert response_code(resp) == "print(1)"
     assert resp.input_tokens == 20
     assert resp.output_tokens == 5
+
+
+@pytest.mark.asyncio
+async def test_pyfetch_openai_native_thinking_off_skips_reasoning_block():
+    """When the caller opts out of native thinking explicitly,
+    ``body["reasoning"]`` should not be set — keeps compatibility with
+    routes that don't understand OpenRouter's reasoning extension.
+    """
+    from agex.llm.formats import ToolUseWireFormat
+
+    args_json = json.dumps({"title": "t", "thinking": "T", "code": "print(1)"})
+    sse_lines = [
+        "data: "
+        + json.dumps(
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "python_action",
+                                        "arguments": args_json,
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            }
+        )
+        + "\n\n",
+        "data: [DONE]\n\n",
+    ]
+
+    class FakeStream:
+        def __init__(self, lines):
+            self._lines = lines
+
+        def __aiter__(self):
+            async def gen():
+                for line in self._lines:
+                    yield line
+
+            return gen()
+
+    fake_adapter = MagicMock()
+    fake_adapter.fetch_stream = MagicMock(return_value=FakeStream(sse_lines))
+
+    client = PyfetchOpenAI(
+        model="anthropic/claude-sonnet-4",
+        api_key="sk-test",
+        fetch_adapter=fake_adapter,
+        wire_format=ToolUseWireFormat(native_thinking=False),
+    )
+    async for _ in client.acomplete_stream("sys", []):
+        pass
+
+    body = fake_adapter.fetch_stream.call_args.kwargs["body"]
+    assert "reasoning" not in body
+
+
+@pytest.mark.asyncio
+async def test_pyfetch_openai_user_reasoning_kwarg_wins():
+    """Caller-supplied ``reasoning=`` overrides the default
+    injection — users running custom reasoning budgets or disabling
+    on specific routes should stay in control."""
+    args_json = json.dumps({"title": "t", "thinking": "T", "code": "print(1)"})
+    sse_lines = [
+        "data: "
+        + json.dumps(
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "python_action",
+                                        "arguments": args_json,
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            }
+        )
+        + "\n\n",
+        "data: [DONE]\n\n",
+    ]
+
+    class FakeStream:
+        def __init__(self, lines):
+            self._lines = lines
+
+        def __aiter__(self):
+            async def gen():
+                for line in self._lines:
+                    yield line
+
+            return gen()
+
+    fake_adapter = MagicMock()
+    fake_adapter.fetch_stream = MagicMock(return_value=FakeStream(sse_lines))
+
+    client = PyfetchOpenAI(
+        model="anthropic/claude-sonnet-4",
+        api_key="sk-test",
+        fetch_adapter=fake_adapter,
+        reasoning={"effort": "high", "max_tokens": 4000},
+    )
+    async for _ in client.acomplete_stream("sys", []):
+        pass
+
+    body = fake_adapter.fetch_stream.call_args.kwargs["body"]
+    assert body["reasoning"] == {"effort": "high", "max_tokens": 4000}
 
 
 @pytest.mark.asyncio

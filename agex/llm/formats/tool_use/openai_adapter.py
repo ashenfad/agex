@@ -28,11 +28,51 @@ from typing import Any, AsyncIterator, Iterator
 
 from .events import (
     TextPart,
+    ThinkingPart,
     ToolCallArgDelta,
     ToolCallEnd,
     ToolCallEvent,
     ToolCallStart,
 )
+
+# OpenRouter's unified reasoning-tokens API carries a
+# ``reasoning_details`` array on assistant messages — one entry per
+# reasoning block, typed (``reasoning.summary`` / ``reasoning.text`` /
+# ``reasoning.encrypted``) and format-tagged (``anthropic-claude-v1``,
+# ``openai-responses-v1``, ``google-gemini-v1``, ...).  The docs
+# require "the entire sequence of consecutive reasoning blocks" to
+# match the original response on replay, so we pack the full array
+# verbatim into :class:`ThinkingEmission.signature` bytes with a
+# short tag prefix — same pattern the Responses adapter uses.  That
+# keeps the emission model provider-agnostic while still round-
+# tripping every opaque byte OpenRouter expects.
+_OPENROUTER_REASONING_PREFIX = b"openrouter-reasoning:"
+
+
+def encode_openrouter_reasoning(details: list) -> bytes:
+    """Pack OpenRouter's ``reasoning_details`` array into signature
+    bytes so it can ride on :class:`ThinkingEmission.signature` and
+    round-trip on the next turn.
+    """
+    return _OPENROUTER_REASONING_PREFIX + json.dumps(details).encode("utf-8")
+
+
+def decode_openrouter_reasoning(sig: Any) -> list | None:
+    """Inverse of :func:`encode_openrouter_reasoning`.  Returns the
+    array or ``None`` if the bytes aren't an OpenRouter-encoded
+    signature (defensive — keeps Gemini/Anthropic/Responses
+    signatures from being mis-replayed here).
+    """
+    if not isinstance(sig, bytes) or not sig.startswith(_OPENROUTER_REASONING_PREFIX):
+        return None
+    try:
+        payload = json.loads(sig[len(_OPENROUTER_REASONING_PREFIX) :].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, list):
+        return None
+    return payload
+
 
 # --- Schemas ----------------------------------------------------------
 
@@ -101,6 +141,7 @@ def translate_messages_to_openai(messages: list[dict]) -> list[dict]:
         if role == "assistant" and isinstance(content, list):
             tool_calls: list[dict] = []
             text_bits: list[str] = []
+            reasoning_details: list[dict] = []
             for block in content:
                 btype = block.get("type")
                 if btype == "tool_use":
@@ -116,12 +157,26 @@ def translate_messages_to_openai(messages: list[dict]) -> list[dict]:
                     )
                 elif btype == "text":
                     text_bits.append(block.get("text", ""))
+                elif btype == "thinking":
+                    # Unpack an OpenRouter reasoning_details array
+                    # back onto the assistant message.  OpenRouter
+                    # requires the full sequence of reasoning blocks
+                    # to round-trip verbatim; we only emit the field
+                    # when the signature decodes as OpenRouter-shaped
+                    # (signatures from Gemini / Anthropic / OpenAI
+                    # Responses are silently ignored — those providers
+                    # don't go through this adapter on replay).
+                    decoded = decode_openrouter_reasoning(block.get("signature"))
+                    if decoded is not None:
+                        reasoning_details.extend(decoded)
             assistant_msg: dict[str, Any] = {
                 "role": "assistant",
                 "content": "".join(text_bits) if text_bits else None,
             }
             if tool_calls:
                 assistant_msg["tool_calls"] = tool_calls
+            if reasoning_details:
+                assistant_msg["reasoning_details"] = reasoning_details
             out.append(assistant_msg)
             continue
 
@@ -169,13 +224,24 @@ def translate_messages_to_openai(messages: list[dict]) -> list[dict]:
 
 @dataclass
 class _StreamState:
-    """Per-stream translator state: tracks open tool calls by index
-    and accumulates any plain-text ``delta.content`` chunks so they
-    can be flushed as a :class:`TextPart` at stream end.
+    """Per-stream translator state: tracks open tool calls by index,
+    accumulates any plain-text ``delta.content`` chunks so they can
+    be flushed as a :class:`TextPart` at stream end, and buffers any
+    OpenRouter ``delta.reasoning_details`` entries so they can be
+    flushed as a single :class:`ThinkingPart` carrying the full
+    ``reasoning_details`` array encoded into its signature.
     """
 
     open_calls: dict[int, str] = field(default_factory=dict)
     text_buf: list[str] = field(default_factory=list)
+    # Keyed by ``index`` within the assistant turn.  Each entry is
+    # a dict mirroring the reasoning_details shape OpenRouter sends
+    # (``type``, ``format``, ``id``, ``index`` + type-specific
+    # content fields like ``text`` / ``summary`` / ``data``).  Text
+    # fields concatenate across deltas; non-text fields take the
+    # latest non-empty value so a late-arriving chunk with an ``id``
+    # or ``format`` fills in whatever was missing earlier.
+    reasoning_by_index: dict[int, dict] = field(default_factory=dict)
 
 
 def _as_dict(chunk: Any) -> dict:
@@ -196,6 +262,25 @@ def _handle_delta(state: _StreamState, delta: dict) -> Iterator[ToolCallEvent]:
     content = delta.get("content")
     if isinstance(content, str) and content:
         state.text_buf.append(content)
+
+    # OpenRouter's unified reasoning tokens arrive as
+    # ``delta.reasoning_details`` — accumulate by ``index`` so the
+    # final ThinkingPart carries the same array shape the server
+    # sent.  Multiple deltas for the same index concatenate text
+    # fields; other fields (format, type, id, data) take the latest
+    # non-empty value.
+    for rd in delta.get("reasoning_details") or []:
+        if not isinstance(rd, dict):
+            continue
+        idx = rd.get("index")
+        if idx is None:
+            continue
+        slot = state.reasoning_by_index.setdefault(idx, {})
+        for key, val in rd.items():
+            if key in ("text", "summary") and isinstance(val, str):
+                slot[key] = (slot.get(key) or "") + val
+            elif val is not None and val != "":
+                slot[key] = val
 
     tool_calls = delta.get("tool_calls") or []
     for tc in tool_calls:
@@ -226,6 +311,29 @@ def _close_open(state: _StreamState) -> Iterator[ToolCallEvent]:
         state.text_buf.clear()
         if text:
             yield TextPart(text=text)
+    if state.reasoning_by_index:
+        # Flush all reasoning blocks as a single ThinkingPart — the
+        # whole array rides in the signature so the next turn can
+        # replay it verbatim.  Surfaceable text (``summary`` or
+        # ``text`` entries) aggregates into the visible text; opaque
+        # encrypted blocks render as redacted.
+        details = [
+            state.reasoning_by_index[k] for k in sorted(state.reasoning_by_index.keys())
+        ]
+        state.reasoning_by_index.clear()
+        text_bits: list[str] = []
+        for d in details:
+            dtype = d.get("type") or ""
+            if dtype.endswith("summary") or dtype.endswith("text"):
+                t = d.get("text") or d.get("summary")
+                if t:
+                    text_bits.append(t)
+        surfaced = "\n".join(text_bits) if text_bits else None
+        yield ThinkingPart(
+            signature=encode_openrouter_reasoning(details),
+            text=surfaced,
+            redacted=surfaced is None,
+        )
 
 
 def _capture_usage(chunk: dict, usage_holder: dict | None) -> None:
