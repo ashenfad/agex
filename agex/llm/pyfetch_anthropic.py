@@ -11,7 +11,6 @@ from typing import Any, AsyncIterator, Iterator, List
 
 from agex.agent.events import Event
 from agex.llm.adapter import DefaultPyfetchAdapter, FetchAdapter
-from agex.llm.anthropic_client import _ensure_extended_thinking
 from agex.llm.core import LLM, TokenChunk
 from agex.llm.formats import ToolUseWireFormat, WireFormat
 from agex.llm.formats.tool_use.anthropic_adapter import (
@@ -20,6 +19,31 @@ from agex.llm.formats.tool_use.anthropic_adapter import (
     schemas_to_anthropic_tools,
     translate_messages_to_anthropic,
 )
+
+# Default budget for Claude extended thinking when ``native_thinking``
+# is on.  Duplicated from ``anthropic_client`` (rather than imported)
+# so this module stays SDK-free — ``anthropic_client`` does
+# ``import anthropic`` at module load, which fails under Pyodide
+# where the SDK isn't installed.
+_DEFAULT_THINKING_BUDGET = 2048
+
+
+def _ensure_extended_thinking(
+    request_kwargs: dict, budget_tokens: int = _DEFAULT_THINKING_BUDGET
+) -> dict:
+    """Enable Claude's extended thinking so the adapter captures
+    ``thinking`` blocks natively instead of narration-in-schema.
+    Callers can override by passing ``thinking=`` explicitly
+    (``thinking=None`` opts out entirely on non-reasoning Claude
+    variants).
+    """
+    if "thinking" in request_kwargs:
+        return request_kwargs
+    return {
+        **request_kwargs,
+        "thinking": {"type": "enabled", "budget_tokens": budget_tokens},
+    }
+
 
 ANTHROPIC_VERSION = "2023-06-01"
 CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
