@@ -15,7 +15,8 @@ from agex import Agent, connect_llm, connect_state, pprint_events
 funcy_agent = Agent(
     name="funcy",
     primer="You are great at providing custom functions to the user. You also like to write modules.",
-    llm=connect_llm(provider="gemini", model="gemini-3-flash-preview"),
+    llm=connect_llm(provider="openai", model="gpt-5.4-mini"),
+    # llm=connect_llm(provider="gemini", model="gemini-3-flash-preview"),
     state=connect_state(type="versioned", storage="memory"),
 )
 funcy_agent.module(math, visibility="low")

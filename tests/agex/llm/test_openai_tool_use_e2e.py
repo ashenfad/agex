@@ -98,7 +98,9 @@ class TestOpenAIToolUse:
             _mk_usage_chunk(prompt=12, completion=3),
         ]
 
-        client = OpenAI(api_key="test", wire_format=ToolUseWireFormat())
+        client = OpenAI(
+            api_key="test", wire_format=ToolUseWireFormat(), use_responses=False
+        )
         with patch.object(
             client.client.chat.completions, "create", return_value=iter(stream)
         ) as mock_create:
@@ -146,7 +148,9 @@ class TestOpenAIToolUse:
             _mk_usage_chunk(),
         ]
 
-        client = OpenAI(api_key="test", wire_format=ToolUseWireFormat())
+        client = OpenAI(
+            api_key="test", wire_format=ToolUseWireFormat(), use_responses=False
+        )
         with patch.object(
             client.client.chat.completions, "create", return_value=iter(stream)
         ):
@@ -181,7 +185,9 @@ class TestOpenAIToolUse:
             _mk_usage_chunk(),
         ]
 
-        client = OpenAI(api_key="test", wire_format=ToolUseWireFormat())
+        client = OpenAI(
+            api_key="test", wire_format=ToolUseWireFormat(), use_responses=False
+        )
         with patch.object(
             client.client.chat.completions, "create", return_value=iter(stream)
         ):
@@ -274,7 +280,7 @@ async def test_pyfetch_openai_tool_use():
 
     body = fake_adapter.fetch_stream.call_args.kwargs["body"]
     assert "tools" in body
-    assert body["tool_choice"] == "auto"
+    assert body["tool_choice"] == "required"
 
     # Round-trip through EmissionsBuilder.
     builder = EmissionsBuilder(agent_name="a")
@@ -285,6 +291,122 @@ async def test_pyfetch_openai_tool_use():
     assert response_code(resp) == "print(1)"
     assert resp.input_tokens == 20
     assert resp.output_tokens == 5
+
+
+@pytest.mark.asyncio
+async def test_pyfetch_openai_responses_path():
+    """PyfetchOpenAI on a GPT-5-family model hits ``/v1/responses`` with
+    the Responses-shaped body (flat tool schema, ``input`` items,
+    ``reasoning`` block, encrypted-content include) and parses
+    responses-shape SSE events correctly.
+    """
+    fc_args = json.dumps({"title": "t", "code": "pass"})
+    sse_lines = [
+        "data: "
+        + json.dumps(
+            {
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": {
+                    "type": "function_call",
+                    "id": "fc_1",
+                    "call_id": "call_1",
+                    "name": "python_action",
+                    "arguments": "",
+                },
+            }
+        )
+        + "\n\n",
+        "data: "
+        + json.dumps(
+            {
+                "type": "response.function_call_arguments.delta",
+                "item_id": "fc_1",
+                "output_index": 0,
+                "delta": fc_args,
+            }
+        )
+        + "\n\n",
+        "data: "
+        + json.dumps(
+            {
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": {
+                    "type": "function_call",
+                    "id": "fc_1",
+                    "call_id": "call_1",
+                    "name": "python_action",
+                    "arguments": fc_args,
+                },
+            }
+        )
+        + "\n\n",
+        "data: "
+        + json.dumps(
+            {
+                "type": "response.completed",
+                "response": {
+                    "usage": {
+                        "input_tokens": 100,
+                        "output_tokens": 20,
+                    }
+                },
+            }
+        )
+        + "\n\n",
+        "data: [DONE]\n\n",
+    ]
+
+    class FakeStream:
+        def __init__(self, lines):
+            self._lines = lines
+
+        def __aiter__(self):
+            async def gen():
+                for line in self._lines:
+                    yield line
+
+            return gen()
+
+    fake_adapter = MagicMock()
+    fake_adapter.fetch_stream = MagicMock(return_value=FakeStream(sse_lines))
+
+    client = PyfetchOpenAI(
+        model="openai/gpt-5-mini",  # triggers Responses dispatch
+        api_key="sk-test",
+        base_url="https://openrouter.ai/api/v1",
+        fetch_adapter=fake_adapter,
+        wire_format=ToolUseWireFormat(),
+    )
+    assert client._use_responses is True
+
+    tokens = []
+    async for t in client.acomplete_stream("sys", []):
+        tokens.append(t)
+
+    # Sent to the Responses endpoint with the Responses-shaped body.
+    call = fake_adapter.fetch_stream.call_args
+    url = call.args[0] if call.args else call.kwargs.get("url")
+    assert url.endswith("/responses")
+    body = call.kwargs["body"]
+    assert "input" in body and "messages" not in body
+    assert body["tool_choice"] == "required"
+    assert body["store"] is False
+    assert "reasoning.encrypted_content" in body["include"]
+    assert body["instructions"].startswith("sys")
+    # Flat tool shape: no nested ``function`` wrapper.
+    tools = body["tools"]
+    assert tools and all("function" not in t for t in tools)
+
+    # Stream parsed into a clean LLMResponse.
+    builder = EmissionsBuilder(agent_name="a")
+    for t in tokens:
+        builder.process_token(t)
+    resp = builder.build()
+    assert response_code(resp) == "pass"
+    assert resp.input_tokens == 100
+    assert resp.output_tokens == 20
 
 
 @pytest.mark.asyncio
@@ -632,7 +754,7 @@ async def test_pyfetch_openai_cache_marker_lands_on_cacheable_block():
     call_kwargs = fake_adapter.fetch_stream.call_args.kwargs
     body = call_kwargs["body"]
     assert "tools" in body
-    assert body["tool_choice"] == "auto"
+    assert body["tool_choice"] == "required"
 
     # Round-trip through EmissionsBuilder.
     builder = EmissionsBuilder(agent_name="a")
