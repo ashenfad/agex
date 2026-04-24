@@ -14,6 +14,12 @@ from agex.llm.formats.tool_use.openai_adapter import (
     translate_messages_to_openai,
     translate_openai_stream_to_events,
 )
+from agex.llm.formats.tool_use.openai_responses_adapter import (
+    atranslate_openai_responses_stream_to_events,
+    schemas_to_openai_responses_tools,
+    translate_messages_to_openai_responses,
+    translate_openai_responses_stream_to_events,
+)
 from agex.tokenizers import get_tokenizer
 
 # Define keys for client setup vs. completion
@@ -27,13 +33,50 @@ CLIENT_CONFIG_KEYS = {"api_key", "base_url", "organization", "timeout", "max_ret
 _DEFAULT_REASONING_EFFORT = "low"
 
 
-def _with_reasoning_default(request_kwargs: dict) -> dict:
-    """Default ``reasoning_effort`` to ``"low"`` unless the caller set
-    it (including explicitly to ``None`` to opt out).
+def _is_reasoning_model(model: str) -> bool:
+    """Heuristic: models that must use the Responses endpoint.
+
+    GPT-5 family and the o1/o3 reasoning models are Responses-native;
+    Chat Completions rejects ``reasoning_effort`` + function tools for
+    several of them (e.g. ``gpt-5.4-nano``) and Responses is where
+    OpenAI is pushing new features (encrypted reasoning round-trip,
+    richer output item shapes).  Everything else (gpt-4-family, 3.5)
+    stays on Chat Completions.
+    """
+    m = model.lower()
+    return m.startswith("gpt-5") or m.startswith("o1") or m.startswith("o3")
+
+
+def _with_reasoning_default_chat(request_kwargs: dict) -> dict:
+    """Default ``reasoning_effort`` to ``"low"`` for Chat Completions.
+
+    The caller can opt out by setting it explicitly (including to
+    ``None``).  Responses expects ``reasoning={"effort": ...}``
+    instead, handled separately.
     """
     if "reasoning_effort" in request_kwargs:
         return request_kwargs
     return {**request_kwargs, "reasoning_effort": _DEFAULT_REASONING_EFFORT}
+
+
+def _with_reasoning_default_responses(request_kwargs: dict) -> dict:
+    """Default the Responses ``reasoning`` block to ``{"effort": "low"}``.
+
+    Also accepts legacy ``reasoning_effort=`` kwargs and folds them
+    into the nested shape, so user code that targeted Chat Completions
+    keeps working when the model dispatches to Responses.  Setting
+    ``reasoning=None`` or ``reasoning_effort=None`` explicitly opts
+    out.
+    """
+    kwargs = {**request_kwargs}
+    if "reasoning_effort" in kwargs:
+        effort = kwargs.pop("reasoning_effort")
+        if "reasoning" not in kwargs and effort is not None:
+            kwargs["reasoning"] = {"effort": effort}
+        return kwargs
+    if "reasoning" in kwargs:
+        return kwargs
+    return {**kwargs, "reasoning": {"effort": _DEFAULT_REASONING_EFFORT}}
 
 
 def _format_message_for_openai(message: dict[str, Any]) -> dict:
@@ -74,6 +117,7 @@ class OpenAI(LLM):
         model: str = "gpt-5-mini",
         timeout_seconds: float = 90.0,
         wire_format: WireFormat | None = None,
+        use_responses: bool | None = None,
         **kwargs,
     ):
         kwargs.pop("provider", None)
@@ -92,6 +136,14 @@ class OpenAI(LLM):
         self._model = model
         self._kwargs = completion_kwargs
         self._timeout_seconds = timeout_seconds
+        # Pick the endpoint.  Responses is required for GPT-5-family
+        # reasoning models (Chat Completions rejects reasoning_effort +
+        # function tools for several of them) and is where new features
+        # are shipping; Chat Completions still covers gpt-4-family and
+        # earlier.  Callers can force either with ``use_responses=``.
+        self._use_responses = (
+            use_responses if use_responses is not None else _is_reasoning_model(model)
+        )
         # GPT-5+ reasons server-side and delivers surfaced text
         # natively; narration-via-schema is redundant.  Default
         # ``native_thinking=True`` on the wire format.  Users on
@@ -121,18 +173,26 @@ class OpenAI(LLM):
         self, system: str, events: List[Event], **kwargs
     ) -> Iterator[TokenChunk]:
         """Stream tokens from OpenAI via the provider-native tool-use
-        path."""
+        path.  Dispatches to Responses for reasoning-class models and
+        Chat Completions for everything else.
+        """
         request_kwargs = {**self._kwargs, **kwargs}
         messages_dicts = self._wire_format.render_events(events)
         system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         full_messages = [
             {"role": "system", "content": system_with_format}
         ] + messages_dicts
-        yield from self._stream_tools(
-            full_messages, request_kwargs, self._wire_format.tool_schema()
-        )
+        tool_schemas = self._wire_format.tool_schema()
+        if self._use_responses:
+            yield from self._stream_responses(
+                full_messages, request_kwargs, tool_schemas
+            )
+        else:
+            yield from self._stream_chat(full_messages, request_kwargs, tool_schemas)
 
-    def _stream_tools(
+    # --- Chat Completions path ------------------------------------
+
+    def _stream_chat(
         self,
         full_messages: list[dict],
         request_kwargs: dict,
@@ -140,7 +200,7 @@ class OpenAI(LLM):
     ) -> Iterator[TokenChunk]:
         translated = translate_messages_to_openai(full_messages)
         tools = schemas_to_openai_tools(tool_schemas)
-        request_kwargs = _with_reasoning_default(request_kwargs)
+        request_kwargs = _with_reasoning_default_chat(request_kwargs)
 
         stream = self.client.chat.completions.create(
             model=self._model,
@@ -170,6 +230,56 @@ class OpenAI(LLM):
             output_tokens=usage_holder["output_tokens"],
         )
 
+    # --- Responses path -------------------------------------------
+
+    def _stream_responses(
+        self,
+        full_messages: list[dict],
+        request_kwargs: dict,
+        tool_schemas: list[dict],
+    ) -> Iterator[TokenChunk]:
+        input_items = translate_messages_to_openai_responses(full_messages)
+        tools = schemas_to_openai_responses_tools(tool_schemas)
+        request_kwargs = _with_reasoning_default_responses(request_kwargs)
+
+        # Stateless round-trip: we don't rely on OpenAI's conversation
+        # store; each turn sends the full history as input items and
+        # replays the prior reasoning items from their encrypted
+        # payloads.  ``include=["reasoning.encrypted_content"]`` is the
+        # switch that surfaces those payloads in the response.
+        kwargs = {**request_kwargs, "store": request_kwargs.get("store", False)}
+        include = list(kwargs.get("include") or [])
+        if "reasoning.encrypted_content" not in include:
+            include.append("reasoning.encrypted_content")
+        kwargs["include"] = include
+
+        stream = self.client.responses.create(
+            model=self._model,
+            input=input_items,  # type: ignore
+            tools=tools,  # type: ignore
+            tool_choice=kwargs.pop("tool_choice", "required"),
+            stream=True,
+            **kwargs,
+        )
+
+        usage_holder: dict[str, int | None] = {
+            "input_tokens": None,
+            "output_tokens": None,
+        }
+
+        tool_events = translate_openai_responses_stream_to_events(
+            iter(stream), usage_holder=usage_holder
+        )
+        yield from self._wire_format.parse_tool_stream(tool_events)
+
+        yield TokenChunk(
+            type="thinking",
+            content="",
+            done=True,
+            input_tokens=usage_holder["input_tokens"],
+            output_tokens=usage_holder["output_tokens"],
+        )
+
     async def acomplete_stream(
         self, system: str, events: List[Event], **kwargs
     ) -> AsyncIterator[TokenChunk]:
@@ -180,12 +290,19 @@ class OpenAI(LLM):
         full_messages = [
             {"role": "system", "content": system_with_format}
         ] + messages_dicts
-        async for t in self._astream_tools(
-            full_messages, request_kwargs, self._wire_format.tool_schema()
-        ):
-            yield t
+        tool_schemas = self._wire_format.tool_schema()
+        if self._use_responses:
+            async for t in self._astream_responses(
+                full_messages, request_kwargs, tool_schemas
+            ):
+                yield t
+        else:
+            async for t in self._astream_chat(
+                full_messages, request_kwargs, tool_schemas
+            ):
+                yield t
 
-    async def _astream_tools(
+    async def _astream_chat(
         self,
         full_messages: list[dict],
         request_kwargs: dict,
@@ -193,7 +310,7 @@ class OpenAI(LLM):
     ) -> AsyncIterator[TokenChunk]:
         translated = translate_messages_to_openai(full_messages)
         tools = schemas_to_openai_tools(tool_schemas)
-        request_kwargs = _with_reasoning_default(request_kwargs)
+        request_kwargs = _with_reasoning_default_chat(request_kwargs)
 
         stream = await self.async_client.chat.completions.create(
             model=self._model,
@@ -211,6 +328,50 @@ class OpenAI(LLM):
         }
 
         tool_events = atranslate_openai_stream_to_events(
+            stream, usage_holder=usage_holder
+        )
+        async for token in self._wire_format.aparse_tool_stream(tool_events):
+            yield token
+
+        yield TokenChunk(
+            type="thinking",
+            content="",
+            done=True,
+            input_tokens=usage_holder["input_tokens"],
+            output_tokens=usage_holder["output_tokens"],
+        )
+
+    async def _astream_responses(
+        self,
+        full_messages: list[dict],
+        request_kwargs: dict,
+        tool_schemas: list[dict],
+    ) -> AsyncIterator[TokenChunk]:
+        input_items = translate_messages_to_openai_responses(full_messages)
+        tools = schemas_to_openai_responses_tools(tool_schemas)
+        request_kwargs = _with_reasoning_default_responses(request_kwargs)
+
+        kwargs = {**request_kwargs, "store": request_kwargs.get("store", False)}
+        include = list(kwargs.get("include") or [])
+        if "reasoning.encrypted_content" not in include:
+            include.append("reasoning.encrypted_content")
+        kwargs["include"] = include
+
+        stream = await self.async_client.responses.create(
+            model=self._model,
+            input=input_items,  # type: ignore
+            tools=tools,  # type: ignore
+            tool_choice=kwargs.pop("tool_choice", "required"),
+            stream=True,
+            **kwargs,
+        )
+
+        usage_holder: dict[str, int | None] = {
+            "input_tokens": None,
+            "output_tokens": None,
+        }
+
+        tool_events = atranslate_openai_responses_stream_to_events(
             stream, usage_holder=usage_holder
         )
         async for token in self._wire_format.aparse_tool_stream(tool_events):

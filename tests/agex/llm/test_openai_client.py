@@ -19,13 +19,19 @@ def test_openai_client_initialization():
         assert client.provider_name == "OpenAI"
 
 
-def test_reasoning_effort_default_on_tool_use_path():
-    """Tool-use path should default reasoning_effort="low" when the
+def test_reasoning_effort_default_on_chat_path():
+    """Chat Completions path defaults reasoning_effort="low" when the
     caller doesn't set it — the API's own default is "none" which
-    produces the wrong behaviour for agentic multi-step work."""
+    produces the wrong behaviour for agentic multi-step work.  The
+    default model (gpt-5-mini) routes to Responses, so this test pins
+    the client to Chat Completions via ``use_responses=False``."""
     from agex.llm.formats import ToolUseWireFormat
 
-    client = OpenAI(api_key="test", wire_format=ToolUseWireFormat())
+    client = OpenAI(
+        api_key="test",
+        wire_format=ToolUseWireFormat(),
+        use_responses=False,
+    )
 
     mock_stream = []  # empty is fine; we only care about the call kwargs
     with patch.object(
@@ -37,14 +43,15 @@ def test_reasoning_effort_default_on_tool_use_path():
     assert call_kwargs.get("reasoning_effort") == "low"
 
 
-def test_reasoning_effort_explicit_override_wins():
+def test_reasoning_effort_explicit_override_wins_on_chat_path():
     """Caller-supplied ``reasoning_effort`` takes precedence over the
-    default."""
+    default on the Chat Completions path."""
     from agex.llm.formats import ToolUseWireFormat
 
     client = OpenAI(
         api_key="test",
         wire_format=ToolUseWireFormat(),
+        use_responses=False,
         reasoning_effort="high",
     )
 
@@ -54,6 +61,84 @@ def test_reasoning_effort_explicit_override_wins():
         list(client.complete_stream("sys", []))
 
     assert create_mock.call_args.kwargs.get("reasoning_effort") == "high"
+
+
+def test_reasoning_default_on_responses_path():
+    """Responses path defaults the nested ``reasoning={"effort": "low"}``
+    block and enables encrypted-content round-trip."""
+    from agex.llm.formats import ToolUseWireFormat
+
+    client = OpenAI(
+        api_key="test",
+        model="gpt-5-mini",
+        wire_format=ToolUseWireFormat(),
+    )
+    assert client._use_responses is True
+
+    with patch.object(
+        client.client.responses, "create", return_value=[]
+    ) as create_mock:
+        list(client.complete_stream("sys", []))
+
+    kwargs = create_mock.call_args.kwargs
+    assert kwargs.get("reasoning") == {"effort": "low"}
+    assert kwargs.get("store") is False
+    assert "reasoning.encrypted_content" in kwargs.get("include", [])
+    assert kwargs.get("tool_choice") == "required"
+    # Flat Responses tool shape — no ``function`` wrapper.
+    tools = kwargs.get("tools")
+    assert tools and all(t.get("type") == "function" and "name" in t for t in tools)
+
+
+def test_reasoning_effort_legacy_kwarg_folds_into_responses_block():
+    """Users whose code targeted Chat Completions often pass
+    ``reasoning_effort="medium"`` directly.  On the Responses path we
+    fold that into the nested ``reasoning`` shape so nothing breaks."""
+    from agex.llm.formats import ToolUseWireFormat
+
+    client = OpenAI(
+        api_key="test",
+        model="gpt-5-mini",
+        wire_format=ToolUseWireFormat(),
+        reasoning_effort="medium",
+    )
+
+    with patch.object(
+        client.client.responses, "create", return_value=[]
+    ) as create_mock:
+        list(client.complete_stream("sys", []))
+
+    kwargs = create_mock.call_args.kwargs
+    assert kwargs.get("reasoning") == {"effort": "medium"}
+    # The legacy kwarg shouldn't leak through alongside the nested shape.
+    assert "reasoning_effort" not in kwargs
+
+
+def test_use_responses_override_forces_chat():
+    """``use_responses=False`` stays on Chat Completions even for
+    gpt-5 models."""
+    from agex.llm.formats import ToolUseWireFormat
+
+    client = OpenAI(
+        api_key="test",
+        model="gpt-5-mini",
+        wire_format=ToolUseWireFormat(),
+        use_responses=False,
+    )
+    assert client._use_responses is False
+
+    with patch.object(
+        client.client.chat.completions, "create", return_value=[]
+    ) as create_mock:
+        list(client.complete_stream("sys", []))
+
+    assert create_mock.called
+
+
+def test_non_reasoning_model_routes_to_chat():
+    """Auto-detection: a gpt-4 model uses Chat Completions."""
+    client = OpenAI(api_key="test", model="gpt-4o-mini")
+    assert client._use_responses is False
 
 
 def test_openai_client_complete_wraps_stream():

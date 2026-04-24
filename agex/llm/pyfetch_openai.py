@@ -19,6 +19,23 @@ from agex.llm.formats.tool_use.openai_adapter import (
     schemas_to_openai_tools,
     translate_messages_to_openai,
 )
+from agex.llm.formats.tool_use.openai_responses_adapter import (
+    atranslate_openai_responses_stream_to_events,
+    schemas_to_openai_responses_tools,
+    translate_messages_to_openai_responses,
+)
+
+
+def _is_reasoning_model(model: str) -> bool:
+    """Mirrors the dispatch rule used by the SDK client — GPT-5 family
+    and o1/o3 reasoning models use the Responses endpoint; everything
+    else stays on Chat Completions.  Accepts OpenRouter-style
+    ``openai/gpt-5-mini`` prefixes alongside plain ``gpt-5-mini``.
+    """
+    m = model.lower()
+    if "/" in m:
+        m = m.split("/", 1)[1]
+    return m.startswith("gpt-5") or m.startswith("o1") or m.startswith("o3")
 
 
 def _hash12(s: str) -> str:
@@ -197,6 +214,7 @@ class PyfetchOpenAI(LLM):
         *,
         fetch_adapter: FetchAdapter | None = None,
         wire_format: WireFormat | None = None,
+        use_responses: bool | None = None,
         **kwargs,
     ):
         kwargs.pop("provider", None)
@@ -207,6 +225,12 @@ class PyfetchOpenAI(LLM):
         self._base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._kwargs = kwargs
+        # Endpoint dispatch mirrors the SDK client.  Responses for
+        # GPT-5-family / o-series reasoning models, Chat Completions
+        # otherwise.  Callers can force either with ``use_responses=``.
+        self._use_responses = (
+            use_responses if use_responses is not None else _is_reasoning_model(model)
+        )
         # Transport seam. When empty api_key is paired with a custom
         # adapter, the adapter is expected to inject auth headers on the
         # way out (e.g., a JS bridge that reads the key from localStorage).
@@ -265,8 +289,9 @@ class PyfetchOpenAI(LLM):
     ) -> AsyncIterator[TokenChunk]:
         """Stream tokens from an OpenAI-compatible endpoint via pyfetch.
 
-        Always uses the provider-native tool-use path.  Retries on
-        network errors (e.g. connection drops on mobile).
+        Dispatches to Responses for reasoning-class models (GPT-5 +
+        o-series) and Chat Completions for everything else.  Retries
+        both paths on network errors (e.g. connection drops on mobile).
         """
         request_kwargs = {**self._kwargs, **kwargs}
 
@@ -274,6 +299,38 @@ class PyfetchOpenAI(LLM):
         system_with_format = f"{system}\n\n{self._wire_format.format_primer()}"
         tool_schemas = self._wire_format.tool_schema()
 
+        if self._use_responses:
+            url, body, cache_idx = self._build_responses_request(
+                system_with_format, messages_dicts, tool_schemas, request_kwargs
+            )
+            stream_once = self._stream_once_responses
+        else:
+            url, body, cache_idx = self._build_chat_request(
+                system_with_format, messages_dicts, tool_schemas, request_kwargs
+            )
+            stream_once = self._stream_once_tools
+
+        headers = self._headers()
+
+        for attempt in range(self._STREAM_MAX_RETRIES):
+            try:
+                async for token in stream_once(url, body, headers, cache_idx):
+                    yield token
+                return  # success
+            except Exception as exc:
+                is_network = _is_network_error(exc)
+                if not is_network or attempt + 1 >= self._STREAM_MAX_RETRIES:
+                    raise
+                # Brief pause before retry
+                await asyncio.sleep(1)
+
+    def _build_chat_request(
+        self,
+        system_with_format: str,
+        messages_dicts: list[dict],
+        tool_schemas: list[dict],
+        request_kwargs: dict,
+    ) -> tuple[str, dict, int]:
         translated = translate_messages_to_openai(messages_dicts)
         system_msg = _format_message_for_openai(
             {"role": "system", "content": system_with_format}, cache=True
@@ -298,28 +355,62 @@ class PyfetchOpenAI(LLM):
             "model": self._model,
             "messages": full_messages,
             "tools": schemas_to_openai_tools(tool_schemas),
-            "tool_choice": "auto",
+            "tool_choice": request_kwargs.pop("tool_choice", "required"),
             "stream": True,
             "stream_options": {"include_usage": True},
             **request_kwargs,
         }
-
-        headers = self._headers()
         url = f"{self._base_url}/chat/completions"
+        return url, body, cache_idx
 
-        for attempt in range(self._STREAM_MAX_RETRIES):
-            try:
-                async for token in self._stream_once_tools(
-                    url, body, headers, cache_idx
-                ):
-                    yield token
-                return  # success
-            except Exception as exc:
-                is_network = _is_network_error(exc)
-                if not is_network or attempt + 1 >= self._STREAM_MAX_RETRIES:
-                    raise
-                # Brief pause before retry
-                await asyncio.sleep(1)
+    def _build_responses_request(
+        self,
+        system_with_format: str,
+        messages_dicts: list[dict],
+        tool_schemas: list[dict],
+        request_kwargs: dict,
+    ) -> tuple[str, dict, int]:
+        """Build the ``/v1/responses`` request body.
+
+        Responses takes ``input`` (a flat list of typed items) rather
+        than ``messages``, and ``instructions`` at top level in place
+        of a leading system message.  Reasoning round-trip requires
+        ``store=False`` + ``include=["reasoning.encrypted_content"]`` —
+        the server then embeds the encrypted state on each reasoning
+        item, which we capture into :class:`ThinkingEmission` and
+        replay verbatim on subsequent turns.
+        """
+        kwargs = {**request_kwargs}
+        # Fold legacy ``reasoning_effort`` into the nested shape.
+        if "reasoning_effort" in kwargs and "reasoning" not in kwargs:
+            effort = kwargs.pop("reasoning_effort")
+            if effort is not None:
+                kwargs["reasoning"] = {"effort": effort}
+        elif "reasoning_effort" in kwargs:
+            kwargs.pop("reasoning_effort")
+
+        input_items = translate_messages_to_openai_responses(messages_dicts)
+
+        kwargs.setdefault("store", False)
+        include = list(kwargs.get("include") or [])
+        if "reasoning.encrypted_content" not in include:
+            include.append("reasoning.encrypted_content")
+        kwargs["include"] = include
+
+        body: dict[str, Any] = {
+            "model": self._model,
+            "input": input_items,
+            "instructions": system_with_format,
+            "tools": schemas_to_openai_responses_tools(tool_schemas),
+            "tool_choice": kwargs.pop("tool_choice", "required"),
+            "stream": True,
+            **kwargs,
+        }
+        url = f"{self._base_url}/responses"
+        # Responses has no message-level cache_control knob we can
+        # place a breakpoint on, so the cache-diagnostics log line
+        # doesn't apply — pass -1 to skip it.
+        return url, body, -1
 
     async def _stream_once_tools(
         self,
@@ -372,6 +463,54 @@ class PyfetchOpenAI(LLM):
             _log_cache_diagnostics(body, cache_idx, usage_holder)
         except Exception:
             pass  # diagnostics must never affect the user's flow
+
+        yield TokenChunk(
+            type="thinking",
+            content="",
+            done=True,
+            input_tokens=usage_holder["input_tokens"],
+            output_tokens=usage_holder["output_tokens"],
+        )
+
+    async def _stream_once_responses(
+        self,
+        url: str,
+        body: dict,
+        headers: dict,
+        cache_idx: int = -1,  # unused on the Responses path; kept for symmetry
+    ) -> AsyncIterator[TokenChunk]:
+        """Single Responses-API streaming attempt.
+
+        Reads SSE JSON events from ``/v1/responses``, hands them to
+        :func:`atranslate_openai_responses_stream_to_events` for
+        translation into :class:`ToolCallEvent`\\ s, and feeds those
+        through the wire format's ``aparse_tool_stream`` so the rest
+        of the pipeline sees the same provider-agnostic token flow.
+        """
+        from agex.llm.sse import parse_sse_events
+
+        response = self._adapter.fetch_stream(url, headers=headers, body=body)
+
+        usage_holder: dict[str, int | None] = {
+            "input_tokens": None,
+            "output_tokens": None,
+            "cached_tokens": None,
+        }
+
+        sse_iter = parse_sse_events(response)
+
+        async def chunk_dicts():
+            async for payload in sse_iter:
+                if not payload.strip():
+                    continue
+                yield json.loads(payload)
+
+        tool_events = atranslate_openai_responses_stream_to_events(
+            chunk_dicts(), usage_holder=usage_holder
+        )
+
+        async for token in self._wire_format.aparse_tool_stream(tool_events):
+            yield token
 
         yield TokenChunk(
             type="thinking",
