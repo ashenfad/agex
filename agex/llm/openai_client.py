@@ -48,15 +48,16 @@ def _is_reasoning_model(model: str) -> bool:
 
 
 def _with_reasoning_default_chat(request_kwargs: dict) -> dict:
-    """Default ``reasoning_effort`` to ``"low"`` for Chat Completions.
+    """No-op on the Chat Completions path.
 
-    The caller can opt out by setting it explicitly (including to
-    ``None``).  Responses expects ``reasoning={"effort": ...}``
-    instead, handled separately.
+    The dispatch routes every gpt-5* / o1* / o3* to the Responses
+    endpoint, so this branch only runs for non-reasoning models
+    (gpt-4* etc.) — which reject ``reasoning_effort`` with a 400.
+    Callers who've forced a reasoning model onto Chat Completions
+    via ``use_responses=False`` can still pass ``reasoning_effort``
+    explicitly; we just don't default one.
     """
-    if "reasoning_effort" in request_kwargs:
-        return request_kwargs
-    return {**request_kwargs, "reasoning_effort": _DEFAULT_REASONING_EFFORT}
+    return request_kwargs
 
 
 def _with_reasoning_default_responses(request_kwargs: dict) -> dict:
