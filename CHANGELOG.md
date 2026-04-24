@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.11.0] - 2026-04-24
 
 **Retooling** — the agex turn shape now matches provider-native tool
 use.  Motivated by Gemini 3 `thought_signature` requirements, Claude
@@ -33,12 +33,18 @@ provider reasoning round-trip.
   (`store=False`, `include=["reasoning.encrypted_content"]`).  Chat
   Completions still serves non-reasoning models.  `use_responses=`
   kwarg forces either path.
-- **OpenRouter unified reasoning tokens** — `PyfetchOpenAI` injects
-  `reasoning={"enabled": True, "effort": "low"}` on the Chat
-  Completions path and captures `delta.reasoning_details[]` into
-  `ThinkingEmission.signature` with the `openrouter-reasoning:` tag
-  prefix; `message.reasoning_details` is replayed byte-for-byte on
-  subsequent turns.
+- **OpenRouter unified reasoning tokens** — `PyfetchOpenAI` injects a
+  provider-native `reasoning` kwarg (Anthropic/Google get `max_tokens`
+  since effort→budget conversion is unreliable on those backends;
+  everything else gets `effort`) plus a `provider` routing hint
+  (`order: ["Anthropic"]` for `anthropic/*` since Bedrock/Vertex
+  accept `reasoning` without erroring but silently return no
+  reasoning; `require_parameters: True` otherwise).  `tool_choice`
+  drops from `required` to `auto` when reasoning is on — Anthropic's
+  extended thinking is incompatible with forced tool choice.
+  `delta.reasoning_details[]` rides in `ThinkingEmission.signature`
+  with the `openrouter-reasoning:` tag prefix and replays byte-for-
+  byte on subsequent turns.
 - **Anthropic extended thinking** enabled by default via
   `thinking={"type": "enabled", "budget_tokens": 2048}`.
   `_ensure_tool_choice_any` auto-skips tool-force when thinking is
@@ -89,6 +95,19 @@ provider reasoning round-trip.
   channel, observation asymmetry (python/terminal produce
   observations; file tools only confirm writes), append over edit
   for new content.
+- **Low-visibility namespaces hidden** from the primer entirely
+  instead of emitting a `module <name>:\n    ...` stub.  Saves
+  primer tokens and — more importantly — keeps the system_message
+  hash stable when helpers auto-register low-viz submodules mid-
+  session (previously broke the provider prompt cache at task
+  boundaries).  Promotion still works: a low-viz module with a high-
+  viz member renders as before.
+- **Default reasoning effort** on the OpenAI Responses path bumped
+  from `low` to `medium`.
+- **`register_io` is idempotent** — marks the agent with
+  `_io_registered=True` on first call and no-ops thereafter.  The
+  sandbox bridge calls it per `python_action`; the guard keeps the
+  agent graph stable across turns.
 
 ### Removed
 - **XML wire format** — `<THINKING>` / `<CODE>` / `<REPORT>` tag
@@ -97,6 +116,9 @@ provider reasoning round-trip.
   the implicit continue.  No builtin, no exception class.
 - **`FileAction` / `EditAction` dataclasses** — superseded by
   `FileWriteEmission` / `FileEditEmission`.
+- **`ResponseBuilder` and `check_for_task_call`** — the XML-era
+  builder is replaced by `EmissionsBuilder`; terminator detection
+  moved into emission handling.
 - **Single-`python_action`-per-turn restriction** — multiple Python
   emissions in one turn share a namespace and run in order.
 - **`thinking` / `report` schema parameters** (when `native_thinking=True`)
