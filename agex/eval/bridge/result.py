@@ -36,6 +36,7 @@ def handle_result(
     on_event: Callable[[Any], None] | None = None,
     injected_keys: set[str] | None = None,
     pre_ids: dict[str, int] | None = None,
+    emission_id: str | None = None,
 ) -> None:
     """Process an ExecResult: sync state and re-raise errors.
 
@@ -63,7 +64,13 @@ def handle_result(
     """
     skip = injected_keys or set()
     ids = pre_ids or {}
-    emission_id = _current_emission_id.get()
+    # Callers pass ``emission_id`` explicitly.  The contextvar is
+    # reset in the caller's ``finally`` block before we run, so
+    # reading it here would always return None — falling back to the
+    # contextvar is only useful for nested / synthetic callers that
+    # didn't know the id up front.
+    if emission_id is None:
+        emission_id = _current_emission_id.get()
 
     # 1. Sync namespace values back to state — only write variables that
     #    were reassigned (different object identity) or newly created.

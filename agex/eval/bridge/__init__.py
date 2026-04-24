@@ -140,6 +140,7 @@ def execute_sandboxed(
         on_event=on_event,
         injected_keys=injected_keys,
         pre_ids=pre_ids,
+        emission_id=emission_id,
     )
 
 

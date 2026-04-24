@@ -26,7 +26,7 @@ from agex.agent.emissions import (
     TextEmission,
     ThinkingEmission,
 )
-from agex.agent.events import CancelledEvent, SystemNoteEvent
+from agex.agent.events import CancelledEvent, OutputEvent, SystemNoteEvent
 from agex.eval.bridge import execute_sandboxed
 from agex.resource_limits import apply_resource_limits
 from agex.state import safe_commit
@@ -497,26 +497,45 @@ class SyncLoopMixin:
             if versioned_state is not None:
                 safe_commit(versioned_state, referenced_keys=accumulated_refs)
 
-            # Nudge if the agent ran out of Python without signaling.
+            # Nudge if the turn ran *silent* Python without signaling.
+            # "Silent" = none of the turn's PythonEmissions produced an
+            # OutputEvent (no print, no view_image, no raised error).
+            # When python did produce output, the agent sees it next
+            # turn and knows the code ran — no reminder needed.  The
+            # nudge is specifically for the case where the tool_result
+            # would otherwise read "(no observation)" and the agent
+            # might wonder whether it should have finished the task.
+            # Returning normally without a terminator is the implicit
+            # continue.
             combined_code = _last_python_code(action_event.emissions)
             if combined_code.strip() and not check_for_terminator_call(combined_code):
-                # Pick the last PythonEmission's id for the nudge so the
-                # renderer pairs it with the expected tool_result.
-                last_py_idx = None
-                for j, em in enumerate(action_event.emissions):
-                    if isinstance(em, PythonEmission) and (em.code or "").strip():
-                        last_py_idx = j
-                nudge_id = (
-                    _emission_block_id(event_idx, last_py_idx)
-                    if last_py_idx is not None
-                    else None
+                py_ids = {
+                    _emission_block_id(event_idx, j)
+                    for j, em in enumerate(action_event.emissions)
+                    if isinstance(em, PythonEmission) and (em.code or "").strip()
+                }
+                new_events = events(exec_state)[event_idx + 1 :]
+                had_observation = any(
+                    isinstance(ev, OutputEvent)
+                    and any(getattr(p, "emission_id", None) in py_ids for p in ev.parts)
+                    for ev in new_events
                 )
-                guidance_output = create_guidance_output(
-                    self.name, emission_id=nudge_id
-                )
-                add_event_to_log(exec_state, guidance_output, on_event=on_event)
-                yield guidance_output
-                events_yielded += 1
+                if not had_observation:
+                    last_py_idx = None
+                    for j, em in enumerate(action_event.emissions):
+                        if isinstance(em, PythonEmission) and (em.code or "").strip():
+                            last_py_idx = j
+                    nudge_id = (
+                        _emission_block_id(event_idx, last_py_idx)
+                        if last_py_idx is not None
+                        else None
+                    )
+                    guidance_output = create_guidance_output(
+                        self.name, emission_id=nudge_id
+                    )
+                    add_event_to_log(exec_state, guidance_output, on_event=on_event)
+                    yield guidance_output
+                    events_yielded += 1
 
             # Nudge if the turn made no progress: text/thinking only,
             # no actionable tool call.  Models (esp. Gemini 3 Flash)
