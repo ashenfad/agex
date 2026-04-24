@@ -172,7 +172,6 @@ class TestFileEmissions:
                     path="/x.py",
                     search="old",
                     content="new",
-                    operation="replace",
                 ),
                 PythonEmission(code="pass", title="t", thinking="T"),
             ],
@@ -183,15 +182,14 @@ class TestFileEmissions:
         assert use["input"]["replace"] == "new"
         assert "insert_after" not in use["input"]
 
-    def test_edit_insert_after(self):
+    def test_edit_match_all_flag_round_trips(self):
         action = ActionEvent(
             agent_name="a",
             emissions=[
                 FileEditEmission(
                     path="/x.py",
                     search="anchor",
-                    content="added",
-                    operation="insert-after",
+                    content="anchor + extra",
                     match_all=True,
                 ),
                 PythonEmission(code="pass", title="t", thinking="T"),
@@ -199,7 +197,7 @@ class TestFileEmissions:
         )
         msgs = render_events_as_tool_use([action])
         use = _only(msgs[0]["content"], "tool_use")[0]
-        assert use["input"]["insert_after"] == "added"
+        assert use["input"]["replace"] == "anchor + extra"
         assert use["input"]["match_all"] is True
 
 
@@ -422,7 +420,6 @@ class TestObservationPairing:
                     path="/x.py",
                     search="X",
                     content="Y",
-                    operation="insert-after",
                     match_all=True,
                 ),
                 PythonEmission(code="pass", title="t", thinking="T"),
@@ -438,7 +435,7 @@ class TestObservationPairing:
         msgs = render_events_as_tool_use(events)
         file_result = _only(msgs[-1]["content"], "tool_result")[0]
         assert file_result["content"] == (
-            "edit_file: insert-after applied to /x.py (match_all)"
+            "edit_file: replace applied to /x.py (match_all)"
         )
 
     def test_file_edit_error_surfaced_instead_of_synth(self):
@@ -455,7 +452,6 @@ class TestObservationPairing:
                     path="/x.py",
                     search="nonexistent",
                     content="new",
-                    operation="replace",
                 ),
             ],
         )

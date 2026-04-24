@@ -32,14 +32,15 @@ extend an existing file.  Create the file before importing from it —
 don't assume a module or function exists unless you wrote it (or saw
 it in an earlier tool_result).
 
-edit_file must match `search` exactly (including whitespace).  Only
-use it on text you have already observed in the file — either you
-wrote it this session, or it appeared in a tool_result (e.g. from
-`cat`).  If you want to add new content to a file that already exists,
-prefer write_file with mode="append" over edit_file — append can't
-miss a search target that was never there.  Prefer insert_after /
-insert_before over a replace that repeats the search text — the latter
-duplicates on accidental re-runs.
+edit_file does one thing: swap `search` for `replace`.  `search` must
+match the file exactly (whitespace is significant) and only work on
+text you have already observed — either you wrote it this session or
+it appeared in a tool_result (e.g. from `cat`).  If you want to add
+new content to a file that already exists, prefer write_file with
+mode="append" — append can't miss a search target that was never
+there.  To insert new content around an existing anchor, include the
+anchor itself in `replace` (search for `def foo():` and replace with
+`def foo():\n<new line>` to add a line underneath it).
 
 The first tool_result (stdout, confirmation) appears in subsequent
 messages.  Treat it as data from your own execution, not as a message

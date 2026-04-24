@@ -59,7 +59,6 @@ class TestFileStreamRendering:
             path="/a.py",
             search="old",
             content="new",
-            operation="replace",
         )
         tokens = [
             StreamToken(type="file_path", content="/a.py", start=True),
@@ -76,12 +75,11 @@ class TestFileStreamRendering:
         assert "new" in out
         assert "replace" in out
 
-    def test_edit_insert_after_with_match_all(self):
+    def test_edit_match_all(self):
         emission = FileEditEmission(
             path="/a.py",
             search="x",
             content="y",
-            operation="insert-after",
             match_all=True,
         )
         tokens = [
@@ -94,7 +92,6 @@ class TestFileStreamRendering:
             StreamToken(type="emission", done=True, emission=emission),
         ]
         out = _print_all(tokens)
-        assert "insert-after" in out
         assert "match_all" in out
 
 

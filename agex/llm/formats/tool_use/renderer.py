@@ -147,13 +147,11 @@ def _tool_use_block_for(emission: Any, block_id: str) -> tuple[dict | None, str 
             inp["mode"] = emission.mode
         return _wrap(TOOL_WRITE_FILE, inp), TOOL_WRITE_FILE
     if isinstance(emission, FileEditEmission):
-        inp = {"path": emission.path, "search": emission.search}
-        if emission.operation == "insert-after":
-            inp["insert_after"] = emission.content
-        elif emission.operation == "insert-before":
-            inp["insert_before"] = emission.content
-        else:
-            inp["replace"] = emission.content
+        inp = {
+            "path": emission.path,
+            "search": emission.search,
+            "replace": emission.content,
+        }
         if emission.match_all:
             inp["match_all"] = True
         return _wrap(TOOL_EDIT_FILE, inp), TOOL_EDIT_FILE
@@ -172,7 +170,7 @@ def _synthesize_file_result(emission: Any) -> str:
         return f"write_file: {verb} {emission.path}"
     if isinstance(emission, FileEditEmission):
         suffix = " (match_all)" if emission.match_all else ""
-        return f"edit_file: {emission.operation} applied to {emission.path}{suffix}"
+        return f"edit_file: replace applied to {emission.path}{suffix}"
     return ""
 
 

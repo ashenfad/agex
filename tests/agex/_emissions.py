@@ -46,14 +46,12 @@ def edit(
     search: str,
     content: str,
     *,
-    operation: str = "replace",
     match_all: bool = False,
 ) -> FileEditEmission:
     return FileEditEmission(
         path=path,
         search=search,
         content=content,
-        operation=operation,  # type: ignore[arg-type]
         match_all=match_all,
     )
 
@@ -171,14 +169,7 @@ def _coerce_file_action(fa):
             return FileEditEmission(
                 path=fa.get("path", ""),
                 search=fa.get("search", ""),
-                content=fa.get(
-                    "content",
-                    fa.get("replace")
-                    or fa.get("insert_after")
-                    or fa.get("insert_before")
-                    or "",
-                ),
-                operation=fa.get("operation", "replace"),
+                content=fa.get("content", fa.get("replace", "")),
                 match_all=bool(fa.get("match_all", False)),
             )
         return FileWriteEmission(

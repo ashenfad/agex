@@ -164,12 +164,12 @@ class TestOpenAIToolUse:
         assert fa.path == "/a.py"
         assert fa.content == "X = 1"
 
-    def test_edit_file_insert_after(self):
+    def test_edit_file_replace_with_match_all(self):
         edit_args = json.dumps(
             {
                 "path": "/b.py",
                 "search": "anchor",
-                "insert_after": "added",
+                "replace": "anchor + added",
                 "match_all": True,
             }
         )
@@ -197,8 +197,7 @@ class TestOpenAIToolUse:
         assert isinstance(ea, FileEditEmission)
         assert ea.path == "/b.py"
         assert ea.search == "anchor"
-        assert ea.content == "added"
-        assert ea.operation == "insert-after"
+        assert ea.content == "anchor + added"
         assert ea.match_all is True
 
 
