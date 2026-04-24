@@ -4,9 +4,16 @@ import json
 
 import pytest
 
-from agex.llm.formats.tool_use import ToolCallArgDelta, ToolCallEnd, ToolCallStart
+from agex.llm.formats.tool_use import (
+    ThinkingPart,
+    ToolCallArgDelta,
+    ToolCallEnd,
+    ToolCallStart,
+)
 from agex.llm.formats.tool_use.openai_adapter import (
     atranslate_openai_stream_to_events,
+    decode_openrouter_reasoning,
+    encode_openrouter_reasoning,
     schemas_to_openai_tools,
     translate_messages_to_openai,
     translate_openai_stream_to_events,
@@ -459,6 +466,309 @@ class TestTranslateOpenAIStream:
             "ToolCallArgDelta",
             "ToolCallEnd",
         ]
+
+
+class TestOpenRouterReasoningRoundTrip:
+    """End-to-end: stream reasoning_details off the wire, build a
+    :class:`ThinkingEmission`, render it back as an assistant
+    message and verify ``reasoning_details`` matches byte-for-byte.
+    """
+
+    def test_stream_capture_into_message_reasoning_details(self):
+        from agex.agent.emissions import ThinkingEmission
+        from agex.llm.core import EmissionsBuilder
+
+        source_details = [
+            {
+                "type": "reasoning.summary",
+                "format": "anthropic-claude-v1",
+                "id": "block_1",
+                "index": 0,
+                "text": "OK, let me think about this. ",
+            },
+            {
+                "type": "reasoning.summary",
+                "format": "anthropic-claude-v1",
+                "id": "block_1",
+                "index": 0,
+                "text": "The user wants a prime-finding fn.",
+            },
+        ]
+        chunks = [
+            {"choices": [{"delta": {"reasoning_details": [source_details[0]]}}]},
+            {"choices": [{"delta": {"reasoning_details": [source_details[1]]}}]},
+            {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        ]
+
+        # Feed the translator + builder end-to-end.
+        builder = EmissionsBuilder(agent_name="a")
+        from agex.llm.formats.tool_use import parse_tool_events
+
+        tool_events = translate_openai_stream_to_events(iter(chunks))
+        for token in parse_tool_events(tool_events):
+            builder.process_token(token)
+        resp = builder.build()
+
+        # One ThinkingEmission with the aggregated text.
+        thinking_ems = [em for em in resp.emissions if isinstance(em, ThinkingEmission)]
+        assert len(thinking_ems) == 1
+        assert (
+            thinking_ems[0].text
+            == "OK, let me think about this. The user wants a prime-finding fn."
+        )
+
+        # Render the captured ThinkingEmission back through the
+        # tool-use renderer + translate_messages_to_openai and
+        # verify ``reasoning_details`` survives the round-trip.
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "thinking",
+                        "text": thinking_ems[0].text,
+                        "signature": thinking_ems[0].signature,
+                    }
+                ],
+            }
+        ]
+        out = translate_messages_to_openai(msgs)
+        # One reasoning block (the two deltas coalesced at index 0).
+        assert len(out[0]["reasoning_details"]) == 1
+        # Concatenated text survives byte-for-byte.
+        assert out[0]["reasoning_details"][0]["text"] == thinking_ems[0].text
+        # Non-text fields (format, id, type, index) preserved.
+        assert out[0]["reasoning_details"][0]["format"] == "anthropic-claude-v1"
+        assert out[0]["reasoning_details"][0]["id"] == "block_1"
+        assert out[0]["reasoning_details"][0]["type"] == "reasoning.summary"
+        assert out[0]["reasoning_details"][0]["index"] == 0
+
+
+class TestOpenRouterReasoningCodec:
+    """The ``reasoning_details`` array rides on
+    :class:`ThinkingEmission.signature` bytes with an
+    ``openrouter-reasoning:`` tag prefix.  Every byte of the original
+    array must round-trip — OpenRouter requires the sequence of
+    reasoning blocks replayed on subsequent turns to match exactly."""
+
+    def test_round_trip_preserves_array(self):
+        details = [
+            {
+                "type": "reasoning.summary",
+                "format": "anthropic-claude-v1",
+                "id": "block_1",
+                "index": 0,
+                "text": "let me think...",
+            },
+            {
+                "type": "reasoning.encrypted",
+                "format": "anthropic-claude-v1",
+                "id": "block_1",
+                "index": 1,
+                "data": "ENCRYPTED_BLOB",
+            },
+        ]
+        sig = encode_openrouter_reasoning(details)
+        assert decode_openrouter_reasoning(sig) == details
+
+    def test_other_provider_signatures_decode_none(self):
+        """Gemini thought_signature bytes / Responses openai-encoded
+        signatures / Anthropic raw strings must fail-closed when
+        handed to this decoder so they aren't forwarded to
+        OpenRouter as garbage reasoning_details."""
+        assert decode_openrouter_reasoning(b"\x01\x02gemini") is None
+        assert decode_openrouter_reasoning(b'openai-responses:{"id":"rs"}') is None
+        assert decode_openrouter_reasoning("not-bytes") is None  # type: ignore[arg-type]
+
+
+class TestReasoningDetailsOnAssistantMessage:
+    """When an assistant ThinkingEmission carries an OpenRouter-encoded
+    signature, ``translate_messages_to_openai`` must unpack the array
+    onto ``message.reasoning_details`` so the next turn can replay
+    it.  Signatures from other providers are silently ignored on
+    this path — those are for their own adapters."""
+
+    def test_reasoning_details_attached_to_assistant_message(self):
+        details = [
+            {
+                "type": "reasoning.summary",
+                "format": "anthropic-claude-v1",
+                "id": "block_1",
+                "index": 0,
+                "text": "thinking...",
+            }
+        ]
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "thinking",
+                        "signature": encode_openrouter_reasoning(details),
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "call_1",
+                        "name": "python_action",
+                        "input": {"code": "pass"},
+                    },
+                ],
+            }
+        ]
+        out = translate_messages_to_openai(msgs)
+        assert len(out) == 1
+        assert out[0]["role"] == "assistant"
+        assert out[0]["reasoning_details"] == details
+        # Tool calls still land in the ``tool_calls`` field, not
+        # interleaved with reasoning.
+        assert out[0]["tool_calls"][0]["function"]["name"] == "python_action"
+
+    def test_non_openrouter_signature_dropped(self):
+        """A thinking block whose signature came from Gemini
+        (``thought_signature`` bytes, no tag prefix) doesn't produce
+        a ``reasoning_details`` field on the OpenAI/OpenRouter
+        message."""
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "signature": b"\x01\x02gemini"},
+                    {
+                        "type": "tool_use",
+                        "id": "call_1",
+                        "name": "python_action",
+                        "input": {},
+                    },
+                ],
+            }
+        ]
+        out = translate_messages_to_openai(msgs)
+        assert "reasoning_details" not in out[0]
+
+
+class TestReasoningDetailsStreamCapture:
+    """Streaming deltas with ``reasoning_details`` accumulate by
+    ``index`` and flush as a single :class:`ThinkingPart` at stream
+    end, carrying the full array in the signature."""
+
+    def test_accumulates_text_across_deltas(self):
+        chunks = [
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "reasoning_details": [
+                                {
+                                    "type": "reasoning.summary",
+                                    "format": "anthropic-claude-v1",
+                                    "id": "block_1",
+                                    "index": 0,
+                                    "text": "first half. ",
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "reasoning_details": [
+                                {
+                                    "type": "reasoning.summary",
+                                    "format": "anthropic-claude-v1",
+                                    "id": "block_1",
+                                    "index": 0,
+                                    "text": "second half.",
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        ]
+        out = list(translate_openai_stream_to_events(iter(chunks)))
+        thinking = [e for e in out if isinstance(e, ThinkingPart)]
+        assert len(thinking) == 1
+        # Visible text aggregates.
+        assert thinking[0].text == "first half. second half."
+        # Signature round-trips the full array with concatenated text.
+        details = decode_openrouter_reasoning(thinking[0].signature)
+        assert details is not None
+        assert len(details) == 1
+        assert details[0]["text"] == "first half. second half."
+        assert details[0]["format"] == "anthropic-claude-v1"
+        assert thinking[0].redacted is False
+
+    def test_multiple_indices_sorted_and_preserved(self):
+        chunks = [
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "reasoning_details": [
+                                {
+                                    "type": "reasoning.summary",
+                                    "format": "anthropic-claude-v1",
+                                    "id": "b0",
+                                    "index": 0,
+                                    "text": "step one",
+                                },
+                                {
+                                    "type": "reasoning.encrypted",
+                                    "format": "anthropic-claude-v1",
+                                    "id": "b1",
+                                    "index": 1,
+                                    "data": "ENC",
+                                },
+                            ]
+                        }
+                    }
+                ]
+            },
+            {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        ]
+        out = list(translate_openai_stream_to_events(iter(chunks)))
+        thinking = [e for e in out if isinstance(e, ThinkingPart)]
+        assert len(thinking) == 1
+        details = decode_openrouter_reasoning(thinking[0].signature)
+        assert [d["index"] for d in details] == [0, 1]
+        assert details[1]["type"] == "reasoning.encrypted"
+        assert details[1]["data"] == "ENC"
+
+    def test_encrypted_only_block_renders_redacted(self):
+        """A reasoning block with encrypted content but no visible
+        text should become a redacted ThinkingPart — the opaque
+        bytes still round-trip via the signature."""
+        chunks = [
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "reasoning_details": [
+                                {
+                                    "type": "reasoning.encrypted",
+                                    "format": "openai-responses-v1",
+                                    "id": "r1",
+                                    "index": 0,
+                                    "data": "OPAQUE",
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        ]
+        out = list(translate_openai_stream_to_events(iter(chunks)))
+        thinking = [e for e in out if isinstance(e, ThinkingPart)]
+        assert len(thinking) == 1
+        assert thinking[0].redacted is True
+        assert thinking[0].text is None
+        details = decode_openrouter_reasoning(thinking[0].signature)
+        assert details[0]["data"] == "OPAQUE"
 
 
 @pytest.mark.asyncio

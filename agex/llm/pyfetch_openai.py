@@ -358,6 +358,23 @@ class PyfetchOpenAI(LLM):
             for i, m in enumerate(translated)
         ]
         full_messages = [system_msg] + conversation
+
+        # When the wire format is native, enable OpenRouter's unified
+        # reasoning tokens so Claude / Gemini / DeepSeek / etc. produce
+        # real reasoning blocks we can capture and round-trip via
+        # ``reasoning_details``.  Without this, ``native_thinking``
+        # strips the ``thinking`` schema param without giving the model
+        # a native alternative — worst of both worlds.  User-supplied
+        # ``reasoning`` kwarg always wins.
+        if (
+            getattr(self._wire_format, "native_thinking", False)
+            and "reasoning" not in request_kwargs
+        ):
+            request_kwargs = {
+                **request_kwargs,
+                "reasoning": {"enabled": True, "effort": "low"},
+            }
+
         body: dict[str, Any] = {
             "model": self._model,
             "messages": full_messages,
