@@ -217,4 +217,5 @@ async def aexecute_sandboxed(
         on_event=safe_on_event,
         injected_keys=injected_keys,
         pre_ids=pre_ids,
+        emission_id=emission_id,
     )
