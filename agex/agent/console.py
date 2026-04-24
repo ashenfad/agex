@@ -16,6 +16,7 @@ from .events import (
     FailEvent,
     OutputEvent,
     SuccessEvent,
+    SystemNoteEvent,
     TaskStartEvent,
 )
 
@@ -434,6 +435,19 @@ def _format_event_lines(
                 f"Message: {_truncate(_strip_newlines(event.message), 160)}",
             )
         )
+
+    elif isinstance(event, SystemNoteEvent):
+        msg = event.message or ""
+        if msg:
+            body_lines.append(
+                _indent(
+                    detail_indent,
+                    _truncate(
+                        _strip_newlines(msg),
+                        200 if verbosity == "verbose" else 120,
+                    ),
+                )
+            )
 
     # Truncate hard if width is small
     if term_width and term_width > 20:
