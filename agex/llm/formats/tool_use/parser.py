@@ -254,6 +254,19 @@ class _ParserState:
             self._calls[event.call_id] = _CallState(
                 event.tool_name, idx, event.signature
             )
+            # Name the tool in the builder's slot so it survives an
+            # action call whose content arg arrived empty.  Without
+            # this, a python_action with ``code=""`` would reduce to
+            # a ThinkingEmission on build — losing the fact that the
+            # model tried to call a tool and triggering the wrong
+            # "no tools called" nudge next turn.
+            if event.tool_name in ACTION_TOOLS:
+                yield TokenChunk(
+                    type="tool_start",
+                    content=event.tool_name,
+                    done=True,
+                    emission_index=idx,
+                )
             # Hoist the signature onto its own token so the builder can
             # slot it independently of the arg-delta stream.  File
             # tools get the signature applied inline at finalize() time,

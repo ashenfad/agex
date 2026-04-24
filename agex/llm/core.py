@@ -91,6 +91,13 @@ class TokenChunk:
       buffered by the parser and finalized together, and may be used
       by provider adapters to emit pre-built Text/Thinking emissions
       with signature metadata in Phase 4.
+    - ``tool_start`` — a marker emitted by the parser on each action-
+      tool call (``python_action`` / ``terminal_action``) carrying the
+      tool name in ``content``.  The builder uses it to preserve the
+      emission kind when the action was called with empty ``code`` /
+      ``commands`` — without the marker, content-based inference
+      would silently demote the call to a :class:`ThinkingEmission`,
+      losing the fact that the model tried to call a tool.
     """
 
     type: Literal[
@@ -104,6 +111,7 @@ class TokenChunk:
         "file_content",
         "emission",
         "signature",
+        "tool_start",
     ]
     content: str = ""
     done: bool = False
@@ -246,6 +254,15 @@ class EmissionsBuilder:
                 slot["_signature"] = token.signature
             return enriched
 
+        if token.type == "tool_start":
+            # Parser-emitted marker naming the tool at ToolCallStart.
+            # Stashed here so ``build()`` can preserve the emission
+            # kind even when the content args are empty (the model
+            # tried to call a tool — we shouldn't demote it to a
+            # ThinkingEmission just because ``code`` came in blank).
+            slot["_tool"] = token.content
+            return enriched
+
         # file_* tokens stream the write_file/edit_file args purely for
         # UI visibility.  The authoritative emission still arrives as a
         # prebuilt ``emission`` chunk at ToolCallEnd, so don't
@@ -278,13 +295,40 @@ class EmissionsBuilder:
             python_str = "".join(slot.get("python", []))
             terminal_str = "".join(slot.get("terminal", []))
             text_str = "".join(slot.get("text", []))
+            tool_marker = slot.get("_tool")
 
+            # When the parser saw an action-tool call (python_action /
+            # terminal_action), preserve the emission kind even if the
+            # content arg ended up empty — the model *tried* to call
+            # a tool and the loop will treat the empty code/commands as
+            # a no-op.  Without this branch we'd silently demote to a
+            # ThinkingEmission and the no-progress nudge would fire with
+            # "plain text doesn't execute anything", which reads as
+            # nonsense to a model that just called a tool.
+            if tool_marker == "python_action":
+                emissions.append(
+                    PythonEmission(
+                        code=python_str,
+                        title=title_str,
+                        thinking=thinking_str,
+                        signature=signature,
+                    )
+                )
+            elif tool_marker == "terminal_action":
+                emissions.append(
+                    TerminalEmission(
+                        commands=terminal_str,
+                        title=title_str,
+                        thinking=thinking_str,
+                        signature=signature,
+                    )
+                )
             # Narration-via-schema thinking rides on the action emission
             # for round-trip fidelity.  Standalone thinking (no
             # accompanying code/commands/text) becomes its own
             # :class:`ThinkingEmission` — that's the shape native-
             # thinking providers deliver.
-            if python_str:
+            elif python_str:
                 emissions.append(
                     PythonEmission(
                         code=python_str,

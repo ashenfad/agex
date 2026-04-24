@@ -20,6 +20,14 @@ Python emissions share state: later python_action calls see variables
 assigned by earlier ones.  File tools run before subsequent python_action
 calls, so you can write a helper module and import it in the same turn.
 
+Observations next turn only come from python_action (stdout, errors,
+raised exceptions) and terminal_action (shell output).  write_file and
+edit_file only confirm a ``✓ wrote /path`` — they don't verify that the
+file does what you intend.  When you want to check your work, pair a
+file write with a python_action that imports or tests it in the same
+turn; otherwise you'll have nothing substantive to reason about on
+the next turn.
+
 Inside python_action's `code`:
 - task_success(value) finishes the task with `value` as the result.
 - task_fail(msg) ends the task with an error message.
