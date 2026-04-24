@@ -11,7 +11,7 @@ from typing import (
     Union,
 )
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from agex.agent.emissions import (
     Emission,
@@ -140,12 +140,11 @@ class LLMResponse(BaseModel):
     round-trip faithfully.
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     emissions: list[Emission] = Field(default_factory=list)
     input_tokens: int | None = None
     output_tokens: int | None = None
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class ResponseParseError(Exception):

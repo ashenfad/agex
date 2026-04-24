@@ -2,7 +2,7 @@ import html
 from datetime import datetime, timezone
 from typing import Any, Callable, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..agent.emissions import (
     Emission,
@@ -424,12 +424,11 @@ class ActionEvent(BaseEvent):
     per-function_call thought_signatures) round-trip faithfully.
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     emissions: list[Emission] = Field(default_factory=list)
     input_tokens: int | None = None
     output_tokens: int | None = None
-
-    class Config:
-        arbitrary_types_allowed = True
 
     @model_validator(mode="after")
     def _compute_tokens(self):
