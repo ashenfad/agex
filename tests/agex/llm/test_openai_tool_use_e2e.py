@@ -369,6 +369,143 @@ async def test_pyfetch_openai_native_thinking_off_skips_reasoning_block():
 
     body = fake_adapter.fetch_stream.call_args.kwargs["body"]
     assert "reasoning" not in body
+    # With reasoning off, the loop-progression safety net kicks back
+    # in: tool_choice stays ``required`` so the model can't stall
+    # with plain assistant text.
+    assert body["tool_choice"] == "required"
+    # No reasoning kwarg → no OpenRouter ``provider`` capability
+    # pinning either (it's only relevant when we're actually asking
+    # for reasoning_details back).
+    assert "provider" not in body
+
+
+@pytest.mark.asyncio
+async def test_pyfetch_openai_non_anthropic_openrouter_uses_require_parameters():
+    """Non-Anthropic OpenRouter models get ``require_parameters=True``
+    rather than the Anthropic-pinning ``order`` filter.  Also verifies
+    the reasoning shape falls through to OpenAI-native ``effort``
+    (not the Anthropic-native ``max_tokens`` budget)."""
+    args_json = json.dumps({"title": "t", "thinking": "T", "code": "print(1)"})
+    sse_lines = [
+        "data: "
+        + json.dumps(
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "python_action",
+                                        "arguments": args_json,
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            }
+        )
+        + "\n\n",
+        "data: [DONE]\n\n",
+    ]
+
+    class FakeStream:
+        def __init__(self, lines):
+            self._lines = lines
+
+        def __aiter__(self):
+            async def gen():
+                for line in self._lines:
+                    yield line
+
+            return gen()
+
+    fake_adapter = MagicMock()
+    fake_adapter.fetch_stream = MagicMock(return_value=FakeStream(sse_lines))
+
+    client = PyfetchOpenAI(
+        # x-ai/grok doesn't match the anthropic/google-prefix branch,
+        # so the client should use effort + require_parameters.
+        model="x-ai/grok-2",
+        api_key="sk-test",
+        fetch_adapter=fake_adapter,
+    )
+    async for _ in client.acomplete_stream("sys", []):
+        pass
+
+    body = fake_adapter.fetch_stream.call_args.kwargs["body"]
+    assert body["reasoning"] == {"enabled": True, "effort": "medium"}
+    assert body["provider"] == {"require_parameters": True}
+
+
+@pytest.mark.asyncio
+async def test_pyfetch_openai_non_openrouter_base_url_omits_provider():
+    """The ``provider`` capability filter is an OpenRouter-specific
+    field (not part of the OpenAI API).  When the client is pointed
+    at a non-OpenRouter endpoint, we must not inject it — some
+    OpenAI-compatible servers 400 on unknown top-level fields."""
+    args_json = json.dumps({"title": "t", "thinking": "T", "code": "print(1)"})
+    sse_lines = [
+        "data: "
+        + json.dumps(
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "python_action",
+                                        "arguments": args_json,
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            }
+        )
+        + "\n\n",
+        "data: [DONE]\n\n",
+    ]
+
+    class FakeStream:
+        def __init__(self, lines):
+            self._lines = lines
+
+        def __aiter__(self):
+            async def gen():
+                for line in self._lines:
+                    yield line
+
+            return gen()
+
+    fake_adapter = MagicMock()
+    fake_adapter.fetch_stream = MagicMock(return_value=FakeStream(sse_lines))
+
+    client = PyfetchOpenAI(
+        model="gpt-4o-mini",
+        api_key="sk-test",
+        base_url="https://api.openai.com/v1",
+        fetch_adapter=fake_adapter,
+    )
+    async for _ in client.acomplete_stream("sys", []):
+        pass
+
+    body = fake_adapter.fetch_stream.call_args.kwargs["body"]
+    # Reasoning injection still runs (native_thinking default is True)
+    # — just the OpenRouter-specific ``provider`` hint is skipped.
+    assert body["reasoning"] == {"enabled": True, "effort": "medium"}
+    assert "provider" not in body
 
 
 @pytest.mark.asyncio

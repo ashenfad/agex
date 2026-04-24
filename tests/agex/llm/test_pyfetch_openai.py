@@ -145,6 +145,83 @@ def test_sync_stream_raises():
 
 
 # ---------------------------------------------------------------------------
+# Reasoning kwarg dispatch (OpenRouter unified API)
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultReasoningKwarg:
+    """Unit coverage for the provider-prefix dispatch that picks
+    between OpenRouter's two reasoning shapes.
+
+    Background: OpenRouter's unified ``reasoning`` config accepts
+    either ``effort`` (low/medium/high) or ``max_tokens`` (budget),
+    but not both simultaneously (HTTP 400).  Its effort→budget
+    conversion on the Anthropic route is also unreliable — sending
+    only ``effort`` for Claude silently disables reasoning.  So we
+    pick the native shape at the client based on model prefix.
+    """
+
+    def test_anthropic_gets_max_tokens(self):
+        from agex.llm.pyfetch_openai import _default_reasoning_kwarg
+
+        out = _default_reasoning_kwarg("anthropic/claude-sonnet-4.6")
+        assert out == {"enabled": True, "max_tokens": 2048}
+
+    def test_google_gets_max_tokens(self):
+        """Gemini's native knob is also a budget — follow Anthropic's shape."""
+        from agex.llm.pyfetch_openai import _default_reasoning_kwarg
+
+        out = _default_reasoning_kwarg("google/gemini-3-pro")
+        assert out == {"enabled": True, "max_tokens": 2048}
+
+    def test_openai_gets_effort(self):
+        """OpenAI o-series / GPT-5 take the effort label, not a budget."""
+        from agex.llm.pyfetch_openai import _default_reasoning_kwarg
+
+        out = _default_reasoning_kwarg("openai/gpt-5")
+        assert out == {"enabled": True, "effort": "medium"}
+
+    def test_bare_model_id_gets_effort(self):
+        """Unprefixed ids (direct OpenAI API) fall through to effort."""
+        from agex.llm.pyfetch_openai import _default_reasoning_kwarg
+
+        out = _default_reasoning_kwarg("gpt-5-mini")
+        assert out == {"enabled": True, "effort": "medium"}
+
+    def test_unknown_prefix_gets_effort(self):
+        """Conservative default — unknown provider prefixes get effort
+        so at least OpenRouter can translate per backend."""
+        from agex.llm.pyfetch_openai import _default_reasoning_kwarg
+
+        out = _default_reasoning_kwarg("x-ai/grok-2")
+        assert out == {"enabled": True, "effort": "medium"}
+
+    def test_effort_override_maps_to_budget_for_anthropic(self):
+        """The caller-picked effort level maps through to a token
+        budget when dispatching to Anthropic/Google: low=1024,
+        medium=2048, high=4096."""
+        from agex.llm.pyfetch_openai import _default_reasoning_kwarg
+
+        assert _default_reasoning_kwarg("anthropic/claude-opus-4.7", "low") == {
+            "enabled": True,
+            "max_tokens": 1024,
+        }
+        assert _default_reasoning_kwarg("anthropic/claude-opus-4.7", "high") == {
+            "enabled": True,
+            "max_tokens": 4096,
+        }
+
+    def test_effort_override_passes_through_for_openai(self):
+        """OpenAI path forwards the effort label verbatim."""
+        from agex.llm.pyfetch_openai import _default_reasoning_kwarg
+
+        assert _default_reasoning_kwarg("openai/gpt-5", "high") == {
+            "enabled": True,
+            "effort": "high",
+        }
+
+
+# ---------------------------------------------------------------------------
 # SSE → TokenChunk integration
 # ---------------------------------------------------------------------------
 
