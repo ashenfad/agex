@@ -235,7 +235,14 @@ class PyfetchOpenAI(LLM):
         # adapter, the adapter is expected to inject auth headers on the
         # way out (e.g., a JS bridge that reads the key from localStorage).
         self._adapter: FetchAdapter = fetch_adapter or DefaultPyfetchAdapter()
-        self._wire_format: WireFormat = wire_format or ToolUseWireFormat()
+        # Reasoning models are the majority now — prefer native
+        # thinking (no ``thinking`` / ``report`` schema params) so
+        # capable models can't split their call by emitting thinking
+        # without code.  Callers routing through OpenRouter to a
+        # non-reasoning model can opt out via ``ToolUseWireFormat()``.
+        self._wire_format: WireFormat = wire_format or ToolUseWireFormat(
+            native_thinking=True
+        )
 
     def _headers(self) -> dict[str, str]:
         h: dict[str, str] = {"Content-Type": "application/json"}

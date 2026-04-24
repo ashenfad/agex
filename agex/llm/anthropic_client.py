@@ -22,6 +22,30 @@ CLIENT_CONFIG_KEYS = {"api_key", "timeout", "max_retries"}
 MAX_TOKENS = 2**14
 CACHE_TTL = "1h"
 
+# Default budget for Claude extended thinking when ``native_thinking``
+# is on.  The API requires at least 1024 tokens; a couple of thousand
+# gives the model real reasoning space without eating into completion
+# budget (``MAX_TOKENS`` covers both).  Callers on constrained budgets
+# can override by passing their own ``thinking`` kwarg.
+_DEFAULT_THINKING_BUDGET = 2048
+
+
+def _ensure_extended_thinking(
+    request_kwargs: dict, budget_tokens: int = _DEFAULT_THINKING_BUDGET
+) -> dict:
+    """Enable Claude's extended thinking so the adapter captures
+    ``thinking`` blocks natively instead of relying on narration-in-
+    schema.  Callers can override by passing ``thinking=`` explicitly
+    (including ``thinking=None`` to opt out entirely on non-reasoning
+    Claude variants).
+    """
+    if "thinking" in request_kwargs:
+        return request_kwargs
+    return {
+        **request_kwargs,
+        "thinking": {"type": "enabled", "budget_tokens": budget_tokens},
+    }
+
 
 def _ensure_tool_choice_any(request_kwargs: dict) -> dict:
     """Default ``tool_choice`` to ``{"type": "any"}`` so Claude is
@@ -106,7 +130,13 @@ class Anthropic(LLM):
         self._model = model
         self._kwargs = completion_kwargs
         self._timeout_seconds = timeout_seconds
-        self._wire_format: WireFormat = wire_format or ToolUseWireFormat()
+        # Claude 4+ supports extended thinking natively; prefer that
+        # over narration-in-schema so ``thinking`` isn't a parameter
+        # the model can fill while leaving ``code`` empty.  Users on
+        # older Claude (3.x) can opt out via ``ToolUseWireFormat()``.
+        self._wire_format: WireFormat = wire_format or ToolUseWireFormat(
+            native_thinking=True
+        )
         self.client = anthropic.Anthropic(**client_kwargs)
         self.async_client = anthropic.AsyncAnthropic(**client_kwargs)
 
@@ -165,6 +195,15 @@ class Anthropic(LLM):
             "input_tokens": None,
             "output_tokens": None,
         }
+
+        # Enable extended thinking when the wire format is native —
+        # this is what lets the adapter capture real thinking blocks
+        # instead of relying on ``thinking`` as a schema parameter.
+        # Must run before ``_ensure_tool_choice_any`` so the helper
+        # sees ``thinking`` already in kwargs and skips the (API-
+        # incompatible) ``tool_choice=any`` force.
+        if getattr(self._wire_format, "native_thinking", False):
+            request_kwargs = _ensure_extended_thinking(request_kwargs)
 
         # Tools are agex's real API — force a tool call each turn so
         # the loop always makes progress.  Extended thinking is
@@ -234,6 +273,8 @@ class Anthropic(LLM):
             "output_tokens": None,
         }
 
+        if getattr(self._wire_format, "native_thinking", False):
+            request_kwargs = _ensure_extended_thinking(request_kwargs)
         request_kwargs = _ensure_tool_choice_any(request_kwargs)
 
         async with self.async_client.messages.stream(
