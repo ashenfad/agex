@@ -38,6 +38,30 @@ def _is_reasoning_model(model: str) -> bool:
     return m.startswith("gpt-5") or m.startswith("o1") or m.startswith("o3")
 
 
+# Effort → budget token mapping used when the target provider wants
+# an explicit ``max_tokens`` / ``budget_tokens`` rather than an effort
+# label.  Anthropic's Claude extended thinking and Gemini both take
+# an integer budget; OpenAI o-series / GPT-5 take the effort label.
+_EFFORT_TO_BUDGET = {"low": 1024, "medium": 2048, "high": 4096}
+
+
+def _default_reasoning_kwarg(model: str, effort: str = "medium") -> dict:
+    """Build a provider-native ``reasoning`` config for the given
+    model slug.  OpenRouter's unified API rejects effort+max_tokens
+    together and its effort→budget conversion is unreliable on the
+    Anthropic route, so we dispatch by prefix:
+
+    - ``anthropic/*`` and ``google/*`` take ``max_tokens`` (budget).
+    - Everything else (``openai/*``, ``x-ai/*``, bare model ids that
+      we assume are OpenAI) takes ``effort``.
+    """
+    m = model.lower()
+    prefix = m.split("/", 1)[0] if "/" in m else ""
+    if prefix in ("anthropic", "google"):
+        return {"enabled": True, "max_tokens": _EFFORT_TO_BUDGET.get(effort, 2048)}
+    return {"enabled": True, "effort": effort}
+
+
 def _hash12(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()[:12]
 
@@ -370,16 +394,66 @@ class PyfetchOpenAI(LLM):
             getattr(self._wire_format, "native_thinking", False)
             and "reasoning" not in request_kwargs
         ):
+            # Dispatch on provider prefix: Anthropic / Gemini take a
+            # token budget, OpenAI takes an effort label.  OpenRouter
+            # rejects sending both together, and its effort→budget
+            # conversion is unreliable on the Anthropic route, so we
+            # pick the native shape ourselves.
             request_kwargs = {
                 **request_kwargs,
-                "reasoning": {"enabled": True, "effort": "low"},
+                "reasoning": _default_reasoning_kwarg(self._model),
             }
 
+        # OpenRouter routing when reasoning is on.  Two issues:
+        #
+        # 1. Default routing doesn't auto-filter on ``reasoning``
+        #    support (only ``tools``/``max_tokens``), so the request
+        #    can land on a provider that silently drops it.
+        # 2. For ``anthropic/*`` models specifically, even providers
+        #    that "accept" the ``reasoning`` kwarg (Amazon Bedrock,
+        #    Google Vertex) don't actually return ``reasoning_details``
+        #    in the stream — only Anthropic-direct does.
+        #    ``require_parameters: True`` isn't strict enough because
+        #    Bedrock/Vertex accept the param without erroring.
+        #
+        # So for ``anthropic/*`` we pin the provider to Anthropic
+        # directly; for others we rely on ``require_parameters``.
+        # User-supplied ``provider`` kwarg always wins.
+        is_openrouter = "openrouter.ai" in self._base_url
+        if (
+            is_openrouter
+            and "reasoning" in request_kwargs
+            and "provider" not in request_kwargs
+        ):
+            model_prefix = self._model.lower().split("/", 1)[0]
+            if model_prefix == "anthropic":
+                request_kwargs = {
+                    **request_kwargs,
+                    "provider": {
+                        "order": ["Anthropic"],
+                        "allow_fallbacks": False,
+                    },
+                }
+            else:
+                request_kwargs = {
+                    **request_kwargs,
+                    "provider": {"require_parameters": True},
+                }
+
+        # ``tool_choice: "required"`` is incompatible with Anthropic's
+        # extended thinking — when OpenRouter forwards it alongside
+        # ``reasoning`` to Anthropic-direct, thinking gets silently
+        # disabled and no ``reasoning_details`` come back.  Same gotcha
+        # the SDK Anthropic client handles via ``_ensure_tool_choice_any``:
+        # when reasoning is on, let tool_choice default to ``"auto"``
+        # so the model can freely emit thinking blocks before any
+        # tool call.
+        default_tool_choice = "auto" if "reasoning" in request_kwargs else "required"
         body: dict[str, Any] = {
             "model": self._model,
             "messages": full_messages,
             "tools": schemas_to_openai_tools(tool_schemas),
-            "tool_choice": request_kwargs.pop("tool_choice", "required"),
+            "tool_choice": request_kwargs.pop("tool_choice", default_tool_choice),
             "stream": True,
             "stream_options": {"include_usage": True},
             **request_kwargs,

@@ -30,8 +30,8 @@ typed output-item events).
 
 Wire:
 
-- Request: `reasoning={"effort": "low"}` (fold from legacy
-  `reasoning_effort="low"` if set), `store=False`,
+- Request: `reasoning={"effort": "medium"}` (fold from legacy
+  `reasoning_effort="medium"` if set), `store=False`,
   `include=["reasoning.encrypted_content"]`.
 - Response streams `response.output_item.added` / `...done` events
   for `type: "reasoning"` items carrying an `id` and
@@ -101,9 +101,21 @@ Wire:
 OpenRouter's [unified reasoning-tokens API](https://openrouter.ai/docs/use-cases/reasoning-tokens)
 normalizes every upstream provider to a single shape:
 
-- Request: `reasoning={"enabled": True, "effort": "low"}`.
-  `PyfetchOpenAI` injects this on the Chat Completions path whenever
-  the wire format is native.
+- Request: `reasoning={"enabled": True, ...}` with a provider-native
+  budget field.  `PyfetchOpenAI` dispatches on the model's prefix:
+  `anthropic/*` and `google/*` get `max_tokens` (budget), everything
+  else gets `effort`.  OpenRouter rejects `effort` + `max_tokens`
+  together (HTTP 400) and its effort→budget conversion is unreliable
+  on the Anthropic route — sending only `effort` silently disables
+  reasoning for Claude.
+- Also injects a `provider` routing hint when reasoning is on and
+  the base URL is OpenRouter.  For `anthropic/*` models it pins
+  `provider={"order": ["Anthropic"], "allow_fallbacks": False}` —
+  Bedrock and Vertex both *accept* the `reasoning` kwarg without
+  erroring but *don't* return `reasoning_details` in the stream
+  (as of early 2026), so `require_parameters: True` isn't strict
+  enough to avoid them.  For other providers, `require_parameters:
+  True` is sufficient.
 - Response: `choices[].delta.reasoning_details[]` entries with `type`
   (`reasoning.summary` / `reasoning.text` / `reasoning.encrypted`),
   `format` (`anthropic-claude-v1`, `openai-responses-v1`,

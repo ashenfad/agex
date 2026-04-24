@@ -45,7 +45,17 @@ RANDOM_EXCLUDE = [
 
 
 def register_io(agent: Agent) -> None:
-    """Register IO related modules with the agent for VFS operations."""
+    """Register IO related modules with the agent for VFS operations.
+
+    Idempotent — subsequent calls on the same agent are no-ops.  This
+    matters because registering modules mutates the agent's system
+    message (via ``render_definitions``), so re-registering mid-session
+    after the first ``_build_system_message`` has run would flip the
+    provider prompt cache on the next task (sys_hash would drift).
+    """
+    if getattr(agent, "_io_registered", False):
+        return
+    agent._io_registered = True  # type: ignore[attr-defined]
     # File-like objects needed by VFS and IsolatedFS
     agent.module(io, visibility="low", include=["BytesIO", "StringIO", "TextIOWrapper"])
 

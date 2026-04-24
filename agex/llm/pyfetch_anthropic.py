@@ -45,6 +45,26 @@ def _ensure_extended_thinking(
     }
 
 
+def _ensure_tool_choice_any(request_kwargs: dict) -> dict:
+    """Default ``tool_choice`` to ``{"type": "any"}`` so Claude is
+    forced to call one of our tools each turn.  Tools are agex's
+    real API; plain text doesn't advance the task.
+
+    Skipped when the caller opts into extended thinking (``thinking``
+    kwarg) — Anthropic rejects ``tool_choice != auto`` in that mode —
+    or when the caller already passed their own ``tool_choice``.
+
+    Mirrors the matching helper in ``anthropic_client`` (SDK path);
+    duplicated here rather than imported so this module stays SDK-free
+    (``anthropic_client`` does ``import anthropic`` at module load).
+    """
+    if "tool_choice" in request_kwargs:
+        return request_kwargs
+    if "thinking" in request_kwargs:
+        return request_kwargs
+    return {**request_kwargs, "tool_choice": {"type": "any"}}
+
+
 ANTHROPIC_VERSION = "2023-06-01"
 CACHE_CONTROL = {"type": "ephemeral", "ttl": "1h"}
 MAX_TOKENS = 2**14
@@ -196,8 +216,12 @@ class PyfetchAnthropic(LLM):
         request_kwargs = {**self._kwargs, **kwargs}
         if "max_tokens" not in request_kwargs:
             request_kwargs["max_tokens"] = MAX_TOKENS
+        # Order matters: extended thinking first so ``_ensure_tool_choice_any``
+        # sees ``thinking`` in kwargs and skips the (API-incompatible)
+        # ``tool_choice=any`` force.
         if getattr(self._wire_format, "native_thinking", False):
             request_kwargs = _ensure_extended_thinking(request_kwargs)
+        request_kwargs = _ensure_tool_choice_any(request_kwargs)
 
         messages_dicts = self._wire_format.render_events(events)
 
