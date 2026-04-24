@@ -81,11 +81,15 @@ def _build_trailing_ws_pattern(search: str) -> re.Pattern:
 def _find_indent_flexible_match(
     search: str, content: str
 ) -> list[tuple[int, int, str]]:
-    """Find matches for search in content with flexible indentation.
+    """Find matches for ``search`` in ``content`` with flexible indentation.
 
-    This handles cases where the search and content have the same code structure
-    but different absolute indentation levels (e.g., agent sends 2-space indent
-    but file uses 4-space or tabs).
+    Handles the common failure mode where the agent's ``FileEditEmission``
+    has the right code structure but a different absolute indent (e.g.
+    2-space search against a 4-space or tab-indented file).  We anchor
+    on the first non-empty line of ``search`` (stripped), then validate
+    the full block matches line-by-line after stripping leading
+    whitespace.  Returns ``(start_pos, end_pos, matched_text)`` tuples
+    — byte offsets into ``content`` — for every occurrence.
     """
     search_lines = search.split("\n")
     content_lines = content.split("\n")
@@ -146,7 +150,15 @@ def _find_indent_flexible_match(
 
 
 def _adjust_replacement_indent(replacement: str, search: str, matched_text: str) -> str:
-    """Adjust replacement indentation to match the target file's style."""
+    """Re-indent ``replacement`` to sit naturally where ``matched_text`` was.
+
+    Paired with :func:`_find_indent_flexible_match`: when we accept a
+    search/file indent mismatch, the replacement also needs its indent
+    shifted so it drops in cleanly instead of inheriting the agent's
+    indent baseline.  Computes the delta between the file's indent
+    (from ``matched_text``) and the search/replacement baseline, then
+    re-applies it uniformly using the file's indent char (space vs tab).
+    """
     search_lines = search.split("\n")
     matched_lines = matched_text.split("\n")
     replacement_lines = replacement.split("\n")
