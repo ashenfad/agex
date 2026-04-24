@@ -278,7 +278,7 @@ agent = Agent(isolation="process")  # Subprocess isolation
 
 All core agent functionality works regardless of isolation level:
 
-- **Task control**: `task_success()`, `task_fail()`, `task_clarify()`, `task_continue()`
+- **Task control**: `task_success()`, `task_fail()`, `task_clarify()` (returning normally from the Python emission is the implicit continue)
 - **`print()`**: Output is captured via snapshot and returned as events
 - **`view_image()`**: Image actions are collected in-sandbox and processed after execution
 - **Registered functions, classes, and modules**: Survive pickle across the process boundary

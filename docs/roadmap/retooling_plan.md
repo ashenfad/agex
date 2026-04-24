@@ -1,5 +1,15 @@
 # Retooling — Implementation Plan
 
+!!! success "Implemented"
+
+    Landed on branch `nxt-retool` ahead of 0.11.  Phases 1–5
+    complete; Phase 6 (agex-studio follow-up) is separate-repo work.
+    See the `[Unreleased]` block in [CHANGELOG.md](../../CHANGELOG.md)
+    for the shipping summary; package READMEs
+    (`agex/llm/formats/tool_use/README.md`, `agex/llm/README.md`)
+    carry the implementation-level reference.  This page is kept as
+    historical planning context.
+
 Concrete staged plan for executing the design in
 [`retooling.md`](retooling.md). Each phase lands on a working state
 with passing tests; between phases we pause, verify, and regroup.
@@ -404,9 +414,9 @@ Claude interleaved is subtler but doable; OpenAI is a one-liner.
 
 ### Docs to write
 
-- `docs/concepts/reasoning.md` — per-provider reasoning-effort patterns
-- `docs/concepts/wire-format.md` — short page explaining
-  `ToolUseWireFormat` and `native_thinking`
+- `agex/llm/README.md` — per-provider reasoning-effort patterns
+- `agex/llm/formats/tool_use/README.md` — wire-format overview
+  (`ToolUseWireFormat`, `native_thinking`, tool surface)
 - CHANGELOG entry for the breaking reshape
 - Update `docs/quick-start.md` if any examples use dropped APIs
 - Update `retooling.md` status to "implemented" (link to the commit)

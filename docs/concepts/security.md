@@ -208,7 +208,7 @@ agent = Agent(isolation="process")
 
 Agent code runs in a forked subprocess. If the code crashes, segfaults, or triggers an OOM, the host process is unaffected. The sandbox communicates results back via IPC.
 
-All core functionality works cross-process: `task_success`/`task_fail`/`task_continue`, `print()`, `view_image()`, registered functions/classes/modules, and state synchronization. Values must be picklable to cross the process boundary.
+All core functionality works cross-process: `task_success` / `task_fail` / `task_clarify`, `print()`, `view_image()`, registered functions/classes/modules, and state synchronization. Values must be picklable to cross the process boundary.
 
 ### Kernel Isolation
 
