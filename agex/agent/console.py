@@ -575,6 +575,7 @@ def pprint_tokens(
         from agex.agent.emissions import (
             FileEditEmission,
             FileWriteEmission,
+            TextEmission,
             ThinkingEmission,
         )
 
@@ -601,6 +602,14 @@ def pprint_tokens(
             else:
                 return  # Nothing worth printing (signature-only or whitespace).
             color_code = _Colors.bright_blue if use_color else ""
+        elif isinstance(em, TextEmission):
+            if not em.text or not em.text.strip():
+                return  # Whitespace-only text is noise.
+            # Match the streamed ``text`` token style (💬, green) so
+            # buffered-then-delivered text reads the same as inline
+            # streaming text.
+            line = f"💬 {em.text.strip()}\n"
+            color_code = _Colors.green if use_color else ""
         else:
             line = f"emission: {em!r}\n"
             color_code = _Colors.magenta if use_color else ""
