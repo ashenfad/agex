@@ -46,6 +46,34 @@ def _guidance_outputs(events):
     return out
 
 
+@pytest.mark.asyncio
+async def test_nudge_silent_on_printed_python_async_path():
+    """Async agents ran through ``aexecute_sandboxed`` which previously
+    reset the ``_current_emission_id`` contextvar *before*
+    ``handle_result`` read it, producing ``PrintAction.emission_id =
+    None`` for every printed observation on the async path.  The
+    silent-turn detector then saw ``None`` in its emission-id set,
+    missed the match, and fired the nudge incorrectly.  This pins
+    the fix: async printed python → no nudge.
+    """
+    llm = Dummy(
+        responses=[
+            make_response(thinking="printing", code="print('hello async')"),
+            make_response(thinking="done", code="task_success('ok')"),
+        ]
+    )
+    agent = Agent(name="loud_async", llm=llm)
+
+    @agent.task
+    async def run() -> str:
+        """noop"""
+        pass
+
+    events: list = []
+    assert await run(on_event=events.append) == "ok"
+    assert _guidance_outputs(events) == []
+
+
 def test_nudge_fires_on_silent_python():
     """Python ran but produced no stdout/image/error → one nudge."""
     llm = Dummy(
