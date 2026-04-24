@@ -60,73 +60,75 @@ event = TaskStartEvent(
 ```
 
 #### `ActionEvent`
-Generated when an agent takes an action (thinks + executes code or terminal commands).
+Generated when an agent takes a turn.  A turn is an ordered list of
+**emissions** — the individual units the model produced (thinking,
+prose, tool calls).  Each emission type maps cleanly to a
+provider-native content block.
 
 ```python
 from agex.agent.events import ActionEvent
+from agex.agent.emissions import (
+    PythonEmission,
+    TerminalEmission,
+    FileWriteEmission,
+    FileEditEmission,
+    TextEmission,
+    ThinkingEmission,
+)
 
-# Event structure
 event = ActionEvent(
-    title="...",             # str
-    thinking="...",          # str
-    code="...",              # str | None - Python code to execute
-    terminal="...",          # str | None - Terminal commands to execute
-    file_actions=[...],      # list[FileAction | EditAction]
-    input_tokens=...,        # int | None - Actual input tokens from LLM API
-    output_tokens=...,       # int | None - Actual output tokens from LLM API
+    agent_name="a",
+    emissions=[...],         # list[Emission] in stream order
+    input_tokens=...,        # int | None — from the provider's usage block
+    output_tokens=...,       # int | None
 )
 ```
 
-**Action Types:**
-- **Python execution**: `code` contains Python code, `terminal` is `None`
-- **Terminal execution**: `terminal` contains shell commands, `code` is `None`
+**Emission types:**
 
-Terminal commands are executed against the agent's virtual filesystem and support common Unix utilities like `ls`, `cat`, `grep`, `find`, `tar`, `gzip`, `zip`, etc. Terminal execution implicitly continues the task loop (no `task_success()` needed).
+- `PythonEmission(code, title=None, thinking=None, signature=None)` — Python to run.
+- `TerminalEmission(commands, title=None, thinking=None, signature=None)` — shell to run.
+- `FileWriteEmission(path, content, mode="write"|"append", ...)` — write/append a file.
+- `FileEditEmission(path, search, content, match_all=False, ...)` — surgical replace.
+- `TextEmission(text, signature=None)` — user-facing prose (assistant text).
+- `ThinkingEmission(text, signature=None, redacted=False)` — model reasoning
+  (native on Claude extended thinking, Gemini thought parts, OpenAI Responses
+  reasoning items, OpenRouter `reasoning_details`).
 
+A single turn can carry several emissions, e.g.
+`[ThinkingEmission, FileWriteEmission, PythonEmission]`.  Python
+emissions share a namespace — later ones see variables assigned
+earlier.  File emissions apply to the VFS before subsequent Python
+runs.  Returning normally from a Python emission is the implicit
+continue; explicit task control uses `task_success(result)` /
+`task_fail(msg)` / `task_clarify(msg)` inside `python_action.code`.
+
+#### `FileWriteEmission`
 ```python
-# Check what type of action was taken
-if event.code:
-    print(f"Python: {event.code}")
-elif event.terminal:
-    print(f"Terminal: {event.terminal}")
-```
+from agex.agent.emissions import FileWriteEmission
 
-#### `FileAction`
-Used within `ActionEvent` to represent a file write or append requested by the agent.
-
-```python
-from agex.agent.datatypes import FileAction
-
-# Structure
-action = FileAction(
+action = FileWriteEmission(
     path="utils.py",         # str
     content="...",           # str
-    mode="write"             # Literal["write", "append"]
+    mode="write",            # Literal["write", "append"]
 )
 ```
 
-#### `EditAction`
-Used within `ActionEvent` to represent a search/replace or insert edit requested by the agent.
+#### `FileEditEmission`
+Surgical search-and-replace.  To insert around an anchor, include the
+anchor itself in `content` (search for `def foo():` and replace with
+`def foo():\n<new line>`).
 
 ```python
-from agex.agent.datatypes import EditAction
+from agex.agent.emissions import FileEditEmission
 
-# Structure
-action = EditAction(
+action = FileEditEmission(
     path="utils.py",         # str
-    search="old_code",       # str - text to find
-    content="new_code",      # str - content to use
-    operation="replace",     # Literal["replace", "insert-after", "insert-before"]
-    match_all=False,         # bool - apply to all occurrences
+    search="old_code",       # str — exact text, whitespace significant
+    content="new_code",      # str — replacement
+    match_all=False,         # bool — apply to every occurrence
 )
 ```
-
-**Operation Options:**
-- `"replace"` (default): The search text is replaced entirely by the content
-- `"insert-after"`: The search text is kept, content is inserted after it
-- `"insert-before"`: Content is inserted before the search text, which is kept
-
-The `operation` attribute controls how the edit is applied. Use `match_all=True` to apply the operation to all occurrences of the search text.
 
 #### `OutputEvent`
 Generated when agents produce output (print, view_image, etc.).

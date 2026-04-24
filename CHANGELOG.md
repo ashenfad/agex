@@ -6,6 +6,119 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+**Retooling** — the agex turn shape now matches provider-native tool
+use.  Motivated by Gemini 3 `thought_signature` requirements, Claude
+4's interleaved extended thinking, and GPT-5-family routing through
+the Responses endpoint.  Breaking: event log, primer, and wire format
+are not compatible with 0.10.x.  See `agex/llm/formats/tool_use/README.md`
+for the wire-format overview and `agex/llm/README.md` for per-
+provider reasoning round-trip.
+
+### Added
+- **Emission-list `ActionEvent`** — `ActionEvent(emissions=[...])` is
+  an ordered list of `PythonEmission` / `TerminalEmission` /
+  `FileWriteEmission` / `FileEditEmission` / `TextEmission` /
+  `ThinkingEmission`.  A single turn may carry several emissions;
+  Python emissions share a namespace.
+- **Native thinking by default** on every provider (`native_thinking=True`
+  on `ToolUseWireFormat`).  Thinking arrives as provider-native
+  content blocks (Claude extended thinking, Gemini thought parts,
+  OpenAI Responses reasoning items, OpenRouter `reasoning_details`)
+  and round-trips via `ThinkingEmission.signature` bytes with
+  provider-specific tag prefixes.
+- **OpenAI Responses API support** — `gpt-5*` / `o1*` / `o3*` auto-
+  dispatch to `/v1/responses` for stateless reasoning round-trip
+  (`store=False`, `include=["reasoning.encrypted_content"]`).  Chat
+  Completions still serves non-reasoning models.  `use_responses=`
+  kwarg forces either path.
+- **OpenRouter unified reasoning tokens** — `PyfetchOpenAI` injects
+  `reasoning={"enabled": True, "effort": "low"}` on the Chat
+  Completions path and captures `delta.reasoning_details[]` into
+  `ThinkingEmission.signature` with the `openrouter-reasoning:` tag
+  prefix; `message.reasoning_details` is replayed byte-for-byte on
+  subsequent turns.
+- **Anthropic extended thinking** enabled by default via
+  `thinking={"type": "enabled", "budget_tokens": 2048}`.
+  `_ensure_tool_choice_any` auto-skips tool-force when thinking is
+  on (the combo is API-incompatible).
+- **Per-emission `emission_id`** on `PrintAction` / `ImageAction`
+  parts — the renderer pairs observations back to the specific
+  emission that produced them in a multi-emission turn.
+- **Forced tool use** — `tool_choice="required"` on OpenAI, `{"type":
+  "any"}` on Anthropic (when thinking isn't on),
+  `tool_config.mode="ANY"` on Gemini.  Tools are the interface; plain
+  assistant text no longer satisfies a turn.
+- **Nudges** for missing progress: a `TASK_CONTROL_GUIDANCE`
+  OutputEvent when a `python_action` produced no observation (print,
+  image, error), and a `NO_PROGRESS_GUIDANCE` SystemNote when a turn
+  carried only text/thinking.
+- **Streaming file-action content** — `write_file` / `edit_file`
+  stream their string args as `file_path` / `file_search` /
+  `file_content` `TokenChunk`s so `on_token` handlers can watch file
+  writes live.
+- **`TextPart` stream event** — all three provider adapters capture
+  plain-text content blocks (Anthropic `text`, OpenAI `delta.content`,
+  Gemini plain text parts) and surface them as
+  `TextEmission`, so user-visible prose mixed into a turn round-
+  trips faithfully.
+- **`tool_start` marker** — the parser emits a marker on every
+  action-tool `ToolCallStart` so the builder preserves
+  `PythonEmission` / `TerminalEmission` shape even when `code` /
+  `commands` came in empty (no more silent demotion to
+  `ThinkingEmission`).
+- **Package READMEs** — `agex/llm/formats/tool_use/README.md` covers
+  the wire format (emission types, tool surface, `native_thinking`);
+  `agex/llm/README.md` covers per-provider reasoning (OpenAI
+  Responses, Anthropic extended thinking, Gemini thought parts,
+  OpenRouter unified `reasoning_details`) and the signature-packing
+  scheme.
+
+### Changed
+- **`edit_file` collapsed to search+replace only.**  The
+  `insert_after` / `insert_before` operations are gone — insertion is
+  expressed as a replace whose `content` includes the anchor.  Models
+  were routinely confused by the mutually-exclusive content fields.
+- **`pprint_events` / `pprint_tokens`** updated for the emission list:
+  terminal commands render, file operations show operation/mode,
+  streaming file tokens get emoji prefixes, signed-thinking-only
+  turns show an explicit hint, `SystemNoteEvent` bodies are no
+  longer silently hidden.
+- **Primer** tightened: tools are the interface, text is a side
+  channel, observation asymmetry (python/terminal produce
+  observations; file tools only confirm writes), append over edit
+  for new content.
+
+### Removed
+- **XML wire format** — `<THINKING>` / `<CODE>` / `<REPORT>` tag
+  parsing and the entire `agex/llm/formats/xml/` directory are gone.
+- **`task_continue`** — returning normally from a `python_action` is
+  the implicit continue.  No builtin, no exception class.
+- **`FileAction` / `EditAction` dataclasses** — superseded by
+  `FileWriteEmission` / `FileEditEmission`.
+- **Single-`python_action`-per-turn restriction** — multiple Python
+  emissions in one turn share a namespace and run in order.
+- **`thinking` / `report` schema parameters** (when `native_thinking=True`)
+  on `python_action` / `terminal_action` — reasoning and prose ride
+  on native content blocks instead.
+
+### Fixed
+- Gemini 3 400s (`Function call is missing a thought_signature`) —
+  parts are buffered across chunks so late-arriving signatures win;
+  a documented dummy signature papers over the first-fc-no-sig edge
+  case.
+- `PrintAction.emission_id` was always `None` because `execute_sandboxed`
+  reset the `_current_emission_id` contextvar before `handle_result`
+  read it.  Now passed explicitly.
+- OpenAI Chat Completions 400 (`Unrecognized request argument supplied:
+  reasoning_effort`) — the Chat path no longer injects
+  `reasoning_effort` by default (only reasoning models accept it, and
+  they dispatch to Responses).
+- `edit_file` failures surface in the `tool_result` instead of being
+  masked by the synthesized success line, so the agent can recover
+  on the next turn.
+
 ## [0.10.2] - 2026-04-20
 
 ### Added

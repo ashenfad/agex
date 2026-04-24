@@ -1,5 +1,15 @@
 # Retooling: align the agex turn with provider-native tool use
 
+!!! success "Implemented"
+
+    Landed on branch `nxt-retool` ahead of 0.11.  See the
+    `[Unreleased]` block in [CHANGELOG.md](../../CHANGELOG.md) for the
+    shipping summary; package READMEs
+    (`agex/llm/formats/tool_use/README.md` for the wire format,
+    `agex/llm/README.md` for per-provider reasoning) carry the
+    implementation-level reference.  This page is kept as historical
+    design context.
+
 ## Summary
 
 Reshape the core event model, execution loop, and primer to match how
@@ -326,8 +336,8 @@ faster than we should — Anthropic's recent `enabled+budget_tokens` →
 `adaptive+effort` migration would've broken an agex abstraction but
 passed through untouched via `**kwargs`.
 
-**Idiomatic usage** (documented in client docstrings + a
-`docs/concepts/reasoning.md` page):
+**Idiomatic usage** (documented in client docstrings +
+`agex/llm/README.md`):
 
 ```python
 OpenAI(model="gpt-5.4", reasoning={"effort": "high"})

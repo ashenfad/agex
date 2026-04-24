@@ -171,7 +171,7 @@ Agents have internal functions to signal different outcomes:
 - **`task_success(result)`** - Agent completed successfully. Becomes the return value of the task.
 - **`task_fail(message)`** - Agent cannot complete the task. Raises a `TaskFail` exception.
 - **`task_clarify(message)`** - Agent needs more information. Raises a `TaskClarify` exception.
-- **`task_continue(*observations)`** - Agent wants to continue to the next think-act cycle. This is the default internal behavior and does not raise an exception.
+- **Implicit continue** — when a `python_action` returns normally without calling any of the above, the turn ends and the loop proceeds to the next iteration. No explicit `task_continue` call is needed.
 
 These internal agent calls become the exceptions you handle in your code.
 
