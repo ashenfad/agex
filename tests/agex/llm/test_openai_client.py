@@ -19,12 +19,11 @@ def test_openai_client_initialization():
         assert client.provider_name == "OpenAI"
 
 
-def test_reasoning_effort_default_on_chat_path():
-    """Chat Completions path defaults reasoning_effort="low" when the
-    caller doesn't set it — the API's own default is "none" which
-    produces the wrong behaviour for agentic multi-step work.  The
-    default model (gpt-5-mini) routes to Responses, so this test pins
-    the client to Chat Completions via ``use_responses=False``."""
+def test_chat_path_does_not_inject_reasoning_effort():
+    """The Chat Completions path only runs for non-reasoning models
+    (gpt-5* / o1* / o3* dispatch to Responses), and those models
+    reject ``reasoning_effort`` with a 400.  Verify we don't inject
+    one by default."""
     from agex.llm.formats import ToolUseWireFormat
 
     client = OpenAI(
@@ -40,12 +39,13 @@ def test_reasoning_effort_default_on_chat_path():
         list(client.complete_stream("sys", []))
 
     call_kwargs = create_mock.call_args.kwargs
-    assert call_kwargs.get("reasoning_effort") == "low"
+    assert "reasoning_effort" not in call_kwargs
 
 
-def test_reasoning_effort_explicit_override_wins_on_chat_path():
-    """Caller-supplied ``reasoning_effort`` takes precedence over the
-    default on the Chat Completions path."""
+def test_reasoning_effort_explicit_opt_in_chat_path():
+    """Callers who've forced a reasoning model onto Chat Completions
+    (``use_responses=False``) can still pass ``reasoning_effort``
+    explicitly — that we forward as-is."""
     from agex.llm.formats import ToolUseWireFormat
 
     client = OpenAI(
