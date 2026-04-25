@@ -39,10 +39,11 @@ def test_view_image_primer_text_is_always_visible():
     # Agent with NO image-related modules
     agent = Agent()
     system_message = agent._build_system_message()
-    # Check for core philosophy items
-    assert "Code is Action" in system_message
-    assert "Persistent State" in system_message
-    assert "Task Control Functions" in system_message
+    # Check for core philosophy items.  Lowercased post-2026-04-25
+    # primer revision (sentence case in headings, less title case).
+    assert "Code is action" in system_message
+    assert "Persistent state" in system_message
+    assert "Task Control" in system_message
     assert "task_success" in system_message
 
 
