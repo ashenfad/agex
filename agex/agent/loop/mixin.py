@@ -299,8 +299,12 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             threshold_idx = max(0, self.max_iterations - 3)
 
         if iteration >= threshold_idx:
+            # The renderer wraps SystemNoteEvent messages with a
+            # ``[system]`` prefix on the way to the LLM, so the
+            # framework attribution is already explicit — no need
+            # to repeat it in the body.
             messages.append(
-                f"System Note: You are on iteration {iteration + 1} of {self.max_iterations}. Please wrap up."
+                f"You are on iteration {iteration + 1} of {self.max_iterations}. Please wrap up."
             )
 
         # 4. Current Working Directory (show if not at root)

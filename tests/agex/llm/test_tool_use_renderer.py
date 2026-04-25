@@ -13,6 +13,7 @@ from agex.agent.events import (
     FailEvent,
     OutputEvent,
     SuccessEvent,
+    SystemNoteEvent,
     TaskStartEvent,
 )
 from agex.eval.objects import ImageAction, PrintAction
@@ -647,3 +648,62 @@ class TestEmpty:
         msgs = render_events_as_tool_use(events)
         assert len(msgs) == 1
         assert msgs[0]["role"] == "user"
+
+
+class TestSystemNoteFraming:
+    """SystemNoteEvent messages render with a ``[system]`` prefix so
+    the model can disambiguate framework telemetry from user speech in
+    user-role messages.  The persisted event keeps its raw message
+    (no presentation concerns leak into the log)."""
+
+    def test_system_note_gets_prefix(self):
+        events = [
+            _python_action(code="x"),
+            OutputEvent(
+                agent_name="a",
+                parts=[PrintAction(args=("done",), emission_id="em_0_0")],
+            ),
+            SystemNoteEvent(
+                agent_name="System",
+                message="✓ write_file: /helpers/utils.py",
+            ),
+        ]
+        msgs = render_events_as_tool_use(events)
+        # System note lands as trailing text in the user message that
+        # carries the tool_result for the prior python_action.
+        assert len(msgs) == 2  # assistant turn + user turn
+        user_msg = msgs[1]
+        assert user_msg["role"] == "user"
+        text_blocks = [b for b in user_msg["content"] if b.get("type") == "text"]
+        assert any(
+            b["text"] == "[system] ✓ write_file: /helpers/utils.py" for b in text_blocks
+        )
+
+    def test_persisted_event_message_is_unchanged(self):
+        """The prefix lives in the renderer, not on the event — the
+        log entry stays clean so the wrapping convention can evolve
+        without migrating historical data."""
+        event = SystemNoteEvent(agent_name="System", message="raw note")
+        # Event body has no prefix.
+        assert event.message == "raw note"
+        # Renderer adds the prefix on the way out.
+        msgs = render_events_as_tool_use([_python_action(code="x"), event])
+        user_msg = msgs[1]
+        text_blocks = [b for b in user_msg["content"] if b.get("type") == "text"]
+        assert any(b["text"] == "[system] raw note" for b in text_blocks)
+
+    def test_multiple_system_notes_each_get_prefix(self):
+        events = [
+            _python_action(code="x"),
+            OutputEvent(
+                agent_name="a",
+                parts=[PrintAction(args=("ok",), emission_id="em_0_0")],
+            ),
+            SystemNoteEvent(agent_name="System", message="first"),
+            SystemNoteEvent(agent_name="System", message="second"),
+        ]
+        msgs = render_events_as_tool_use(events)
+        user_msg = msgs[1]
+        texts = [b["text"] for b in user_msg["content"] if b.get("type") == "text"]
+        assert "[system] first" in texts
+        assert "[system] second" in texts
