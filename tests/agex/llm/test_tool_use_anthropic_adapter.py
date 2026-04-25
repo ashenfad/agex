@@ -75,6 +75,36 @@ class TestTranslateMessagesToAnthropic:
         out = translate_messages_to_anthropic(msgs)
         assert out == msgs
 
+    def test_assistant_tool_use_strips_signature(self):
+        """The renderer attaches ``signature`` to tool_use blocks for
+        Gemini's ``thought_signature`` round-trip.  Anthropic's Messages
+        API doesn't accept that field on tool_use blocks (it lives on
+        separate ``thinking`` blocks instead) and would 400.  Strip on
+        egress so cross-provider replay stays safe."""
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "call_1",
+                        "name": "python_action",
+                        "input": {"code": "pass"},
+                        "signature": b"opaque-bytes-from-gemini",
+                    }
+                ],
+            }
+        ]
+        out = translate_messages_to_anthropic(msgs)
+        assert out[0]["content"][0] == {
+            "type": "tool_use",
+            "id": "call_1",
+            "name": "python_action",
+            "input": {"code": "pass"},
+        }
+        # Original message must not be mutated.
+        assert "signature" in msgs[0]["content"][0]
+
     def test_assistant_text_plus_tool_use_both_replayed(self):
         """A turn that mixed a TextEmission with a PythonEmission must
         pass through as assistant content containing both the text

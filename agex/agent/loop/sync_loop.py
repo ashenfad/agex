@@ -176,7 +176,10 @@ class SyncLoopMixin:
 
             if isinstance(emission, FileWriteEmission):
                 try:
-                    apply_file_write(self, emission, fs, exec_state, on_event=on_event)
+                    with apply_resource_limits(self._resource_limits):
+                        apply_file_write(
+                            self, emission, fs, exec_state, on_event=on_event
+                        )
                     add_event_to_log(
                         exec_state,
                         SystemNoteEvent(
@@ -195,15 +198,25 @@ class SyncLoopMixin:
 
             elif isinstance(emission, FileEditEmission):
                 try:
-                    apply_file_edit(emission, fs, exec_state, on_event=on_event)
-                    add_event_to_log(
-                        exec_state,
-                        SystemNoteEvent(
-                            agent_name="System",
-                            message=f"✓ edit_file: {emission.path}",
-                        ),
-                        on_event=on_event,
-                    )
+                    with apply_resource_limits(self._resource_limits):
+                        modified = apply_file_edit(
+                            emission, fs, exec_state, on_event=on_event
+                        )
+                    # Only log success when the edit actually changed
+                    # the file — ``apply_file_edit`` returns ``False``
+                    # in the "already applied" no-op path (which has
+                    # already emitted its own ⚠️ SystemNoteEvent) and
+                    # when ``fs`` is absent.  See the matching guard in
+                    # ``async_loop.py``.
+                    if modified:
+                        add_event_to_log(
+                            exec_state,
+                            SystemNoteEvent(
+                                agent_name="System",
+                                message=f"✓ edit_file: {emission.path}",
+                            ),
+                            on_event=on_event,
+                        )
                 except Exception as e:
                     recoverable_error = e
                     error_output = create_error_output(

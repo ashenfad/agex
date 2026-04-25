@@ -141,6 +141,19 @@ def translate_messages_to_anthropic(messages: list[dict]) -> list[dict]:
                 new_content.append(_translate_tool_result(block))
             elif btype == "thinking":
                 new_content.append(_translate_thinking_block(block))
+            elif btype == "tool_use":
+                # The renderer attaches ``signature`` to ``tool_use``
+                # blocks for Gemini's ``thought_signature`` round-trip.
+                # Anthropic's Messages API doesn't accept that field on
+                # tool_use blocks (it lives on separate ``thinking``
+                # blocks instead) and would 400.  Drop on egress so
+                # cross-provider replay stays safe.
+                if "signature" in block:
+                    new_content.append(
+                        {k: v for k, v in block.items() if k != "signature"}
+                    )
+                else:
+                    new_content.append(block)
             else:
                 new_content.append(block)
         out.append({"role": msg["role"], "content": new_content})
