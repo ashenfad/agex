@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Changed
+- **System-note rendering** — every `SystemNoteEvent` is now wrapped
+  with a `[system] ` prefix when rendered into the LLM's user-role
+  message, so the agent can disambiguate framework telemetry from
+  user speech regardless of the call site.  Applied at the renderer
+  rather than the event boundary so the persisted log stays clean
+  and the wrapping convention can evolve without migrating
+  historical events.  The iteration warning's redundant
+  `"System Note: "` body prefix is dropped — the wrapper does that
+  work now.
+
 ## [0.11.0] - 2026-04-24
 
 **Retooling** — the agex turn shape now matches provider-native tool

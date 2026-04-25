@@ -410,7 +410,18 @@ def render_events_as_tool_use(events: List[Event]) -> List[dict]:
             pending_text.append({"type": "text", "text": text})
 
         elif isinstance(event, SystemNoteEvent):
-            pending_text.append({"type": "text", "text": event.message})
+            # Wrap framework-side notes with a consistent ``[system]``
+            # prefix.  All trailing text in user-role messages is some
+            # mix of tool_results, system notes, and other telemetry —
+            # the prefix lets the model disambiguate "framework speaking"
+            # from "user speaking" at a glance, regardless of which
+            # call site emitted the note (iteration warning, file-op
+            # confirmation, dropped-duplicate warning, etc.).  Applied
+            # at the renderer rather than the event boundary so the
+            # persisted log stays clean of presentation concerns and
+            # the wrapping convention can evolve without migrating
+            # historical events.
+            pending_text.append({"type": "text", "text": f"[system] {event.message}"})
 
     _flush_user()
     return messages
