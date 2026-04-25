@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Verify-before-commit best practice** in the builtin primer.
+  When a task returns a testable artifact (callable, module, parser,
+  etc.), agents are nudged to assert against known cases in the same
+  `python_action` as `task_success` — passing asserts let the task
+  complete in one turn; failing asserts surface as the next turn's
+  observation so the agent fixes before any broken result is shipped.
+
 ### Changed
 - **System-note rendering** — every `SystemNoteEvent` is now wrapped
   with a `[system] ` prefix when rendered into the LLM's user-role
@@ -18,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   historical events.  The iteration warning's redundant
   `"System Note: "` body prefix is dropped — the wrapper does that
   work now.
+- **Builtin primer revision** — fresh-eyes pass that fixes stale
+  content (the `edit_file` doc still mentioned the removed
+  `insert_after` / `insert_before` operations; "most stdlib is
+  available" was misleading post-low-viz hiding), drops redundant
+  sections (Core Philosophy "Iterative Refinement" duplicated the
+  Task Control intro; Best Practices "Don't hide errors" duplicated
+  `task_fail`'s "NOT for code bugs"; Best Practices "Modularize"
+  duplicated "Importing Your Code"), tightens the Communicating-
+  with-Caller section, and reorders Chapters near Capabilities
+  (it's environmental info, not a behavioral rule).  Net length
+  drops from ~8.7k chars to ~5.9k (32% smaller, ~700 fewer tokens
+  per request).
 
 ## [0.11.0] - 2026-04-24
 
