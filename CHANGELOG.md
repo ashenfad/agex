@@ -35,9 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `task_fail`'s "NOT for code bugs"; Best Practices "Modularize"
   duplicated "Importing Your Code"), tightens the Communicating-
   with-Caller section, and reorders Chapters near Capabilities
-  (it's environmental info, not a behavioral rule).  Net length
-  drops from ~8.7k chars to ~5.9k (32% smaller, ~700 fewer tokens
-  per request).
+  (it's environmental info, not a behavioral rule).  Adds a
+  first-class **Terminal** capability section — the previous primer
+  treated `terminal_action` as a footnote, leading agents to
+  underuse it for filesystem inventory, git on their own workspace,
+  and script execution.  Reframes the opening to name both
+  surfaces (Python REPL + per-command shell) without privileging
+  one as "the" core.  Calls out explicitly that terminal/git
+  operations work on the agent's own VFS — nothing is shared with
+  the user's local machine and there's no remote.  Net length
+  drops from ~8.7k chars to ~6.9k (~20% smaller).
 
 ## [0.11.0] - 2026-04-24
 
