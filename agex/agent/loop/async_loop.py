@@ -174,15 +174,25 @@ class AsyncLoopMixin:
             elif isinstance(emission, FileEditEmission):
                 try:
                     with apply_resource_limits(self._resource_limits):
-                        apply_file_edit(emission, fs, exec_state, on_event=on_event)
-                    add_event_to_log(
-                        exec_state,
-                        SystemNoteEvent(
-                            agent_name="System",
-                            message=f"✓ edit_file: {emission.path}",
-                        ),
-                        on_event=on_event,
-                    )
+                        modified = apply_file_edit(
+                            emission, fs, exec_state, on_event=on_event
+                        )
+                    # Only log success when the edit actually changed
+                    # the file.  ``apply_file_edit`` returns ``False``
+                    # in the "already applied" no-op path (after emitting
+                    # its own ⚠️ SystemNoteEvent) and when ``fs`` is
+                    # absent — appending a generic ✓ in either case
+                    # produces confusing back-to-back warning+success
+                    # entries in the event log.
+                    if modified:
+                        add_event_to_log(
+                            exec_state,
+                            SystemNoteEvent(
+                                agent_name="System",
+                                message=f"✓ edit_file: {emission.path}",
+                            ),
+                            on_event=on_event,
+                        )
                 except Exception as e:
                     recoverable_error = e
                     error_output = create_error_output(
