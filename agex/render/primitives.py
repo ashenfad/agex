@@ -69,17 +69,24 @@ def is_dataframe(value: Any) -> bool:
     """
     Check if a value is a pandas DataFrame.
 
-    Uses duck-typing to avoid hard pandas dependency.
-    Excludes list/dict/set/tuple which might have shape/columns attributes.
+    Uses duck-typing to avoid hard pandas dependency.  Excludes
+    list/dict/set/tuple which might have shape/columns attributes,
+    and excludes class objects themselves — ``pd.DataFrame`` (the
+    class) has ``shape`` and ``columns`` as ``property`` /
+    metadata attributes that pass ``hasattr`` but are not the
+    instance-level values, so a downstream ``value.shape[0]``
+    against the class hits a ``property`` object and raises
+    ``TypeError: 'property' object is not subscriptable``.
 
     Args:
         value: Value to check
 
     Returns:
-        True if value appears to be a pandas DataFrame
+        True if value appears to be a pandas DataFrame instance
     """
     return (
-        hasattr(value, "shape")
+        not isinstance(value, type)
+        and hasattr(value, "shape")
         and hasattr(value, "columns")
         and not isinstance(value, (list, dict, set, tuple))
     )
