@@ -17,6 +17,7 @@ from agex.agent.events import (
     SuccessEvent,
     TaskStartEvent,
 )
+from agex.eval.objects import PrintAction
 from agex.llm.dummy_client import Dummy
 from agex.state import _agex_decoder, _agex_encoder, connect_state, events
 from agex.state.kv import Memory
@@ -385,10 +386,17 @@ class TestEventSystem:
         # Should have ActionEvent
         assert "ActionEvent" in event_types
 
-        # Should have OutputEvents from print statements
+        # Should have an OutputEvent from the print statements — one
+        # event per emission with one ``parts`` entry per print, so
+        # two prints from a single ``python_action`` collapse into a
+        # single OutputEvent with two PrintAction parts.
         assert "OutputEvent" in event_types
         output_events = [e for e in event_list if isinstance(e, OutputEvent)]
-        assert len(output_events) >= 2  # Two print statements
+        assert len(output_events) >= 1
+        print_parts = [
+            p for e in output_events for p in e.parts if isinstance(p, PrintAction)
+        ]
+        assert len(print_parts) == 2
 
         # Should end with SuccessEvent
         assert event_types[-1] == "SuccessEvent"

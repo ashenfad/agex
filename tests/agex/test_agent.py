@@ -1126,12 +1126,12 @@ print(f"Setup complete: {setup_var}")
     # Verify result
     assert result == "done"
 
-    # Verify expected event sequence
+    # Verify expected event sequence — both setup prints fold into a
+    # single OutputEvent with one PrintAction part per print.
     expected_sequence = [
         TaskStartEvent,  # Task starts
         ActionEvent,  # Setup action
-        OutputEvent,  # Setup output 1: "Setup is running"
-        OutputEvent,  # Setup output 2: "Setup complete: Hello from setup!"
+        OutputEvent,  # Setup output: both prints, one event with two parts
         ActionEvent,  # Agent action
         SuccessEvent,  # Task completion
     ]
@@ -1145,7 +1145,7 @@ print(f"Setup complete: {setup_var}")
             f"Event {i} should be {expected_type.__name__}, got {type(event).__name__}"
         )
 
-    # Verify setup ActionEvent is immediately followed by its OutputEvents
+    # Verify setup ActionEvent is immediately followed by its OutputEvent
     setup_action = event_list[1]
     assert isinstance(setup_action, ActionEvent)
     assert (
@@ -1153,20 +1153,15 @@ print(f"Setup complete: {setup_var}")
         == "This code was automatically run to provide context for the task."
     )
 
-    # Next events should be OutputEvents from setup
-    setup_output_1 = event_list[2]
-    setup_output_2 = event_list[3]
-    assert isinstance(setup_output_1, OutputEvent)
-    assert isinstance(setup_output_2, OutputEvent)
-
-    # Verify output content
-    output_1_text = str(setup_output_1.parts[0])
-    output_2_text = str(setup_output_2.parts[0])
-    assert "Setup is running" in output_1_text
-    assert "Setup complete: Hello from setup!" in output_2_text
+    # The OutputEvent carries both prints as parts in their original order.
+    setup_output = event_list[2]
+    assert isinstance(setup_output, OutputEvent)
+    assert len(setup_output.parts) == 2
+    assert "Setup is running" in str(setup_output.parts[0])
+    assert "Setup complete: Hello from setup!" in str(setup_output.parts[1])
 
     # Verify the last ActionEvent is the agent's actual response
-    agent_action = event_list[4]
+    agent_action = event_list[3]
     assert isinstance(agent_action, ActionEvent)
     assert event_thinking(agent_action) == "I will complete immediately"
     assert event_code(agent_action) == 'task_success("done")'

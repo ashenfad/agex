@@ -97,11 +97,23 @@ def handle_result(
         if key in state:
             del state[key]
 
-    # 3. Convert print snapshots into OutputEvents.  Each PrintAction
-    #    carries the current emission_id so the renderer can pair
-    #    observations per emission in a multi-emission turn.  Intercept
-    #    __AGEX_IMAGE__: prefixed prints and convert to ImageAction.
+    # 3. Convert print snapshots into a single OutputEvent whose
+    #    ``parts`` carries one PrintAction / ImageAction per print
+    #    in original order.  Each part stamps the current emission_id
+    #    so the renderer can pair observations per emission in a
+    #    multi-emission turn.  Intercept __AGEX_IMAGE__: prefixed
+    #    prints and convert to ImageAction.
+    #
+    #    Why one event with N parts instead of N events?  Sandtrap
+    #    batches prints into ``result.prints`` regardless — the
+    #    sandbox has no per-print callback hook, so emitting an event
+    #    per print just fans out a list at the end of exec, not a
+    #    stream.  A single multi-part event is fewer commits in
+    #    kvgit, one token-budgeting pass, and matches how the
+    #    OutputEvent data model already presents itself
+    #    (``parts: list[Any]``).
     _IMG_PREFIX = "__AGEX_IMAGE__:"
+    output_parts: list[Any] = []
     for args in result.prints:
         tup = tuple(args)
         if len(tup) == 1 and isinstance(tup[0], str) and tup[0].startswith(_IMG_PREFIX):
@@ -113,20 +125,13 @@ def handle_result(
 
                 b64 = tup[0][len(_IMG_PREFIX) :]
                 img = Image.open(io.BytesIO(base64.b64decode(b64)))
-                event = OutputEvent(
-                    agent_name=agent_name,
-                    parts=[ImageAction(image=img, emission_id=emission_id)],
-                )
+                output_parts.append(ImageAction(image=img, emission_id=emission_id))
             except Exception:
-                event = OutputEvent(
-                    agent_name=agent_name,
-                    parts=[PrintAction(args=tup, emission_id=emission_id)],
-                )
+                output_parts.append(PrintAction(args=tup, emission_id=emission_id))
         else:
-            event = OutputEvent(
-                agent_name=agent_name,
-                parts=[PrintAction(args=tup, emission_id=emission_id)],
-            )
+            output_parts.append(PrintAction(args=tup, emission_id=emission_id))
+    if output_parts:
+        event = OutputEvent(agent_name=agent_name, parts=output_parts)
         add_event_to_log(state, event, on_event=on_event)
 
     # 4. Convert __outputs__ entries (e.g. view_image) into OutputEvents.
