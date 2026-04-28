@@ -6,45 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.11.1] - 2026-04-28
 
 ### Added
-- **Verify-before-commit best practice** in the builtin primer.
-  When a task returns a testable artifact (callable, module, parser,
-  etc.), agents are nudged to assert against known cases in the same
-  `python_action` as `task_success` — passing asserts let the task
-  complete in one turn; failing asserts surface as the next turn's
-  observation so the agent fixes before any broken result is shipped.
+- **Verify-before-commit primer guidance** — when a task returns a
+  testable artifact, the primer nudges the agent to assert against
+  known cases in the same `python_action` as `task_success`, so a
+  broken result fails the turn instead of shipping.
 
 ### Changed
-- **System-note rendering** — every `SystemNoteEvent` is now wrapped
-  with a `[system] ` prefix when rendered into the LLM's user-role
-  message, so the agent can disambiguate framework telemetry from
-  user speech regardless of the call site.  Applied at the renderer
-  rather than the event boundary so the persisted log stays clean
-  and the wrapping convention can evolve without migrating
-  historical events.  The iteration warning's redundant
-  `"System Note: "` body prefix is dropped — the wrapper does that
-  work now.
-- **Builtin primer revision** — fresh-eyes pass that fixes stale
-  content (the `edit_file` doc still mentioned the removed
-  `insert_after` / `insert_before` operations; "most stdlib is
-  available" was misleading post-low-viz hiding), drops redundant
-  sections (Core Philosophy "Iterative Refinement" duplicated the
-  Task Control intro; Best Practices "Don't hide errors" duplicated
-  `task_fail`'s "NOT for code bugs"; Best Practices "Modularize"
-  duplicated "Importing Your Code"), tightens the Communicating-
-  with-Caller section, and reorders Chapters near Capabilities
-  (it's environmental info, not a behavioral rule).  Adds a
-  first-class **Terminal** capability section — the previous primer
-  treated `terminal_action` as a footnote, leading agents to
-  underuse it for filesystem inventory, git on their own workspace,
-  and script execution.  Reframes the opening to name both
-  surfaces (Python REPL + per-command shell) without privileging
-  one as "the" core.  Calls out explicitly that terminal/git
-  operations work on the agent's own VFS — nothing is shared with
-  the user's local machine and there's no remote.  Net length
-  drops from ~8.7k chars to ~6.9k (~20% smaller).
+- **System-note rendering** — `SystemNoteEvent`s are wrapped with a
+  `[system] ` prefix when rendered into the LLM's user-role message
+  so framework telemetry stays distinguishable from user speech.
+  Applied at the renderer (not the event boundary) so persisted logs
+  stay clean.
+- **Builtin primer rewrite** — fresh-eyes pass: fixes stale references
+  (`edit_file` ops, "most stdlib available"), drops redundant sections,
+  adds a first-class **Terminal** capability section, and clarifies
+  that terminal/git act on the agent's own VFS. Net ~20% shorter
+  (~8.7k → ~6.9k chars).
 
 ## [0.11.0] - 2026-04-24
 
