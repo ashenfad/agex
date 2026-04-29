@@ -1,6 +1,12 @@
 # State Configuration
 
-The `connect_state()` factory function configures agent memory and persistence. State determines whether agents remember context across task calls and how that memory is stored.
+The `connect_state()` factory function configures the agent's durable workspace and how it's stored.  State holds the things the agent's work *deliberately* persists:
+
+- **Event log** — the agent's record of what it has done.  Surfaces as the rendered conversation history on the next turn.
+- **Virtual filesystem** — files written under `/scratch/`, `helpers/`, etc.  See [FileSystem](fs.md).
+- **`cache`** — an explicit per-session dict the agent can write to (`cache["model"] = fitted`) for Python objects it wants to remember.
+
+State does **not** hold the agent's local variables, imported modules, or definitions inside a `python_action` — each emission runs as a fresh Python script, and cross-action continuity goes through the three channels above by design.
 
 ## `connect_state()` API
 
@@ -45,7 +51,7 @@ result2 = analyze("second")  # No memory of first call
 
 ### Versioned State (Recommended for Persistence)
 
-Provides checkpointing, rollback, and cross-process persistence:
+Provides checkpointing, rollback, and cross-process persistence.  The agent's event log, VFS, and `cache` are all stored in kvgit; each turn commits a new snapshot.
 
 ```python
 from agex import Agent, connect_state
@@ -60,24 +66,26 @@ def build_analysis(data: str) -> dict:
     """Build cumulative analysis."""
     pass
 
-# Agent remembers context across calls
+# Across tasks, the agent sees:
+#  - its own prior actions (rendered from the event log)
+#  - any cache entries it wrote (e.g. cache["analysis"] = ...)
+#  - any files it left in the VFS
 result1 = build_analysis("first")
-result2 = build_analysis("second")  # Remembers first call
+result2 = build_analysis("second")  # Sees result1 via event log + cache
 ```
 
 ### Live State (In-Process Only)
 
-For unpicklable objects like database connections:
+A faster, ephemeral backend.  Same shape as versioned (event log, VFS, cache), but stored in plain in-memory dicts — no kvgit, no checkpointing, no cross-process persistence.
 
 ```python
 agent = Agent(
-    primer="You are a database expert.",
+    primer="You are helpful.",
     state=connect_state(type="live"),
 )
-
-# Agent can work with file handles, cursors, etc.
-# Memory lost when process ends
 ```
+
+**Use for:** development, testing, agents whose `cache` and VFS only need to survive within a single process.  Each task call still sees the same Live state when the same agent instance is reused, but everything is lost when the process ends.
 
 ## Session Management
 
@@ -93,13 +101,14 @@ def chat(message: str) -> str:
     """Chat with the user."""
     pass
 
-# Different sessions have isolated memory
+# Different sessions have isolated event logs, VFS, and cache
 chat("Hello", session="user_alice")  # Alice's conversation
 chat("Hello", session="user_bob")    # Bob's conversation (separate)
 
-# Same session shares memory
+# Same session shares state — the agent sees prior turns via the
+# event log, plus anything it wrote to cache or the VFS.
 chat("Remember this", session="alice")
-chat("What did I say?", session="alice")  # Remembers previous message
+chat("What did I say?", session="alice")  # Sees Alice's history
 ```
 
 ### Default Session
@@ -225,34 +234,34 @@ def background_task() -> None:
 
 See [Task - Concurrency Control](task.md#concurrency-control) for details.
 
-### Unpicklable Objects
+### Persisted values: picklability and identity
 
-Versioned state handles unpicklable objects gracefully. Agents can use database cursors, file handles, etc. — they work for single-turn use. Accessing them in later turns shows a clear error with solutions. Best practice: recreate resources each turn (`cursor = db.cursor()`) or chain operations (`results = db.cursor().fetchall()`).
+Local variables defined inside a `python_action` are turn-local; they're never serialized.  The agent only persists values it deliberately writes to one of the durable channels:
 
-## Serialization Behavior
+- `cache[k] = v` — validated for picklability at write time using cloudpickle.  Unpicklable values raise `CacheError` immediately so the agent can choose a different representation.  Sandbox-defined functions and classes round-trip cleanly via sandtrap's `__sandtrap_activate__` hook.
+- VFS file writes — file contents are bytes/strings, which pickle trivially.
+- Init-supplied values (see below) — go through the state codec on first session creation.
 
-When using versioned state, agent variables are serialized (pickled) between task executions. This creates a few behavioral differences compared to standard Python:
+Two things to know about objects that round-trip:
 
-**Object identity is not preserved across tasks.** Objects are reconstructed from serialized data, so `id()` changes and `is` checks between objects from different task runs will fail. Use value-based comparisons (`==`) instead.
+**Object identity is not preserved.**  Anything pulled back out of the cache or `init` was reconstructed from serialized bytes, so `id()` changes and `is`-comparisons across reads fail.  Use value-based comparisons (`==`) instead.
 
-**Closures capture "frozen" values.** When a closure is serialized, the variables it captured are frozen at their current values. Changing the captured variable in a later task won't affect the closure:
+**Closures capture "frozen" values.**  When a closure is cached, the variables it captured are frozen at their current values.  A cached `multiplier` defined when `factor = 2` will keep returning `x * 2` even if a later action defines a new `factor = 10`:
 
 ```python
-# Task 1: define closure
+# Action 1: define and cache a closure
 factor = 2
 def multiplier(x):
     return x * factor
-# `multiplier` is frozen with factor=2
+cache["multiplier"] = multiplier  # captured with factor=2
 
-# Task 2: change factor
-factor = 10
-multiplier(5)  # Still returns 10, not 50
+# Action 2 (later task): retrieve and call
+multiplier = cache["multiplier"]
+multiplier(5)  # Returns 10 — factor stays at 2 inside the closure
 ```
 
-**Unpicklable objects are auto-detected.** Objects like database cursors, file handles, and network connections work within a single task. If referenced in a later task, the agent gets a clear `UnpicklableVariableError` with suggestions for how to proceed.
-
 > [!NOTE]
-> These constraints only apply to versioned state. With `Live` state, objects stay in memory and serialization doesn't occur.
+> Resources like database cursors, file handles, and network connections are not picklable.  Inside a single `python_action` they work normally; they just can't be cached.  Either re-acquire them at the top of each action (`cursor = db.cursor()`), chain the operation in a single line (`results = db.cursor().fetchall()`), or have the host expose them through a registered function so the live object stays in the host process.
 
 ## Advanced: Direct State Construction
 

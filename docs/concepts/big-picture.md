@@ -28,7 +28,7 @@ This creates a natural development experience:
 
 - **Iterative refinement** - Agents see their output, adjust their approach, and try again
 - **Natural error handling** - Exceptions appear in stdout just like in a real Python environment
-- **Persistent workspace** - With versioned state, agents can define functions, store variables, and build solutions across multiple iterations
+- **Versioned workspace** - With versioned state, agents accumulate work across iterations through three explicit channels: a per-session `cache` for Python objects, the virtual filesystem (with `helpers/*.py` for reusable code), and the event log for self-history
 - **Familiar debugging** - `print()` works as expected
 
 

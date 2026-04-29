@@ -16,7 +16,7 @@ Register functions, classes, and modules to make them available to agents. Contr
 Define agent tasks using the `@agent.task` decorator. Support for standalone tasks and multi-agent workflows.
 
 - **[State](state.md)** -
-Manage persistent state across agent executions with automatic checkpointing and rollback capabilities. configure state storage backends and session isolation.
+Manage the agent's durable workspace — virtual filesystem, per-session `cache`, and event log — with automatic checkpointing and rollback. Configure state storage backends and session isolation.
 
 - **[LLM](llm.md)** -
 Configure LLM providers, models, timeouts, and connection settings. Support for OpenAI, Anthropic, Gemini, and local models.

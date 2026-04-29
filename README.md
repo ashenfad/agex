@@ -9,7 +9,7 @@
 Key features:
 - **Type-Safe Execution**: Agents fulfill typed signatures by executing sandboxed Python.
 - **Curated Scope**: Whitelist exactly which modules and classes are available.
-- **Stateful Memory**: Versioned workspace enables time-travel debugging.
+- **Versioned Workspace**: A virtual filesystem, an explicit per-session `cache`, and the event log are all kvgit-backed for time-travel debugging.
 - **Multi-Agent Orchestration**: Coordinate agents with natural Python control flow.
 - **Terminal & Scripting**: Agents run shell commands, Python scripts, and git — all sandboxed.
 - **Flexible Hosting**: Run locally (default), on HTTP servers, or serverless via [Modal](https://modal.com/).
