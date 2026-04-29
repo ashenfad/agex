@@ -305,13 +305,12 @@ class TestCacheSubAgentIsolation:
 
 
 class TestCacheStFunction:
-    """Sandbox-defined functions can be stored in cache.
+    """Sandbox-defined functions can be cached and called across tasks.
 
-    Note: re-activating a cached StFunction across tasks requires
-    sandtrap to recurse into Cache during ``_auto_activate``, which is
-    not yet supported.  For phase 2, agents that want callable code
-    across tasks should write helpers under ``helpers/`` and import
-    them — the canonical pattern documented in the primer.
+    Cross-task activation is delivered by sandtrap's
+    ``__sandtrap_activate__`` container hook (>= 0.2.0), which Cache
+    implements: on every ``exec`` sandtrap walks Cache values and
+    re-activates any inactive ``StFunction``/``StClass`` it finds.
     """
 
     def setup_method(self):
@@ -323,14 +322,48 @@ class TestCacheStFunction:
         agent = Agent(name="t")
         state = Live()
         state["__event_log__"] = []
-        # Define and immediately use within one action — exercises the
-        # cloudpickle write-time validator on an StFunction.
         execute_sandboxed(
             'def add(a, b):\n    return a + b\ncache["add"] = add',
             agent,
             state,
         )
         assert PREFIX + "add" in state
+
+    def test_sandbox_function_round_trips_across_tasks(self):
+        """A function cached in one task is callable in the next."""
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(name="t", llm=Dummy(), state=config)
+
+        @agent.task
+        def define() -> None:
+            """Define a helper and stash it."""
+            pass
+
+        @agent.task
+        def use() -> int:
+            """Retrieve and call the helper."""
+            pass
+
+        agent.llm.responses = [
+            make_response(
+                thinking="define and stash",
+                code=(
+                    "def add(a, b):\n    return a + b\n"
+                    'cache["add"] = add\n'
+                    "task_success(None)"
+                ),
+            )
+        ]
+        define(session="s")
+
+        agent.llm.responses = [
+            make_response(
+                thinking="retrieve and use",
+                code='fn = cache["add"]\ntask_success(fn(2, 3))',
+            )
+        ]
+        result = use(session="s")
+        assert result == 5
 
 
 # -----------------------------------------------------------------------------

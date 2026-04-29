@@ -10,6 +10,11 @@ on every emission.  Values are validated for picklability at write
 time using cloudpickle — the same serializer the state codec uses —
 so the agent gets an immediate, clear error rather than a silent
 ``UnpicklableMarker`` discovered on a later read.
+
+Sandbox-defined functions and classes (``StFunction``/``StClass``)
+stored in the cache are re-activated on every ``exec`` via sandtrap's
+``__sandtrap_activate__`` container hook, so a cached helper from one
+task remains callable in any later task.
 """
 
 from __future__ import annotations
@@ -100,3 +105,24 @@ class Cache(MutableMapping[str, Any]):
         except Exception:
             return "Cache(<unreadable>)"
         return f"Cache({keys!r})"
+
+    def __sandtrap_activate__(self, activate_value, gates, sandbox) -> None:
+        """Sandtrap container-activation hook.
+
+        Sandtrap calls this on every ``exec`` after building the
+        namespace.  We walk the cache values and re-activate any
+        sandbox-defined wrappers so that a ``StFunction`` cached in
+        one task remains callable when retrieved in a later task.
+
+        Errors per-value are swallowed: a single value with a stale
+        wrapper or a deserialization issue must not break ``exec``.
+        """
+        for key in list(self):
+            try:
+                val = self[key]
+            except Exception:
+                continue
+            try:
+                activate_value(val, gates, sandbox=sandbox)
+            except Exception:
+                continue

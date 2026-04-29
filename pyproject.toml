@@ -28,7 +28,7 @@ requires-python = ">=3.10"
 dependencies = [
     "termish>=0.1.5,<0.2.0",
     "kvgit>=0.3.0,<0.4.0",
-    "sandtrap>=0.1.15,<0.2.0",
+    "sandtrap>=0.2.0,<0.3.0",
     "reprobate>=0.1.1,<0.2.0",
     "monkeyfs>=0.1.4,<0.2.0",
     "tiktoken",
@@ -131,6 +131,7 @@ filterwarnings = [
 [tool.uv.sources]
 kvgit = { path = "../kvgit", editable = true }
 termish = { path = "../termish", editable = true }
+sandtrap = { path = "../sandtrap", editable = true }
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
