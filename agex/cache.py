@@ -23,6 +23,12 @@ other locally-defined functions outside the sandbox do not.  Cached
 wrappers are re-activated on every ``exec`` via sandtrap's
 ``__sandtrap_activate__`` container hook, so a cached helper from
 one task remains callable in any later task.
+
+To keep the activation hook from decoding every cache value on every
+emission (data-only caches are common; full decode is wasteful),
+the Cache maintains a side index of which keys hold sandbox-defined
+wrappers.  The hook walks only those keys; data values are decoded
+lazily on access.
 """
 
 from __future__ import annotations
@@ -32,6 +38,22 @@ from collections.abc import Iterator, MutableMapping
 from typing import Any
 
 PREFIX = "__cache__/"
+
+# Side-index key tracking which cache keys hold sandbox-defined
+# wrappers (StFunction / StClass / StInstance).  Lives outside the
+# ``__cache__/`` prefix so it never appears in user-facing cache
+# iteration.  See ``__sandtrap_activate__`` for the read path.
+_WRAPPER_INDEX_KEY = "__cache_wrappers__"
+
+
+def _is_sandtrap_wrapper(value: Any) -> bool:
+    """Return True if ``value`` is a sandtrap wrapper that may need
+    re-activation when retrieved from the cache."""
+    # Imported lazily so the module loads cleanly even if the caller
+    # has stubbed sandtrap (e.g. tests using only Live state).
+    from sandtrap.wrappers import StClass, StFunction, StInstance
+
+    return isinstance(value, (StFunction, StClass, StInstance))
 
 
 class CacheError(ValueError):
@@ -85,12 +107,41 @@ class Cache(MutableMapping[str, Any]):
             raise CacheError(
                 f"Cannot cache key {key!r}: value is not picklable ({exc})"
             ) from exc
+        # Maintain the wrapper-index so the activation hook can find
+        # sandbox-defined values without decoding the entire cache.
+        wrappers = self._wrapper_keys()
+        if _is_sandtrap_wrapper(value):
+            if key not in wrappers:
+                wrappers.add(key)
+                self._save_wrapper_keys(wrappers)
+        elif key in wrappers:
+            # The slot used to hold a wrapper; the new value is plain
+            # data, so drop it from the index.
+            wrappers.discard(key)
+            self._save_wrapper_keys(wrappers)
         self._state[qualified] = value
 
     def __delitem__(self, key: str) -> None:
         if not isinstance(key, str):
             raise KeyError(key)
+        wrappers = self._wrapper_keys()
+        if key in wrappers:
+            wrappers.discard(key)
+            self._save_wrapper_keys(wrappers)
         del self._state[PREFIX + key]
+
+    def _wrapper_keys(self) -> set[str]:
+        """Read the wrapper-index from state.  Returns an empty set
+        when the index hasn't been written yet (data-only cache)."""
+        return set(self._state.get(_WRAPPER_INDEX_KEY) or ())
+
+    def _save_wrapper_keys(self, keys: set[str]) -> None:
+        """Persist the wrapper-index, or drop it when empty so the
+        state stays clean for caches that have never held a wrapper."""
+        if keys:
+            self._state[_WRAPPER_INDEX_KEY] = keys
+        elif _WRAPPER_INDEX_KEY in self._state:
+            del self._state[_WRAPPER_INDEX_KEY]
 
     def __iter__(self) -> Iterator[str]:
         plen = len(PREFIX)
@@ -117,20 +168,23 @@ class Cache(MutableMapping[str, Any]):
         """Sandtrap container-activation hook.
 
         Sandtrap calls this on every ``exec`` after building the
-        namespace.  We walk the cache values and re-activate any
-        sandbox-defined wrappers so that a ``StFunction`` cached in
-        one task remains callable when retrieved in a later task.
+        namespace.  We walk only the cache keys that hold
+        sandbox-defined wrappers (tracked in the wrapper-index, kept
+        in sync at write time) and re-activate them so that a
+        ``StFunction`` cached in one task remains callable when
+        retrieved in a later task.  Plain data values are not
+        decoded — they're loaded lazily when the agent reads them.
 
         ``namespace`` is the top-level exec namespace, passed through
         to ``activate_value`` so a cached wrapper that references a
         name resolved in the top-level namespace (e.g. a registered
-        function or another cached helper that was injected
-        elsewhere) can find it during late-binding rebuild.
+        function or another cached helper) can find it during
+        late-binding rebuild.
 
-        Errors per-value are swallowed: a single value with a stale
-        wrapper or a deserialization issue must not break ``exec``.
+        Errors per-value are swallowed: a single stale wrapper or a
+        deserialization issue must not break ``exec``.
         """
-        for key in list(self):
+        for key in self._wrapper_keys():
             try:
                 val = self[key]
             except Exception:
