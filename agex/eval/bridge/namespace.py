@@ -10,7 +10,6 @@ Sandtrap layers registered modules and functions on top via the policy.
 from __future__ import annotations
 
 import builtins as _builtins
-from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
 from agex.agent.datatypes import TaskClarify, TaskFail, TaskSuccess
@@ -21,41 +20,27 @@ if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
 
 
-# Internal-key prefixes still consulted by ``handle_result`` when it
-# filters the post-exec namespace; lives here for the moment so the
-# import stays stable while the bridge is rewired.
-_INTERNAL_STATE_PREFIXES = ("__", "_event_")
-
-
-def _is_internal_state_key(key: str) -> bool:
-    return any(key.startswith(p) for p in _INTERNAL_STATE_PREFIXES)
-
-
 def build_namespace(
-    state: MutableMapping[str, Any],
     agent: "BaseAgent",
     agent_name: str,
     on_event: Callable[[Any], None] | None = None,
-) -> tuple[dict[str, Any], set[str], set[str]]:
+) -> tuple[dict[str, Any], set[str]]:
     """Build a fresh execution namespace for one ``python_action``.
 
     Each call returns an independent dict — there is no cross-emission
-    state continuity. ``state`` is unused under the stateless contract
-    and remains in the signature only until the call site is updated.
+    state continuity.  Sandtrap layers registered modules and functions
+    on top via the policy; this dict only carries the bridge-injected
+    task terminators, ``view_image``, the ``__outputs__`` collector,
+    and the ``dir`` override.
 
     Args:
-        state: Unused. Retained pending call-site update.
         agent: The agent providing policy context.
         agent_name: Name of the agent (for event attribution).
         on_event: Optional event callback.
 
     Returns:
-        A tuple of (namespace_dict, pre_keys, injected_keys). ``pre_keys``
-        is always empty under the new contract and will be removed when
-        ``handle_result`` no longer needs it.
+        A tuple of (namespace_dict, injected_keys).
     """
-    del state  # unused under stateless contract; will be dropped from signature
-
     namespace: dict[str, Any] = {}
 
     # Inject task control functions — module-level so they're picklable
@@ -86,7 +71,7 @@ def build_namespace(
     # dict directly.
     namespace["dir"] = _AgentDir(injected_keys - {"__outputs__", "dir"})
 
-    return namespace, set(), injected_keys
+    return namespace, injected_keys
 
 
 def _task_success(result=None):
