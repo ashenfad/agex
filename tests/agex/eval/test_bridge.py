@@ -126,7 +126,7 @@ class TestNamespaceBuilder:
         ns, _ = build_namespace(Live(), agent, "ns_test")
 
         # The only top-level keys in the dict are the bridge injections
-        # — task terminators, view_image, __outputs__, dir.
+        # — task terminators, view_image, __outputs__, dir, cache.
         assert set(ns.keys()) == {
             "task_success",
             "task_fail",
@@ -134,6 +134,7 @@ class TestNamespaceBuilder:
             "view_image",
             "__outputs__",
             "dir",
+            "cache",
         }
 
     def test_independent_namespaces(self):
@@ -173,6 +174,7 @@ class TestNamespaceBuilder:
             "view_image",
             "__outputs__",
             "dir",
+            "cache",
         }
 
 

@@ -376,6 +376,7 @@ class SyncLoopMixin:
                     "__outputs__",
                     "dir",
                     "inputs",
+                    "cache",
                 }
                 exec_state["__setup_namespace__"] = {
                     k: v
