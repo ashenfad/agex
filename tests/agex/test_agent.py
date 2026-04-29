@@ -11,7 +11,7 @@ from kvgit import Namespaced, Staged, VersionedKV
 from agex import events
 from agex.agent import Agent, MemberSpec
 from agex.agent.base import clear_agent_registry
-from agex.agent.datatypes import UnpicklableMarker
+from agex.agent.datatypes import TaskTimeout, UnpicklableMarker
 from agex.agent.events import ActionEvent, OutputEvent, SuccessEvent, TaskStartEvent
 from agex.agent.policy.describe import (
     describe_class,
@@ -1227,13 +1227,14 @@ def test_recursive_module_registration_allows_submodule_imports():
 
 
 def test_non_recursive_module_registration_fails_submodule_imports():
-    """
-    Tests that a non-recursive registration does NOT allow importing submodules.
+    """Non-recursive module registration blocks submodule imports —
+    even submodules eager-loaded as parent attributes (``collections.abc``
+    is set by ``collections.__init__``).  The Dummy retries the same
+    broken code, so a working gate hits ``max_iterations`` →
+    ``TaskTimeout``.
     """
     agent = Agent()
-    # Register collections WITHOUT recursive=True
     agent.module(collections, recursive=False)
-    # Dummy LLM won't be used because setup should fail before LLM runs
     agent.llm = Dummy(
         responses=[
             make_response(
@@ -1245,14 +1246,12 @@ def test_non_recursive_module_registration_fails_submodule_imports():
 
     @agent.task(setup="from collections import abc")
     def import_submodule_fail():
-        """
-        Attempts to import a submodule from a non-recursively registered package.
-        This should fail.
-        """
+        """Attempts to import a submodule from a non-recursively
+        registered package.  This should fail."""
         pass
 
-    # Invoke the task; no exception expected here since setup may be a no-op in current implementation
-    import_submodule_fail()
+    with pytest.raises(TaskTimeout):
+        import_submodule_fail()
 
 
 def test_recursive_module_registration_resolves_dataclass_fields():
