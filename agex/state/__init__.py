@@ -35,7 +35,7 @@ __all__ = [
     "raw_set",
     "raw_get",
     "raw_remove",
-    "safe_commit",
+    "commit_state",
     "state_diffs",
     "connect_state",
     "events",
@@ -183,25 +183,21 @@ def raw_remove(staged: Staged, key: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Commit with mutation detection (replaces snapshot + merge)
+# Commit
 # ---------------------------------------------------------------------------
 
 
-def safe_commit(
+def commit_state(
     staged: Staged,
-    referenced_keys: set[str] | None = None,
     on_conflict: str = "raise",
 ) -> MergeResult:
-    """Commit staged changes with optional mutation detection.
+    """Commit staged changes (events, VFS records, file-change markers).
 
     Suspends filesystem interception during commit so that KV backend I/O
     (e.g., disk writes) doesn't get intercepted by VFS/IsolatedFS patching.
 
     Args:
         staged: The Staged store to commit.
-        referenced_keys: State keys referenced in agent code. Keys present
-            in state but not explicitly staged are re-staged so the encoder
-            runs and kvgit detects byte-level changes from in-place mutations.
         on_conflict: Conflict strategy ('raise' or 'abandon').
 
     Returns:
@@ -210,18 +206,6 @@ def safe_commit(
     from monkeyfs import suspend
 
     with suspend():
-        if referenced_keys:
-            state_keys = staged.keys()
-            for key in referenced_keys & set(state_keys):
-                if not staged.is_staged(key):
-                    # Re-stage so encoder runs and kvgit detects byte changes.
-                    # Skip keys that are already UnpicklableMarkers — they can't
-                    # have been mutated in-place since agent code can't access them.
-                    try:
-                        staged[key] = staged.get(key)
-                    except UnpicklableVariableError:
-                        pass
-
         return staged.commit(on_conflict=on_conflict)
 
 

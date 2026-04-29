@@ -29,7 +29,7 @@ from agex.agent.emissions import (
 from agex.agent.events import CancelledEvent, OutputEvent, SystemNoteEvent
 from agex.eval.bridge import execute_sandboxed
 from agex.resource_limits import apply_resource_limits
-from agex.state import safe_commit
+from agex.state import commit_state
 
 from .common import (
     ActionEvent,
@@ -138,7 +138,7 @@ class SyncLoopMixin:
 
         # Commit events / VFS / file-change records.
         if versioned_state is not None:
-            safe_commit(versioned_state)
+            commit_state(versioned_state)
 
     def _execute_emissions(
         self,
@@ -388,7 +388,7 @@ class SyncLoopMixin:
                 yield cancelled_event
 
                 if versioned_state is not None:
-                    safe_commit(versioned_state)
+                    commit_state(versioned_state)
 
                 raise TaskCancelled(
                     message=f"Task '{task_name}' was cancelled",
@@ -499,7 +499,7 @@ class SyncLoopMixin:
 
             # Persist event-log and VFS changes from this iteration.
             if versioned_state is not None:
-                safe_commit(versioned_state)
+                commit_state(versioned_state)
 
             # Nudge if the turn ran *silent* Python without signaling.
             # "Silent" = none of the turn's PythonEmissions produced an

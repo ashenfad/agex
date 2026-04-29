@@ -33,7 +33,7 @@ from agex.agent.events import CancelledEvent, OutputEvent, SystemNoteEvent
 from agex.agent.utils import call_sync_or_async
 from agex.eval.bridge import aexecute_sandboxed, execute_sandboxed
 from agex.resource_limits import apply_resource_limits
-from agex.state import safe_commit
+from agex.state import commit_state
 
 from .common import (
     ActionEvent,
@@ -120,7 +120,7 @@ class AsyncLoopMixin:
 
         # Commit events / VFS / file-change records.
         if versioned_state is not None:
-            safe_commit(versioned_state)
+            commit_state(versioned_state)
 
     async def _aexecute_emissions(
         self,
@@ -393,7 +393,7 @@ class AsyncLoopMixin:
                 yield cancelled_event
 
                 if versioned_state is not None:
-                    safe_commit(versioned_state)
+                    commit_state(versioned_state)
 
                 raise TaskCancelled(
                     message=f"Task '{task_name}' was cancelled",
@@ -506,7 +506,7 @@ class AsyncLoopMixin:
             events_yielded = len(events(exec_state))
 
             if versioned_state is not None:
-                safe_commit(versioned_state)
+                commit_state(versioned_state)
 
             # Silent-python nudge — see sync_loop for the rationale.
             combined_code = _last_python_code(action_event.emissions)
