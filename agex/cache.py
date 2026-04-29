@@ -106,13 +106,19 @@ class Cache(MutableMapping[str, Any]):
             return "Cache(<unreadable>)"
         return f"Cache({keys!r})"
 
-    def __sandtrap_activate__(self, activate_value, gates, sandbox) -> None:
+    def __sandtrap_activate__(self, activate_value, gates, sandbox, namespace) -> None:
         """Sandtrap container-activation hook.
 
         Sandtrap calls this on every ``exec`` after building the
         namespace.  We walk the cache values and re-activate any
         sandbox-defined wrappers so that a ``StFunction`` cached in
         one task remains callable when retrieved in a later task.
+
+        ``namespace`` is the top-level exec namespace, passed through
+        to ``activate_value`` so a cached wrapper that references a
+        name resolved in the top-level namespace (e.g. a registered
+        function or another cached helper that was injected
+        elsewhere) can find it during late-binding rebuild.
 
         Errors per-value are swallowed: a single value with a stale
         wrapper or a deserialization issue must not break ``exec``.
@@ -123,6 +129,6 @@ class Cache(MutableMapping[str, Any]):
             except Exception:
                 continue
             try:
-                activate_value(val, gates, sandbox=sandbox)
+                activate_value(val, gates, sandbox=sandbox, namespace=namespace)
             except Exception:
                 continue
