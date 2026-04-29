@@ -1,8 +1,10 @@
 """
 Builds the execution namespace dict for sandtrap's Sandbox.exec().
 
-Hydrates kvgit state values into a plain dict, then injects
-task control functions and view_image.
+Each ``python_action`` runs as a fresh script, so ``build_namespace`` is
+called once per emission and produces a clean dict containing only the
+bridge-injected names (task control functions, view_image, ``dir``).
+Sandtrap layers registered modules and functions on top via the policy.
 """
 
 from __future__ import annotations
@@ -19,15 +21,9 @@ if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
 
 
-# Prefixes for state keys that are internal bookkeeping (event log,
-# framework metadata) and must never be hydrated into the agent's
-# sandbox namespace. Exposing them is both a privacy leak (the agent
-# could see its own prior events) and a correctness hazard: if a key
-# ends up in ``pre_keys`` but not in the sandbox's post-exec namespace,
-# ``handle_result`` treats it as "user deleted it" and removes it from
-# state. That silently corrupted ``__event_log__`` in the wild —
-# events were referenced by the log but their backing keys had been
-# deleted on a subsequent agent turn.
+# Internal-key prefixes still consulted by ``handle_result`` when it
+# filters the post-exec namespace; lives here for the moment so the
+# import stays stable while the bridge is rewired.
 _INTERNAL_STATE_PREFIXES = ("__", "_event_")
 
 
@@ -41,70 +37,38 @@ def build_namespace(
     agent_name: str,
     on_event: Callable[[Any], None] | None = None,
 ) -> tuple[dict[str, Any], set[str], set[str]]:
-    """Build the execution namespace from state and builtins.
+    """Build a fresh execution namespace for one ``python_action``.
+
+    Each call returns an independent dict — there is no cross-emission
+    state continuity. ``state`` is unused under the stateless contract
+    and remains in the signature only until the call site is updated.
 
     Args:
-        state: The kvgit state to hydrate from.
+        state: Unused. Retained pending call-site update.
         agent: The agent providing policy context.
         agent_name: Name of the agent (for event attribution).
         on_event: Optional event callback.
 
     Returns:
-        A tuple of (namespace_dict, pre_keys, injected_keys) where pre_keys
-        is the set of user-visible state keys before execution (for deletion
-        tracking) and injected_keys is the set of bridge-injected names that
-        should not be synced back to state.
+        A tuple of (namespace_dict, pre_keys, injected_keys). ``pre_keys``
+        is always empty under the new contract and will be removed when
+        ``handle_result`` no longer needs it.
     """
+    del state  # unused under stateless contract; will be dropped from signature
+
     namespace: dict[str, Any] = {}
-    pre_keys: set[str] = set()
 
-    # 1. Hydrate from state (skip internal keys)
-    from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
-
-    for key in state.keys():
-        if _is_internal_state_key(key):
-            continue
-        try:
-            namespace[key] = state.get(key)
-        except UnpicklableVariableError as exc:
-            # Place marker in namespace so the agent gets a descriptive
-            # error on access rather than a bare NameError.
-            if exc.marker is not None:
-                exc.marker.variable_name = key
-                namespace[key] = exc.marker
-            else:
-                namespace[key] = UnpicklableMarker(
-                    variable_name=key,
-                    type_name="<unknown>",
-                    original_exception=str(exc),
-                )
-        except Exception:
-            continue  # Skip corrupt values
-        pre_keys.add(key)
-
-    # 2. Inject task control functions — module-level so they're picklable
-    #    for cross-process isolation. Validation happens in handle_result.
+    # Inject task control functions — module-level so they're picklable
+    # for cross-process isolation. Validation happens in handle_result.
     namespace["task_success"] = _task_success
     namespace["task_fail"] = _task_fail
     namespace["task_clarify"] = _task_clarify
 
-    # 3. Inject __outputs__ list and picklable view_image.
-    #    view_image appends to __outputs__; handle_result drains it into events.
+    # Inject __outputs__ list and picklable view_image.
+    # view_image appends to __outputs__; handle_result drains it into events.
     outputs: list = []
     namespace["__outputs__"] = outputs
     namespace["view_image"] = _ViewImage(outputs)
-
-    # 4. Override dir() to hide internal keys (_event_*, __dunder__, sandtrap
-    #    injections) while exposing user state and task control functions.
-    _visible_names = {
-        "task_success",
-        "task_fail",
-        "task_clarify",
-        "view_image",
-    }
-    # Add user state keys (excluding _event_* and other internal prefixed keys)
-    _visible_names |= {k for k in pre_keys if not k.startswith("_")}
-    namespace["dir"] = _AgentDir(_visible_names)
 
     injected_keys = {
         "task_success",
@@ -115,7 +79,14 @@ def build_namespace(
         "dir",
     }
 
-    return namespace, pre_keys, injected_keys
+    # Override dir() to hide sandtrap-injected internals while exposing
+    # task control functions and any names the agent defines during
+    # execution. Registered functions and modules show up via sandtrap's
+    # own scoping; this list is just the names we put in the namespace
+    # dict directly.
+    namespace["dir"] = _AgentDir(injected_keys - {"__outputs__", "dir"})
+
+    return namespace, set(), injected_keys
 
 
 def _task_success(result=None):
@@ -136,9 +107,9 @@ def _task_clarify(message=""):
 class _AgentDir:
     """Custom dir() that shows user-relevant names only.
 
-    Hides internal keys (_event_*, __dunder__, sandtrap-injected classes)
-    while exposing user state variables, task control functions, and any
-    variables the agent defines during execution.
+    Hides sandtrap-injected internals (``__st_*`` gates, dunder names)
+    while exposing the task control terminators plus whatever names the
+    agent defined during this action.
     """
 
     _real_dir = _builtins.dir
@@ -152,9 +123,9 @@ class _AgentDir:
         import sys
 
         caller_locals = sys._getframe(1).f_locals
-        # Start with locals defined by the agent during execution
+        # Start with locals defined by the agent during this action
         names = {k for k in caller_locals if not k.startswith("_")}
-        # Add pre-approved names (user state + task control builtins)
+        # Add the bridge-injected terminators
         names |= self._visible_names
         return sorted(names)
 
