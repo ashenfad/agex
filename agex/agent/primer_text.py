@@ -55,6 +55,17 @@ A Virtual Filesystem is your durable workspace.  Python actions and shell comman
 
 **Importing your code** — files you write under `helpers/` (e.g. `helpers/utils.py`) can be imported as `import helpers.utils`.  Helpers are the canonical way to carry code across actions and tasks: write reusable functions there, import them in any future action.  Modules auto-reload on each import; you do NOT need `importlib.reload()`.
 
+### Cache (`cache`)
+
+A persistent dict scoped to your agent session — survives across actions and tasks, isolated per agent.  Use it for Python objects you want to remember without round-tripping through the filesystem.
+
+- `cache["model"] = fitted_model` — store
+- `cache.get("model")` — retrieve, returns `None` if absent
+- `del cache["model"]` — forget
+- `list(cache)` — see what's there
+
+Cache values must be picklable; sandbox-defined functions and classes are fine.  For files (text, binaries, generated artifacts), prefer the VFS — cache is for in-memory Python objects.
+
 ### Image inspection
 
 `view_image(img)` sends an image (PIL Image, matplotlib Figure, or Plotly Figure) to your own vision so you can inspect it on the next turn.
@@ -91,7 +102,7 @@ Good reports name what's happening or what you're about to do: "Scanning your ca
 
 1. **Inspect data before assuming structure.** Check `df.columns`, `json_data.keys()`, etc. before indexing. Saves a turn of "AttributeError" on data you haven't really looked at.
 2. **Modularize complex logic.** Write a file under `helpers/` for non-trivial code, then import it. Keeps `python_action` bodies readable, and is the only way to carry code across actions — Python definitions don't survive between actions.
-3. **Externalize as you go.** Anything you'll want in a later action — cleaned datasets, fitted models, generated artifacts — must be on disk before the current action returns.  Helpers go under `helpers/`; working data goes under `/scratch/` or similar.  Python state is discarded after each action.
+3. **Externalize as you go.** Anything you'll want in a later action must leave the current namespace before the action returns: in-memory Python objects go in `cache[...]`, reusable code in `helpers/`, working files under `/scratch/` or similar.  Python state is discarded after each action.
 4. **Verify testable results before completing.** When your task returns something testable (a callable, module, parser, or other reusable artifact), assert against known cases in the same `python_action` as `task_success`. If a check fails, the AssertionError surfaces next turn so you can fix it; if it passes, the task completes in one turn. Skip this for trivial answer-style tasks where the answer *is* the work.
 5. **Let errors surface.** Do not wrap code in broad `try/except` that calls `task_fail`. Tracebacks are debugging information, not failure modes.
 """

@@ -14,6 +14,7 @@ from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
 from agex.agent.datatypes import TaskClarify, TaskFail, TaskSuccess
+from agex.cache import Cache
 from agex.eval.bridge.policy import _current_emission_id
 from agex.eval.objects import ImageAction
 
@@ -48,13 +49,16 @@ def build_namespace(
     """
     namespace: dict[str, Any] = {}
 
-    # Surface launcher-provided values into the agent's per-emission
-    # namespace.  Two channels exist:
+    # Surface launcher-provided values and the agent's persistent cache
+    # into the per-emission namespace.  Three channels exist:
     #   - ``inputs``: the typed task input.
     #   - ``__setup_namespace__``: names produced by the task's setup
     #     code (run once before the agent loop starts).
-    # Both are written by the task launcher and read here on every
-    # emission; agent-defined values remain turn-local.
+    #   - ``cache``: a persistent ``Cache`` view over state, written
+    #     and read by the agent across actions and tasks.
+    # ``inputs`` and ``__setup_namespace__`` are launcher-controlled;
+    # ``cache`` is agent-controlled.  Agent-defined locals remain
+    # turn-local.
     if state is not None:
         inputs = state.get("inputs")
         if inputs is not None:
@@ -62,6 +66,7 @@ def build_namespace(
         setup_ns = state.get("__setup_namespace__") or {}
         for k, v in setup_ns.items():
             namespace[k] = v
+        namespace["cache"] = Cache(state)
 
     # Inject task control functions — module-level so they're picklable
     # for cross-process isolation. Validation happens in handle_result.
@@ -85,6 +90,8 @@ def build_namespace(
     }
     if "inputs" in namespace:
         injected_keys.add("inputs")
+    if "cache" in namespace:
+        injected_keys.add("cache")
     if state is not None:
         injected_keys.update(state.get("__setup_namespace__") or {})
 
