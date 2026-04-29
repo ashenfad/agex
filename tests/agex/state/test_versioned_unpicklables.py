@@ -6,7 +6,7 @@ import pytest
 from kvgit import Staged, VersionedKV
 
 from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
-from agex.state import _agex_decoder, _agex_encoder, commit_state
+from agex.state import _agex_decoder, _agex_encoder
 from agex.state.kv import Memory
 
 
@@ -58,33 +58,6 @@ def test_multi_turn_unpicklable_raises_clear_error():
 
     error_msg = str(exc_info.value)
     assert "UnpicklableObject" in error_msg
-
-
-def test_commit_state_skips_unpicklable_refs():
-    """commit_state should not raise when referenced_keys includes an UnpicklableMarker.
-
-    Reproduces the bug where turn 1 creates an unpicklable variable (added to
-    accumulated_refs via find_refs), and turn 2's commit_state re-stages the
-    key, triggering UnpicklableVariableError outside the sandbox.
-    """
-    state = _make_versioned()
-
-    # Turn 1: create unpicklable and commit (marker stored in state)
-    state["at"] = UnpicklableObject(42)
-    state["good"] = "hello"
-    state.commit()
-
-    # Turn 2: only touch a different key, but accumulated_refs still has "at"
-    state["good"] = "world"
-    result = commit_state(state, referenced_keys={"at", "good"})
-    assert result.merged
-
-    # "good" should reflect the new value
-    assert state.get("good") == "world"
-
-    # "at" should still be an unpicklable marker (not lost, not raised)
-    with pytest.raises(UnpicklableVariableError):
-        state.get("at")
 
 
 def test_marker_is_picklable():
@@ -340,39 +313,3 @@ def test_namespaced_key_displays_correctly_in_error():
 
     error_msg = str(exc_info.value)
     assert "UnpicklableObject" in error_msg
-
-
-def test_namespace_hydration_places_marker_instead_of_dropping():
-    """Unpicklable variables should appear as markers in the namespace,
-    not be silently dropped (which would cause NameError)."""
-    from unittest.mock import MagicMock
-
-    from agex.eval.bridge.namespace import build_namespace
-
-    state = _make_versioned()
-
-    # Store a picklable and an unpicklable variable
-    state["good"] = 42
-    state["bad"] = UnpicklableObject(99)
-    state.commit()
-
-    # Build namespace as the agent loop would
-    agent = MagicMock()
-    agent.policy = MagicMock()
-    agent.policy.namespaces = []
-    namespace, pre_keys, _ = build_namespace(state, agent, "test_agent")
-
-    # Picklable variable is in the namespace normally
-    assert namespace["good"] == 42
-    assert "good" in pre_keys
-
-    # Unpicklable variable is in the namespace as a marker (not dropped)
-    assert "bad" in namespace
-    assert "bad" in pre_keys
-    assert isinstance(namespace["bad"], UnpicklableMarker)
-
-    # Accessing any attribute on the marker raises a descriptive error
-    with pytest.raises(UnpicklableVariableError) as exc_info:
-        namespace["bad"].data
-    assert "bad" in str(exc_info.value)
-    assert "Re-create it" in str(exc_info.value)

@@ -314,9 +314,9 @@ class TestRunFileInSandbox:
         fs.write("test.py", b"import math\nresult = math.sqrt(25)")
 
         # Run
-        state = run_file_in_sandbox(agent, "test.py", "session")
+        ns = run_file_in_sandbox(agent, "test.py", "session")
 
-        assert state.get("result") == 5.0
+        assert ns["result"] == 5.0
 
     def test_run_file_not_found(self):
         """Raises FileNotFoundError for missing file."""
@@ -343,10 +343,8 @@ class TestRunFileInSandbox:
         fs.write("test.py", b"import math\nx = 1")
 
         # Should not raise with reasonable code
-        state = run_file_in_sandbox(
-            agent, "test.py", "session", eval_timeout_seconds=10.0
-        )
-        assert state.get("x") == 1
+        ns = run_file_in_sandbox(agent, "test.py", "session", eval_timeout_seconds=10.0)
+        assert ns["x"] == 1
 
     def test_clone_registrations_for_sandbox(self):
         """Typical use case: clone registrations to create isolated sandbox."""
@@ -378,6 +376,6 @@ result = json.dumps(data)
         )
 
         # Run in sandbox
-        state = run_file_in_sandbox(sandbox, "app/main.py", "session")
+        ns = run_file_in_sandbox(sandbox, "app/main.py", "session")
 
-        assert state.get("result") == '{"sqrt_2": 1.4142135623730951}'
+        assert ns["result"] == '{"sqrt_2": 1.4142135623730951}'

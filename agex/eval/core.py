@@ -35,13 +35,14 @@ def run_file_in_sandbox(
     *,
     eval_timeout_seconds: float | None = None,
     on_event: Callable[[Any], None] | None = None,
-) -> Any:
+) -> dict[str, Any]:
     """
     Run a file from VFS in the agent's sandbox.
 
-    This is a convenience function for executing code from the virtual filesystem
-    using the agent's registered modules, functions, and classes. Useful for
-    running user-generated code (e.g., apps) in a sandboxed environment.
+    Convenience helper for executing code from the virtual filesystem
+    using the agent's registered modules, functions, and classes.
+    Useful for running user-generated code (e.g., apps) in a sandboxed
+    environment, with the post-exec namespace returned for inspection.
 
     Args:
         agent: The agent providing the execution context and VFS access
@@ -51,7 +52,8 @@ def run_file_in_sandbox(
         on_event: Optional handler to call for each event
 
     Returns:
-        The state after execution
+        The post-execution namespace dict — variables, functions, and
+        classes defined or imported by the script.
 
     Raises:
         FileNotFoundError: If the file doesn't exist in VFS
@@ -66,8 +68,9 @@ def run_file_in_sandbox(
         )
         sandbox.module(ui)  # Add UI module to sandbox
 
-        # Run user-generated app code
-        run_file_in_sandbox(sandbox, "app/main.py", session_id)
+        # Run user-generated app code and inspect a computed value
+        ns = run_file_in_sandbox(sandbox, "app/main.py", session_id)
+        result = ns["result"]
     """
     from agex.eval.bridge import execute_sandboxed
 
@@ -87,8 +90,8 @@ def run_file_in_sandbox(
     # Normalize file_path for relative import resolution
     normalized = file_path if file_path.startswith("/") else f"/{file_path}"
 
-    # Execute in sandbox
-    execute_sandboxed(
+    # Execute in sandbox; return the post-exec namespace.
+    return execute_sandboxed(
         code,
         agent,
         state,
@@ -98,5 +101,3 @@ def run_file_in_sandbox(
         on_event=on_event,
         file_path=normalized,
     )
-
-    return state

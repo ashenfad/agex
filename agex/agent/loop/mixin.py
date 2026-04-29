@@ -246,42 +246,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         """
         messages = []
 
-        # 1. User Functions (always show if present)
-        fn_names = exec_state.get("__sys_user_fn_names__", set())
-        if fn_names:
-            user_fns = []
-            missing_names = set()
-
-            for name in sorted(fn_names):
-                obj = exec_state.get(name)
-                if obj is not None and callable(obj):
-                    try:
-                        sig = str(inspect.signature(obj))
-                    except (ValueError, TypeError):
-                        sig = "(...)"
-
-                    doc = inspect.getdoc(obj) or ""
-                    if len(doc) > 100:
-                        doc = doc[:97] + "..."
-
-                    user_fns.append(f"- {name}{sig}: {doc}")
-                else:
-                    missing_names.add(name)
-
-            if missing_names:
-                new_names = fn_names - missing_names
-                exec_state["__sys_user_fn_names__"] = new_names
-
-            if user_fns:
-                messages.append(
-                    "## User Defined Functions\n"
-                    "The following functions are ALREADY DEFINED in your global scope.\n"
-                    "**GUARANTEE**: These functions are LIVE in memory and GUARANTEED to work.\n"
-                    "**PERFORMANCE**: Reuse them to reduce token usage and speed up execution.\n"
-                    "**DO NOT** redefine them.\n" + "\n".join(user_fns)
-                )
-
-        # 2. Workspace Recap (Inventory)
+        # Workspace Recap (Inventory)
         # We assume the session matches what's in exec_state (usually 'default' unless specified)
         # We use getattr to safely access session if it's stored in state
         session = getattr(exec_state, "session", "default")

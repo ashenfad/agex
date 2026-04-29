@@ -1,4 +1,8 @@
-"""Test VFS module persistence across agent turns."""
+"""Test VFS persistence across agent turns under the stateless contract.
+
+VFS files survive across turns and tasks; Python namespace state does not.
+The agent must re-import its VFS modules each turn it wants to use them.
+"""
 
 from agex import Agent, connect_fs, connect_state
 from agex.agent.base import clear_agent_registry
@@ -7,8 +11,12 @@ from agex.llm import Dummy
 from tests.agex._emissions import make_response
 
 
-def test_vfs_module_survives_across_turns():
-    """VFS module imported in turn 1 should be accessible in turn 2."""
+def test_vfs_module_reimport_works_across_turns():
+    """A VFS module written once is importable on any subsequent turn.
+
+    Each turn must import freshly — the import binding does not survive
+    between python_action emissions.
+    """
     clear_agent_registry()
 
     agent = Agent(
@@ -23,12 +31,12 @@ def test_vfs_module_survives_across_turns():
 
     agent.llm.responses = [
         make_response(
-            thinking="Turn 1: import and use module",
-            code='import utils\nresult = utils.get_val()\ntask_continue("got", result)',
+            thinking="Turn 1: import and probe the module, then continue",
+            code="import utils\nprint(utils.get_val())",
         ),
         make_response(
-            thinking="Turn 2: use module again without re-importing",
-            code="result2 = utils.get_val()\ntask_success(result2)",
+            thinking="Turn 2: re-import (namespace doesn't carry) and finish",
+            code="import utils\ntask_success(utils.get_val())",
         ),
     ]
 
@@ -41,8 +49,13 @@ def test_vfs_module_survives_across_turns():
     assert result == 42
 
 
-def test_vfs_closure_survives_across_turns():
-    """Closure over VFS module should work across turns."""
+def test_namespace_does_not_persist_across_turns():
+    """Imports and definitions from turn 1 must NOT carry into turn 2.
+
+    Turn 2 references ``utils`` without importing — should fail with
+    NameError, surfaced back to the agent as an OutputEvent.  The third
+    turn re-imports cleanly and finishes.
+    """
     clear_agent_registry()
 
     agent = Agent(
@@ -50,26 +63,30 @@ def test_vfs_closure_survives_across_turns():
         llm=Dummy(),
         fs=connect_fs(type="virtual"),
         state=connect_state(type="versioned", storage="memory"),
-        max_iterations=3,
+        max_iterations=4,
     )
 
     agent.fs().write("utils.py", b"CONST = 42\ndef get_val(): return CONST")
 
     agent.llm.responses = [
         make_response(
-            thinking="Turn 1: define closure over module",
-            code="import utils\ndef my_fn():\n    return utils.get_val()\ntask_continue(my_fn())",
+            thinking="Turn 1: import",
+            code="import utils\nprint(utils.get_val())",
         ),
         make_response(
-            thinking="Turn 2: call closure again",
-            code="task_success(my_fn())",
+            thinking="Turn 2: try to use without importing — should fail",
+            code="print(utils.get_val())",
+        ),
+        make_response(
+            thinking="Turn 3: re-import and finish",
+            code="import utils\ntask_success(utils.get_val())",
         ),
     ]
 
     @agent.task
-    def closure_turn() -> int:
-        """Test closure persistence."""
+    def t() -> int:
+        """Test stateless namespace contract."""
         pass
 
-    result = closure_turn(on_event=pprint_events)
+    result = t(on_event=pprint_events)
     assert result == 42
