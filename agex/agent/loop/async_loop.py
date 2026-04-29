@@ -357,7 +357,7 @@ class AsyncLoopMixin:
             setup_event_idx = len(events(exec_state)) - 1
             setup_emission_id = _emission_block_id(setup_event_idx, 1)
             try:
-                await _aexecute_with_limits(
+                setup_namespace = await _aexecute_with_limits(
                     self._resource_limits,
                     setup,
                     self,
@@ -369,6 +369,23 @@ class AsyncLoopMixin:
                     on_token=on_token,
                     emission_id=setup_emission_id,
                 )
+                # See sync_loop's matching block: filter bridge injections
+                # so only setup-defined names get carried into the agent's
+                # subsequent emissions via build_namespace.
+                _setup_filter = {
+                    "task_success",
+                    "task_fail",
+                    "task_clarify",
+                    "view_image",
+                    "__outputs__",
+                    "dir",
+                    "inputs",
+                }
+                exec_state["__setup_namespace__"] = {
+                    k: v
+                    for k, v in setup_namespace.items()
+                    if k not in _setup_filter and not k.startswith("__")
+                }
             except BaseException:
                 pass
 

@@ -2,7 +2,14 @@
 Tests for the sandtrap bridge layer.
 
 Verifies that the bridge correctly translates agex policy → sandtrap policy,
-builds namespaces, handles results, and executes code through sandtrap's sandbox.
+builds a fresh namespace per emission, processes results, and executes code
+through sandtrap's sandbox.
+
+Contract: each ``python_action`` runs as a fresh script.  No state hydrates
+into the namespace at the start of execution; no state is written back from
+the namespace at the end.  Persistent communication is via the event log
+(prints, view_image, errors) and via task terminators that surface as
+exceptions.
 """
 
 import math
@@ -113,358 +120,164 @@ class TestNamespaceBuilder:
     def setup_method(self):
         clear_agent_registry()
 
-    def test_hydrates_state(self):
-        state = Live()
-        state["x"] = 42
-        state["name"] = "alice"
+    def test_namespace_is_fresh(self):
+        """Each call returns a clean dict — no state hydration."""
         agent = Agent(name="ns_test")
-        ns, pre_keys, _ = build_namespace(state, agent, "ns_test")
-        assert ns["x"] == 42
-        assert ns["name"] == "alice"
-        assert pre_keys == {"x", "name"}
+        ns, _ = build_namespace(Live(), agent, "ns_test")
 
-    def test_skips_internal_keys(self):
-        state = Live()
-        state["__event_log__"] = []
-        state["__expected_return_type__"] = str
-        state["x"] = 1
+        # The only top-level keys in the dict are the bridge injections
+        # — task terminators, view_image, __outputs__, dir.
+        assert set(ns.keys()) == {
+            "task_success",
+            "task_fail",
+            "task_clarify",
+            "view_image",
+            "__outputs__",
+            "dir",
+        }
+
+    def test_independent_namespaces(self):
+        """Two calls return distinct dicts — no shared state."""
         agent = Agent(name="ns_test")
-        ns, pre_keys, _ = build_namespace(state, agent, "ns_test")
-        assert "__event_log__" not in ns
-        assert "__expected_return_type__" not in ns
-        assert "x" in ns
-        assert pre_keys == {"x"}
+        ns1, _ = build_namespace(Live(), agent, "ns_test")
+        ns2, _ = build_namespace(Live(), agent, "ns_test")
+        assert ns1 is not ns2
+        assert ns1["__outputs__"] is not ns2["__outputs__"]
 
     def test_task_control_present(self):
-        state = Live()
         agent = Agent(name="ns_test")
-        ns, _, _ = build_namespace(state, agent, "ns_test")
+        ns, _ = build_namespace(Live(), agent, "ns_test")
         assert callable(ns["task_success"])
         assert callable(ns["task_fail"])
         assert callable(ns["task_clarify"])
-        # task_continue was removed in the retooling — returning normally
-        # is the implicit continue now.
-        assert "task_continue" not in ns
 
     def test_view_image_present(self):
-        state = Live()
         agent = Agent(name="ns_test")
-        ns, _, _ = build_namespace(state, agent, "ns_test")
-        # print is handled via sandtrap's snapshot_prints, not in namespace
-        assert "print" not in ns
+        ns, _ = build_namespace(Live(), agent, "ns_test")
         assert callable(ns["view_image"])
-        # help uses Python builtins; dir is overridden to filter internals
-        assert "help" not in ns
         assert callable(ns["dir"])
 
     def test_outputs_list_present(self):
-        state = Live()
         agent = Agent(name="ns_test")
-        ns, _, _ = build_namespace(state, agent, "ns_test")
+        ns, _ = build_namespace(Live(), agent, "ns_test")
         assert isinstance(ns["__outputs__"], list)
         assert len(ns["__outputs__"]) == 0
 
-    def test_print_snapshot_creates_output_event(self):
-        """Test that result.prints are converted to OutputEvents by handle_result."""
+    def test_injected_keys_returned(self):
+        agent = Agent(name="ns_test")
+        _, injected = build_namespace(Live(), agent, "ns_test")
+        assert injected == {
+            "task_success",
+            "task_fail",
+            "task_clarify",
+            "view_image",
+            "__outputs__",
+            "dir",
+        }
+
+
+class TestResultHandler:
+    """Tests for handle_result()."""
+
+    def test_print_creates_output_event(self):
         from agex.eval.objects import PrintAction
 
         state = Live()
         state["__event_log__"] = []
         result = ExecResult(prints=[("Hello", 42)])
 
-        handle_result(result, state, "test_agent", set())
+        handle_result(result, state, "test_agent")
 
         event_list = events(state)
         assert len(event_list) == 1
         assert isinstance(event_list[0], OutputEvent)
-        # Prints are wrapped in PrintAction so emission_id can travel
-        # alongside the observation for per-emission tool_result pairing.
         assert event_list[0].parts == [PrintAction(args=("Hello", 42))]
 
+    def test_view_image_creates_output_event(self):
+        from agex.eval.objects import ImageAction
 
-class TestResultHandler:
-    """Tests for handle_result()."""
-
-    def test_syncs_new_values(self):
         state = Live()
+        state["__event_log__"] = []
+        img_action = ImageAction(image="test_img", detail="high")
+        result = ExecResult(namespace={"__outputs__": [img_action]})
+
+        handle_result(result, state, "test_agent")
+
+        event_list = events(state)
+        assert len(event_list) == 1
+        assert isinstance(event_list[0], OutputEvent)
+        assert len(event_list[0].parts) == 1
+        assert isinstance(event_list[0].parts[0], ImageAction)
+        assert event_list[0].parts[0].image == "test_img"
+
+    def test_namespace_values_not_synced_to_state(self):
+        """Variables in result.namespace must NOT land in state.
+
+        This is the central B-contract assertion: the agent's namespace
+        is purely turn-local and does not flow back into kvgit-backed
+        state.
+        """
+        state = Live()
+        state["__event_log__"] = []
+        # Pre-existing key the agent didn't touch
+        state["existing"] = "kept"
+
         result = ExecResult(namespace={"x": 42, "y": "hello"})
-        handle_result(result, state, "test", set())
-        assert state.get("x") == 42
-        assert state.get("y") == "hello"
+        handle_result(result, state, "test")
 
-    def test_skips_internal_keys(self):
-        state = Live()
-        result = ExecResult(namespace={"x": 1, "__builtins__": {}})
-        handle_result(result, state, "test", set())
-        assert state.get("x") == 1
-        assert "__builtins__" not in state
-
-    def test_detects_deletions(self):
-        state = Live()
-        state["x"] = 42
-        state["y"] = "keep"
-        pre_keys = {"x", "y"}
-        # Only y remains in namespace after exec
-        result = ExecResult(namespace={"y": "keep"})
-        handle_result(result, state, "test", pre_keys)
         assert "x" not in state
-        assert state.get("y") == "keep"
+        assert "y" not in state
+        assert state.get("existing") == "kept"
 
-    def test_does_not_delete_event_log_entries(self):
-        """Regression: ``_event_*`` keys must survive a sandbox turn.
-
-        Event keys (stored by ``agex.state.log.add_event_to_log``) live
-        alongside user-visible state at keys like ``_event_<ts>_`` —
-        single underscore, not the dunder prefix used for framework
-        metadata. An earlier version of ``build_namespace`` hydrated
-        them into the sandbox and added them to ``pre_keys``; if the
-        sandbox's post-exec namespace didn't carry them back out,
-        ``handle_result`` treated them as user deletions and removed
-        them from state, leaving ``__event_log__`` with dangling refs.
-        """
+    def test_namespace_deletions_not_propagated(self):
+        """If a state key isn't in the post-exec namespace, state must
+        keep it — handle_result no longer infers deletions."""
         state = Live()
-        state["__event_log__"] = [
-            "_event_1000_",
-            "_event_2000_",
-        ]
-        state["_event_1000_"] = "event-one"
-        state["_event_2000_"] = "event-two"
-        state["x"] = 42  # real user var
-
-        # Simulate what a buggy caller might have passed: pre_keys that
-        # includes the internal event keys.
-        pre_keys = {"_event_1000_", "_event_2000_", "x"}
-        # Sandbox returned only the user var — event keys are missing.
-        result = ExecResult(namespace={"x": 42})
-
-        handle_result(result, state, "test", pre_keys)
-
-        assert state.get("_event_1000_") == "event-one", (
-            "event keys must not be deleted by the sandbox deletion-detection path"
-        )
-        assert state.get("_event_2000_") == "event-two"
-        assert state.get("x") == 42
-
-    def test_build_namespace_excludes_event_keys(self):
-        """Regression: event keys must not enter the sandbox namespace.
-
-        Preventing the hydration in the first place is the primary fix
-        for the ``__event_log__`` dangling-ref bug above; this guards
-        the contract independently of the deletion logic.
-        """
-        state = Live()
-        state["__event_log__"] = ["_event_1000_"]
-        state["_event_1000_"] = "event-one"
+        state["__event_log__"] = []
         state["x"] = 42
-        agent = Agent(name="ns_event_test")
 
-        ns, pre_keys, _ = build_namespace(state, agent, "ns_event_test")
+        # Sandbox returns no namespace (or a different one)
+        result = ExecResult(namespace={})
+        handle_result(result, state, "test")
 
-        assert "_event_1000_" not in ns, "event keys leaked into sandbox namespace"
-        assert "_event_1000_" not in pre_keys, "event keys leaked into pre_keys"
-        assert "x" in ns
-        assert pre_keys == {"x"}
+        assert state.get("x") == 42
 
     def test_reraises_task_success(self):
         state = Live()
+        state["__event_log__"] = []
         result = ExecResult(error=TaskSuccess("done"))
         with pytest.raises(TaskSuccess):
-            handle_result(result, state, "test", set())
+            handle_result(result, state, "test")
 
     def test_reraises_task_fail(self):
         state = Live()
+        state["__event_log__"] = []
         result = ExecResult(error=TaskFail("oops"))
         with pytest.raises(TaskFail):
-            handle_result(result, state, "test", set())
+            handle_result(result, state, "test")
 
     def test_reraises_regular_exception(self):
         state = Live()
+        state["__event_log__"] = []
         result = ExecResult(error=ValueError("bad value"))
         with pytest.raises(ValueError, match="bad value"):
-            handle_result(result, state, "test", set())
+            handle_result(result, state, "test")
 
-    def test_syncs_before_reraising(self):
-        """State should be synced even when an error is re-raised."""
-        state = Live()
-        result = ExecResult(
-            namespace={"x": 42},
-            error=TaskSuccess("done"),
-        )
-        with pytest.raises(TaskSuccess):
-            handle_result(result, state, "test", set())
-        # x should still be synced despite the error
-        assert state.get("x") == 42
-
-
-class TestChangeDetection:
-    """Tests for identity-based change detection in handle_result.
-
-    Only variables that were reassigned (different id()) or newly created
-    should be written to state.  Unchanged variables should be skipped to
-    avoid creating duplicate blobs in kvgit.
-    """
-
-    def test_unchanged_variable_not_restaged(self):
-        """A variable with the same id() after execution should not be
-        written back to state (no unnecessary staging)."""
-        state = Live()
-        original = [1, 2, 3]
-        state["data"] = original
-
-        # Simulate: namespace has the same object (not reassigned)
-        ns_obj = original  # same id()
-        pre_ids = {"data": id(ns_obj)}
-        result = ExecResult(namespace={"data": ns_obj})
-
-        handle_result(result, state, "test", {"data"}, pre_ids=pre_ids)
-        # state["data"] should not have been re-set (no __setitem__ call)
-        # We verify by checking that the Live store wasn't written to —
-        # if it were, .get() would return a re-pickled copy, not the original.
-        # For Live(), __setitem__ always writes, so the test is that the
-        # value is correct (and in production with Staged, the key wouldn't
-        # be in _updates).
-        assert state.get("data") == [1, 2, 3]
-
-    def test_reassigned_variable_is_staged(self):
-        """A variable with a different id() should be written to state."""
-        state = Live()
-        state["x"] = 10
-
-        old_obj = state.get("x")  # the hydrated value
-        new_obj = 20  # different id
-        pre_ids = {"x": id(old_obj)}
-        result = ExecResult(namespace={"x": new_obj})
-
-        handle_result(result, state, "test", {"x"}, pre_ids=pre_ids)
-        assert state.get("x") == 20
-
-    def test_new_variable_is_staged(self):
-        """A variable not in pre_ids (newly created) should be written."""
-        state = Live()
-        pre_ids = {}  # nothing existed before
-        result = ExecResult(namespace={"new_var": 42})
-
-        handle_result(result, state, "test", set(), pre_ids=pre_ids)
-        assert state.get("new_var") == 42
-
-    def test_deletion_still_works_with_pre_ids(self):
-        """Variable deletion should still work when pre_ids is provided."""
-        state = Live()
-        state["x"] = 42
-        state["y"] = 99
-
-        pre_ids = {"x": id(42), "y": id(99)}
-        result = ExecResult(namespace={"y": 99})  # x deleted
-
-        handle_result(result, state, "test", {"x", "y"}, pre_ids=pre_ids)
-        assert "x" not in state
-        assert state.get("y") == 99
-
-    def test_without_pre_ids_all_written(self):
-        """Without pre_ids (backward compat), all variables are written."""
-        state = Live()
-        state["x"] = 10
-        result = ExecResult(namespace={"x": 10, "y": 20})
-
-        handle_result(result, state, "test", {"x"})
-        assert state.get("x") == 10
-        assert state.get("y") == 20
-
-    def test_mixed_changed_and_unchanged(self):
-        """Only changed/new variables are staged; unchanged are skipped."""
-        state = Live()
-        big_data = {"key": "value" * 1000}
-        state["big"] = big_data
-        state["small"] = 1
-
-        # Simulate: big is same object, small is reassigned
-        pre_ids = {"big": id(big_data), "small": id(state.get("small"))}
-        result = ExecResult(
-            namespace={
-                "big": big_data,  # same id — should skip
-                "small": 2,  # different value, different id
-                "new": "hello",  # not in pre_ids — should write
-            }
-        )
-
-        # Use a tracking wrapper to count writes
-        writes = []
-
-        class TrackingState:
-            def __init__(self, inner):
-                self._inner = inner
-
-            def __getattr__(self, name):
-                return getattr(self._inner, name)
-
-            def __setitem__(self, key, value):
-                writes.append(key)
-                self._inner[key] = value
-
-            def __contains__(self, key):
-                return key in self._inner
-
-            def __delitem__(self, key):
-                del self._inner[key]
-
-            def get(self, key, default=None):
-                return self._inner.get(key, default)
-
-            def keys(self):
-                return self._inner.keys()
-
-        tracking = TrackingState(state)
-        handle_result(result, tracking, "test", {"big", "small"}, pre_ids=pre_ids)
-
-        assert "big" not in writes, "Unchanged variable should not be written"
-        assert "small" in writes, "Reassigned variable should be written"
-        assert "new" in writes, "New variable should be written"
-
-    def test_execute_sandboxed_skips_untouched_vars(self):
-        """End-to-end: execute_sandboxed only writes variables that changed."""
-        clear_agent_registry()
-        agent = Agent(name="cd_test")
+    def test_validates_task_success_result_type(self):
+        """When a return type is registered, task_success enforces it."""
         state = Live()
         state["__event_log__"] = []
+        state["__expected_return_type__"] = int
 
-        # Turn 1: create two variables
-        execute_sandboxed("big = list(range(1000))\nsmall = 1", agent, state)
-        assert state.get("big") == list(range(1000))
-        assert state.get("small") == 1
+        # Valid result — should re-raise TaskSuccess without TypeError
+        result = ExecResult(error=TaskSuccess(result=42))
+        with pytest.raises(TaskSuccess):
+            handle_result(result, state, "test")
 
-        # Wrap state to track writes on turn 2
-        writes = []
-
-        class TrackingLive:
-            def __init__(self, inner):
-                self._inner = inner
-
-            def __getattr__(self, name):
-                return getattr(self._inner, name)
-
-            def __setitem__(self, key, value):
-                writes.append(key)
-                self._inner[key] = value
-
-            def __contains__(self, key):
-                return key in self._inner
-
-            def __delitem__(self, key):
-                del self._inner[key]
-
-            def get(self, key, default=None):
-                return self._inner.get(key, default)
-
-            def keys(self):
-                return self._inner.keys()
-
-        tracking = TrackingLive(state)
-
-        # Turn 2: only reassign small, don't touch big
-        execute_sandboxed("small = 2", agent, tracking)
-
-        assert "small" in writes, "Reassigned variable should be written"
-        assert "big" not in writes, "Untouched variable should NOT be written"
+        # Invalid result — should raise TypeError from validation
+        result = ExecResult(error=TaskSuccess(result="not an int"))
+        with pytest.raises(TypeError, match="Output validation failed"):
+            handle_result(result, state, "test")
 
 
 class TestTaskControlPicklability:
@@ -482,25 +295,6 @@ class TestTaskControlPicklability:
         for fn in [_task_success, _task_fail, _task_clarify]:
             roundtripped = pickle.loads(pickle.dumps(fn))
             assert callable(roundtripped)
-
-    def test_task_success_validation_in_handle_result(self):
-        """Validation of TaskSuccess result happens in handle_result, not in sandbox."""
-        state = Live()
-        state["__event_log__"] = []
-        state["__expected_return_type__"] = int
-
-        # Valid result — should re-raise TaskSuccess without TypeError
-        result = ExecResult(error=TaskSuccess(result=42))
-        with pytest.raises(TaskSuccess):
-            handle_result(result, state, "test", set())
-
-        # Invalid result — should raise TypeError from validation
-        result = ExecResult(error=TaskSuccess(result="not an int"))
-        with pytest.raises(TypeError, match="Output validation failed"):
-            handle_result(result, state, "test", set())
-
-    # task_continue tests removed — the builtin was dropped in the
-    # retooling; Python returning normally is now the implicit continue.
 
 
 class TestViewImage:
@@ -538,23 +332,6 @@ class TestViewImage:
         with pytest.raises(ValueError, match="detail must be"):
             vi("img", detail="medium")
 
-    def test_outputs_converted_to_events_by_handle_result(self):
-        from agex.eval.objects import ImageAction
-
-        state = Live()
-        state["__event_log__"] = []
-        img_action = ImageAction(image="test_img", detail="high")
-        result = ExecResult(namespace={"__outputs__": [img_action]})
-
-        handle_result(result, state, "test_agent", set())
-
-        event_list = events(state)
-        assert len(event_list) == 1
-        assert isinstance(event_list[0], OutputEvent)
-        assert len(event_list[0].parts) == 1
-        assert isinstance(event_list[0].parts[0], ImageAction)
-        assert event_list[0].parts[0].image == "test_img"
-
     def test_view_image_in_sandbox(self):
         """view_image works through execute_sandboxed via __outputs__."""
         agent = Agent(name="vi_test")
@@ -569,24 +346,17 @@ class TestViewImage:
 
 
 class TestExecuteSandboxed:
-    """Integration tests for execute_sandboxed()."""
+    """Integration tests for execute_sandboxed().
+
+    Under the stateless contract, ``state`` is used only for the event
+    log and for return-type validation — sandboxed code never reads
+    user-visible variables out of state, and assignments inside a
+    ``python_action`` never land in state.  These tests assert the
+    observable surfaces: terminator exceptions, output events, errors.
+    """
 
     def setup_method(self):
         clear_agent_registry()
-
-    def test_simple_assignment(self):
-        agent = Agent(name="exec_test")
-        state = Live()
-        state["__event_log__"] = []
-        execute_sandboxed("x = 42", agent, state)
-        assert state.get("x") == 42
-
-    def test_arithmetic(self):
-        agent = Agent(name="exec_test")
-        state = Live()
-        state["__event_log__"] = []
-        execute_sandboxed("result = 2 + 3 * 4", agent, state)
-        assert state.get("result") == 14
 
     def test_task_success_raises(self):
         agent = Agent(name="exec_test")
@@ -615,31 +385,47 @@ class TestExecuteSandboxed:
         assert len(output_events) == 1
         assert output_events[0].parts == [PrintAction(args=("Hello from sandbox",))]
 
-    def test_state_persistence_across_calls(self):
+    def test_assignment_does_not_leak_into_state(self):
+        """The B-contract end-to-end: agent code that assigns variables
+        must NOT have those assignments visible in state afterwards."""
+        agent = Agent(name="exec_test")
+        state = Live()
+        state["__event_log__"] = []
+        execute_sandboxed("x = 42", agent, state)
+        assert "x" not in state
+
+    def test_state_does_not_persist_across_calls(self):
+        """Two execute_sandboxed calls must NOT share namespace state.
+
+        Each python_action emission is a fresh script; the second call
+        cannot see variables defined in the first.
+        """
         agent = Agent(name="exec_test")
         state = Live()
         state["__event_log__"] = []
         execute_sandboxed("x = 10", agent, state)
-        execute_sandboxed("y = x + 5", agent, state)
-        assert state.get("y") == 15
 
-    def test_variable_deletion(self):
-        agent = Agent(name="exec_test")
-        state = Live()
-        state["__event_log__"] = []
-        state["x"] = 42
-        execute_sandboxed("del x", agent, state)
-        assert "x" not in state
+        # The second emission can't see x — should raise NameError.
+        with pytest.raises(NameError):
+            execute_sandboxed("y = x + 5", agent, state)
 
-    def test_registered_module_import(self):
+    def test_registered_module_visible(self):
+        """Registered modules are available without flowing through state."""
         agent = Agent(name="exec_test")
         agent.module(math)
         state = Live()
         state["__event_log__"] = []
-        execute_sandboxed("import math\nresult = math.sqrt(16)", agent, state)
-        assert state.get("result") == 4.0
+        # Compute and print rather than asserting state.
+        execute_sandboxed(
+            "import math\nprint(math.sqrt(16))",
+            agent,
+            state,
+        )
+        event_list = events(state)
+        output_events = [e for e in event_list if isinstance(e, OutputEvent)]
+        assert any("4.0" in str(e.parts[0].args) for e in output_events)
 
-    def test_registered_function_call(self):
+    def test_registered_function_callable(self):
         agent = Agent(name="exec_test")
 
         def double(n):
@@ -648,10 +434,11 @@ class TestExecuteSandboxed:
         agent.fn(double)
         state = Live()
         state["__event_log__"] = []
-        execute_sandboxed("result = double(21)", agent, state)
-        assert state.get("result") == 42
+        with pytest.raises(TaskSuccess) as exc_info:
+            execute_sandboxed("task_success(double(21))", agent, state)
+        assert exc_info.value.result == 42
 
-    def test_registered_class_instantiation(self):
+    def test_registered_class_instantiable(self):
         agent = Agent(name="exec_test")
 
         class Point:
@@ -662,8 +449,9 @@ class TestExecuteSandboxed:
         agent.cls(Point)
         state = Live()
         state["__event_log__"] = []
-        execute_sandboxed("p = Point(3, 4)", agent, state)
-        p = state.get("p")
+        with pytest.raises(TaskSuccess) as exc_info:
+            execute_sandboxed("task_success(Point(3, 4))", agent, state)
+        p = exc_info.value.result
         assert p.x == 3
         assert p.y == 4
 
@@ -681,21 +469,16 @@ class TestExecuteSandboxed:
         with pytest.raises(SyntaxError):
             execute_sandboxed("def f(:", agent, state)
 
-    def test_user_defined_function(self):
+    def test_user_defined_function_within_emission(self):
+        """A function defined inside a python_action is callable within
+        the same emission (but not across emissions)."""
         agent = Agent(name="exec_test")
         state = Live()
         state["__event_log__"] = []
-        execute_sandboxed(
-            "def square(n):\n    return n * n\nresult = square(7)",
-            agent,
-            state,
-        )
-        assert state.get("result") == 49
-
-    def test_from_import(self):
-        agent = Agent(name="exec_test")
-        agent.module(math)
-        state = Live()
-        state["__event_log__"] = []
-        execute_sandboxed("from math import pi\nresult = round(pi, 2)", agent, state)
-        assert state.get("result") == 3.14
+        with pytest.raises(TaskSuccess) as exc_info:
+            execute_sandboxed(
+                "def square(n):\n    return n * n\ntask_success(square(7))",
+                agent,
+                state,
+            )
+        assert exc_info.value.result == 49

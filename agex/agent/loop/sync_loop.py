@@ -354,7 +354,7 @@ class SyncLoopMixin:
             setup_emission_id = _emission_block_id(setup_event_idx, 1)
             try:
                 with apply_resource_limits(self._resource_limits):
-                    execute_sandboxed(
+                    setup_namespace = execute_sandboxed(
                         setup,
                         self,
                         exec_state,
@@ -365,6 +365,23 @@ class SyncLoopMixin:
                         on_token=on_token,
                         emission_id=setup_emission_id,
                     )
+                # Filter out bridge injections and dunder bookkeeping so
+                # only setup-defined names get carried into the agent's
+                # subsequent emissions via build_namespace.
+                _setup_filter = {
+                    "task_success",
+                    "task_fail",
+                    "task_clarify",
+                    "view_image",
+                    "__outputs__",
+                    "dir",
+                    "inputs",
+                }
+                exec_state["__setup_namespace__"] = {
+                    k: v
+                    for k, v in setup_namespace.items()
+                    if k not in _setup_filter and not k.startswith("__")
+                }
             except BaseException:
                 pass
 

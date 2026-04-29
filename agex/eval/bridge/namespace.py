@@ -10,6 +10,7 @@ Sandtrap layers registered modules and functions on top via the policy.
 from __future__ import annotations
 
 import builtins as _builtins
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
 from agex.agent.datatypes import TaskClarify, TaskFail, TaskSuccess
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
 
 
 def build_namespace(
+    state: MutableMapping[str, Any],
     agent: "BaseAgent",
     agent_name: str,
     on_event: Callable[[Any], None] | None = None,
@@ -29,11 +31,14 @@ def build_namespace(
 
     Each call returns an independent dict — there is no cross-emission
     state continuity.  Sandtrap layers registered modules and functions
-    on top via the policy; this dict only carries the bridge-injected
-    task terminators, ``view_image``, the ``__outputs__`` collector,
-    and the ``dir`` override.
+    on top via the policy; this dict carries the bridge-injected task
+    terminators, ``view_image``, the ``__outputs__`` collector, the
+    ``dir`` override, and the task's ``inputs`` value if one was set
+    by the task launcher.
 
     Args:
+        state: Read-only view used to surface ``inputs`` to the agent.
+            No other keys are read; nothing is written.
         agent: The agent providing policy context.
         agent_name: Name of the agent (for event attribution).
         on_event: Optional event callback.
@@ -42,6 +47,21 @@ def build_namespace(
         A tuple of (namespace_dict, injected_keys).
     """
     namespace: dict[str, Any] = {}
+
+    # Surface launcher-provided values into the agent's per-emission
+    # namespace.  Two channels exist:
+    #   - ``inputs``: the typed task input.
+    #   - ``__setup_namespace__``: names produced by the task's setup
+    #     code (run once before the agent loop starts).
+    # Both are written by the task launcher and read here on every
+    # emission; agent-defined values remain turn-local.
+    if state is not None:
+        inputs = state.get("inputs")
+        if inputs is not None:
+            namespace["inputs"] = inputs
+        setup_ns = state.get("__setup_namespace__") or {}
+        for k, v in setup_ns.items():
+            namespace[k] = v
 
     # Inject task control functions — module-level so they're picklable
     # for cross-process isolation. Validation happens in handle_result.
@@ -63,6 +83,10 @@ def build_namespace(
         "__outputs__",
         "dir",
     }
+    if "inputs" in namespace:
+        injected_keys.add("inputs")
+    if state is not None:
+        injected_keys.update(state.get("__setup_namespace__") or {})
 
     # Override dir() to hide sandtrap-injected internals while exposing
     # task control functions and any names the agent defines during

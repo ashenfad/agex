@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 def _prepare_sandbox(
     program: str,
     agent: "BaseAgent",
+    state: MutableMapping[str, Any],
     eval_timeout_seconds: float | None = None,
     *,
     fs: "FileSystem | None" = None,
@@ -33,9 +34,10 @@ def _prepare_sandbox(
 ):
     """Shared setup for execute_sandboxed and aexecute_sandboxed.
 
-    Each call builds a fresh namespace; no state is read in or written
-    out here.  The caller owns ``state`` and passes it to
-    :func:`handle_result` for event-log writes only.
+    Each call builds a fresh namespace.  ``state`` is read only to
+    surface ``inputs`` into the namespace; no other keys are read and
+    nothing is written.  The caller passes ``state`` to
+    :func:`handle_result` for event-log writes.
     """
     tick_limit = getattr(agent, "eval_tick_limit", None)
 
@@ -64,7 +66,9 @@ def _prepare_sandbox(
         filesystem=fs,
         snapshot_prints=True,
     )
-    namespace, _injected_keys = build_namespace(agent, agent.name, on_event=on_event)
+    namespace, _injected_keys = build_namespace(
+        state, agent, agent.name, on_event=on_event
+    )
 
     # Set __file__ for relative import resolution
     if file_path is not None:
@@ -85,13 +89,18 @@ def execute_sandboxed(
     on_token: Callable[[Any], None] | None = None,
     file_path: str | None = None,
     emission_id: str | None = None,
-) -> None:
+) -> dict[str, Any]:
     """Execute agent code synchronously in the sandtrap sandbox.
 
     ``emission_id`` is propagated via contextvar so PrintAction and
     ImageAction parts emitted by this call trace back to the originating
     PythonEmission — essential for per-emission tool_result pairing in
     multi-emission turns.
+
+    Returns the post-exec namespace dict so callers like
+    :func:`agex.eval.core.run_file_in_sandbox` can inspect what the
+    script computed.  Loop callers driving an LLM ignore this return
+    value — namespaces are not shared across emissions.
     """
     from .policy import (
         _current_emission_id,
@@ -104,6 +113,7 @@ def execute_sandboxed(
     sb, namespace = _prepare_sandbox(
         program,
         agent,
+        state,
         eval_timeout_seconds,
         fs=fs,
         on_event=on_event,
@@ -135,6 +145,7 @@ def execute_sandboxed(
         on_event=on_event,
         emission_id=emission_id,
     )
+    return result.namespace
 
 
 async def aexecute_sandboxed(
@@ -149,10 +160,11 @@ async def aexecute_sandboxed(
     on_token: Callable[[Any], None] | None = None,
     file_path: str | None = None,
     emission_id: str | None = None,
-) -> None:
+) -> dict[str, Any]:
     """Execute agent code asynchronously in the sandtrap sandbox.
 
     Uses sandbox.aexec() so ``await`` works natively in sandbox code.
+    Returns the post-exec namespace dict; see :func:`execute_sandboxed`.
     """
     from .policy import (
         _current_emission_id,
@@ -177,6 +189,7 @@ async def aexecute_sandboxed(
     sb, namespace = _prepare_sandbox(
         program,
         agent,
+        state,
         eval_timeout_seconds,
         fs=fs,
         on_event=safe_on_event,
@@ -208,3 +221,4 @@ async def aexecute_sandboxed(
         on_event=safe_on_event,
         emission_id=emission_id,
     )
+    return result.namespace

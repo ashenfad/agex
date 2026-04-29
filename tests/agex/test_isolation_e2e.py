@@ -285,18 +285,17 @@ class TestIsolationProcess:
 
         assert calc(session="s") == 42
 
-    def test_multi_iteration_with_continue(self):
-        """task_continue works cross-process for multi-turn tasks."""
+    def test_multi_iteration_cross_process(self):
+        """Process isolation handles multi-turn task flow correctly.
+
+        Each emission runs in its own subprocess; the loop drives a
+        sequence of independent emissions rather than carrying state
+        between them.
+        """
         llm = Dummy(
             [
-                make_response(
-                    thinking="step 1",
-                    code='x = 10\ntask_continue("computed x")',
-                ),
-                make_response(
-                    thinking="step 2",
-                    code="task_success(x * 2)",
-                ),
+                make_response(thinking="step 1", code="print('looking around')"),
+                make_response(thinking="step 2", code="task_success(20)"),
             ]
         )
         config = connect_state(type="versioned", storage="memory")
@@ -317,13 +316,17 @@ class TestIsolationProcess:
         result = multi_step(session="s")
         assert result == 20
 
-    def test_state_syncs_back(self):
-        """Namespace changes in the subprocess sync back to state."""
+    def test_print_event_logged_cross_process(self):
+        """Prints from a subprocess emission flow into the event log."""
+        from agex.agent.events import OutputEvent
+        from agex.eval.objects import PrintAction
+        from agex.state import events as state_events
+
         llm = Dummy(
             [
                 make_response(
-                    thinking="set a value",
-                    code='answer = 42\ntask_success("ok")',
+                    thinking="print and finish",
+                    code='print("hello from subprocess")\ntask_success("ok")',
                 )
             ]
         )
@@ -338,13 +341,20 @@ class TestIsolationProcess:
         )
 
         @agent.task
-        def set_state():
-            """Set state."""
+        def emit():
+            """Emit something."""
             pass
 
-        set_state(session="s")
+        emit(session="s")
         state = agent._host.resolve_state(config, "s")
-        assert state.get("answer") == 42
+        outputs = [e for e in state_events(state) if isinstance(e, OutputEvent)]
+        prints = [
+            p
+            for ev in outputs
+            for p in ev.parts
+            if isinstance(p, PrintAction) and p.args == ("hello from subprocess",)
+        ]
+        assert len(prints) == 1
 
     def test_view_image_cross_process(self):
         """view_image works cross-process via __outputs__."""

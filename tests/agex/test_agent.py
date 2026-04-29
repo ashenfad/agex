@@ -42,7 +42,7 @@ def test_view_image_primer_text_is_always_visible():
     # Check for core philosophy items.  Lowercased post-2026-04-25
     # primer revision (sentence case in headings, less title case).
     assert "Code is action" in system_message
-    assert "Persistent state" in system_message
+    assert "fresh script" in system_message
     assert "Task Control" in system_message
     assert "task_success" in system_message
 
@@ -704,72 +704,6 @@ def test_task_input_dataclass_pickling():
     assert len(commit_hash) > 0
 
 
-def test_unserializable_object_in_state_is_handled_gracefully():
-    """
-    Test that if an unserializable object (like a lambda) is added to state
-    via mutation, the snapshot process handles it gracefully by creating a marker.
-    The agent won't see any warnings (silent success), but will get a clear error
-    if they try to access the variable in a future turn.
-    """
-
-    clear_agent_registry()
-
-    # This fn mutates a dictionary to include a real Python lambda,
-    # making the dictionary unserializable.
-    llm = Dummy(
-        responses=[
-            make_response(
-                thinking="Mutating an object to make it unserializable.",
-                code="make_object_unserializable(my_object)",
-            ),
-            make_response(
-                thinking="Now I will finish.",
-                code="task_success('done')",
-            ),
-        ]
-    )
-    config = connect_state(type="versioned", storage="memory")
-    agent = Agent(name="test_agent", llm=llm, state=config)
-
-    class Unserializable:
-        def __getstate__(self):
-            raise pickle.PicklingError("This object cannot be pickled.")
-
-    @agent.fn()
-    def make_object_unserializable(obj):
-        obj["bad_field"] = Unserializable()
-
-    @agent.task("A task that creates bad state via mutation.")
-    def task_with_unserializable_state() -> str:  # type: ignore
-        """This task will create unserializable state by mutation."""
-        pass
-
-    # Pre-populate the state with a serializable object.
-    state = agent._host.resolve_state(config, "test_session")
-    state["my_object"] = {"a": 1}  # No longer namespaced
-    state.commit()
-
-    # Run the task. This will mutate my_object and then try to snapshot.
-    # It should NOT raise a PicklingError - a marker is created instead.
-    result = task_with_unserializable_state(session="test_session")  # type: ignore
-    assert result == "done"
-
-    # With the new marker system, there's NO warning shown (silent success)
-    # The marker is successfully saved in place of the unpicklable object
-
-    # Verify that trying to access the variable would now raise an error
-    from agex.agent.datatypes import UnpicklableVariableError
-
-    # Directly check that the variable is now a marker
-    with pytest.raises(UnpicklableVariableError) as exc_info:
-        state.get("my_object")  # No longer namespaced
-
-    # Verify the marker contains useful information
-    error_msg = str(exc_info.value)
-    assert "dict" in error_msg  # type_name of the original object
-    assert "cannot be pickled" in error_msg  # original exception info
-
-
 def test_shallow_validation_on_large_input_list():
     """
     Tests that the shallow validator catches bad data in a large input list.
@@ -832,15 +766,22 @@ def test_shallow_validation_on_agent_output():
     config = connect_state(type="versioned", storage="memory")
     agent = Agent(name="test_agent", llm=llm, state=config, max_iterations=10)
 
-    @agent.task("A task that returns a large dictionary.")
+    # Inject the dicts via the task ``setup`` channel — under the
+    # stateless contract this is the supported way to surface
+    # launcher-prepared values to the agent.
+    @agent.task(
+        "A task that returns a large dictionary.",
+        setup=(
+            "invalid_dict = "
+            + repr(large_invalid_dict)
+            + "\nvalid_dict = "
+            + repr(large_valid_dict)
+        ),
+    )
     def produce_large_dict() -> dict[str, int]:  # type: ignore
         pass
 
-    # Pre-populate state to avoid parsing large literals in the agent's code
     state = agent._host.resolve_state(config, "test_session")
-    state["invalid_dict"] = large_invalid_dict  # No longer namespaced
-    state["valid_dict"] = large_valid_dict  # No longer namespaced
-
     result = produce_large_dict(session="test_session")  # type: ignore
 
     # Check that the final result is the valid one
@@ -926,9 +867,12 @@ def test_task_setup_functionality():
     )
     assert event_code(setup_event) == 'setup_var = "Hello from setup!"'
 
-    # Check that setup variable is available in state
-    setup_value = state.get("setup_var")  # No longer namespaced
-    assert setup_value == "Hello from setup!"
+    # Setup-produced names live in the framework-managed
+    # __setup_namespace__ slot so they can be re-injected into each
+    # python_action emission.  The agent already saw the value via the
+    # f-string in the result, so this is just a structural assertion.
+    setup_ns = state.get("__setup_namespace__") or {}
+    assert setup_ns.get("setup_var") == "Hello from setup!"
 
 
 def test_task_setup_error_handling():

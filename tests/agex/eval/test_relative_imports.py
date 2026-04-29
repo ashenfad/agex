@@ -39,8 +39,8 @@ result = views.VAL
 """,
         )
 
-        state = run_file_in_sandbox(agent, "app/main.py")
-        assert state.get("result") == 42
+        ns = run_file_in_sandbox(agent, "app/main.py")
+        assert ns["result"] == 42
 
     def test_from_dot_module_import_name(self):
         """Test `from .views import VAL` in app/main.py."""
@@ -56,8 +56,8 @@ result = VAL
 """,
         )
 
-        state = run_file_in_sandbox(agent, "app/main.py")
-        assert state.get("result") == 100
+        ns = run_file_in_sandbox(agent, "app/main.py")
+        assert ns["result"] == 100
 
     def test_from_dot_import_multiple(self):
         """Test `from . import views, utils` in app/main.py."""
@@ -74,8 +74,8 @@ result = views.X + utils.Y
 """,
         )
 
-        state = run_file_in_sandbox(agent, "app/main.py")
-        assert state.get("result") == 3
+        ns = run_file_in_sandbox(agent, "app/main.py")
+        assert ns["result"] == 3
 
     def test_from_dotdot_import(self):
         """Test `from .. import shared` in app/sub/module.py."""
@@ -91,8 +91,8 @@ result = shared.SHARED
 """,
         )
 
-        state = run_file_in_sandbox(agent, "app/sub/module.py")
-        assert state.get("result") == "hello"
+        ns = run_file_in_sandbox(agent, "app/sub/module.py")
+        assert ns["result"] == "hello"
 
     def test_from_dotdot_module_import(self):
         """Test `from ..utils import helper` in app/sub/module.py."""
@@ -108,8 +108,8 @@ result = helper()
 """,
         )
 
-        state = run_file_in_sandbox(agent, "app/sub/module.py")
-        assert state.get("result") == "helped"
+        ns = run_file_in_sandbox(agent, "app/sub/module.py")
+        assert ns["result"] == "helped"
 
     def test_relative_import_with_alias(self):
         """Test `from . import views as v`."""
@@ -125,8 +125,8 @@ result = v.VAL
 """,
         )
 
-        state = run_file_in_sandbox(agent, "app/main.py")
-        assert state.get("result") == 99
+        ns = run_file_in_sandbox(agent, "app/main.py")
+        assert ns["result"] == 99
 
     def test_relative_import_in_top_level_fails(self):
         """Test that relative import in top-level file fails gracefully."""

@@ -151,21 +151,26 @@ async def test_async_task_clarify_handling():
 
 
 @pytest.mark.asyncio
-async def test_async_task_continue():
-    """Test that task_continue works in async task (multiple iterations)."""
+async def test_async_multi_iteration_via_print():
+    """Multi-turn task: turn 1 emits a print (no terminator), turn 2 finishes.
+
+    Under the stateless contract, namespace doesn't carry between
+    emissions — multi-turn flow is driven by event log + filesystem,
+    not by leftover variables.
+    """
     responses = [
-        make_response(thinking="First step", code="x = 1; task_continue()"),
-        make_response(thinking="Second step", code="task_success(x + 1)"),
+        make_response(thinking="First step", code="print('looking around')"),
+        make_response(thinking="Second step", code="task_success(2)"),
     ]
     client = Dummy(responses=responses)
     a = Agent(llm=client)
 
     @a.task
-    async def continue_task() -> int:
-        """Continue task."""
+    async def multi_turn_task() -> int:
+        """Multi-turn task."""
         pass
 
-    result = await continue_task()
+    result = await multi_turn_task()
     assert result == 2
     assert len(client.all_events) == 2  # Two LLM calls
 
