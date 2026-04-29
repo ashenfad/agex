@@ -6,6 +6,69 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.12.0] - 2026-04-29
+
+### Changed (breaking)
+- **Stateless namespace contract.** Each `python_action` now runs as a
+  fresh Python script.  Variables, imports, and definitions defined in
+  one action no longer carry into the next; the previous "persistent
+  REPL" behaviour is gone.  Cross-action continuity goes through three
+  explicit channels:
+    - **`cache[k] = v`** — agent-session-scoped persistent dict
+      injected into every emission's namespace (see below).
+    - **Virtual Filesystem** — files written under `/scratch/` and
+      reusable code under `helpers/*.py` imported in any later action.
+    - **Event log** — the agent's record of what it has done, surfaced
+      via chapter summaries and `<TERMINAL>` `cat` / `ls`.
+  The primer is rewritten end-to-end to teach this contract.  Agents
+  that previously relied on automatic variable persistence now have
+  three deliberate, inspectable channels to choose from.
+
+### Added
+- **`cache`** — agent-session-scoped persistent dict, automatically
+  available to the agent in every `python_action`.  Picklability is
+  validated at write time using cloudpickle, so the agent gets an
+  immediate `CacheError` rather than discovering a silent
+  `UnpicklableMarker` later.  Sandbox-defined functions and classes
+  round-trip across tasks via sandtrap's `__sandtrap_activate__`
+  container hook (sandtrap >= 0.2.0).
+- `execute_sandboxed`, `aexecute_sandboxed`, and `run_file_in_sandbox`
+  now return the post-exec namespace dict so one-shot callers can
+  inspect what a script computed without round-tripping through state.
+
+### Removed (breaking)
+- `agex.state.safe_commit` → renamed to `agex.state.commit_state`.
+  The `referenced_keys` parameter is gone (the mutation-detection
+  re-stage path it drove no longer exists).
+- `build_namespace` signature simplified to
+  `(state, agent, agent_name, on_event=None) -> (namespace,
+  injected_keys)`.  The `pre_keys` slot in the return tuple is gone
+  (no deletion-detection layer to feed).
+- `handle_result` no longer takes `pre_keys`, `pre_ids`, or
+  `injected_keys`; signature is now
+  `(result, state, agent_name, on_event=None, emission_id=None)`.
+- The static-analysis mutation-detection layer
+  (`collect_python_refs`, `accumulated_refs` plumbing, the
+  `__sys_user_fn_names__` "User Defined Functions" forefront message)
+  is removed — agex no longer needs `sandtrap.find_refs`.
+
+### Dependencies
+- `sandtrap >=0.2.0,<0.3.0` (was `>=0.1.15,<0.2.0`).  Required for
+  the `__sandtrap_activate__` container hook used by the cache.
+- `termish >=0.1.6,<0.2.0` (was `>=0.1.5,<0.2.0`).
+
+### Migration
+- Replace `from agex.state import safe_commit` with `commit_state`;
+  drop any `referenced_keys=...` argument.
+- Code patterns that relied on agent variables surviving across
+  tasks need to be updated:
+    - Python objects the agent wants to remember → `cache[...]`
+    - Reusable code → `helpers/*.py` imported via `import helpers.foo`
+- Tests that asserted state values written by sandbox code (e.g.
+  `state.get("result")` after running an agent's code) should either
+  capture the value via `task_success(value)` or read the namespace
+  dict returned by `execute_sandboxed` / `run_file_in_sandbox`.
+
 ## [0.11.2] - 2026-04-28
 
 ### Added

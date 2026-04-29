@@ -2,7 +2,7 @@
 
 The `@agent.task` decorator transforms function signatures into agent-driven implementations. You define the interface and behavior specification - the agent provides the implementation.
 
-Tasks are defined on [Agent](agent.md) instances and can use [State](state.md) for persistent memory across executions.
+Tasks are defined on [Agent](agent.md) instances.  Cross-task continuity comes from configured [State](state.md) — the agent's `cache`, virtual filesystem, and event log — rather than from local variables in the agent's Python action.
 
 ## Basic Usage
 
