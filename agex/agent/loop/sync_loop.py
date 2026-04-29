@@ -66,7 +66,6 @@ from .common import (
 )
 from .state_helpers import (
     clear_stale_cancel,
-    collect_python_refs,
     mount_chapters_overlay,
     prepare_task_loop,
     strip_python_fences,
@@ -124,7 +123,6 @@ class SyncLoopMixin:
         events_yielded,
         terminal_event,
         on_event,
-        referenced_keys=None,
     ):
         """Helper to handle common terminal condition logic (success, fail, clarify)."""
         for event in yield_new_events(exec_state, events_yielded):
@@ -138,9 +136,9 @@ class SyncLoopMixin:
         add_event_to_log(exec_state, terminal_event, on_event=on_event)
         yield terminal_event
 
-        # Commit with mutation detection
+        # Commit events / VFS / file-change records.
         if versioned_state is not None:
-            safe_commit(versioned_state, referenced_keys=referenced_keys)
+            safe_commit(versioned_state)
 
     def _execute_emissions(
         self,
@@ -160,11 +158,11 @@ class SyncLoopMixin:
         this method) and the recoverable error (logged as an
         OutputEvent, loop continues on next iteration).
 
-        Emissions execute in stream-arrival order.  PythonEmissions
-        share state transitively — each call's ``handle_result`` syncs
-        assignments back, and the next emission's ``build_namespace``
-        hydrates from the updated state.  On the first terminator, the
-        walk aborts; remaining emissions stay in the log but don't run.
+        Emissions execute in stream-arrival order.  Each
+        ``python_action`` emission runs as a fresh script — variables,
+        imports, and definitions do NOT carry between emissions.  On
+        the first terminator, the walk aborts; remaining emissions
+        stay in the log but don't run.
         """
         recoverable_error: Exception | None = None
 
@@ -375,9 +373,6 @@ class SyncLoopMixin:
                 yield event
             events_yielded = len(events(exec_state))
 
-        # Accumulate referenced state keys across iterations for mutation
-        # detection.
-        accumulated_refs: set[str] = set()
         last_error: Exception | None = None
 
         # Main task loop
@@ -415,7 +410,6 @@ class SyncLoopMixin:
                 transient_message=forefront_msg,
             )
             strip_python_fences(llm_response, self._strip_markdown_code_fence)
-            collect_python_refs(llm_response, exec_state, accumulated_refs)
 
             # Create and yield action event
             action_event = create_action_event(self.name, llm_response)
@@ -452,7 +446,6 @@ class SyncLoopMixin:
                     events_yielded,
                     success_event,
                     on_event,
-                    referenced_keys=accumulated_refs,
                 )
                 return task_signal.result
 
@@ -466,7 +459,6 @@ class SyncLoopMixin:
                     events_yielded,
                     clarify_event,
                     on_event,
-                    referenced_keys=accumulated_refs,
                 )
                 if isinstance(state, Namespaced):
                     raise EvalError(
@@ -485,7 +477,6 @@ class SyncLoopMixin:
                     events_yielded,
                     fail_event,
                     on_event,
-                    referenced_keys=accumulated_refs,
                 )
                 if isinstance(state, Namespaced):
                     raise EvalError(f"Sub-agent failed: {task_fail.message}")
@@ -506,9 +497,9 @@ class SyncLoopMixin:
                 yield event
             events_yielded = len(events(exec_state))
 
-            # Persist changes from this iteration.
+            # Persist event-log and VFS changes from this iteration.
             if versioned_state is not None:
-                safe_commit(versioned_state, referenced_keys=accumulated_refs)
+                safe_commit(versioned_state)
 
             # Nudge if the turn ran *silent* Python without signaling.
             # "Silent" = none of the turn's PythonEmissions produced an

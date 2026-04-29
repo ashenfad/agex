@@ -71,7 +71,6 @@ from .common import (
 )
 from .state_helpers import (
     clear_stale_cancel,
-    collect_python_refs,
     mount_chapters_overlay,
     prepare_task_loop,
     strip_python_fences,
@@ -103,7 +102,6 @@ class AsyncLoopMixin:
         events_yielded,
         terminal_event,
         on_event,
-        referenced_keys=None,
     ):
         """Helper to handle common terminal condition logic (success, fail, clarify)."""
         for event in yield_new_events(exec_state, events_yielded):
@@ -120,8 +118,9 @@ class AsyncLoopMixin:
                 await res
         yield terminal_event
 
+        # Commit events / VFS / file-change records.
         if versioned_state is not None:
-            safe_commit(versioned_state, referenced_keys=referenced_keys)
+            safe_commit(versioned_state)
 
     async def _aexecute_emissions(
         self,
@@ -377,7 +376,6 @@ class AsyncLoopMixin:
                 yield event
             events_yielded = len(events(exec_state))
 
-        accumulated_refs: set[str] = set()
         last_error: Exception | None = None
 
         for iteration in range(self.max_iterations):
@@ -416,7 +414,6 @@ class AsyncLoopMixin:
                 transient_message=forefront_msg,
             )
             strip_python_fences(llm_response, self._strip_markdown_code_fence)
-            collect_python_refs(llm_response, exec_state, accumulated_refs)
 
             action_event = create_action_event(self.name, llm_response)
             add_event_to_log(exec_state, action_event, on_event=None)
@@ -453,7 +450,6 @@ class AsyncLoopMixin:
                     events_yielded,
                     success_event,
                     on_event,
-                    referenced_keys=accumulated_refs,
                 ):
                     yield event
                 return
@@ -468,7 +464,6 @@ class AsyncLoopMixin:
                     events_yielded,
                     clarify_event,
                     on_event,
-                    referenced_keys=accumulated_refs,
                 ):
                     yield event
 
@@ -489,7 +484,6 @@ class AsyncLoopMixin:
                     events_yielded,
                     fail_event,
                     on_event,
-                    referenced_keys=accumulated_refs,
                 ):
                     yield event
 
@@ -512,7 +506,7 @@ class AsyncLoopMixin:
             events_yielded = len(events(exec_state))
 
             if versioned_state is not None:
-                safe_commit(versioned_state, referenced_keys=accumulated_refs)
+                safe_commit(versioned_state)
 
             # Silent-python nudge — see sync_loop for the rationale.
             combined_code = _last_python_code(action_event.emissions)

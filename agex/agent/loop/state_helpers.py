@@ -253,27 +253,3 @@ def strip_python_fences(
     for em in llm_response.emissions:
         if isinstance(em, PythonEmission) and em.code:
             em.code = strip_fence_fn(em.code)
-
-
-def collect_python_refs(
-    llm_response: "LLMResponse",
-    exec_state: MutableMapping[str, Any],
-    accumulated_refs: set[str],
-) -> None:
-    """Extend ``accumulated_refs`` with state keys each PythonEmission
-    references.
-
-    ``safe_commit`` uses the union to detect in-place mutations at the
-    iteration boundary.  Silent-fail so a single malformed emission
-    doesn't break the whole turn.
-    """
-    from sandtrap import find_refs
-
-    from agex.agent.emissions import PythonEmission
-
-    for em in llm_response.emissions:
-        if isinstance(em, PythonEmission) and em.code:
-            try:
-                accumulated_refs |= find_refs(em.code, namespace=exec_state)
-            except Exception:
-                pass
