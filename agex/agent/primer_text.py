@@ -62,7 +62,7 @@ A persistent dict scoped to your agent session — survives across actions and t
 - `cache["model"] = fitted_model` — store
 - `cache.get("model")` — retrieve, returns `None` if absent
 - `del cache["model"]` — forget
-- `list(cache)` — see what's there
+- `list(cache)` or `print(cache)` — see what's there (keys only, cheap; no values are decoded)
 
 Cache values must be picklable; sandbox-defined functions and classes are fine.  For files (text, binaries, generated artifacts), prefer the VFS — cache is for in-memory Python objects.
 
