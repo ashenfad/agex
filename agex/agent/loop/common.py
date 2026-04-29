@@ -44,9 +44,9 @@ from agex.llm.core import (
 from agex.state import (
     ConcurrencyError,
     MergeConflict,
+    commit_state,
     events,
     is_live_root,
-    safe_commit,
 )
 from agex.state.live import Live
 from agex.state.log import add_event_to_log, get_events_from_log
@@ -111,7 +111,7 @@ __all__ = [
     "apply_file_write",
     "apply_file_edit",
     "apply_optimistic_file_actions",
-    "safe_commit",
+    "commit_state",
     "EmissionsBuilder",
     # Re-exports
     "ValidationError",

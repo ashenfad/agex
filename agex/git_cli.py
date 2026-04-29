@@ -163,7 +163,7 @@ def make_git_handler(
 def _agent_commits(vkv: "VersionedKV") -> list[str]:
     """Return commit hashes that have an agent-supplied message.
 
-    System commits (from safe_commit / turn boundaries) have no message
+    System commits (from commit_state / turn boundaries) have no message
     and are filtered out.  The agent's ``git log``, ``git diff``, and
     ``HEAD~N`` ref resolution all operate on this filtered list.
     """
@@ -421,7 +421,7 @@ def _git_status(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) 
     ctx.stdout.write(f"On branch {vkv.current_branch}\n")
 
     # Pending changes come from two sources:
-    # 1. kvgit diff: files committed by safe_commit since the last agent bookmark
+    # 1. kvgit diff: files committed by commit_state since the last agent bookmark
     # 2. Staged buffer: files written this turn but not yet flushed
     tagged = _agent_commits(vkv)
 
@@ -600,7 +600,7 @@ def _git_commit(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) 
     if _tracked and staged is not None:
         # Selective commit: flush only the tracked keys via the public
         # Staged.commit(keys=...) API.  Untracked changes remain staged
-        # for safe_commit to handle at the turn boundary.
+        # for commit_state to handle at the turn boundary.
         info["files"] = sorted(_strip_fn(k) for k in _tracked)
         result = staged.commit(keys=_tracked, info=info)
         _tracked.clear()
@@ -631,7 +631,7 @@ def _git_reset(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -
     # Virtual reset: restore VFS files to match the target commit without
     # moving kvgit's real HEAD.  This preserves the event log, REPL
     # namespace, and all session state.  The restored files become pending
-    # changes that the next safe_commit (or git commit) persists as a new
+    # changes that the next commit_state (or git commit) persists as a new
     # forward commit.
     _is_visible_fn = kw.get("_is_visible", lambda k: True)
     staged = kw.get("_state")
@@ -789,7 +789,7 @@ def _git_add(args: list[str], ctx: CommandContext, vkv: "VersionedKV", **kw) -> 
 
     if args == ["."] or args == ["-A"]:
         # Stage all changed VFS files from both sources:
-        # 1. kvgit diff (cross-turn changes already committed by safe_commit)
+        # 1. kvgit diff (cross-turn changes already committed by commit_state)
         tagged = _agent_commits(vkv)
         if tagged:
             d = vkv.diff(tagged[0], vkv.current_commit)

@@ -35,10 +35,10 @@ def apply_init_if_fresh(
             state[key] = value
         state["__agex_init__"] = True
         # Commit for versioned state
-        from agex.state import safe_commit
+        from agex.state import commit_state
 
         if isinstance(state, Staged):
-            safe_commit(state)
+            commit_state(state)
 
 
 class Host(ABC):
