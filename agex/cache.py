@@ -60,6 +60,13 @@ class CacheError(ValueError):
     """Raised when a cache operation cannot complete (e.g. unpicklable value)."""
 
 
+def _make_local_cache() -> "Cache":
+    """Constructor used by ``Cache.__reduce__`` to materialize a fresh
+    in-memory Cache on the receiving end of a pickle round-trip
+    (typically a process-isolated subprocess)."""
+    return Cache({})
+
+
 class Cache(MutableMapping[str, Any]):
     """A persistent dict for the agent, scoped to the agent's session.
 
@@ -163,6 +170,39 @@ class Cache(MutableMapping[str, Any]):
         except Exception:
             return "Cache(<unreadable>)"
         return f"Cache({keys!r})"
+
+    def __reduce__(self):
+        """Pickle support for process-isolated emissions.
+
+        Versioned ``state`` holds non-picklable resources (kvgit
+        threading locks etc.), so a Cache wrapping it can't cross a
+        process boundary as-is.  Without this hook sandtrap's
+        ``filter_namespace`` would drop the cache from the
+        subprocess's namespace with a warning — the agent would then
+        see a ``NameError`` instead of a usable ``cache``.
+
+        We probe the underlying state's picklability:
+          - If it pickles (e.g. a plain dict, ``Live`` state), we
+            preserve the round-trip — the receiving end gets a
+            ``Cache`` over an equivalent state, with the same data.
+          - If not (e.g. Staged with kvgit locks), we fall back to a
+            fresh empty Cache so the subprocess gets a working
+            object.
+
+        Limitation in the fallback case: writes performed inside a
+        process-isolated emission are stored in the subprocess's
+        local copy and do NOT propagate back to the parent's session
+        cache.  Reads of keys the parent cached are also unavailable.
+        Cross-process cache durability would require explicit IPC,
+        which the bridge doesn't currently do.  Most workloads use
+        ``isolation='none'`` (the default), where cache works as
+        documented.
+        """
+        try:
+            pickle.dumps(self._state, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception:
+            return (_make_local_cache, ())
+        return (Cache, (self._state,))
 
     def __sandtrap_activate__(self, activate_value, gates, sandbox, namespace) -> None:
         """Sandtrap container-activation hook.
