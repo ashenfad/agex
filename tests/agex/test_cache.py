@@ -399,6 +399,33 @@ class TestCachePicklability:
         assert roundtripped["k"] == 1
         assert "k" in roundtripped
 
+    def test_unpicklable_state_falls_back_to_empty_cache(self):
+        """When the underlying state holds non-picklable resources
+        (kvgit locks etc.), Cache pickles to a fresh empty Cache.
+
+        This keeps process-isolation namespace transfer warning-free
+        and gives the subprocess a working — if local-only — cache,
+        instead of having Cache stripped from the namespace and
+        surfacing as a NameError to the agent.
+        """
+        import threading
+
+        # State that contains an unpicklable resource — same shape
+        # as kvgit Staged's threading locks.
+        state = {PREFIX + "k": 1, "_lock": threading.Lock()}
+        cache = Cache(state)
+
+        # Pickle round-trip should succeed (no warning, no exception).
+        roundtripped = pickle.loads(pickle.dumps(cache))
+
+        # And the result is a working but empty Cache.
+        assert isinstance(roundtripped, Cache)
+        assert len(roundtripped) == 0
+        assert "k" not in roundtripped  # original data not transferred
+        # Writes work locally.
+        roundtripped["new"] = 42
+        assert roundtripped["new"] == 42
+
 
 # -----------------------------------------------------------------------------
 # Primer text mentions cache
