@@ -45,39 +45,93 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Encoder / decoder with UnpicklableMarker support
 # ---------------------------------------------------------------------------
+#
+# Two flavours of the same logical encoder/decoder pair, picked at module
+# import time based on whether numpy is available:
+#
+# * Plain pickle (1-arg) when numpy isn't installed — same behaviour the
+#   module shipped with before the chunked codec existed.
+# * kvgit's chunked codec (2-arg, sink/reader) when numpy is importable —
+#   numpy ndarrays and pandas DataFrame block buffers are externalized as
+#   content-addressed chunks, so a 10 MB DataFrame sliced into N derived
+#   variables stores ~10 MB total instead of N×10 MB. Decode semantics
+#   match plain pickle (independent, writable copies).
+#
+# kvgit's ``Staged`` autodetects encoder/decoder arity by signature, so
+# every existing call site that passes ``encoder=_agex_encoder,
+# decoder=_agex_decoder`` to ``Staged`` keeps working unchanged.
+#
+# UnpicklableMarker handling is identical in both branches: encode-side
+# failures get wrapped in a marker, decode-side failures and marker
+# values both raise ``UnpicklableVariableError``.
 
+try:
+    import numpy as _np  # noqa: F401  — availability probe only
+    from kvgit.codecs import compose as _kvgit_compose
+    from kvgit.codecs.numpy import NumpyCodec as _NumpyCodec
 
-def _agex_encoder(value: Any) -> bytes:
-    """Pickle encoder that creates an UnpicklableMarker for unserializable values."""
-    try:
-        return pickle.dumps(value)
-    except Exception as e:
-        marker = UnpicklableMarker(
-            variable_name="<unknown>",
-            type_name=type(value).__name__,
-            original_exception=str(e),
-        )
-        return pickle.dumps(marker)
+    _CHUNKED_ENCODER, _CHUNKED_DECODER = _kvgit_compose(_NumpyCodec())
 
-
-def _agex_decoder(raw: bytes) -> Any:
-    """Pickle decoder that raises UnpicklableVariableError on marker values."""
-    try:
-        value = pickle.loads(raw)
-    except (RecursionError, Exception) as e:
-        # Catch all deserialization errors: RecursionError, UnpicklingError,
-        # EOFError (truncated), AttributeError (missing class), ImportError,
-        # ValueError (invalid opcode), TypeError, etc.
-        raise UnpicklableVariableError(
-            UnpicklableMarker(
+    def _agex_encoder(value: Any, sink: Any) -> bytes:
+        """Chunked encoder; falls back to UnpicklableMarker on failure."""
+        try:
+            return _CHUNKED_ENCODER(value, sink)
+        except Exception as e:
+            marker = UnpicklableMarker(
                 variable_name="<unknown>",
-                type_name="<corrupt>",
-                original_exception=f"{type(e).__name__}: {e}",
+                type_name=type(value).__name__,
+                original_exception=str(e),
             )
-        )
-    if isinstance(value, UnpicklableMarker):
-        raise UnpicklableVariableError(value)
-    return value
+            return pickle.dumps(marker)
+
+    def _agex_decoder(raw: bytes, reader: Any) -> Any:
+        """Chunked decoder; raises UnpicklableVariableError on marker / corrupt."""
+        try:
+            value = _CHUNKED_DECODER(raw, reader)
+        except (RecursionError, Exception) as e:
+            raise UnpicklableVariableError(
+                UnpicklableMarker(
+                    variable_name="<unknown>",
+                    type_name="<corrupt>",
+                    original_exception=f"{type(e).__name__}: {e}",
+                )
+            )
+        if isinstance(value, UnpicklableMarker):
+            raise UnpicklableVariableError(value)
+        return value
+
+except ImportError:
+
+    def _agex_encoder(value: Any) -> bytes:
+        """Pickle encoder that creates an UnpicklableMarker for unserializable values."""
+        try:
+            return pickle.dumps(value)
+        except Exception as e:
+            marker = UnpicklableMarker(
+                variable_name="<unknown>",
+                type_name=type(value).__name__,
+                original_exception=str(e),
+            )
+            return pickle.dumps(marker)
+
+    def _agex_decoder(raw: bytes) -> Any:
+        """Pickle decoder that raises UnpicklableVariableError on marker values."""
+        try:
+            value = pickle.loads(raw)
+        except (RecursionError, Exception) as e:
+            # Catch all deserialization errors: RecursionError, UnpicklingError,
+            # EOFError (truncated), AttributeError (missing class), ImportError,
+            # ValueError (invalid opcode), TypeError, etc.
+            raise UnpicklableVariableError(
+                UnpicklableMarker(
+                    variable_name="<unknown>",
+                    type_name="<corrupt>",
+                    original_exception=f"{type(e).__name__}: {e}",
+                )
+            )
+        if isinstance(value, UnpicklableMarker):
+            raise UnpicklableVariableError(value)
+        return value
 
 
 # ---------------------------------------------------------------------------
