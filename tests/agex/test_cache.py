@@ -159,14 +159,32 @@ class TestCacheNamespaceInjection:
         execute_sandboxed("cache['data'] = [1, 2, 3]", agent, state)
         assert state.get(PREFIX + "data") == [1, 2, 3]
 
-    def test_lambda_is_acceptable(self):
-        """cloudpickle handles lambdas; the validator should accept them."""
+    def test_module_level_lambda_rejected(self):
+        """Stdlib pickle can't serialize lambdas, and that's what the
+        state codec uses on persist — so the cache validator rejects
+        them up front rather than letting them marker silently."""
+        from agex.cache import CacheError
+
         agent = Agent(name="t")
         state = Live()
         state["__event_log__"] = []
-        # lambdas are picklable via cloudpickle
-        execute_sandboxed("cache['fn'] = lambda x: x + 1", agent, state)
-        assert callable(state.get(PREFIX + "fn"))
+        with pytest.raises(CacheError):
+            execute_sandboxed("cache['fn'] = lambda x: x + 1", agent, state)
+
+    def test_sandbox_function_passes_validation(self):
+        """Sandbox-defined functions (``StFunction``) are picklable via
+        stdlib pickle — they define ``__getstate__`` / ``__setstate__``
+        — so the validator accepts them.  This is the intended path
+        for caching agent-defined helpers across tasks."""
+        agent = Agent(name="t")
+        state = Live()
+        state["__event_log__"] = []
+        execute_sandboxed(
+            'def fn(x):\n    return x + 1\ncache["fn"] = fn',
+            agent,
+            state,
+        )
+        assert PREFIX + "fn" in state
 
 
 # -----------------------------------------------------------------------------

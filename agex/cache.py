@@ -7,22 +7,29 @@ cache lives at ``<agent_namespace>/__cache__/<key>``.
 
 The cache is injected into the agent's namespace by ``build_namespace``
 on every emission.  Values are validated for picklability at write
-time using cloudpickle — the same serializer the state codec uses —
-so the agent gets an immediate, clear error rather than a silent
+time using stdlib ``pickle.HIGHEST_PROTOCOL`` — the protocol the
+state codec uses underneath.  The codec is kvgit's ``scientific``
+preset (``ChunkingPickler`` + ``NumpyCodec``); for non-array values
+the chunking pickler falls through to the same protocol, so anything
+``pickle.dumps`` rejects the codec also rejects (and would silently
+marker), and anything ``pickle.dumps`` accepts the codec accepts
+(and may externalize more efficiently).  The validator gives the
+agent an immediate ``CacheError`` instead of a silent
 ``UnpicklableMarker`` discovered on a later read.
 
-Sandbox-defined functions and classes (``StFunction``/``StClass``)
-stored in the cache are re-activated on every ``exec`` via sandtrap's
-``__sandtrap_activate__`` container hook, so a cached helper from one
-task remains callable in any later task.
+Sandbox-defined ``StFunction`` / ``StClass`` wrappers define
+``__getstate__`` / ``__setstate__`` and pass validation; lambdas and
+other locally-defined functions outside the sandbox do not.  Cached
+wrappers are re-activated on every ``exec`` via sandtrap's
+``__sandtrap_activate__`` container hook, so a cached helper from
+one task remains callable in any later task.
 """
 
 from __future__ import annotations
 
+import pickle
 from collections.abc import Iterator, MutableMapping
 from typing import Any
-
-import cloudpickle
 
 PREFIX = "__cache__/"
 
@@ -67,13 +74,13 @@ class Cache(MutableMapping[str, Any]):
 
     def __setitem__(self, key: str, value: Any) -> None:
         qualified = self._check_writable_key(key)
-        # Validate picklability up front so the agent gets a clear error
-        # at write time rather than discovering a silent marker later.
-        # cloudpickle is used because it matches the state codec's
-        # capabilities (handles lambdas, sandbox-defined functions,
-        # most Python objects).
+        # Validate picklability up front so the agent gets a clear
+        # error at write time rather than discovering a silent marker
+        # on a later read.  ``pickle.HIGHEST_PROTOCOL`` matches what
+        # the state codec uses underneath; anything stdlib pickle
+        # rejects, the codec also rejects.
         try:
-            cloudpickle.dumps(value)
+            pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
         except Exception as exc:
             raise CacheError(
                 f"Cannot cache key {key!r}: value is not picklable ({exc})"

@@ -66,11 +66,16 @@ __all__ = [
 # values both raise ``UnpicklableVariableError``.
 
 try:
-    import numpy as _np  # noqa: F401  — availability probe only
-    from kvgit.codecs import compose as _kvgit_compose
-    from kvgit.codecs.numpy import NumpyCodec as _NumpyCodec
+    # ``scientific`` is kvgit's named codec preset bundling
+    # ``NumpyCodec`` (and any future scientific codecs — Arrow,
+    # Polars, ... — when kvgit adds them).  Functionally identical to
+    # ``compose(NumpyCodec())`` today, but using the preset lets agex
+    # pick up additions automatically.  Raises ImportError if numpy
+    # isn't available, which is what we want — the except branch
+    # below provides a plain-pickle fallback.
+    from kvgit.codecs import scientific as _scientific
 
-    _CHUNKED_ENCODER, _CHUNKED_DECODER = _kvgit_compose(_NumpyCodec())
+    _CHUNKED_ENCODER, _CHUNKED_DECODER = _scientific()
 
     def _agex_encoder(value: Any, sink: Any) -> bytes:
         """Chunked encoder; falls back to UnpicklableMarker on failure."""

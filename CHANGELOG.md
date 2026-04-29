@@ -27,11 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **`cache`** — agent-session-scoped persistent dict, automatically
   available to the agent in every `python_action`.  Picklability is
-  validated at write time using cloudpickle, so the agent gets an
-  immediate `CacheError` rather than discovering a silent
+  validated at write time using stdlib `pickle.HIGHEST_PROTOCOL` —
+  the protocol the state codec uses underneath — so the agent gets
+  an immediate `CacheError` rather than discovering a silent
   `UnpicklableMarker` later.  Sandbox-defined functions and classes
-  round-trip across tasks via sandtrap's `__sandtrap_activate__`
-  container hook (sandtrap >= 0.2.0).
+  (`StFunction` / `StClass`) define `__getstate__` / `__setstate__`
+  and round-trip across tasks via sandtrap's `__sandtrap_activate__`
+  container hook (sandtrap >= 0.2.0); lambdas and other
+  locally-defined functions outside the sandbox don't pickle and are
+  rejected at the validator.
 - `execute_sandboxed`, `aexecute_sandboxed`, and `run_file_in_sandbox`
   now return the post-exec namespace dict so one-shot callers can
   inspect what a script computed without round-tripping through state.
@@ -51,6 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`collect_python_refs`, `accumulated_refs` plumbing, the
   `__sys_user_fn_names__` "User Defined Functions" forefront message)
   is removed — agex no longer needs `sandtrap.find_refs`.
+
+### Internal
+- State codec now uses `kvgit.codecs.scientific()` (the named preset)
+  instead of constructing `compose(NumpyCodec())` inline.
+  Functionally identical today; agex automatically picks up future
+  scientific codecs (Arrow, etc.) when kvgit adds them.
 
 ### Dependencies
 - `sandtrap >=0.2.0,<0.3.0` (was `>=0.1.15,<0.2.0`).  Required for
