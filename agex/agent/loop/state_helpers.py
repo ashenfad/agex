@@ -253,3 +253,37 @@ def strip_python_fences(
     for em in llm_response.emissions:
         if isinstance(em, PythonEmission) and em.code:
             em.code = strip_fence_fn(em.code)
+
+
+# Names that ``build_namespace`` may inject into a per-emission
+# namespace.  When the setup-namespace capture sees these in the
+# post-setup namespace, it filters them out — they're framework
+# bookkeeping, not setup-defined values to re-inject on each
+# subsequent emission.
+_BRIDGE_INJECTED_NAMES = frozenset(
+    {
+        "task_success",
+        "task_fail",
+        "task_clarify",
+        "view_image",
+        "__outputs__",
+        "dir",
+        "inputs",
+        "cache",
+    }
+)
+
+
+def capture_setup_namespace(setup_namespace: dict[str, Any]) -> dict[str, Any]:
+    """Strip bridge injections and dunder bookkeeping from a captured
+    setup-task namespace, leaving only setup-defined names.
+
+    Used by both the sync and async loops to populate
+    ``__setup_namespace__`` from the post-setup namespace dict
+    returned by ``execute_sandboxed`` / ``aexecute_sandboxed``.
+    """
+    return {
+        k: v
+        for k, v in setup_namespace.items()
+        if k not in _BRIDGE_INJECTED_NAMES and not k.startswith("__")
+    }

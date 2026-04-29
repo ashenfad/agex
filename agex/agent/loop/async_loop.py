@@ -70,6 +70,7 @@ from .common import (
     yield_new_events,
 )
 from .state_helpers import (
+    capture_setup_namespace,
     clear_stale_cancel,
     mount_chapters_overlay,
     prepare_task_loop,
@@ -369,24 +370,12 @@ class AsyncLoopMixin:
                     on_token=on_token,
                     emission_id=setup_emission_id,
                 )
-                # See sync_loop's matching block: filter bridge injections
-                # so only setup-defined names get carried into the agent's
-                # subsequent emissions via build_namespace.
-                _setup_filter = {
-                    "task_success",
-                    "task_fail",
-                    "task_clarify",
-                    "view_image",
-                    "__outputs__",
-                    "dir",
-                    "inputs",
-                    "cache",
-                }
-                exec_state["__setup_namespace__"] = {
-                    k: v
-                    for k, v in setup_namespace.items()
-                    if k not in _setup_filter and not k.startswith("__")
-                }
+                # Strip bridge injections so only setup-defined names
+                # get carried into the agent's subsequent emissions
+                # via build_namespace.
+                exec_state["__setup_namespace__"] = capture_setup_namespace(
+                    setup_namespace
+                )
             except BaseException:
                 pass
 
