@@ -25,14 +25,18 @@ if TYPE_CHECKING:
 def _prepare_sandbox(
     program: str,
     agent: "BaseAgent",
-    state: MutableMapping[str, Any],
     eval_timeout_seconds: float | None = None,
     *,
     fs: "FileSystem | None" = None,
     on_event: Callable[[Any], None] | None = None,
     file_path: str | None = None,
 ):
-    """Shared setup for execute_sandboxed and aexecute_sandboxed."""
+    """Shared setup for execute_sandboxed and aexecute_sandboxed.
+
+    Each call builds a fresh namespace; no state is read in or written
+    out here.  The caller owns ``state`` and passes it to
+    :func:`handle_result` for event-log writes only.
+    """
     tick_limit = getattr(agent, "eval_tick_limit", None)
 
     if tick_limit is not None:
@@ -60,20 +64,13 @@ def _prepare_sandbox(
         filesystem=fs,
         snapshot_prints=True,
     )
-    namespace, pre_keys, injected_keys = build_namespace(
-        state, agent, agent.name, on_event=on_event
-    )
+    namespace, _injected_keys = build_namespace(agent, agent.name, on_event=on_event)
 
     # Set __file__ for relative import resolution
     if file_path is not None:
         namespace["__file__"] = file_path
 
-    # Snapshot object identities so handle_result can skip unchanged vars.
-    pre_ids = {
-        key: id(value) for key, value in namespace.items() if not key.startswith("__")
-    }
-
-    return sb, namespace, pre_keys, injected_keys, pre_ids
+    return sb, namespace
 
 
 def execute_sandboxed(
@@ -104,10 +101,9 @@ def execute_sandboxed(
         _current_session,
     )
 
-    sb, namespace, pre_keys, injected_keys, pre_ids = _prepare_sandbox(
+    sb, namespace = _prepare_sandbox(
         program,
         agent,
-        state,
         eval_timeout_seconds,
         fs=fs,
         on_event=on_event,
@@ -136,10 +132,7 @@ def execute_sandboxed(
         result,
         state,
         agent.name,
-        pre_keys,
         on_event=on_event,
-        injected_keys=injected_keys,
-        pre_ids=pre_ids,
         emission_id=emission_id,
     )
 
@@ -181,10 +174,9 @@ async def aexecute_sandboxed(
         def safe_on_event(event: Any) -> None:
             asyncio.run_coroutine_threadsafe(on_event(event), loop)
 
-    sb, namespace, pre_keys, injected_keys, pre_ids = _prepare_sandbox(
+    sb, namespace = _prepare_sandbox(
         program,
         agent,
-        state,
         eval_timeout_seconds,
         fs=fs,
         on_event=safe_on_event,
@@ -213,9 +205,6 @@ async def aexecute_sandboxed(
         result,
         state,
         agent.name,
-        pre_keys,
         on_event=safe_on_event,
-        injected_keys=injected_keys,
-        pre_ids=pre_ids,
         emission_id=emission_id,
     )

@@ -1,11 +1,12 @@
 """
-Processes sandtrap ExecResult back into agex's kvgit state and event system.
+Processes a sandtrap ExecResult into agex's event system.
 
-Handles:
-- Syncing namespace changes back to the kvgit Store
-- Detecting variable deletions
-- Re-raising _AgentExit signals captured by sandtrap
-- Converting modules to pickleable ModuleRef for cross-turn persistence
+Each ``python_action`` runs as a fresh script — the namespace is
+discarded once execution returns.  ``handle_result`` only reads from
+``result``: it fans prints and ``view_image`` outputs into events,
+validates the typed return type when ``task_success`` fires, and
+re-raises any error captured by the sandbox.  No state is written
+back from the namespace.
 """
 
 from __future__ import annotations
@@ -13,16 +14,13 @@ from __future__ import annotations
 import base64
 import inspect
 import io
-import types
 from collections.abc import MutableMapping
 from typing import Any, Callable
 
 from sandtrap import ExecResult
-from sandtrap.wrappers import ModuleRef
 
 from agex.agent.datatypes import TaskSuccess
 from agex.agent.events import OutputEvent
-from agex.eval.bridge.namespace import _is_internal_state_key
 from agex.eval.bridge.policy import _current_emission_id
 from agex.eval.objects import ImageAction, PrintAction
 from agex.state.log import add_event_to_log
@@ -32,38 +30,26 @@ def handle_result(
     result: ExecResult,
     state: MutableMapping[str, Any],
     agent_name: str,
-    pre_keys: set[str],
     on_event: Callable[[Any], None] | None = None,
-    injected_keys: set[str] | None = None,
-    pre_ids: dict[str, int] | None = None,
     emission_id: str | None = None,
 ) -> None:
-    """Process an ExecResult: sync state and re-raise errors.
+    """Process an ExecResult: emit output events, validate task_success,
+    re-raise any error.
 
     Args:
         result: The ExecResult from sandtrap Sandbox.exec().
-        state: The kvgit state to sync changes back to.
+        state: The kvgit state — used for the event log and return-type
+               lookup, never written to from the namespace.
         agent_name: Agent name for event attribution.
-        pre_keys: Set of user-visible state keys before execution
-                  (for deletion detection).
         on_event: Optional event callback.
-        injected_keys: Set of bridge-injected names (task_success, etc.)
-                       that should not be synced back to state.
-        pre_ids: Object identity snapshot from before execution.  When
-                 provided, only variables whose ``id()`` changed (i.e.
-                 were reassigned or newly created) are written back to
-                 state.  Variables that were merely *referenced* but not
-                 reassigned are left to ``safe_commit``'s
-                 ``referenced_keys`` path, which re-stages them for
-                 byte-level change detection (catching in-place mutations
-                 without creating duplicate blobs for unchanged values).
+        emission_id: Stamps PrintAction / ImageAction parts so the
+                     renderer can pair observations per emission in a
+                     multi-emission turn.
 
     Raises:
         _AgentExit subclasses: TaskSuccess, TaskFail, etc.
         Exception: Any regular exception from agent code.
     """
-    skip = injected_keys or set()
-    ids = pre_ids or {}
     # Callers pass ``emission_id`` explicitly.  The contextvar is
     # reset in the caller's ``finally`` block before we run, so
     # reading it here would always return None — falling back to the
@@ -72,32 +58,7 @@ def handle_result(
     if emission_id is None:
         emission_id = _current_emission_id.get()
 
-    # 1. Sync namespace values back to state — only write variables that
-    #    were reassigned (different object identity) or newly created.
-    #    Variables with the same id() are untouched by agent code and
-    #    don't need to be re-staged; safe_commit's referenced_keys path
-    #    will catch any in-place mutations via byte comparison.
-    for key, value in result.namespace.items():
-        if key.startswith("__") or key in skip:
-            continue
-        if key in ids and id(value) == ids[key]:
-            continue  # Same object — not reassigned
-        if isinstance(value, types.ModuleType):
-            # Modules can't survive pickle — store a ref that _auto_activate
-            # will resolve via __sb_import__ on the next turn.
-            state[key] = ModuleRef(value.__name__, getattr(value, "__file__", None))
-        else:
-            state[key] = value
-
-    # 2. Detect deletions (key was in state before exec, not in namespace after).
-    post_keys = {k for k in result.namespace if not _is_internal_state_key(k)}
-    for key in pre_keys - post_keys:
-        if _is_internal_state_key(key):
-            continue
-        if key in state:
-            del state[key]
-
-    # 3. Convert print snapshots into a single OutputEvent whose
+    # 1. Convert print snapshots into a single OutputEvent whose
     #    ``parts`` carries one PrintAction / ImageAction per print
     #    in original order.  Each part stamps the current emission_id
     #    so the renderer can pair observations per emission in a
@@ -134,7 +95,7 @@ def handle_result(
         event = OutputEvent(agent_name=agent_name, parts=output_parts)
         add_event_to_log(state, event, on_event=on_event)
 
-    # 4. Convert __outputs__ entries (e.g. view_image) into OutputEvents.
+    # 2. Convert __outputs__ entries (e.g. view_image) into OutputEvents.
     for item in result.namespace.get("__outputs__", []):
         # Stamp the current emission_id if the ImageAction didn't
         # already carry one (view_image reads the contextvar at call
@@ -144,12 +105,12 @@ def handle_result(
         event = OutputEvent(agent_name=agent_name, parts=[item])
         add_event_to_log(state, event, on_event=on_event)
 
-    # 5. Validate TaskSuccess result type (moved from sandbox-side closure
+    # 3. Validate TaskSuccess result type (moved from sandbox-side closure
     #    so task_success can be a plain picklable function for cross-process)
     if isinstance(result.error, TaskSuccess):
         _validate_task_result(result.error.result, state)
 
-    # 6. Re-raise any error captured by sandtrap.
+    # 4. Re-raise any error captured by sandtrap.
     # sandtrap catches ALL BaseException (except KeyboardInterrupt) and puts
     # it in result.error. This includes _AgentExit subclasses (TaskSuccess,
     # TaskFail, TaskClarify) which are BaseException.
