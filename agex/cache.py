@@ -60,13 +60,6 @@ class CacheError(ValueError):
     """Raised when a cache operation cannot complete (e.g. unpicklable value)."""
 
 
-def _make_local_cache() -> "Cache":
-    """Constructor used by ``Cache.__reduce__`` to materialize a fresh
-    in-memory Cache on the receiving end of a pickle round-trip
-    (typically a process-isolated subprocess)."""
-    return Cache({})
-
-
 class Cache(MutableMapping[str, Any]):
     """A persistent dict for the agent, scoped to the agent's session.
 
@@ -171,39 +164,6 @@ class Cache(MutableMapping[str, Any]):
             return "Cache(<unreadable>)"
         return f"Cache({keys!r})"
 
-    def __reduce__(self):
-        """Pickle support for process-isolated emissions.
-
-        Versioned ``state`` holds non-picklable resources (kvgit
-        threading locks etc.), so a Cache wrapping it can't cross a
-        process boundary as-is.  Without this hook sandtrap's
-        ``filter_namespace`` would drop the cache from the
-        subprocess's namespace with a warning — the agent would then
-        see a ``NameError`` instead of a usable ``cache``.
-
-        We probe the underlying state's picklability:
-          - If it pickles (e.g. a plain dict, ``Live`` state), we
-            preserve the round-trip — the receiving end gets a
-            ``Cache`` over an equivalent state, with the same data.
-          - If not (e.g. Staged with kvgit locks), we fall back to a
-            fresh empty Cache so the subprocess gets a working
-            object.
-
-        Limitation in the fallback case: writes performed inside a
-        process-isolated emission are stored in the subprocess's
-        local copy and do NOT propagate back to the parent's session
-        cache.  Reads of keys the parent cached are also unavailable.
-        Cross-process cache durability would require explicit IPC,
-        which the bridge doesn't currently do.  Most workloads use
-        ``isolation='none'`` (the default), where cache works as
-        documented.
-        """
-        try:
-            pickle.dumps(self._state, protocol=pickle.HIGHEST_PROTOCOL)
-        except Exception:
-            return (_make_local_cache, ())
-        return (Cache, (self._state,))
-
     def __sandtrap_activate__(self, activate_value, gates, sandbox, namespace) -> None:
         """Sandtrap container-activation hook.
 
@@ -233,3 +193,84 @@ class Cache(MutableMapping[str, Any]):
                 activate_value(val, gates, sandbox=sandbox, namespace=namespace)
             except Exception:
                 continue
+
+
+class RemoteCache(MutableMapping[str, Any]):
+    """Worker-side cache facade backed by a parent-process ``Cache``
+    via RPC.
+
+    Used under process / kernel isolation: the bridge layer injects an
+    :class:`sandtrap.RpcProxyMarker` (with ``wrapper="agex.cache:
+    RemoteCache"``) into the namespace; the worker substitutes it
+    with this class wrapping an ``RpcProxy``.  Method calls translate
+    into RPC round-trips that reach the parent's live ``Cache(state)``,
+    so writes propagate to the agent's real session cache and reads
+    see whatever the parent has cached.
+
+    Sandbox-defined wrappers (``StFunction`` / ``StClass``) are
+    re-activated locally with the worker's gates on every read — they
+    arrive inactive because pickle strips the sandbox-bound
+    ``_compiled`` / ``_sandbox`` / ``_gates`` references on the
+    parent-side serialization.  The activation hook captures the
+    worker's gates on first ``exec`` so subsequent ``__getitem__``
+    calls have what they need.
+    """
+
+    def __init__(self, proxy: Any) -> None:
+        self._proxy = proxy
+        self._gates: Any = None
+        self._sandbox: Any = None
+
+    def __sandtrap_activate__(self, activate_value, gates, sandbox, namespace) -> None:
+        # Stash the worker's gates / sandbox so __getitem__ can
+        # activate inactive wrappers it pulls back from the parent.
+        # We don't pre-warm cache reads here — there's no benefit
+        # and it'd waste IPC on values the agent never touches.
+        self._gates = gates
+        self._sandbox = sandbox
+
+    def __getitem__(self, key: str) -> Any:
+        if not isinstance(key, str):
+            raise KeyError(key)
+        val = self._proxy._call("getitem", key)
+        # Activate any inactive wrapper the parent shipped over.
+        # ``activate_value`` short-circuits cheaply for non-wrappers,
+        # so plain data values pay only an isinstance check.
+        if self._gates is not None:
+            from sandtrap.wrappers import activate_value
+
+            try:
+                activate_value(val, self._gates, sandbox=self._sandbox)
+            except Exception:
+                pass
+        return val
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        # Validation (key shape, picklability) happens on the parent
+        # via Cache.__setitem__.  Errors propagate back as RPC
+        # exceptions and re-raise here.
+        self._proxy._call("setitem", key, value)
+
+    def __delitem__(self, key: str) -> None:
+        if not isinstance(key, str):
+            raise KeyError(key)
+        self._proxy._call("delitem", key)
+
+    def __iter__(self) -> Iterator[str]:
+        # Parent returns a list snapshot; iterate locally.
+        return iter(self._proxy._call("iter"))
+
+    def __len__(self) -> int:
+        return self._proxy._call("len")
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, str):
+            return False
+        return self._proxy._call("contains", key)
+
+    def __repr__(self) -> str:
+        try:
+            keys = sorted(self._proxy._call("iter"))
+        except Exception:
+            return "Cache(<unreadable>)"
+        return f"Cache({keys!r})"

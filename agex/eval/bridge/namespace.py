@@ -66,7 +66,22 @@ def build_namespace(
         setup_ns = state.get("__setup_namespace__") or {}
         for k, v in setup_ns.items():
             namespace[k] = v
-        namespace["cache"] = Cache(state)
+        # Cache injection: under in-process isolation the agent gets
+        # the live Cache(state) directly.  Under process / kernel
+        # isolation we ship an RpcProxyMarker — the parent registers
+        # a handler for "cache" (see ``_make_cache_handler``) and the
+        # worker substitutes the marker with a RemoteCache that
+        # forwards method calls to the parent over the connection.
+        # The agent contract is the same in both modes.
+        if getattr(agent, "isolation", "none") == "none":
+            namespace["cache"] = Cache(state)
+        else:
+            from sandtrap import RpcProxyMarker
+
+            namespace["cache"] = RpcProxyMarker(
+                target="cache",
+                wrapper="agex.cache:RemoteCache",
+            )
 
     # Inject task control functions — module-level so they're picklable
     # for cross-process isolation. Validation happens in handle_result.
