@@ -42,21 +42,23 @@ def _make_cache_handler(
     cache = Cache(state)
 
     def handler(method: str, args: tuple, kwargs: dict) -> Any:
-        if method == "getitem":
-            return cache[args[0]]
-        if method == "setitem":
-            cache[args[0]] = args[1]
-            return None
-        if method == "delitem":
-            del cache[args[0]]
-            return None
-        if method == "iter":
-            return list(cache)
-        if method == "len":
-            return len(cache)
-        if method == "contains":
-            return args[0] in cache
-        raise AttributeError(method)
+        match method:
+            case "getitem":
+                return cache[args[0]]
+            case "setitem":
+                cache[args[0]] = args[1]
+                return None
+            case "delitem":
+                del cache[args[0]]
+                return None
+            case "iter":
+                return list(cache)
+            case "len":
+                return len(cache)
+            case "contains":
+                return args[0] in cache
+            case _:
+                raise AttributeError(method)
 
     return handler
 
