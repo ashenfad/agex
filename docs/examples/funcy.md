@@ -63,7 +63,9 @@ Try out the prime finder and then ask for a variation:
 print(next_prime(500000))
 # 500009
 
-# Build a related function leveraging context
+# Build a related function — the agent sees its prior turn in the
+# event log, so "now make it the next lower prime" has the
+# is_prime helper to riff on.
 prev_prime = fn_builder("Okay, now make it the next lower prime.")
 print(prev_prime(500000))
 # 499979
@@ -73,7 +75,7 @@ Why this is different:
 
 - Returns an actual Python callable you can pass anywhere (sort keys, compose APIs).
 - Works with your existing libraries — the agent composes them in code.
-- Persistent context allows progressive capability building.
+- The agent's event log carries across calls, so a follow-up task can build on what an earlier task did without you wiring up explicit context-passing.
 
 [![asciicast](https://asciinema.org/a/ZqYiNf6AJoskeVkcjPQAalgba.svg)](https://asciinema.org/a/ZqYiNf6AJoskeVkcjPQAalgba)
 —

@@ -101,7 +101,9 @@ def workshop_joke(prompt: str) -> str:  # type: ignore[return-value]
     """Build on the ongoing joke based on the prompt."""
     pass
 
-# Agent builds an elaborate joke across multiple calls (state is managed internally)
+# Each call runs as a fresh Python action; cross-call continuity comes
+# from state — the agent's event log lets each turn see what earlier
+# turns produced, so the joke gets built up over the three calls.
 setup = workshop_joke("Start a joke about a programmer and a fish")
 buildup = workshop_joke("Add more detail about their meeting")
 punchline = workshop_joke("Deliver the punchline!")
