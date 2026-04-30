@@ -79,9 +79,23 @@ class TestCacheDirect:
             cache["a/b"] = 1
 
     def test_reject_non_string_keys(self):
+        """Non-string keys raise TypeError on every operation that
+        cares about key shape, matching dict's TypeError-for-
+        unhashable contract.  ``__contains__`` stays lenient
+        (returns False) so ``if k in cache:`` is safe to use as a
+        defensive check without try/except."""
         cache = Cache({})
+        cache["foo"] = 1  # populate so missing-key noise doesn't mask the type errors
+
         with pytest.raises(TypeError):
             cache[42] = "x"
+        with pytest.raises(TypeError):
+            cache[42]
+        with pytest.raises(TypeError):
+            del cache[42]
+
+        # __contains__ stays lenient.
+        assert (42 in cache) is False
 
     def test_repr_lists_keys(self):
         cache = Cache({})

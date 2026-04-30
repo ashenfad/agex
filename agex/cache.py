@@ -90,8 +90,13 @@ class Cache(MutableMapping[str, Any]):
         return PREFIX + key
 
     def __getitem__(self, key: str) -> Any:
+        # Match dict's wrong-shape vs missing distinction: ``dict``
+        # raises TypeError for unhashable keys and KeyError for
+        # missing-but-hashable keys.  Cache's stricter constraint
+        # ("must be str") follows the same split — non-str raises
+        # TypeError; str-but-missing raises KeyError via the state.
         if not isinstance(key, str):
-            raise KeyError(key)
+            raise TypeError(f"Cache keys must be strings, got {type(key).__name__}")
         return self._state[PREFIX + key]
 
     def __setitem__(self, key: str, value: Any) -> None:
@@ -123,7 +128,7 @@ class Cache(MutableMapping[str, Any]):
 
     def __delitem__(self, key: str) -> None:
         if not isinstance(key, str):
-            raise KeyError(key)
+            raise TypeError(f"Cache keys must be strings, got {type(key).__name__}")
         wrappers = self._wrapper_keys()
         if key in wrappers:
             wrappers.discard(key)
@@ -231,7 +236,7 @@ class RemoteCache(MutableMapping[str, Any]):
 
     def __getitem__(self, key: str) -> Any:
         if not isinstance(key, str):
-            raise KeyError(key)
+            raise TypeError(f"Cache keys must be strings, got {type(key).__name__}")
         val = self._proxy._call("getitem", key)
         # Activate any inactive wrapper the parent shipped over.
         # ``activate_value`` short-circuits cheaply for non-wrappers,
@@ -253,7 +258,7 @@ class RemoteCache(MutableMapping[str, Any]):
 
     def __delitem__(self, key: str) -> None:
         if not isinstance(key, str):
-            raise KeyError(key)
+            raise TypeError(f"Cache keys must be strings, got {type(key).__name__}")
         self._proxy._call("delitem", key)
 
     def __iter__(self) -> Iterator[str]:
