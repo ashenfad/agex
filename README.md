@@ -1,25 +1,37 @@
 # agex: Library-Friendly Agents
 
-**`agex`** (a portmanteau of **age**nt **ex**ecution) is a Python-native agentic framework that enables AI agents to work directly with your existing libraries and codebase.
+`agex` (a portmanteau of **age**nt **ex**ecution) is a Python library for building AI agents that work directly with your code.
 
-## Core Concepts
+You define a typed Python function with `@task` and the agent fills it in. It writes sandboxed Python that calls into the modules you've whitelisted, returning real Python objects (DataFrames, Plotly figures, your Pydantic models) that flow back into your code unchanged. There's no JSON serialization at the boundary and no separate runtime to deploy: agex runs inside your application's Python process.
 
-`agex` executes sandboxed Python directly in your process, bypassing JSON serialization to let complex objects flow freely. You define a safe, focused environment by whitelisting exactly which capabilities are available.
+Because the sandbox is pure-Python AST rewriting, the same agent code runs in-process, in a subprocess, in a kernel-isolated worker, or (via Pyodide) entirely in a browser tab. [agex-studio](https://agex.studio) is the proof-of-concept: pandas, scikit-learn, plotly, and a chat agent all running client-side with no backend.
 
-Key features:
-- **Type-Safe Execution**: Agents fulfill typed signatures by executing sandboxed Python.
-- **Curated Scope**: Whitelist exactly which modules and classes are available.
-- **Versioned Workspace**: A virtual filesystem, an explicit per-session `cache`, and the event log are all kvgit-backed for time-travel debugging.
-- **Multi-Agent Orchestration**: Coordinate agents with natural Python control flow.
-- **Terminal & Scripting**: Agents run shell commands, Python scripts, and git — all sandboxed.
-- **Flexible Hosting**: Run locally (default), on HTTP servers, or serverless via [Modal](https://modal.com/).
+```python
+import pandas as pd
+from agex import Agent
+
+agent = Agent()
+agent.module(pd)
+
+@agent.task
+def summarize(df: pd.DataFrame) -> dict[str, float]:
+    """Return summary statistics for the numeric columns."""
+    pass
+
+stats = summarize(my_dataframe)  # real dict[str, float]
+```
 
 ![Demo of an agex agent returning pandas DataFrames and plotly figures in an IPython REPL](docs/assets/teaser.gif)
 
-**This works because** `agex` agents can accept and return complex types like `pandas.DataFrame` and `plotly.Figure` objects without intermediate JSON serialization. For a deeper dive, check out the full **[agex101.ipynb tutorial](https://ashenfad.github.io/agex/examples/agex101/)** or see **[geospatial routing with OSMnx](https://ashenfad.github.io/agex/examples/routing/)** for advanced multi-library integration.
+## What you get
 
-For a full demo app where agex integrates with NiceGUI, see [`agex-ui`](https://github.com/ashenfad/agex-ui).
+- **Typed function tasks** - `@task` declares the input/output contract; the agent fulfills it.
+- **Curated Python environment** - whitelist exactly which modules and classes the agent can use, with per-member visibility.
+- **Versioned workspace** - virtual filesystem, the agent's session memory, and event log are all kvgit-backed, with checkpoints and time-travel.
+- **Multi-agent orchestration** - coordinate agents with regular Python control flow; sub-agents are just functions.
+- **Flexible execution** - in-process by default; subprocess, kernel-isolated, browser (Pyodide), or remote ([Modal](https://modal.com/), HTTP) when you need them.
 
+For a deeper dive, see the [agex101 tutorial](https://ashenfad.github.io/agex/examples/agex101/) or the [geospatial routing example](https://ashenfad.github.io/agex/examples/routing/) for multi-library integration. For a NiceGUI integration demo, see [`agex-ui`](https://github.com/ashenfad/agex-ui).
 
 ## Documentation
 
@@ -36,20 +48,19 @@ Key sections:
 Install agex with your preferred LLM provider:
 
 ```bash
-# Install with a specific provider
-pip install "agex[openai]"        # For OpenAI models
-pip install "agex[anthropic]"     # For Anthropic Claude models
-pip install "agex[gemini]"        # For Google Gemini models
+pip install "agex[openai]"        # OpenAI models
+pip install "agex[anthropic]"     # Anthropic Claude models
+pip install "agex[gemini]"        # Google Gemini models
 
-# Or install with all providers
+# Or with all providers
 pip install "agex[all-providers]"
 ```
 
 ## Project Status
 
-> **⚠️** `agex` is a new framework in active development. While the core concepts are stabilizing, the API should be considered experimental and is subject to change.
+This is a hobby project in active development. The core concepts are stabilizing but the API should be considered experimental.
 
-For teams looking for a more battle-tested library built on the same "agents-that-think-in-code" philosophy, we highly recommend Hugging Face's excellent [`smolagents`](https://github.com/huggingface/smolagents) project. `agex` explores a different architectural path, focusing on deep runtime interoperability and a secure, sandboxed environment for direct integration with existing Python libraries.
+If you're looking for a more battle-tested library built on the same "agents-that-think-in-code" idea, [`smolagents`](https://github.com/huggingface/smolagents) (Hugging Face) is the closest cousin and a good choice. agex explores a different shape: an embeddable library you import into your application, with typed function contracts and a pure-Python sandbox that runs anywhere Python runs (including the browser).
 
 ## Built On
 
@@ -65,4 +76,4 @@ agex is composed of several focused libraries that can also be used independentl
 
 ## Contributing
 
-We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for details on our development workflow, code style, and how to submit pull requests. For bug reports and feature requests, please use [GitHub Issues](https://github.com/ashenfad/agex/issues).
+Bug reports, ideas, and pull requests welcome - see [GitHub Issues](https://github.com/ashenfad/agex/issues) or the [Contributing Guide](CONTRIBUTING.md).
