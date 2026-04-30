@@ -10,6 +10,7 @@ import sys
 import pytest
 
 from agex import Agent, TaskFail, clear_agent_registry
+from agex.agent.datatypes import TaskTimeout
 from agex.agent.events import OutputEvent, SuccessEvent
 from agex.llm.dummy_client import Dummy
 from agex.state import connect_state, events
@@ -753,3 +754,212 @@ class TestAsyncSubAgentTask:
 
         result = await run(idea="umbrella sales", session="s")
         assert result == "plot.png"
+
+
+class TestCacheUnderProcessIsolation:
+    """The agent's ``cache`` must work the same in any isolation mode.
+
+    Under ``isolation="process"``, the worker namespace gets a
+    ``RemoteCache`` (sandtrap >= 0.2.1) that proxies operations to
+    the parent's live ``Cache(state)`` over an RPC channel.  Reads
+    see what the parent has cached; writes propagate back to the
+    parent's session cache.
+    """
+
+    def setup_method(self):
+        clear_agent_registry()
+
+    def test_cache_write_propagates_to_parent_state(self):
+        """A subprocess ``cache[k] = v`` lands in the parent's state."""
+        from agex.cache import PREFIX
+
+        llm = Dummy(
+            [
+                make_response(
+                    thinking="cache it",
+                    code='cache["answer"] = 42\ntask_success("ok")',
+                )
+            ]
+        )
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(
+            name="proc_cache_write",
+            llm=llm,
+            state=config,
+            isolation="process",
+            eval_tick_limit=None,
+            eval_timeout_seconds=10.0,
+        )
+
+        @agent.task
+        def stash() -> str:
+            """Stash a value."""
+            pass
+
+        assert stash(session="s") == "ok"
+
+        # The write hopped from worker → parent via RPC.  The
+        # parent's state has the qualified key.
+        state = agent._host.resolve_state(config, "s")
+        assert state.get(PREFIX + "answer") == 42
+
+    def test_cache_read_sees_parent_state(self):
+        """Pre-cached values are visible to subprocess reads."""
+        from agex.cache import PREFIX
+
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(
+            name="proc_cache_read",
+            llm=Dummy(),
+            state=config,
+            isolation="process",
+            eval_tick_limit=None,
+            eval_timeout_seconds=10.0,
+        )
+
+        # Pre-populate the cache outside the agent — the agent's
+        # subprocess should see it via the RPC proxy.
+        state = agent._host.resolve_state(config, "s")
+        state[PREFIX + "secret"] = "shibboleth"
+        state.commit()
+
+        agent.llm = Dummy(
+            [
+                make_response(
+                    thinking="recall",
+                    code='task_success(cache["secret"])',
+                )
+            ]
+        )
+
+        @agent.task
+        def recall() -> str:
+            """Recall."""
+            pass
+
+        assert recall(session="s") == "shibboleth"
+
+    def test_cache_persists_across_isolated_tasks(self):
+        """Two task calls in the same session, both isolated.
+
+        Task 1 writes; task 2 reads.  Mirrors the in-process
+        ``test_persistence_across_tasks`` semantics under process
+        isolation.
+        """
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(
+            name="proc_cache_persist",
+            llm=Dummy(),
+            state=config,
+            isolation="process",
+            eval_tick_limit=None,
+            eval_timeout_seconds=10.0,
+        )
+
+        @agent.task
+        def stash() -> None:
+            """Stash."""
+            pass
+
+        @agent.task
+        def recall() -> int:
+            """Recall."""
+            pass
+
+        agent.llm.responses = [
+            make_response(
+                thinking="store",
+                code='cache["answer"] = 42\ntask_success(None)',
+            )
+        ]
+        stash(session="s")
+
+        agent.llm.responses = [
+            make_response(thinking="recall", code='task_success(cache["answer"])')
+        ]
+        assert recall(session="s") == 42
+
+    def test_cache_unpicklable_value_raises_in_subprocess(self):
+        """Validation runs on the parent — unpicklable writes raise
+        ``CacheError`` and the worker re-raises in the agent's call
+        site, just like in-process."""
+        # Register a host-side function that produces an unpicklable
+        # object (a thread Lock).  Write to cache → handler runs
+        # cloudpickle-equivalent picklability check → raises.
+        import threading
+
+        from agex.cache import CacheError
+
+        agent = Agent(
+            name="proc_cache_bad",
+            llm=Dummy(),
+            state=connect_state(type="versioned", storage="memory"),
+            isolation="process",
+            eval_tick_limit=None,
+            eval_timeout_seconds=10.0,
+        )
+        agent.fn(threading.Lock, name="make_lock")
+        agent.llm = Dummy(
+            [
+                make_response(
+                    thinking="bad write",
+                    code='cache["bad"] = make_lock()',
+                )
+            ]
+        )
+
+        @agent.task
+        def attempt() -> None:
+            """Try a bad write."""
+            pass
+
+        # CacheError surfaces as the task's recoverable error and the
+        # task eventually times out (Dummy keeps replaying the same
+        # broken code).  Either way, the failure is loud, not silent.
+        with pytest.raises((CacheError, TaskTimeout)):
+            attempt(session="s")
+
+    def test_cached_stfunction_round_trips_across_processes(self):
+        """A function defined in one isolated task is callable in the next."""
+        config = connect_state(type="versioned", storage="memory")
+        agent = Agent(
+            name="proc_cache_fn",
+            llm=Dummy(),
+            state=config,
+            isolation="process",
+            eval_tick_limit=None,
+            eval_timeout_seconds=15.0,
+        )
+
+        @agent.task
+        def define() -> None:
+            """Define a helper and stash it."""
+            pass
+
+        @agent.task
+        def use() -> int:
+            """Retrieve and call the helper."""
+            pass
+
+        agent.llm.responses = [
+            make_response(
+                thinking="define and stash",
+                code=(
+                    "def add(a, b):\n    return a + b\n"
+                    'cache["add"] = add\n'
+                    "task_success(None)"
+                ),
+            )
+        ]
+        define(session="s")
+
+        agent.llm.responses = [
+            make_response(
+                thinking="retrieve and use",
+                code='fn = cache["add"]\ntask_success(fn(2, 3))',
+            )
+        ]
+        # The retrieved StFunction arrives inactive in the worker;
+        # RemoteCache.__getitem__ activates it with the worker's
+        # local gates before returning.
+        assert use(session="s") == 5

@@ -22,6 +22,45 @@ if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
 
 
+def _make_cache_handler(
+    state: MutableMapping[str, Any],
+) -> Callable[[str, tuple, dict], Any]:
+    """Build a sandtrap RPC handler that proxies cache operations to
+    a parent-side ``Cache(state)``.
+
+    Used only under process / kernel isolation: the worker's
+    ``RemoteCache`` calls ``handler(method, args, kwargs)`` over the
+    RPC channel; this factory returns the closure that dispatches by
+    method name to the live parent-side cache.
+
+    Errors raised by the parent-side cache (e.g. ``CacheError`` from
+    a non-picklable write) propagate back to the worker and re-raise
+    in the agent's call site.
+    """
+    from agex.cache import Cache
+
+    cache = Cache(state)
+
+    def handler(method: str, args: tuple, kwargs: dict) -> Any:
+        if method == "getitem":
+            return cache[args[0]]
+        if method == "setitem":
+            cache[args[0]] = args[1]
+            return None
+        if method == "delitem":
+            del cache[args[0]]
+            return None
+        if method == "iter":
+            return list(cache)
+        if method == "len":
+            return len(cache)
+        if method == "contains":
+            return args[0] in cache
+        raise AttributeError(method)
+
+    return handler
+
+
 def _prepare_sandbox(
     program: str,
     agent: "BaseAgent",
@@ -59,12 +98,22 @@ def _prepare_sandbox(
         register_io(agent)
 
     policy = translate_policy(agent, timeout=timeout, tick_limit=tick_limit)
+
+    # Under process / kernel isolation we register an RPC handler so
+    # the worker's ``RemoteCache`` proxy can reach back into the
+    # parent's live ``Cache(state)``.  Skipped for ``isolation="none"``
+    # — the in-process namespace gets the live Cache directly.
+    rpc_handlers: dict[str, Callable[[str, tuple, dict], Any]] | None = None
+    if agent.isolation != "none":
+        rpc_handlers = {"cache": _make_cache_handler(state)}
+
     sb = create_sandbox(
         policy,
         isolation=agent.isolation,
         mode="wrapped",
         filesystem=fs,
         snapshot_prints=True,
+        rpc_handlers=rpc_handlers,
     )
     namespace, _injected_keys = build_namespace(
         state, agent, agent.name, on_event=on_event

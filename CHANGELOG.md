@@ -36,6 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   container hook (sandtrap >= 0.2.0); lambdas and other
   locally-defined functions outside the sandbox don't pickle and are
   rejected at the validator.
+- **Cache works the same in any isolation mode.** Under
+  `isolation="process"` / `"kernel"`, `build_namespace` injects a
+  `RpcProxyMarker` instead of a live `Cache`; the worker substitutes
+  it with a `RemoteCache` (also in `agex.cache`) that forwards
+  method calls to the parent over sandtrap's RPC channel
+  (sandtrap >= 0.2.1).  Writes propagate to the parent's session
+  cache; reads see whatever the parent has cached; cached
+  sandbox-defined helpers round-trip and re-activate against the
+  worker's gates on read.  The agent contract is identical across
+  modes — the only difference is per-call IPC latency under
+  isolation.
 - `execute_sandboxed`, `aexecute_sandboxed`, and `run_file_in_sandbox`
   now return the post-exec namespace dict so one-shot callers can
   inspect what a script computed without round-tripping through state.
@@ -63,8 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scientific codecs (Arrow, etc.) when kvgit adds them.
 
 ### Dependencies
-- `sandtrap >=0.2.0,<0.3.0` (was `>=0.1.15,<0.2.0`).  Required for
-  the `__sandtrap_activate__` container hook used by the cache.
+- `sandtrap >=0.2.1,<0.3.0` (was `>=0.1.15,<0.2.0`).  0.2.0 added
+  the `__sandtrap_activate__` container hook used by `Cache`; 0.2.1
+  added the worker→parent RPC channel used by `RemoteCache` for
+  cross-process cache parity.
 - `termish >=0.1.6,<0.2.0` (was `>=0.1.5,<0.2.0`).
 
 ### Migration
