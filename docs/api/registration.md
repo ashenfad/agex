@@ -1,6 +1,6 @@
 # Registration Methods
 
-Agent registration methods allow you to expose functions, classes, and modules to your agents. These methods control what capabilities agents have access to and how they're presented in the agent's context.
+Agent registration methods allow you to expose functions, classes, modules, terminal commands, and skills to your agents. These methods control what capabilities agents have access to and how they're presented in the agent's context.
 
 Registration happens on [Agent](agent.md) instances - create an agent first, then register capabilities using these methods.
 
@@ -411,13 +411,148 @@ agent.module(calgebra, visibility="low", recursive=True)
 agent.skill(files("calgebra") / "skills" / "calgebra" / "SKILL.md")
 ```
 
-## Terminal Plugins
+## `.terminal()` - Terminal Command Registration
 
-Agents can use `<TERMINAL>` blocks to run shell commands against the VFS. Two plugins extend the terminal with additional capabilities:
+Register a custom shell command for use inside `terminal_action`. Hosts use this when a capability is more naturally CLI-shaped than library-shaped — compilers, formatters, archive tools, anything an agent has seen as a command-line invocation in training.
+
+```python
+agent.terminal(
+    handler: Callable | None = None,
+    *,
+    name: str | None = None,
+    visibility: Literal["high", "medium", "low"] = "high",
+    docstring: str | None = None,
+)
+```
+
+The handler receives a `TerminalContext` (args, stdin, stdout, fs) per invocation and returns `None` (success, exit code 0) or a `CommandResult` (with `exit_code` / `stderr` set). Both shapes compose cleanly with termish's pipeline machinery.
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `handler` | `Callable | None` | `None` | Command handler (filled automatically when used as decorator) |
+| `name` | `str | None` | `None` | Override the command name in the agent's terminal. Defaults to `handler.__name__` |
+| `visibility` | `Literal["high", "medium", "low"]` | `"high"` | How prominently the command is surfaced in the agent's primer |
+| `docstring` | `str | None` | `None` | Override `handler.__doc__` for the primer description |
+
+### Visibility Levels
+
+| Level | Behavior | Best For |
+|-------|----------|----------|
+| `"high"` | Command name + docstring shown in the primer | Novel host-specific commands the agent should know about |
+| `"medium"` | Command name only | Tells the agent the command exists without spending tokens on a description |
+| `"low"` | Not surfaced in the primer; the command still works | Commands the agent already knows from training (`git`, `esbuild`, `tsc`) — pair with a skill markdown file for in-depth reference |
+
+The command is callable from `terminal_action` regardless of visibility — the setting only controls primer placement, not availability.
+
+### Reserved Names
+
+The string `"python"` is reserved for agex's internal bridge to nested `python_action` execution and cannot be registered. All other names — including termish builtins (`ls`, `cat`, `grep`, `find`, `tar`, `gzip`, `jq`, etc.) — are *overridable* per termish's contract. User registrations are last-wins among themselves.
+
+```python
+agent.terminal(my_handler, name="ls")    # ✅ overrides termish's `ls`
+agent.terminal(my_handler, name="python") # ❌ ValueError — reserved
+```
+
+### Usage Patterns
+
+#### As a Decorator
+
+```python
+from agex.terminal import TerminalContext, CommandResult
+
+@agent.terminal
+def greet(ctx: TerminalContext) -> CommandResult | None:
+    """Print a greeting."""
+    name = ctx.args[0] if ctx.args else "world"
+    ctx.stdout.write(f"hello {name}\n")
+    return None  # exit 0
+```
+
+#### Decorator With Options
+
+```python
+@agent.terminal(visibility="low", name="esbuild")
+def my_esbuild_handler(ctx):
+    """Bundle JS source files. Run `esbuild --help` for options."""
+    ...
+```
+
+#### Direct Registration
+
+```python
+def my_handler(ctx):
+    pass
+
+agent.terminal(my_handler, name="custom-cmd")
+```
+
+#### Returning Errors
+
+Use `ctx.fail(message, exit_code=N)` to build a `CommandResult` with a non-zero exit:
+
+```python
+@agent.terminal
+def deploy(ctx):
+    """Deploy the current build."""
+    if not ctx.args:
+        return ctx.fail("deploy: missing target. Run `deploy --help`.")
+    target = ctx.args[0]
+    if target not in ("staging", "production"):
+        return ctx.fail(f"deploy: unknown target '{target}'", exit_code=2)
+    ...
+```
+
+Termish raises a `TerminalError` from non-zero exits, which surfaces to the agent as a regular tracebacked error — same agex idiom as letting Python exceptions surface.
+
+### Composing With Termish Builtins
+
+Custom commands compose with termish's built-in pipeline operators (`|`, `>`, `>>`, `<`) and 30+ builtins (ls, cat, grep, etc.):
+
+```python
+@agent.terminal
+def emit_data(ctx):
+    """Emit some lines."""
+    ctx.stdout.write("alpha\nbeta\ngamma\n")
+```
+
+The agent can then use it in pipelines naturally:
+
+```
+emit_data | grep beta | wc -l
+```
+
+### Discoverability Patterns
+
+For commands at `visibility="low"` (i.e., agents already know the CLI from training), pair with a skill markdown for in-depth reference:
+
+```python
+agent.terminal(esbuild_handler, visibility="low", docstring="Bundle JS source files.")
+agent.skill(files("my_pkg") / "skills" / "esbuild" / "SKILL.md")
+```
+
+Agents can also probe with `<command> --help` — handler authors should support it explicitly:
+
+```python
+@agent.terminal
+def my_cmd(ctx):
+    """Short summary for the primer."""
+    if not ctx.args or ctx.args[0] in ("--help", "-h"):
+        ctx.stdout.write("Usage: my_cmd <input> [--flag]\n...")
+        return None
+    ...
+```
+
+## Bundled Terminal Commands
+
+agex ships two terminal commands out of the box — one always available, one opt-in.
 
 ### Python Scripts (always available)
 
-Agents can run `python file.py` from `<TERMINAL>` blocks. Scripts execute in a sandtrap sandbox with the agent's full policy (registered modules, VFS) but in a fresh namespace — no REPL state and no `task_*` bindings. The agent completes tasks by importing from scripts in a `<PYTHON>` block.
+Agents can run `python file.py` from `terminal_action` blocks. Scripts execute in a sandtrap sandbox with the agent's full policy (registered modules, VFS) but in a fresh namespace — no REPL state and no `task_*` bindings. The agent completes tasks by importing from scripts in a `python_action` block.
+
+`"python"` is the only reserved terminal-command name (see above) — the bridge to nested `python_action` execution depends on it.
 
 ### Git CLI (opt-in)
 
@@ -429,7 +564,9 @@ from agex.git_cli import register_git
 register_git(agent)
 ```
 
-This enables `git log`, `git commit -m`, `git diff`, `git branch`, `git checkout`, `git reset --hard`, `git show`, and `git merge` from `<TERMINAL>` blocks, backed by kvgit.
+This enables `git log`, `git commit -m`, `git diff`, `git branch`, `git checkout`, `git reset --hard`, `git show`, and `git merge` from `terminal_action` blocks, backed by kvgit. The `register_git` helper mounts the git SKILL.md *and* registers the `git` command via an internal factory mechanism (`_terminal_command_factory`) for handlers needing per-action runtime context (Staged state, VFS internals).
+
+The internal factory API is currently used only by `register_git`. It will be promoted to public (`agent.terminal_factory`) when other downstream cases emerge — for now, public registrations should use `.terminal()` and reach for runtime values via closures over the agent at registration time when needed.
 
 Key behaviors:
 

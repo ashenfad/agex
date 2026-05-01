@@ -10,7 +10,7 @@ Welcome to the agex API documentation. agex is a Python agentic framework that e
 Create and configure agents with LLM providers, timeouts, and custom primers.
 
 - **[Registration](registration.md)** -
-Register functions, classes, and modules to make them available to agents. Control visibility and configure per-member settings.
+Register functions, classes, modules, terminal commands, and skills to make them available to agents. Control visibility and configure per-member settings.
 
 - **[Task](task.md)** -
 Define agent tasks using the `@agent.task` decorator. Support for standalone tasks and multi-agent workflows.
@@ -60,7 +60,7 @@ from agex import clear_agent_registry  # Utilities
 
 The agex API is built on a core principle that makes its syntax consistent and predictable:
 
-- **Definable** methods are for registering new functions (`def`) and classes (`class`) as they are being defined. These methods (`.fn`, `.cls`) support the decorator pattern (`@agent.fn`) and use a "decorator factory" syntax.
+- **Definable** methods are for registering new functions (`def`), classes (`class`), and terminal commands as they are being defined. These methods (`.fn`, `.cls`, `.terminal`) support the decorator pattern (`@agent.fn`) and use a "decorator factory" syntax.
 
 - **Configurable** methods are for exposing parts of *already existing* objects, like imported modules. These methods (`.module`) are direct function calls: `agent.module(math, ...)`.
 
@@ -76,7 +76,11 @@ def my_new_function():
 class MyNewClass:
     pass
 
-# Configurable - direct calls for existing code  
+@agent.terminal
+def my_command(ctx):
+    pass
+
+# Configurable - direct calls for existing code
 agent.module(math, include=["sin", "cos"])
 agent.module(pandas, visibility="low")
 ```

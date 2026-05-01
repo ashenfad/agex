@@ -77,9 +77,11 @@ Registers the `plotly` library for creating interactive visualizations.
 Registers IO-related modules for file operations. Used with VFS and isolated filesystems.
 
 -   **File objects**: `io.BytesIO`, `io.StringIO`, `io.TextIOWrapper` (plus the internal `_io` types for real file objects)
--   **OS operations**: `os.listdir`, `os.remove`, `os.mkdir`, `os.makedirs`, `os.rename`, `os.stat`
+-   **OS operations**: `os.listdir`, `os.walk`, `os.remove`, `os.mkdir`, `os.makedirs`, `os.rename`, `os.stat`
 -   **Path utilities**: `os.path.exists`, `os.path.isfile`, `os.path.isdir`, `os.path.join`, `os.path.basename`, `os.path.dirname`, `os.path.splitext`
 -   **Data formats**: `json`, `csv`, `pickle`, `pathlib`
+-   **Pattern matching**: `glob`, `fnmatch`
+-   **Compressed / archive IO**: `gzip`, `zipfile`, `tarfile`
 -   **Built-in**: `open()`
 
 > [!NOTE]
@@ -93,3 +95,44 @@ from agex.helpers import register_io
 agent = Agent()
 register_io(agent)
 ```
+
+### `register_matplotlib(agent)`
+
+Registers `matplotlib` for headless plotting in agex deployments.
+
+Beyond the usual module exposure, this helper handles two sandbox-environment quirks that matplotlib's lazy initialization runs into:
+
+1. **Backend selection.** Forces the non-interactive `Agg` backend before any pyplot import — agex deployments are headless (Pyodide, subprocess workers, kernel-isolated containers), and matplotlib's default backend probing fails in those environments.
+2. **Font cache warm-up.** matplotlib builds its `fontlist.json` cache the first time `font_manager` resolves a glyph (i.e. the first `savefig` with text). The build acquires a lock file inside matplotlib's package directory — a write the sandbox blocks. Pre-warming at registration time, *before* any sandboxed code runs, lets the lock write succeed and populates the cache for later sandboxed `savefig` calls to read.
+
+```python
+from agex.helpers import register_matplotlib
+
+register_matplotlib(agent)
+```
+
+Must be called from outside the sandbox (i.e. before any task execution). The other helpers in this package have the same implicit contract; matplotlib is the first case where violating it has a visible failure mode.
+
+## Terminal Command Helpers
+
+These helpers register entries that surface inside `terminal_action` rather than `python_action`. See [Registration](registration.md) for the underlying `.terminal()` API.
+
+### `register_git(agent)`
+
+Registers the `git` skill and `git` terminal command, giving agents version control over their VFS workspace files.
+
+```python
+from agex.git_cli import register_git
+
+register_git(agent)
+```
+
+Enables `git log`, `git commit -m`, `git diff`, `git branch`, `git checkout`, `git reset --hard`, `git show`, and `git merge` from `terminal_action` blocks, backed by kvgit. The skill (`/skills/git/SKILL.md`) is mounted alongside the command for agents that want detailed reference.
+
+Key behaviors:
+
+-   **All file writes are automatically tracked** — there is no staging area or `git add`.
+-   **History is virtualized** — only agent-tagged commits (those with a message) appear in `git log`. System commits from the framework are filtered out.
+-   **`git reset --hard`** restores files without moving kvgit's real HEAD, preserving session state.
+
+> Note: `register_git` lives at `agex.git_cli`, not `agex.helpers`. The other helpers above sit alongside the popular Python libraries they wrap; git's pairs more naturally with the kvgit-backed state machinery so the import path tracks that.
