@@ -12,6 +12,7 @@ import collections
 import csv
 import datetime
 import decimal
+import fnmatch
 import fractions
 import glob
 import gzip
@@ -27,11 +28,13 @@ import random
 import re
 import statistics
 import string
+import tarfile
 import textwrap
 import time
 import traceback
 import typing
 import uuid
+import zipfile
 import zoneinfo
 
 from agex.agent import Agent
@@ -116,12 +119,17 @@ def register_io(agent: Agent) -> None:
 
     # Path-pattern matching — uses os.scandir/listdir under the hood,
     # so it routes through whatever fs interception is in place.
+    # fnmatch is pure string matching (no fs); paired with glob for
+    # agents that build their own enumeration logic.
     agent.module(glob, visibility="low")
+    agent.module(fnmatch, visibility="low")
 
-    # Compressed-file IO — gzip.open() wraps the standard open()
-    # which the fs interception layer routes; compress/decompress
-    # are pure bytes ops.
+    # Compressed-file and archive IO — all of these use the standard
+    # open() under the hood, which the fs interception layer routes;
+    # gzip's compress/decompress are pure bytes ops.
     agent.module(gzip, visibility="low")
+    agent.module(zipfile, visibility="low")
+    agent.module(tarfile, visibility="low")
 
     # pathlib - exclude methods that bypass VFS wrappers
     # Agents must use open() instead of Path.read_text()  etc.
