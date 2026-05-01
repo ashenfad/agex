@@ -13,6 +13,8 @@ import csv
 import datetime
 import decimal
 import fractions
+import glob
+import gzip
 import hashlib
 import io
 import itertools
@@ -78,6 +80,7 @@ def register_io(agent: Agent) -> None:
         visibility="low",
         include=[
             "listdir",
+            "walk",
             "remove",
             "unlink",
             "mkdir",
@@ -110,6 +113,15 @@ def register_io(agent: Agent) -> None:
     agent.module(json, visibility="low")
     agent.module(csv, visibility="low")
     agent.module(pickle, visibility="low")
+
+    # Path-pattern matching — uses os.scandir/listdir under the hood,
+    # so it routes through whatever fs interception is in place.
+    agent.module(glob, visibility="low")
+
+    # Compressed-file IO — gzip.open() wraps the standard open()
+    # which the fs interception layer routes; compress/decompress
+    # are pure bytes ops.
+    agent.module(gzip, visibility="low")
 
     # pathlib - exclude methods that bypass VFS wrappers
     # Agents must use open() instead of Path.read_text()  etc.
