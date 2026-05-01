@@ -555,6 +555,171 @@ class RegistrationMixin(BaseAgent):
                 self._track_module(obj.__module__)
             self._update_fingerprint()
 
+    @overload
+    def terminal_command(
+        self,
+        _handler: F,
+        *,
+        name: str | None = None,
+        visibility: Visibility = "high",
+        docstring: str | None = None,
+    ) -> F: ...
+
+    @overload
+    def terminal_command(
+        self,
+        _handler: None = None,
+        *,
+        name: str | None = None,
+        visibility: Visibility = "high",
+        docstring: str | None = None,
+    ) -> Callable[[F], F]: ...
+
+    def terminal_command(
+        self,
+        _handler: Callable[..., Any] | None = None,
+        *,
+        name: str | None = None,
+        visibility: Visibility = "high",
+        docstring: str | None = None,
+    ) -> Callable[..., Any] | Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Register a terminal command for ``terminal_action``.
+
+        The handler receives a :class:`~agex.terminal.TerminalContext`
+        per invocation and returns ``None`` (success, exit code 0) or
+        a :class:`~agex.terminal.CommandResult` (with ``exit_code`` /
+        ``stderr`` set).
+
+        Handlers needing per-action runtime context (state, vfs)
+        should register via :meth:`terminal_command_factory` instead.
+
+        Can be used as a decorator (``@agent.terminal_command``) or as
+        a direct call (``agent.terminal_command(handler, name=...)``).
+
+        Args:
+            _handler: The handler callable.  When omitted, this method
+                returns a decorator (decorator-factory pattern).
+            name: Override the command name.  Defaults to
+                ``handler.__name__``.  Cannot be a name in
+                :data:`~agex.terminal.RESERVED_TERMINAL_NAMES`
+                (currently ``{"python"}``).
+            visibility: Surfaces the command in the agent's primer.
+                ``"high"`` (default): name + docstring; ``"medium"``:
+                name only; ``"low"``: not in primer (rely on ``--help``
+                or skill markdown).  The command works regardless —
+                visibility only controls primer placement.
+            docstring: Override ``handler.__doc__`` for the primer.
+
+        Returns:
+            The handler unchanged (decorator-friendly).
+
+        Raises:
+            ValueError: If ``name`` collides with a reserved
+                terminal-command name.
+
+        Example::
+
+            @agent.terminal_command
+            def esbuild(ctx):
+                '''Bundle JS files.  Run `esbuild --help` for options.'''
+                ...
+        """
+        from agex.terminal import (
+            RESERVED_TERMINAL_NAMES,
+            TerminalCommandRegistration,
+        )
+
+        def decorator(handler: F) -> F:
+            final_name = name or getattr(handler, "__name__", None)
+            if not final_name:
+                raise ValueError(
+                    "terminal_command: handler has no __name__; pass name= explicitly."
+                )
+            if final_name in RESERVED_TERMINAL_NAMES:
+                raise ValueError(
+                    f"'{final_name}' is reserved (agex-internal command); "
+                    f"use a different name."
+                )
+            final_doc = docstring if docstring is not None else handler.__doc__
+            self._terminal_commands[final_name] = TerminalCommandRegistration(
+                name=final_name,
+                handler=handler,
+                kind="simple",
+                visibility=visibility,
+                docstring=final_doc,
+            )
+            return handler
+
+        return decorator(_handler) if _handler is not None else decorator
+
+    def terminal_command_factory(
+        self,
+        name: str,
+        factory: Callable[..., Any],
+        *,
+        visibility: Visibility = "high",
+        docstring: str | None = None,
+    ) -> None:
+        """Register a terminal command via a factory closure.
+
+        For commands that need per-action agex runtime context (state,
+        vfs).  The factory is called once per ``terminal_action`` with
+        a fresh :class:`~agex.terminal.TerminalRuntime` and returns a
+        termish-shape :class:`~agex.terminal.CommandFunc` (a callable
+        taking :class:`~agex.terminal.CommandContext` and returning
+        ``CommandResult | None``).
+
+        For simple commands that only need ``args`` / ``stdin`` /
+        ``stdout`` / ``fs``, prefer :meth:`terminal_command` —
+        it has nicer ergonomics (decorator pattern, function-name
+        auto-derivation).
+
+        Args:
+            name: The command name.  Required (factory has no
+                ``__name__`` semantics for the command itself).
+                Cannot be in :data:`~agex.terminal.RESERVED_TERMINAL_NAMES`.
+            factory: A callable taking a
+                :class:`~agex.terminal.TerminalRuntime` and returning a
+                :class:`~agex.terminal.CommandFunc`.
+            visibility: Same semantics as :meth:`terminal_command`.
+            docstring: Description for the primer.  When omitted,
+                falls back to ``factory.__doc__``.
+
+        Raises:
+            ValueError: If ``name`` collides with a reserved
+                terminal-command name.
+
+        Example::
+
+            def make_my_command(rt: TerminalRuntime) -> CommandFunc:
+                state = rt.state
+                def handler(ctx: CommandContext) -> CommandResult | None:
+                    # uses ctx.fs + closes over state
+                    ...
+                return handler
+
+            agent.terminal_command_factory(
+                "my-cmd", make_my_command, docstring="..."
+            )
+        """
+        from agex.terminal import (
+            RESERVED_TERMINAL_NAMES,
+            TerminalCommandRegistration,
+        )
+
+        if name in RESERVED_TERMINAL_NAMES:
+            raise ValueError(
+                f"'{name}' is reserved (agex-internal command); use a different name."
+            )
+        final_doc = docstring if docstring is not None else factory.__doc__
+        self._terminal_commands[name] = TerminalCommandRegistration(
+            name=name,
+            handler=factory,
+            kind="factory",
+            visibility=visibility,
+            docstring=final_doc,
+        )
+
     def _track_module(self, module_name: str | None) -> None:
         """Record a module name for lazy dependency resolution (fast, no package lookup)."""
         if module_name:
