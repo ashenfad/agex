@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- **`agent.terminal_command(handler, ...)`** — register a custom shell
+  command for `terminal_action`.  Decorator-style; the handler
+  receives a `TerminalContext` (args, stdin, stdout, fs) and returns
+  `None` (success) or a `CommandResult`.  Mirrors `agent.fn`
+  ergonomics: bare decorator, decorator-factory with options, and
+  direct-call shapes all supported.
+- **`agent.terminal_command_factory(name, factory, ...)`** — register
+  a command via a factory closure for handlers that need agex
+  per-action runtime context (state, vfs).  The factory is invoked
+  once per `terminal_action` with a fresh `TerminalRuntime` and
+  returns a termish `CommandFunc`.
+- **`agex.terminal` module** — public types for handler authors:
+  `TerminalContext`, `TerminalRuntime`, plus re-exports of termish's
+  `CommandContext` / `CommandResult` / `CommandFunc` so handlers can
+  import their full toolset from one place.
+
+### Changed
+- **`register_git` migrated to `terminal_command_factory`.** No
+  behavior change — git still mounts the skill markdown and surfaces
+  in `terminal_action` — but the wiring now goes through the public
+  registration API instead of a hardcoded branch in
+  `build_terminal_commands`.  This is the API sanity check: the
+  existing complex case migrates cleanly.
+- **`terminal_action` primer wording** updated to acknowledge that
+  hosts may register additional commands and to recommend
+  `<command> --help` for discovery.
+
+### Reserved names
+- The string `"python"` is reserved for agex's internal bridge to
+  nested `python_action` execution.  `terminal_command(...)` and
+  `terminal_command_factory(...)` raise `ValueError` if a registration
+  attempts to use it.  All other names — including termish builtins
+  (`ls`, `cat`, `grep`, ...) — follow termish's existing
+  "user-injected commands override builtins" contract; user
+  registrations are last-wins among themselves.
+
+
 ## [0.12.0] - 2026-04-29
 
 ### Changed (breaking)
