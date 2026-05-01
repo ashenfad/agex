@@ -108,6 +108,17 @@ while not (review := critique(report)).approved:
 
 **Skills.** Where registration tells the agent *what* it can use, skills tell it *how* to use it effectively. `agent.skill(...)` mounts markdown documentation that the agent reads on-demand - useful for libraries with non-obvious APIs.
 
+**Terminal-shaped tooling.** Most agent capabilities fit the library shape — registered modules and functions the agent calls in Python.  But some don't: compilers, formatters, archive utilities, anything the agent has seen as a CLI invocation in training rather than a Python API.  `agent.terminal(...)` exposes these as commands the agent runs from `terminal_action` blocks, with the same `--help`-and-pipelines idioms agents already know.
+
+```python
+@agent.terminal
+def esbuild(ctx):
+    """Bundle JS source files."""
+    ...
+```
+
+The library shape stays primary — that's where work finishes, and `task_success` only fires from `python_action`.  The terminal is a secondary surface for tools whose natural interface isn't a Python function: register Python where it's natural, terminal where it's natural, agents reach for whichever the underlying capability is shaped like.
+
 **Time-travel debugging.** Every action commits a checkpoint to a kvgit-backed state store. You can pull up the agent's workspace at any past commit:
 
 ```python
