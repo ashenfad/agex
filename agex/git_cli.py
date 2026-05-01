@@ -55,7 +55,11 @@ def register_git(agent: Any) -> None:
     """
     skill_bytes = resources.files("agex.skills").joinpath("git.md").read_bytes()
     agent.skill(skill_bytes)
-    agent.terminal_command_factory(
+    # ``_terminal_command_factory`` is currently internal — git is the
+    # only consumer.  See its docstring; if real downstream cases
+    # emerge that need per-action runtime context, the API will be
+    # promoted to a public ``agent.terminal_factory``.
+    agent._terminal_command_factory(
         "git",
         _make_git_factory(),
         visibility="low",
@@ -67,12 +71,12 @@ def register_git(agent: Any) -> None:
 
 
 def _make_git_factory():
-    """Build the ``terminal_command_factory`` callable for git.
+    """Build the factory callable for git's terminal command.
 
     The factory receives a :class:`~agex.terminal.TerminalRuntime` per
     invocation and returns a termish CommandFunc.  This thin layer
-    bridges the new factory shape to the existing
-    :func:`make_git_handler` plumbing without rewriting it.
+    bridges the factory shape to the existing :func:`make_git_handler`
+    plumbing without rewriting it.
     """
     from agex.terminal import TerminalRuntime
 

@@ -138,26 +138,27 @@ def build_terminal_commands(
     """Build the injected commands dict for termish execution.
 
     ``python`` is always available (core capability and reserved name).
-    User-registered commands (via ``agent.terminal_command(...)`` or
-    ``agent.terminal_command_factory(...)``) are added on top.  Termish
-    builtins (ls, cat, grep, ...) are NOT in the dict — termish loads
-    them itself; user registrations with those names override them
-    per termish's existing contract.
+    User-registered commands (via ``agent.terminal(...)`` or, for
+    internal use, ``agent._terminal_command_factory(...)``) are added
+    on top.  Termish builtins (ls, cat, grep, ...) are NOT in the
+    dict — termish loads them itself; user registrations with those
+    names override them per termish's existing contract.
     """
     from agex.python_cli import make_python_handler
 
     commands: dict = {"python": make_python_handler(agent, fs)}
 
-    # User-registered commands (terminal_command + terminal_command_factory).
-    # Includes ``git`` when ``register_git(agent)`` has been called —
-    # register_git wires through terminal_command_factory now.
+    # User-registered commands (agent.terminal + the internal
+    # _terminal_command_factory).  Includes ``git`` when
+    # ``register_git(agent)`` has been called — register_git wires
+    # through the internal factory API.
     registrations: dict[str, TerminalCommandRegistration] = getattr(
         agent, "_terminal_commands", {}
     )
     for name, reg in registrations.items():
         if name in commands:
-            # Reserved names like "python" — terminal_command()
-            # already raises on registration, but defend here too.
+            # Reserved names like "python" — registration already
+            # raises on collision, but defend here too.
             continue
         commands[name] = _build_termish_handler(reg, fs, state, vfs)
 

@@ -147,10 +147,10 @@ class BaseAgent:
         self._skills: list[tuple[str, dict[str, bytes]]] = []
 
         # Custom terminal commands (name → registration record).
-        # Populated by ``agent.terminal_command(...)`` /
-        # ``agent.terminal_command_factory(...)``; consumed by
-        # ``build_terminal_commands`` to construct the per-action
-        # commands dict handed to termish.
+        # Populated by ``agent.terminal(...)`` (public) and
+        # ``agent._terminal_command_factory(...)`` (internal, used by
+        # ``register_git``); consumed by ``build_terminal_commands``
+        # to construct the per-action commands dict handed to termish.
         from agex.terminal import TerminalCommandRegistration
 
         self._terminal_commands: dict[str, TerminalCommandRegistration] = {}

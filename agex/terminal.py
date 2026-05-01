@@ -1,20 +1,18 @@
 """Types and helpers for agex terminal command registration.
 
-Hosts register custom shell commands for ``terminal_action`` via two
-sibling APIs on :class:`~agex.agent.Agent`:
+Hosts register custom shell commands for ``terminal_action`` via
+:meth:`~agex.agent.Agent.terminal` on :class:`~agex.agent.Agent`.
+The handler receives a :class:`TerminalContext` (args, stdin, stdout,
+fs) and returns ``None`` (success) or a :class:`CommandResult`.
 
-- :meth:`~agex.agent.Agent.terminal_command` — decorator-style for the
-  common case where the handler only needs the termish-shape context
-  (args, stdin, stdout, fs).
-- :meth:`~agex.agent.Agent.terminal_command_factory` — for handlers
-  that need agex per-action runtime context (state, vfs).  The factory
-  is called once per ``terminal_action`` with a fresh
-  :class:`TerminalRuntime` and returns a termish-shape handler.
-
-The split keeps :class:`TerminalContext` minimal and trivially
-testable for the 95% case while giving complex handlers (like
-``register_git``) a typed escape hatch for the agex internals they
-need.
+A second, *internal-only* registration path
+(:meth:`~agex.agent.Agent._terminal_command_factory`) supports
+handlers that need per-action runtime context (state, vfs).  It's
+currently used only by ``register_git``; if real downstream cases
+emerge that need it, the API will be promoted to a public
+``agent.terminal_factory``.  Until then, public registrations should
+use :meth:`~agex.agent.Agent.terminal` and reach for runtime values
+via closures over the agent at registration time when needed.
 
 Termish's :class:`~termish.context.CommandContext`,
 :class:`~termish.context.CommandResult`, and
@@ -36,9 +34,12 @@ if TYPE_CHECKING:
     from termish.fs import FileSystem
 
 
+# Public surface (decorator-friendly handlers + termish re-exports).
+# ``TerminalRuntime`` and ``TerminalCommandRegistration`` exist in
+# this module but are deliberately NOT re-exported here — they're
+# tied to the internal ``_terminal_command_factory`` API.
 __all__ = [
     "TerminalContext",
-    "TerminalRuntime",
     "CommandContext",
     "CommandResult",
     "CommandFunc",
@@ -60,10 +61,8 @@ class TerminalContext:
     """Per-invocation context for a terminal command handler.
 
     Mirrors the relevant subset of termish's
-    :class:`~termish.context.CommandContext`.  Handlers needing agex
-    per-action runtime (state, vfs) should register via
-    :meth:`~agex.agent.Agent.terminal_command_factory` instead, which
-    additionally provides a :class:`TerminalRuntime`.
+    :class:`~termish.context.CommandContext`.  This is what handlers
+    registered via :meth:`~agex.agent.Agent.terminal` receive.
     """
 
     args: list[str]
@@ -120,8 +119,8 @@ class TerminalCommandRegistration:
     ``CommandFunc`` wrappers per action.
 
     Direct construction is not part of the public API — register
-    commands via :meth:`~agex.agent.Agent.terminal_command` or
-    :meth:`~agex.agent.Agent.terminal_command_factory` instead.
+    commands via :meth:`~agex.agent.Agent.terminal` (or, for
+    internal use, :meth:`~agex.agent.Agent._terminal_command_factory`).
     """
 
     name: str

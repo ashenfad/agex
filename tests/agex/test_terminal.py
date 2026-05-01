@@ -1,12 +1,13 @@
-"""Tests for ``agent.terminal_command`` and ``agent.terminal_command_factory``.
+"""Tests for ``agent.terminal`` (public) and the
+``_terminal_command_factory`` internal API used by ``register_git``.
 
 Covers:
 - Registration roundtrip (decorator, decorator-factory, direct call)
 - Reserved-name collision raises ValueError
 - Last-wins override semantics
 - ``build_terminal_commands`` wires registrations through to termish
-- Factory variant receives per-action ``TerminalRuntime`` and returns
-  a working CommandFunc
+- Internal factory variant receives per-action ``TerminalRuntime``
+  and returns a working CommandFunc
 - Pipeline composition with termish builtins
 """
 
@@ -29,11 +30,11 @@ from agex.terminal import (
 # ---------------------------------------------------------------------------
 
 
-class TestTerminalCommandRegistration:
+class TestTerminalRegistration:
     def test_bare_decorator_registers_with_function_name(self):
         a = Agent()
 
-        @a.terminal_command
+        @a.terminal
         def greet(ctx):
             """say hi"""
             ctx.stdout.write("hi\n")
@@ -49,7 +50,7 @@ class TestTerminalCommandRegistration:
     def test_decorator_factory_with_options(self):
         a = Agent()
 
-        @a.terminal_command(name="renamed", visibility="low", docstring="custom")
+        @a.terminal(name="renamed", visibility="low", docstring="custom")
         def some_handler(ctx):
             """ignored — explicit docstring overrides"""
             pass
@@ -66,7 +67,7 @@ class TestTerminalCommandRegistration:
         def my_handler(ctx):
             pass
 
-        result = a.terminal_command(my_handler, name="custom")
+        result = a.terminal(my_handler, name="custom")
 
         # Direct call returns the handler unchanged (decorator-friendly).
         assert result is my_handler
@@ -76,7 +77,7 @@ class TestTerminalCommandRegistration:
     def test_visibility_default_is_high(self):
         a = Agent()
 
-        @a.terminal_command
+        @a.terminal
         def cmd(ctx):
             pass
 
@@ -88,7 +89,7 @@ class TestTerminalCommandRegistration:
 # ---------------------------------------------------------------------------
 
 
-class TestTerminalCommandFactory:
+class TestInternalFactoryAPI:
     def test_factory_registration(self):
         a = Agent()
 
@@ -100,7 +101,7 @@ class TestTerminalCommandFactory:
 
             return handler
 
-        a.terminal_command_factory("custom", make_handler)
+        a._terminal_command_factory("custom", make_handler)
 
         reg = a._terminal_commands["custom"]
         assert reg.kind == "factory"
@@ -118,7 +119,7 @@ class TestTerminalCommandFactory:
 
             return handler
 
-        a.terminal_command_factory("custom", make_handler, docstring="explicit")
+        a._terminal_command_factory("custom", make_handler, docstring="explicit")
 
         assert a._terminal_commands["custom"].docstring == "explicit"
 
@@ -128,7 +129,7 @@ class TestTerminalCommandFactory:
         def factory(rt):
             return lambda cmd_ctx: None
 
-        a.terminal_command_factory("custom", factory)
+        a._terminal_command_factory("custom", factory)
         assert a._terminal_commands["custom"].visibility == "high"
 
 
@@ -145,20 +146,20 @@ class TestReservedNames:
         a = Agent()
         with pytest.raises(ValueError, match="reserved"):
 
-            @a.terminal_command(name="python")
+            @a.terminal(name="python")
             def cmd(ctx):
                 pass
 
     def test_terminal_command_factory_python_raises(self):
         a = Agent()
         with pytest.raises(ValueError, match="reserved"):
-            a.terminal_command_factory("python", lambda rt: lambda c: None)
+            a._terminal_command_factory("python", lambda rt: lambda c: None)
 
     def test_termish_builtins_are_NOT_reserved(self):
         # Termish explicitly supports overriding builtins.
         a = Agent()
 
-        @a.terminal_command(name="ls")
+        @a.terminal(name="ls")
         def my_ls(ctx):
             pass
 
@@ -175,11 +176,11 @@ class TestOverride:
     def test_user_registrations_last_wins(self):
         a = Agent()
 
-        @a.terminal_command(name="cmd", docstring="first")
+        @a.terminal(name="cmd", docstring="first")
         def first(ctx):
             pass
 
-        @a.terminal_command(name="cmd", docstring="second")
+        @a.terminal(name="cmd", docstring="second")
         def second(ctx):
             pass
 
@@ -189,14 +190,14 @@ class TestOverride:
     def test_factory_can_replace_simple_registration(self):
         a = Agent()
 
-        @a.terminal_command(name="cmd")
+        @a.terminal(name="cmd")
         def simple(ctx):
             pass
 
         def make(rt):
             return lambda cmd_ctx: None
 
-        a.terminal_command_factory("cmd", make)
+        a._terminal_command_factory("cmd", make)
 
         # Factory registration replaces the simple one.
         assert a._terminal_commands["cmd"].kind == "factory"
@@ -217,7 +218,7 @@ class TestBuildTerminalCommands:
     def test_simple_handler_is_wired_through(self):
         a = Agent()
 
-        @a.terminal_command
+        @a.terminal
         def greet(ctx):
             ctx.stdout.write(f"hello {ctx.args[0]}\n")
 
@@ -231,7 +232,7 @@ class TestBuildTerminalCommands:
         a = Agent()
         captured = {}
 
-        @a.terminal_command
+        @a.terminal
         def cmd(ctx):
             # Verify ctx is a TerminalContext, not a CommandContext.
             captured["type"] = type(ctx).__name__
@@ -262,7 +263,7 @@ class TestBuildTerminalCommands:
 
             return handler
 
-        a.terminal_command_factory("custom", make_handler)
+        a._terminal_command_factory("custom", make_handler)
 
         fs = MemoryFS()
         # build_terminal_commands invokes the factory eagerly when wiring.
@@ -276,7 +277,7 @@ class TestBuildTerminalCommands:
     def test_pipeline_composition_with_termish_builtins(self):
         a = Agent()
 
-        @a.terminal_command
+        @a.terminal
         def emit(ctx):
             ctx.stdout.write("alpha\nbeta\ngamma\n")
 
@@ -290,7 +291,7 @@ class TestBuildTerminalCommands:
         # termish's `cat` reads files; we override with one that writes a marker.
         a = Agent()
 
-        @a.terminal_command(name="cat")
+        @a.terminal(name="cat")
         def custom_cat(ctx):
             ctx.stdout.write("OVERRIDDEN\n")
 
@@ -304,7 +305,7 @@ class TestBuildTerminalCommands:
     def test_handler_can_return_command_result_for_failure(self):
         a = Agent()
 
-        @a.terminal_command
+        @a.terminal
         def failing(ctx):
             return ctx.fail("something broke", exit_code=2)
 
@@ -341,7 +342,7 @@ class TestPerActionFreshness:
 
             return handler
 
-        a.terminal_command_factory("custom", make_handler)
+        a._terminal_command_factory("custom", make_handler)
 
         fs = MemoryFS()
         build_terminal_commands(a, fs, state="state-1")

@@ -556,7 +556,7 @@ class RegistrationMixin(BaseAgent):
             self._update_fingerprint()
 
     @overload
-    def terminal_command(
+    def terminal(
         self,
         _handler: F,
         *,
@@ -566,7 +566,7 @@ class RegistrationMixin(BaseAgent):
     ) -> F: ...
 
     @overload
-    def terminal_command(
+    def terminal(
         self,
         _handler: None = None,
         *,
@@ -575,7 +575,7 @@ class RegistrationMixin(BaseAgent):
         docstring: str | None = None,
     ) -> Callable[[F], F]: ...
 
-    def terminal_command(
+    def terminal(
         self,
         _handler: Callable[..., Any] | None = None,
         *,
@@ -590,11 +590,8 @@ class RegistrationMixin(BaseAgent):
         a :class:`~agex.terminal.CommandResult` (with ``exit_code`` /
         ``stderr`` set).
 
-        Handlers needing per-action runtime context (state, vfs)
-        should register via :meth:`terminal_command_factory` instead.
-
-        Can be used as a decorator (``@agent.terminal_command``) or as
-        a direct call (``agent.terminal_command(handler, name=...)``).
+        Can be used as a decorator (``@agent.terminal``) or as a
+        direct call (``agent.terminal(handler, name=...)``).
 
         Args:
             _handler: The handler callable.  When omitted, this method
@@ -619,7 +616,7 @@ class RegistrationMixin(BaseAgent):
 
         Example::
 
-            @agent.terminal_command
+            @agent.terminal
             def esbuild(ctx):
                 '''Bundle JS files.  Run `esbuild --help` for options.'''
                 ...
@@ -633,7 +630,7 @@ class RegistrationMixin(BaseAgent):
             final_name = name or getattr(handler, "__name__", None)
             if not final_name:
                 raise ValueError(
-                    "terminal_command: handler has no __name__; pass name= explicitly."
+                    "agent.terminal: handler has no __name__; pass name= explicitly."
                 )
             if final_name in RESERVED_TERMINAL_NAMES:
                 raise ValueError(
@@ -652,7 +649,7 @@ class RegistrationMixin(BaseAgent):
 
         return decorator(_handler) if _handler is not None else decorator
 
-    def terminal_command_factory(
+    def _terminal_command_factory(
         self,
         name: str,
         factory: Callable[..., Any],
@@ -660,7 +657,7 @@ class RegistrationMixin(BaseAgent):
         visibility: Visibility = "high",
         docstring: str | None = None,
     ) -> None:
-        """Register a terminal command via a factory closure.
+        """Register a terminal command via a factory closure (internal).
 
         For commands that need per-action agex runtime context (state,
         vfs).  The factory is called once per ``terminal_action`` with
@@ -669,10 +666,13 @@ class RegistrationMixin(BaseAgent):
         taking :class:`~agex.terminal.CommandContext` and returning
         ``CommandResult | None``).
 
-        For simple commands that only need ``args`` / ``stdin`` /
-        ``stdout`` / ``fs``, prefer :meth:`terminal_command` —
-        it has nicer ergonomics (decorator pattern, function-name
-        auto-derivation).
+        **Internal API.** Currently used only by ``register_git`` for
+        access to the agent's per-action ``Staged`` and VFS internals.
+        Will be promoted to a public ``agent.terminal_factory`` method
+        if real downstream cases emerge that need per-action runtime
+        context — for now, public registrations should use
+        :meth:`terminal` and reach for runtime values via closures
+        over the agent at registration time when needed.
 
         Args:
             name: The command name.  Required (factory has no
@@ -681,26 +681,13 @@ class RegistrationMixin(BaseAgent):
             factory: A callable taking a
                 :class:`~agex.terminal.TerminalRuntime` and returning a
                 :class:`~agex.terminal.CommandFunc`.
-            visibility: Same semantics as :meth:`terminal_command`.
+            visibility: Same semantics as :meth:`terminal`.
             docstring: Description for the primer.  When omitted,
                 falls back to ``factory.__doc__``.
 
         Raises:
             ValueError: If ``name`` collides with a reserved
                 terminal-command name.
-
-        Example::
-
-            def make_my_command(rt: TerminalRuntime) -> CommandFunc:
-                state = rt.state
-                def handler(ctx: CommandContext) -> CommandResult | None:
-                    # uses ctx.fs + closes over state
-                    ...
-                return handler
-
-            agent.terminal_command_factory(
-                "my-cmd", make_my_command, docstring="..."
-            )
         """
         from agex.terminal import (
             RESERVED_TERMINAL_NAMES,
