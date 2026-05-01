@@ -9,41 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **`agent.terminal_command(handler, ...)`** — register a custom shell
-  command for `terminal_action`.  Decorator-style; the handler
-  receives a `TerminalContext` (args, stdin, stdout, fs) and returns
-  `None` (success) or a `CommandResult`.  Mirrors `agent.fn`
-  ergonomics: bare decorator, decorator-factory with options, and
-  direct-call shapes all supported.
-- **`agent.terminal_command_factory(name, factory, ...)`** — register
-  a command via a factory closure for handlers that need agex
-  per-action runtime context (state, vfs).  The factory is invoked
-  once per `terminal_action` with a fresh `TerminalRuntime` and
-  returns a termish `CommandFunc`.
+- **`agent.terminal(handler, ...)`** — register a custom shell command
+  for `terminal_action`.  Mirrors `agent.fn` ergonomics: bare
+  decorator (`@agent.terminal`), decorator-factory with options
+  (`@agent.terminal(visibility="low")`), and direct-call shapes all
+  supported.  The handler receives a `TerminalContext` (args, stdin,
+  stdout, fs) and returns `None` (success) or a `CommandResult`.
 - **`agex.terminal` module** — public types for handler authors:
-  `TerminalContext`, `TerminalRuntime`, plus re-exports of termish's
-  `CommandContext` / `CommandResult` / `CommandFunc` so handlers can
-  import their full toolset from one place.
+  `TerminalContext`, plus re-exports of termish's `CommandContext` /
+  `CommandResult` / `CommandFunc` so handlers can import their full
+  toolset from one place.
 
 ### Changed
-- **`register_git` migrated to `terminal_command_factory`.** No
+- **`register_git` migrated to use the new registration path.**  No
   behavior change — git still mounts the skill markdown and surfaces
-  in `terminal_action` — but the wiring now goes through the public
+  in `terminal_action` — but the wiring now goes through the
   registration API instead of a hardcoded branch in
-  `build_terminal_commands`.  This is the API sanity check: the
-  existing complex case migrates cleanly.
+  `build_terminal_commands`.  Git uses an internal factory API
+  (`agent._terminal_command_factory`) to access per-action runtime
+  context (Staged, VFS internals); this internal API will be
+  promoted to public if real downstream cases emerge that need it.
 - **`terminal_action` primer wording** updated to acknowledge that
   hosts may register additional commands and to recommend
   `<command> --help` for discovery.
 
 ### Reserved names
 - The string `"python"` is reserved for agex's internal bridge to
-  nested `python_action` execution.  `terminal_command(...)` and
-  `terminal_command_factory(...)` raise `ValueError` if a registration
-  attempts to use it.  All other names — including termish builtins
-  (`ls`, `cat`, `grep`, ...) — follow termish's existing
-  "user-injected commands override builtins" contract; user
-  registrations are last-wins among themselves.
+  nested `python_action` execution.  `terminal(...)` raises
+  `ValueError` if a registration attempts to use it.  All other
+  names — including termish builtins (`ls`, `cat`, `grep`, ...) —
+  follow termish's existing "user-injected commands override
+  builtins" contract; user registrations are last-wins among
+  themselves.
 
 
 ## [0.12.0] - 2026-04-29
