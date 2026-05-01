@@ -66,6 +66,8 @@ A persistent dict scoped to your agent session — survives across actions and t
 
 Cache values must be picklable; sandbox-defined functions and classes are fine.  For files (text, binaries, generated artifacts), prefer the VFS — cache is for in-memory Python objects.
 
+`cache` is a `python_action`-only name.  Helpers in `helpers/` don't see it — bare `cache` references inside a helper module raise `NameError`.  If a helper needs cache access, take it as an argument: `def my_helper(cache, ...): ...` and pass it in from the action.  Don't rely on module-level dicts in helpers for cross-action memoization either; helpers reload on each import, so module-level state is action-local.  `cache` is the durable channel.
+
 ### Image inspection
 
 `view_image(img)` sends an image (PIL Image, matplotlib Figure, or Plotly Figure) to your own vision so you can inspect it on the next turn.
