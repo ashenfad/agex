@@ -38,16 +38,76 @@ if TYPE_CHECKING:
 
 
 def register_git(agent: Any) -> None:
-    """Register the git skill on an agent.
+    """Register the git skill + git terminal command on an agent.
 
-    Mounts the git usage guide at ``/skills/git/SKILL.md`` so the agent
-    can discover git commands on demand via ``cat /skills/git/SKILL.md``.
+    Mounts the git usage guide at ``/skills/git/SKILL.md`` for
+    discovery via ``cat /skills/git/SKILL.md``, and registers the
+    ``git`` terminal command so the agent can run git operations
+    inside ``terminal_action`` pipelines.
+
+    The terminal command is registered at ``visibility="low"`` —
+    agents already know git from training, and the on-demand skill
+    file is the in-depth reference; spending primer tokens on a brief
+    description would be wasteful.
 
     Args:
         agent: An :class:`~agex.Agent` instance.
     """
     skill_bytes = resources.files("agex.skills").joinpath("git.md").read_bytes()
     agent.skill(skill_bytes)
+    agent.terminal_command_factory(
+        "git",
+        _make_git_factory(),
+        visibility="low",
+        docstring=(
+            "Git-style commit / branch / diff operations on the agent's VFS.  "
+            "Run `git` with no args for usage; see /skills/git/SKILL.md for details."
+        ),
+    )
+
+
+def _make_git_factory():
+    """Build the ``terminal_command_factory`` callable for git.
+
+    The factory receives a :class:`~agex.terminal.TerminalRuntime` per
+    invocation and returns a termish CommandFunc.  This thin layer
+    bridges the new factory shape to the existing
+    :func:`make_git_handler` plumbing without rewriting it.
+    """
+    from agex.terminal import TerminalRuntime
+
+    def factory(rt: "TerminalRuntime"):
+        # vkv comes from a versioned state; without it, git can't
+        # operate on history or commits.  Return a handler that
+        # explains the failure rather than crashing the pipeline.
+        vkv = getattr(rt.state, "_versioned", None) if rt.state is not None else None
+        if vkv is None:
+
+            def no_state_handler(ctx):
+                return ctx.fail("git: requires versioned state")
+
+            # Adapter: termish gives a CommandContext; our no_state_handler
+            # uses .fail() which is on TerminalContext.  Wrap to avoid
+            # depending on a mismatched ctx shape.
+            def termish_no_state(cmd_ctx):
+                from termish.context import CommandResult
+
+                return CommandResult(
+                    exit_code=1,
+                    stderr="git: requires versioned state",
+                )
+
+            return termish_no_state
+
+        # Unwrap MountFS to get the raw VFS (which has the path-encoding
+        # internals git_cli relies on).
+        raw_vfs = rt.vfs
+        if hasattr(rt.vfs, "_base"):
+            raw_vfs = rt.vfs._base
+
+        return make_git_handler(vkv, state=rt.state, vfs=raw_vfs)
+
+    return factory
 
 
 def make_git_handler(

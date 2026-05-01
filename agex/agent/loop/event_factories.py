@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from monkeyfs import MountFS
 from termish import ParseError, TerminalError, execute_script, to_script
@@ -23,6 +23,9 @@ from agex.agent.events import (
 from agex.eval.objects import PrintAction
 from agex.llm.core import LLMResponse
 from agex.state.log import add_event_to_log
+
+if TYPE_CHECKING:
+    from agex.terminal import TerminalCommandRegistration
 
 # Task control guidance message (shown when agent forgets to signal completion).
 # Python completing without a terminator implicitly continues the turn — this
@@ -134,30 +137,72 @@ def build_terminal_commands(
 ) -> dict:
     """Build the injected commands dict for termish execution.
 
-    ``python`` is always available (core capability).
-    ``git`` is available when the agent has the git skill registered.
-
-    Returns an empty dict if no handlers are applicable.
+    ``python`` is always available (core capability and reserved name).
+    User-registered commands (via ``agent.terminal_command(...)`` or
+    ``agent.terminal_command_factory(...)``) are added on top.  Termish
+    builtins (ls, cat, grep, ...) are NOT in the dict — termish loads
+    them itself; user registrations with those names override them
+    per termish's existing contract.
     """
     from agex.python_cli import make_python_handler
 
     commands: dict = {"python": make_python_handler(agent, fs)}
 
-    # git is opt-in via register_git(agent)
-    skill_names = {name for name, _ in getattr(agent, "_skills", [])}
-    if "git" in skill_names:
-        from agex.git_cli import make_git_handler
-
-        vkv = getattr(state, "_versioned", None) if state is not None else None
-        if vkv is not None:
-            # Extract the raw VirtualFS from a MountFS wrapper if needed.
-            # The git handler needs the VFS for key encoding/decoding.
-            raw_vfs = vfs
-            if hasattr(vfs, "_base"):
-                raw_vfs = vfs._base  # MountFS wraps a base FS
-            commands["git"] = make_git_handler(vkv, state=state, vfs=raw_vfs)
+    # User-registered commands (terminal_command + terminal_command_factory).
+    # Includes ``git`` when ``register_git(agent)`` has been called —
+    # register_git wires through terminal_command_factory now.
+    registrations: dict[str, TerminalCommandRegistration] = getattr(
+        agent, "_terminal_commands", {}
+    )
+    for name, reg in registrations.items():
+        if name in commands:
+            # Reserved names like "python" — terminal_command()
+            # already raises on registration, but defend here too.
+            continue
+        commands[name] = _build_termish_handler(reg, fs, state, vfs)
 
     return commands
+
+
+def _build_termish_handler(
+    reg: "TerminalCommandRegistration",
+    fs: Any,
+    state: Any,
+    vfs: Any,
+) -> Callable[..., Any]:
+    """Adapt a TerminalCommandRegistration to a termish CommandFunc.
+
+    Constructs a fresh per-invocation closure that:
+    - For ``kind="simple"``: builds a TerminalContext from termish's
+      CommandContext and dispatches the user's handler.
+    - For ``kind="factory"``: invokes the user's factory once with a
+      TerminalRuntime, returns the resulting CommandFunc directly.
+
+    Per-action ``state`` and ``vfs`` are captured by the closure (or
+    via the factory's TerminalRuntime), so each terminal_action sees
+    fresh runtime values without re-registration.
+    """
+    from agex.terminal import TerminalContext, TerminalRuntime
+
+    if reg.kind == "factory":
+        rt = TerminalRuntime(fs=fs, state=state, vfs=vfs)
+        # The factory itself returns a termish CommandFunc — pass through.
+        return reg.handler(rt)
+
+    # kind == "simple": wrap the user's TerminalContext-shape handler
+    # into a termish CommandFunc that translates from CommandContext.
+    handler = reg.handler
+
+    def termish_command(cmd_ctx):
+        rt_ctx = TerminalContext(
+            args=cmd_ctx.args,
+            stdin=cmd_ctx.stdin,
+            stdout=cmd_ctx.stdout,
+            fs=cmd_ctx.fs,
+        )
+        return handler(rt_ctx)
+
+    return termish_command
 
 
 def execute_terminal(
