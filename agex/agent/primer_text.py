@@ -30,13 +30,14 @@ Task terminators (`task_success`, `task_fail`, `task_clarify`) are only availabl
 
 ### Terminal (`terminal_action`)
 
-The per-invocation shell surface.  Each command runs in isolation — like `python_action`, no state carries between calls.  Filesystem operations and git work on **your own workspace** (the VFS); nothing here is shared with the user's local machine, and there's no remote — git is your own version control over your scratch space.
+The per-invocation shell surface.  Each command runs in isolation — like `python_action`, no state carries between calls.  Filesystem operations, git, and any commands the host has registered work on **your own workspace** (the VFS); nothing here is shared with the user's local machine, and there's no remote — git is your own version control over your scratch space.
 
 Reach for the terminal when:
 
 - Inventorying or searching the workspace (`ls`, `find`, `grep`).
 - Running git operations on your own work (`status`, `diff`, `commit`, `branch`, `checkout`).
 - Executing a script you've written (`python helpers/foo.py`).
+- Running tools the host has registered (compilers, formatters, etc.) — try `<command> --help` to see options.
 
 If you develop in scripts, finish the task by importing the result back into `python_action`: `from helpers.compute import solve; task_success(solve(inputs))`.
 
