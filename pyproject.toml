@@ -1,6 +1,6 @@
 [project]
 name = "agex"
-version = "0.12.0"
+version = "0.12.1"
 description = "Library-friendly agents that work directly with your existing Python codebase."
 readme = "README.md"
 license = "MIT"
