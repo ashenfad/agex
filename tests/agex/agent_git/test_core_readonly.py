@@ -218,7 +218,19 @@ class TestLog:
         b = commit_agent(state, {"b": b"2"}, "touched b", parents=[a])
         set_meta(state, branches={"main": b})
         log = vg.log(path="a")
+        # The root commit (a) introduced ``a``; it must appear under
+        # path filter even though it has no virtual parent to diff
+        # against.  Real-git parity for ``git log -- path``.
         assert [e.message for e in log] == ["touched a"]
+
+    def test_path_filter_excludes_root_when_path_absent(self, state, vg):
+        # Conversely: the root commit shouldn't appear when path
+        # filtering for a file it didn't introduce.
+        a = commit_agent(state, {"a": b"1"}, "first")
+        b = commit_agent(state, {"b": b"2"}, "added b", parents=[a])
+        set_meta(state, branches={"main": b})
+        log = vg.log(path="b")
+        assert [e.message for e in log] == ["added b"]
 
     def test_log_includes_files_when_annotated(self, state, vg):
         # Manually craft a commit info with the "files" annotation.
@@ -322,6 +334,32 @@ class TestDiff:
         set_meta(state, branches={"main": b})
         out = vg.diff(a, b)
         assert "Binary files" in out
+
+    def test_diff_invalid_utf8_does_not_crash(self, state, vg):
+        # latin-1 bytes (e.g. ``Ã©``-as-0xE9) and other non-UTF-8
+        # text-like content shouldn't take down ``git diff``.
+        # ``is_binary`` only catches NUL-prefixed files; everything
+        # else flows through the unified-diff path.  Decoding must
+        # use ``errors="replace"`` so invalid bytes render as ``�``
+        # rather than raise ``UnicodeDecodeError``.
+        a = commit_agent(state, {"f": b"caf\xe9\n"}, "v1")  # latin-1 'café'
+        b = commit_agent(state, {"f": b"caf\xe9!\n"}, "v2", parents=[a])
+        set_meta(state, branches={"main": b})
+        out = vg.diff(a, b)  # must not raise
+        # Both versions appear, with replacement chars for the bad byte.
+        assert "caf" in out
+        assert "+" in out  # there's an addition line
+
+    def test_diff_partial_utf8_corruption(self, state, vg):
+        # A truncated multi-byte sequence (here 0xC3 starts a 2-byte
+        # codepoint but is followed by ASCII).  Naive ``decode("utf-8")``
+        # would raise; ``errors="replace"`` keeps the diff readable.
+        a = commit_agent(state, {"f": b"hello\xc3"}, "v1")
+        b = commit_agent(state, {"f": b"world\xc3"}, "v2", parents=[a])
+        set_meta(state, branches={"main": b})
+        out = vg.diff(a, b)
+        assert "-hello" in out
+        assert "+world" in out
 
     def test_diff_one_arg_means_ref_vs_working(self, state, vg):
         # vg.diff(a, None) → diff a vs working tree.  After staging

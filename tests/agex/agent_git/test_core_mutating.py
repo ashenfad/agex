@@ -137,6 +137,26 @@ class TestRm:
         with pytest.raises(PathSpecError, match="did not match"):
             vg.rm(["nope"])
 
+    def test_rm_already_removed_from_workspace_is_idempotent(self, vg):
+        # Real git: ``rm foo && git rm foo`` succeeds — the file's
+        # already gone from the working tree but still tracked at
+        # HEAD, so the deletion just gets re-staged.  An agent that
+        # deletes a file via ``del state[k]`` (or via shell ``rm``)
+        # and then runs ``git rm`` should see the same idempotent
+        # behaviour rather than a "did not match" error.
+        commit_with(vg, {"a": b"1"}, "init")
+        del vg._state["a"]  # already removed from workspace
+        vg.rm(["a"])  # must not raise
+        assert "a" in Metadata.load(vg._state).index
+
+    def test_rm_path_never_existed_still_raises(self, vg):
+        # Negative case: the file isn't in the working tree AND isn't
+        # at HEAD.  ``git rm`` must error rather than silently stage a
+        # spurious "deletion" of a nonexistent path.
+        commit_with(vg, {"a": b"1"}, "init")
+        with pytest.raises(PathSpecError, match="did not match"):
+            vg.rm(["never-existed"])
+
 
 # ---------------------------------------------------------------------------
 # commit
