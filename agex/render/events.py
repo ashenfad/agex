@@ -6,6 +6,7 @@ Converts agex events into provider message formats for LLM communication.
 
 from typing import Any, List
 
+from agex.agent.chapter import build_chapter_scope_filter
 from agex.agent.events import (
     ActionEvent,
     CancelledEvent,
@@ -50,8 +51,17 @@ def render_events_as_markdown(events: List[Event]) -> List[dict]:
     """
     messages: List[dict[str, Any]] = []
 
-    # Filter out ErrorEvents (not shown to agents)
-    filtered_events = [e for e in events if not isinstance(e, ErrorEvent)]
+    # Filter A: hide closed ``__chapter__`` task scopes (their summary
+    # text is already represented by the ChapterEvent itself; rendering
+    # the chapter task's bookkeeping would duplicate it).  Open scopes
+    # stay visible so the chapter task's own loop can see its prompt.
+    skip = build_chapter_scope_filter(events)
+    # Drop ErrorEvents (not shown to agents) and chapter-scope events.
+    filtered_events = [
+        e
+        for i, e in enumerate(events)
+        if not isinstance(e, ErrorEvent) and i not in skip
+    ]
 
     for i, event in enumerate(filtered_events, 1):
         budget = HI_DETAIL_BUDGET
