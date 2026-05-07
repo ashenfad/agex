@@ -25,6 +25,7 @@ from .refs import (
     all_ancestors,
     merge_base,
     resolve_ref,
+    virtual_parents,
     walk_virtual_ancestry,
 )
 
@@ -245,11 +246,11 @@ class VirtualGit:
         """Walk virtual ancestry from the current branch's tip.
 
         Optional ``path`` filters to commits that touched the file.
-        Path-touch detection uses kvgit's hash-level diff between a
-        commit and its first kvgit parent — fast, but it does include
-        commits where the path was incidentally also touched on the
-        physical chain (e.g., a system commit).  Acceptable: such
-        commits don't appear in virtual ancestry anyway.
+        Path-touch detection diffs against the commit's first *virtual*
+        parent — the previous tagged-agent commit on the same branch,
+        which matches what an agent reading their own log expects.
+        Falls back to skipping the commit when no virtual parent is
+        recorded (root commit on a branch).
         """
         meta = self._load_metadata()
         head = meta.head
@@ -261,12 +262,19 @@ class VirtualGit:
         out: list[AgentCommit] = []
         for h in walk_virtual_ancestry(self._vkv, head):
             if path_key is not None:
-                parents = self._vkv.parents(h)
-                if not parents:
-                    continue
-                d = self._vkv.diff(parents[0], h)
-                if path_key not in (d.added | d.removed | d.modified):
-                    continue
+                v_parents = virtual_parents(self._vkv, h)
+                if v_parents:
+                    d = self._vkv.diff(v_parents[0], h)
+                    if path_key not in (d.added | d.removed | d.modified):
+                        continue
+                else:
+                    # Root agent commit (no virtual parent).  Real git
+                    # includes the initial commit in ``git log -- path``
+                    # when that commit introduced the file; we mirror
+                    # that by checking presence at the commit itself.
+                    snap = self._state.checkout(h)
+                    if snap is None or path_key not in snap:
+                        continue
 
             out.append(self._make_commit(h))
             if max_count is not None and len(out) >= max_count:
@@ -383,11 +391,20 @@ class VirtualGit:
                 out.append(f"Binary files a/{display} and b/{display} differ\n")
                 continue
 
+            # ``errors="replace"`` keeps ``git diff`` from crashing on
+            # files that aren't strictly UTF-8 (latin-1, mojibake,
+            # partially-corrupted text).  The is_binary check above
+            # filters NUL-containing files; everything else is
+            # rendered with ``�`` substitutions for invalid bytes.
             old_lines = (
-                old_bytes.decode("utf-8").splitlines(keepends=True) if old_bytes else []
+                old_bytes.decode("utf-8", errors="replace").splitlines(keepends=True)
+                if old_bytes
+                else []
             )
             new_lines = (
-                new_bytes.decode("utf-8").splitlines(keepends=True) if new_bytes else []
+                new_bytes.decode("utf-8", errors="replace").splitlines(keepends=True)
+                if new_bytes
+                else []
             )
             for line in difflib.unified_diff(
                 old_lines,
@@ -523,14 +540,34 @@ class VirtualGit:
                     except KeyError:
                         pass
             else:
-                if internal not in self._state:
-                    raise PathSpecError(f"pathspec '{path}' did not match any files")
-                try:
-                    del self._state[internal]
-                    removed.append(path)
+                if internal in self._state:
+                    try:
+                        del self._state[internal]
+                        removed.append(path)
+                        meta.index.add(internal)
+                    except KeyError:  # pragma: no cover — race-only
+                        raise PathSpecError(
+                            f"pathspec '{path}' did not match any files"
+                        )
+                else:
+                    # File isn't in the working tree.  Real git still
+                    # accepts ``git rm`` on a path tracked at HEAD that
+                    # was already deleted from the workspace —
+                    # idempotently re-stages the deletion.  Without
+                    # this, an agent can't ``git rm`` a file they
+                    # already removed via shell ``rm`` or a Python
+                    # script.
+                    in_head = False
+                    if meta.head is not None:
+                        head_snap = self._state.checkout(meta.head)
+                        if head_snap is not None:
+                            in_head = internal in head_snap
+                    if not in_head:
+                        raise PathSpecError(
+                            f"pathspec '{path}' did not match any files"
+                        )
                     meta.index.add(internal)
-                except KeyError:
-                    raise PathSpecError(f"pathspec '{path}' did not match any files")
+                    removed.append(path)
 
         meta.save(self._state)
 
