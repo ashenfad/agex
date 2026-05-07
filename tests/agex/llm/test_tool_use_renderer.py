@@ -1,5 +1,6 @@
 """Tests for the tool-use event-log renderer."""
 
+from agex.agent.chapter import CHAPTER_TASK
 from agex.agent.emissions import (
     FileEditEmission,
     FileWriteEmission,
@@ -9,6 +10,7 @@ from agex.agent.emissions import (
 )
 from agex.agent.events import (
     ActionEvent,
+    ChapterEvent,
     ClarifyEvent,
     FailEvent,
     OutputEvent,
@@ -707,3 +709,376 @@ class TestSystemNoteFraming:
         texts = [b["text"] for b in user_msg["content"] if b.get("type") == "text"]
         assert "[system] first" in texts
         assert "[system] second" in texts
+
+
+class TestChapterScopeFiltering:
+    """Filter A: closed ``__chapter__`` task scopes are skipped during
+    rendering so the agent's context shows the resulting ChapterEvent
+    summary without the chapter task's own bookkeeping (which carries
+    the same summary text in its ``task_success([Chapter(...)])`` code).
+    """
+
+    def test_closed_chapter_scope_is_skipped(self):
+        """The chapter task's TaskStart, action carrying the
+        ``task_success([Chapter(...)])``, and closing Success do not
+        appear in the rendered messages — only the resulting
+        ChapterEvent does."""
+        events = [
+            TaskStartEvent(agent_name="a", task_name="t1", inputs={}, message="t1"),
+            _python_action(code="real_work()"),
+            OutputEvent(
+                agent_name="a",
+                parts=[PrintAction(args=("done",), emission_id="em_1_0")],
+            ),
+            SuccessEvent(agent_name="a", result="done"),
+            # Chapter task scope — should be filtered out
+            TaskStartEvent(
+                agent_name="a",
+                task_name=CHAPTER_TASK,
+                inputs={"event_index": "[1] task t1"},
+                message="chapter primer goes here",
+            ),
+            _python_action(
+                code='task_success([Chapter(start=1, end=1, name="P1", message="full summary")])'
+            ),
+            SuccessEvent(agent_name="a", result=[]),
+            # The resulting ChapterEvent
+            ChapterEvent(agent_name="a", name="P1", message="full summary"),
+            # Next parent task
+            TaskStartEvent(agent_name="a", task_name="t2", inputs={}, message="t2"),
+            _python_action(code="more_work()"),
+            SuccessEvent(agent_name="a", result="r2"),
+        ]
+        msgs = render_events_as_tool_use(events)
+        # Stringify the whole render — text blocks and tool_use inputs
+        # — so we can spot bookkeeping leaks regardless of where they
+        # land (assistant text turns, user text, or tool_use input).
+        rendered_str = repr(msgs)
+        # The chapter task's primer / bookkeeping must not appear.
+        assert "chapter primer goes here" not in rendered_str
+        assert CHAPTER_TASK not in rendered_str
+        # The chapter task's emitted summary code shouldn't appear
+        # either — the ChapterEvent already carries the summary.
+        assert "Chapter(start=1, end=1" not in rendered_str
+        # The ChapterEvent summary IS rendered.
+        assert "P1" in rendered_str
+        assert "full summary" in rendered_str
+        # And t2's real action code still renders (in a tool_use block).
+        assert "more_work()" in rendered_str
+
+    def test_open_chapter_scope_is_visible(self):
+        """While the chapter task is still running (no terminator yet),
+        its scope is OPEN — its TaskStart and any prior turns must
+        remain visible to its own loop's render call."""
+        events = [
+            TaskStartEvent(agent_name="a", task_name="t1", inputs={}, message="t1"),
+            _python_action(code="x"),
+            SuccessEvent(agent_name="a", result="r"),
+            # Chapter task starts — no terminator yet
+            TaskStartEvent(
+                agent_name="a",
+                task_name=CHAPTER_TASK,
+                inputs={"event_index": "[1] task t1"},
+                message="chapter primer goes here",
+            ),
+            _python_action(code="/* turn 1: still picking */"),
+        ]
+        msgs = render_events_as_tool_use(events)
+        flat = "\n".join(
+            (b.get("text", "") if isinstance(b, dict) else "")
+            for m in msgs
+            for b in (
+                m["content"]
+                if isinstance(m["content"], list)
+                else [{"type": "text", "text": m["content"]}]
+            )
+        )
+        # The chapter task's prompt + turn 1 are visible — the open
+        # scope is exempt from Filter A so the chapter task can see
+        # its own conversation history when it runs turn 2.
+        assert "chapter primer goes here" in flat
+
+    def test_multi_turn_chapter_task_sees_its_own_prior_turns(self):
+        """Regression for the agex-ts case at chaptering.test.ts:293.
+
+        When a chapter task emits a non-terminal action on turn 1 and
+        runs a second turn, turn 2's render must include the chapter
+        task's own turn-1 action.  Filter A's open-scope contract: an
+        unclosed __chapter__ scope is NOT skipped, so the chapter task
+        sees its own conversation history when its loop calls
+        ``render_events_as_tool_use``.
+
+        If Filter A wrongly filtered the open scope, the chapter task's
+        LLM call on turn 2 would see only the parent's events — its
+        turn-1 thinking, code, and any output would vanish, breaking
+        provider-side tool_use/tool_result pairing.
+        """
+        events = [
+            # Parent task ran and finished.
+            TaskStartEvent(agent_name="a", task_name="t1", inputs={}, message="t1"),
+            _python_action(code="parent_action()"),
+            SuccessEvent(agent_name="a", result="r1"),
+            # Chapter task starts (no terminator yet — open scope).
+            TaskStartEvent(
+                agent_name="a",
+                task_name=CHAPTER_TASK,
+                inputs={"event_index": "[1] task t1"},
+                message="chapter task prompt",
+            ),
+            # Turn 1 action — *non-terminal*, e.g. the agent narrating
+            # its plan before emitting Chapter() instances.
+            ActionEvent(
+                agent_name="a",
+                emissions=[
+                    PythonEmission(
+                        code="# turn 1: thinking about which to fold",
+                        title="Plan",
+                        thinking="I'll fold t1.",
+                    )
+                ],
+            ),
+            # OutputEvent for turn 1 — must route to turn 1's tool_use.
+            OutputEvent(
+                agent_name="a",
+                parts=[PrintAction(args=("scoping",), emission_id="em_4_0")],
+            ),
+            # (No SuccessEvent yet — chapter task is mid-flight, about
+            #  to emit turn 2.)
+        ]
+        msgs = render_events_as_tool_use(events)
+        rendered = repr(msgs)
+        # Chapter task's turn-1 thinking/title/code must be visible —
+        # this is what proves Filter A doesn't strip the open scope.
+        assert "turn 1: thinking about which to fold" in rendered
+        assert "Plan" in rendered
+        assert "I'll fold t1." in rendered
+        # Its prompt is also visible (the TaskStartEvent message).
+        assert "chapter task prompt" in rendered
+        # Tool_use / tool_result pairing for turn 1 is intact: there
+        # must be a tool_use block with id "em_4_0" AND a tool_result
+        # block referencing that id (carrying the "scoping" output).
+        rendered_lower = rendered
+        assert "em_4_0" in rendered_lower
+        assert "scoping" in rendered_lower
+
+    def test_filter_a_does_not_inflate_token_count(self):
+        """Token-count regression: the rendered output of a log that
+        contains a closed __chapter__ scope is approximately the same
+        size as the same log with the bookkeeping events stripped.
+
+        The whole point of Filter A is "the chapter task's bookkeeping
+        is invisible to the parent's next render."  This pins down
+        that property at the token level — a future change that
+        leaks chapter bookkeeping into the render would inflate the
+        count and fail this test.
+        """
+        from agex.tokenizers import get_tokenizer
+
+        baseline = [
+            TaskStartEvent(agent_name="a", task_name="t1", inputs={}, message="t1"),
+            _python_action(code="real_work()"),
+            SuccessEvent(agent_name="a", result="r1"),
+            ChapterEvent(agent_name="a", name="P1", message="full summary text"),
+            TaskStartEvent(agent_name="a", task_name="t2", inputs={}, message="t2"),
+            _python_action(code="more_work()"),
+            SuccessEvent(agent_name="a", result="r2"),
+        ]
+        # Same log, but with a fully-formed chapter task scope inserted
+        # before the ChapterEvent (matching what the runtime actually
+        # produces — the bookkeeping is what Filter A is meant to hide).
+        with_bookkeeping = [
+            TaskStartEvent(agent_name="a", task_name="t1", inputs={}, message="t1"),
+            _python_action(code="real_work()"),
+            SuccessEvent(agent_name="a", result="r1"),
+            TaskStartEvent(
+                agent_name="a",
+                task_name=CHAPTER_TASK,
+                inputs={"event_index": "[1] task t1"},
+                message=(
+                    "this is a long chapter primer with many words so the "
+                    "token cost of leaking it would be obvious if Filter A "
+                    "ever silently regressed"
+                ),
+            ),
+            _python_action(
+                code='task_success([Chapter(start=1, end=1, name="P1", message="full summary text")])'
+            ),
+            SuccessEvent(agent_name="a", result=[]),
+            ChapterEvent(agent_name="a", name="P1", message="full summary text"),
+            TaskStartEvent(agent_name="a", task_name="t2", inputs={}, message="t2"),
+            _python_action(code="more_work()"),
+            SuccessEvent(agent_name="a", result="r2"),
+        ]
+
+        def _token_count(events):
+            tokenizer = get_tokenizer("gpt-4")
+            messages = render_events_as_tool_use(events)
+            total = 0
+            for msg in messages:
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    total += len(tokenizer.encode(content))
+                elif isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict):
+                            text = part.get("text") or ""
+                            if text:
+                                total += len(tokenizer.encode(text))
+                            # Tool-use blocks carry their input as a
+                            # dict — count its serialized form so leaks
+                            # of chapter-task code into a tool_use block
+                            # would be detected too.
+                            if part.get("type") == "tool_use":
+                                total += len(
+                                    tokenizer.encode(repr(part.get("input", {})))
+                                )
+            return total
+
+        baseline_tokens = _token_count(baseline)
+        with_book_tokens = _token_count(with_bookkeeping)
+
+        # Allow a small tolerance for incidental positional differences
+        # (e.g. tool_use_id formatting).  Anything bigger means the
+        # chapter task's primer / code is leaking into the render.
+        assert abs(with_book_tokens - baseline_tokens) <= 5, (
+            f"Filter A regression: baseline={baseline_tokens}, "
+            f"with_bookkeeping={with_book_tokens} (delta should be ~0)"
+        )
+
+    def test_multiple_consecutive_closed_chapter_scopes(self):
+        """Two closed chapter scopes back-to-back are both filtered
+        — exercises stack discipline across consecutive scopes."""
+        events = [
+            TaskStartEvent(agent_name="a", task_name="t1", inputs={}, message="t1"),
+            SuccessEvent(agent_name="a", result="r1"),
+            # First chapter task scope.
+            TaskStartEvent(
+                agent_name="a", task_name=CHAPTER_TASK, inputs={}, message="primer-1"
+            ),
+            _python_action(code="task_success([])"),
+            SuccessEvent(agent_name="a", result=[]),
+            TaskStartEvent(agent_name="a", task_name="t2", inputs={}, message="t2"),
+            SuccessEvent(agent_name="a", result="r2"),
+            # Second chapter task scope.
+            TaskStartEvent(
+                agent_name="a", task_name=CHAPTER_TASK, inputs={}, message="primer-2"
+            ),
+            _python_action(code="task_success([])"),
+            SuccessEvent(agent_name="a", result=[]),
+            # Third real task.
+            TaskStartEvent(agent_name="a", task_name="t3", inputs={}, message="t3"),
+        ]
+        rendered = repr(render_events_as_tool_use(events))
+        assert "primer-1" not in rendered
+        assert "primer-2" not in rendered
+        assert CHAPTER_TASK not in rendered
+        # All three real task starts remain visible.
+        assert "t1" in rendered
+        assert "t2" in rendered
+        assert "t3" in rendered
+
+    def test_non_chapter_subtask_inside_chapter_scope_is_filtered(self):
+        """A sub-task running inside a chapter scope is also filtered
+        — the chapter-scope filter's stack discipline keeps the chapter
+        frame on the stack across the inner task's open/close, so the
+        whole chapter scope (including the inner task's events) is
+        skipped."""
+        events = [
+            TaskStartEvent(
+                agent_name="a", task_name="parent", inputs={}, message="parent"
+            ),
+            SuccessEvent(agent_name="a", result="r"),
+            # Chapter task opens.
+            TaskStartEvent(
+                agent_name="a", task_name=CHAPTER_TASK, inputs={}, message="ch-primer"
+            ),
+            # Nested non-chapter task inside the chapter scope (e.g. a
+            # tool a chapter task ran).  Its own taskStart and success
+            # do NOT close the chapter frame.
+            TaskStartEvent(
+                agent_name="a", task_name="inner", inputs={}, message="inner-msg"
+            ),
+            _python_action(code="inner_action()"),
+            SuccessEvent(agent_name="a", result="inner-r"),
+            # Chapter task continues, closes.
+            _python_action(code="task_success([])"),
+            SuccessEvent(agent_name="a", result=[]),
+            # Real next task.
+            TaskStartEvent(agent_name="a", task_name="next", inputs={}, message="next"),
+        ]
+        rendered = repr(render_events_as_tool_use(events))
+        # All chapter-scope content invisible — including the inner task.
+        assert "ch-primer" not in rendered
+        assert "inner-msg" not in rendered
+        assert "inner_action()" not in rendered
+        assert "inner-r" not in rendered
+        assert CHAPTER_TASK not in rendered
+        # Real surrounding tasks remain.
+        assert "parent" in rendered
+        assert "next" in rendered
+
+    def test_open_chapter_scope_mid_log_remains_visible(self):
+        """Defensive: an open chapter scope with events after it (e.g.
+        a chapter task that crashed mid-flight, leaving its taskStart
+        in the log without a terminator while the parent continued)
+        is NOT filtered by Filter A.
+
+        This is a degenerate state — in normal flow the chapter task
+        either closes cleanly or its enclosing task ends.  Filter A's
+        contract is "skip *closed* scopes only," so the open scope
+        renders.  The test pins down the behavior so a future change
+        that auto-closes orphaned scopes is a deliberate decision, not
+        a silent one.
+        """
+        events = [
+            TaskStartEvent(
+                agent_name="a", task_name="parent", inputs={}, message="parent"
+            ),
+            _python_action(code="x"),
+            SuccessEvent(agent_name="a", result="r"),
+            # Open chapter scope (no terminator) — orphaned.
+            TaskStartEvent(
+                agent_name="a",
+                task_name=CHAPTER_TASK,
+                inputs={},
+                message="orphan-primer",
+            ),
+            _python_action(code="orphan_code"),
+            # No closing terminator for the chapter task.
+            # Parent continues with another task afterward.
+            TaskStartEvent(agent_name="a", task_name="next", inputs={}, message="next"),
+        ]
+        rendered = repr(render_events_as_tool_use(events))
+        # Open scope remains visible (Filter A only skips closed scopes).
+        assert "orphan-primer" in rendered
+        assert "orphan_code" in rendered
+
+    def test_task_numbering_skips_filtered_starts(self):
+        """A filtered chapter task's TaskStart does not bump the
+        ``[N]`` counter — t2 stays ``[2]`` (matching what
+        ``build_boundary_index`` would produce)."""
+        events = [
+            TaskStartEvent(agent_name="a", task_name="t1", inputs={}, message="t1"),
+            _python_action(code="x"),
+            SuccessEvent(agent_name="a", result="r1"),
+            TaskStartEvent(
+                agent_name="a", task_name=CHAPTER_TASK, inputs={}, message="chapter"
+            ),
+            _python_action(code="task_success([])"),
+            SuccessEvent(agent_name="a", result=[]),
+            TaskStartEvent(agent_name="a", task_name="t2", inputs={}, message="t2"),
+        ]
+        msgs = render_events_as_tool_use(events)
+        flat = "\n".join(
+            (b.get("text", "") if isinstance(b, dict) else "")
+            for m in msgs
+            for b in (
+                m["content"]
+                if isinstance(m["content"], list)
+                else [{"type": "text", "text": m["content"]}]
+            )
+        )
+        # t1 is [1], t2 is [2] — chapter task does NOT take slot [2].
+        assert "[1] t1" in flat
+        assert "[2] t2" in flat
+        assert "[3]" not in flat

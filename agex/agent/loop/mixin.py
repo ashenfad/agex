@@ -17,8 +17,8 @@ from typing import Any
 from agex.agent.base import BaseAgent
 from agex.agent.chapter import (
     Chapter,
-    build_numbered_task_index,
-    prepare_tasks_for_chaptering,
+    build_boundary_index,
+    has_completable_boundary,
     should_trigger_chaptering,
 )
 from agex.agent.events import ChapterEvent
@@ -291,9 +291,12 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         """Run chapter task if context exceeds the chaptering trigger.
 
         Checks the most recent ActionEvent's input_tokens against
-        chaptering_trigger. If triggered, calls the __chapter__ task
-        which returns Chapter instances. Converts those to ChapterEvents
-        and applies them to the event log.
+        chaptering_trigger. If triggered, builds the boundary index
+        (one entry per non-chapter ``TaskStartEvent`` and per prior
+        ``ChapterEvent``) and runs the ``__chapter__`` task. The
+        chapter task returns ``Chapter`` instances naming 1-based
+        inclusive boundary ranges to fold; each is converted to a
+        ``ChapterEvent`` that replaces the underlying log slice.
         """
         if self._chapter_task is None:
             return
@@ -305,9 +308,22 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
         if not should_trigger_chaptering(all_events, self.chaptering_trigger):
             return
 
-        # Build task index
-        tasks, task_to_log_range = prepare_tasks_for_chaptering(all_events)
-        index_text = build_numbered_task_index(tasks)
+        # Build the boundary index. ``ranges`` are 0-based, end-exclusive
+        # log slices — each entry covers a single boundary's owned events.
+        index_text, ranges = build_boundary_index(all_events)
+
+        # Skip the chapter task when there's nothing safe to fold.
+        # The trigger fires *during* the parent's flow, so the parent's
+        # in-progress task is one of the boundaries — but its range has
+        # no terminator yet and the primer rules out folding ongoing
+        # work. We need at least one *completable* boundary (a closed
+        # task or a prior ChapterEvent). Without one, invoking the
+        # chapter task wastes an LLM call and pollutes the parent's
+        # log with empty-result bookkeeping.
+        if not has_completable_boundary(all_events, ranges):
+            logger.debug("No completable boundary; skipping chapter task")
+            return
+
         try:
             chapters = await self._chapter_task(
                 event_index=index_text,
@@ -323,30 +339,30 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
             logger.debug("Agent returned no chapters")
             return
 
-        # Validate and convert to ChapterEvents
+        # Validate and convert to ChapterEvents.
         chapters_and_ranges = []
         for ch in chapters:
             if not isinstance(ch, Chapter):
                 logger.debug("Skipping non-Chapter object: %s", type(ch).__name__)
                 continue
-            # Validate 1-based inclusive task numbers
+            # 1-based inclusive boundary positions.
             if ch.start < 1 or ch.end < ch.start:
                 logger.debug(
                     "Skipping invalid range: start=%d end=%d", ch.start, ch.end
                 )
                 continue
-            if ch.start > len(task_to_log_range) or ch.end > len(task_to_log_range):
+            if ch.start > len(ranges) or ch.end > len(ranges):
                 logger.debug(
                     "Skipping out-of-bounds range: start=%d end=%d (max=%d)",
                     ch.start,
                     ch.end,
-                    len(task_to_log_range),
+                    len(ranges),
                 )
                 continue
 
-            # Map task range to log range
-            log_start = task_to_log_range[ch.start - 1][0]
-            log_end = task_to_log_range[ch.end - 1][1]
+            # Map boundary positions to the underlying log range.
+            log_start = ranges[ch.start - 1][0]
+            log_end = ranges[ch.end - 1][1]
 
             chapter_event = ChapterEvent(
                 agent_name=self.name,
@@ -366,7 +382,7 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
 
         logger.debug("Applied %d chapter(s)", len(chapters_and_ranges))
 
-        # Emit ChapterEvents so live UIs can update without a reload
+        # Emit ChapterEvents so live UIs can update without a reload.
         if on_event is not None:
             for _, _, chapter_event in chapters_and_ranges:
                 try:

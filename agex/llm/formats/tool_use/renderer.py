@@ -25,6 +25,7 @@ Rendering rules:
 
 from typing import Any, List
 
+from agex.agent.chapter import build_chapter_scope_filter
 from agex.agent.emissions import (
     FileEditEmission,
     FileWriteEmission,
@@ -223,11 +224,28 @@ def render_events_as_tool_use(events: List[Event]) -> List[dict]:
     pending_text: list[dict] = []
 
     task_number = 0
+    # Filter A: skip events inside *closed* ``__chapter__`` task scopes.
+    # The chapter task's bookkeeping (its TaskStart, the action carrying
+    # ``task_success([Chapter(...)])``, and the closing terminator) sits
+    # in the parent's log alongside everything else, but rendering it to
+    # the LLM would (a) duplicate the summary text already rendered via
+    # the ChapterEvents themselves and (b) clutter the parent agent's
+    # context with "I ran a __chapter__ task" noise.  Open scopes (the
+    # chapter task currently running, mid-loop) are intentionally NOT
+    # filtered — that's how the chapter task's own LLM calls see their
+    # own user prompt (its TaskStartEvent) plus any prior turns.
+    skip = build_chapter_scope_filter(events)
+
     # Walk with the *raw* event-log index so block_ids match the loop's
     # stamp on PrintAction / ImageAction.  ErrorEvents are skipped in
-    # rendering but still consume an index.
+    # rendering but still consume an index.  Filtered chapter-scope
+    # events are skipped here too — they neither get rendered nor bump
+    # ``task_number``, which keeps the agent's ``[N]`` numbering aligned
+    # with ``build_boundary_index`` (also Filter-B-aware).
     indexed_events = [
-        (i, e) for i, e in enumerate(events) if not isinstance(e, ErrorEvent)
+        (i, e)
+        for i, e in enumerate(events)
+        if not isinstance(e, ErrorEvent) and i not in skip
     ]
 
     def _last_actionable() -> str | None:
