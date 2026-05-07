@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.12.2] - 2026-05-06
+
+### Changed
+- **Virtualized agent-view git over the kvgit substrate.**  The `git`
+  terminal command now operates on its own metadata blob
+  (`__agex_git__`) — `git checkout / branch / merge` no longer call
+  kvgit branch APIs, so framework state (event log, REPL namespace,
+  agent memory) survives every branch operation.  Implementation
+  moved to the new `agex.agent_git` package; `agex.git_cli` is a
+  re-export shim.
+
+### Fixed
+- **`git add` index persists across terminal actions.**  Was a
+  per-handler closure variable, so `git add foo` followed by
+  `git commit -m` in separate `<TERMINAL>` blocks silently lost the
+  index.  Now stored in the metadata blob alongside branch refs.
+- **Checkout/merge "pending changes" guard is content-based.**  Now
+  catches edits that `commit_state` flushed at a turn boundary but
+  the agent never `git commit -m`'d — previously the guard only saw
+  the in-turn `Staged` buffer.
+- **3-way merge against the merge base.**  Replaces the prior
+  "diff(current, source)" approximation that clobbered local-only
+  changes on the receiving branch.
+- **`git diff` no longer crashes on non-UTF-8 file content**
+  (latin-1, truncated multi-byte sequences); decodes with
+  `errors="replace"`.
+- **`git rm <path>` is idempotent** when the path was already removed
+  from the working tree but is still tracked at HEAD — real-git
+  parity.
+
+
 ## [0.12.0] - 2026-05-02
 
 ### Added
