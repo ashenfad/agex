@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.12.3] - 2026-05-07
+
+### Changed
+- **Boundary-based chaptering index.**  `Chapter` ranges now address
+  both prior `ChapterEvent`s and `TaskStartEvent`s, so the chapter
+  task can fold older summaries into deeper outer chapters.  New
+  `build_boundary_index` / `has_completable_boundary` helpers in
+  `agex.agent.chapter` replace `prepare_tasks_for_chaptering`.
+- **Default-to-folding chapter primer.**  Empty-list returns are
+  reframed as a last resort, and nested chaptering is documented as
+  normal usage.
+
+### Fixed
+- **Chapter-task bookkeeping no longer pollutes the parent's render.**
+  A new `__chapter__`-scope filter skips the chapter task's taskStart,
+  action, and closing terminator in both the LLM render and the
+  boundary-index builder, eliminating the duplicate summary text and
+  `[N]`-slot leakage on subsequent parent turns.
+- **Chapter task skipped when nothing is foldable.**  `_maybe_chapter`
+  now bails via `has_completable_boundary` when the only boundary is
+  the in-progress parent — saves the wasted LLM call and the empty
+  bookkeeping that followed.
+
+
 ## [0.12.2] - 2026-05-06
 
 ### Changed
