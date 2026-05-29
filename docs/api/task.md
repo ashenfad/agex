@@ -256,6 +256,51 @@ agent = Agent(
 > [!NOTE]
 > Cancellation is checked between LLM iterations, not mid-execution. If the agent is in the middle of a long function call or waiting for an LLM response, cancellation will take effect after that operation completes.
 
+### Requesting Permission (Scopes)
+
+When a capability is registered with a [`scope=`](registration.md#scoped-capabilities), it's locked until the user grants that scope for the session. An agent that needs a locked capability **suspends the task** to ask; you resume it once you've decided.
+
+**Agent side** — inside its code, the agent ends the turn with:
+
+```python
+task_request_permission(scope="email", reason="to send the summary")
+```
+
+It can also discover a locked capability reactively: simply *using* one raises a `ScopeRequired` error the agent sees and reacts to.
+
+**Host side** — the call surfaces as a `PermissionPending` exception carrying the request. Decide, then `resume`:
+
+```python
+from agex.agent.permission import PermissionPending
+
+try:
+    result = clean_data(df, session="abc")
+except PermissionPending as p:
+    print(p.scope, p.reason)              # "email", "to send the summary"
+    # ...ask a human...
+    result = clean_data.resume(
+        session="abc",
+        response=p.respond(granted=True),  # or granted=False, note="why not"
+    )
+```
+
+`resume` applies the decision and **re-enters the same task** — no fresh start; the original framing and the agent's partial work are already in the log. It returns the task's result, or raises `PermissionPending` again if the resumed turn needs a different scope (loop until resolved). Async tasks use `await task.aresume(...)`.
+
+**The request is durable.** It's committed as a `PermissionRequestEvent` in the session log, so a host UI can surface a pending request later — even after a restart, on versioned state — and resume it then. The `PermissionPending` exception is just the live, in-process view of that record.
+
+**How it works:**
+
+1. `task_request_permission(scope, reason)` suspends the turn (a terminal control, alongside `task_success`/`task_fail`) and commits a `PermissionRequestEvent`.
+2. The host catches `PermissionPending`, decides, and calls `resume(session=..., response=PermissionResponse(granted=..., note=...))`.
+3. A grant updates the session's granted-scope set and records a `GrantEvent`; a denial records a `GrantDeniedEvent`.
+4. The task re-enters and continues; the granted capability is now live.
+
+**Notes:**
+
+- Grants can also be managed directly — e.g. `scopes(agent.state("abc")).grant("email")` — for pre-granting or admin use (see [State](state.md)). The request/resume flow above applies them for you.
+- `PermissionResponse(granted, note)` is intentionally minimal for v1; `note` is most useful on a denial, to guide the agent's next move.
+- Permission requests are supported from **top-level tasks** (see the v1 constraint on scoped sub-agents in [Registration](registration.md#scoped-capabilities)).
+
 
 ### on_event Parameter
 

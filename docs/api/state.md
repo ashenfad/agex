@@ -111,6 +111,22 @@ chat("Remember this", session="alice")
 chat("What did I say?", session="alice")  # Sees Alice's history
 ```
 
+### Capability Grants (scopes)
+
+When an agent registers [scoped capabilities](registration.md#scoped-capabilities), the scopes granted to a session live in that session's state. Manage them with the `scopes(state)` accessor — mirroring `events(state)` / `view(state)`:
+
+```python
+from agex import scopes
+
+s = scopes(agent.state("alice"))
+s.grant("email")        # grant for this session
+s.has("email")          # -> True
+s.list()                # -> {"email"}
+s.revoke("email")
+```
+
+Grants live in a host-private, versioned key: they commit with the session's state, roll back with it, and are invisible to (and unwritable by) the agent's own code. A standalone `grant`/`revoke` commits immediately. The usual path, though, is the [request/resume flow](task.md#requesting-permission-scopes), where the agent asks and the host grants while resuming.
+
 ### Default Session
 
 If you don't specify a session, the default session `"default"` is used:
