@@ -106,6 +106,40 @@ def _report_tap(on_event, agent_name):
                     )
 
 
+def _find_open_request(events, task_name):
+    """Return the latest *unresolved* PermissionRequestEvent for ``task_name``.
+
+    A request is resolved by a following GrantEvent/GrantDeniedEvent for the
+    same scope. With at most one open request per session, this yields that
+    request (or None if none is open). Abandoned requests from earlier task
+    segments are ignored (they're dead history, like an unhandled task_fail).
+    """
+    from agex.agent.events import (
+        GrantDeniedEvent,
+        GrantEvent,
+        PermissionRequestEvent,
+    )
+
+    open_req = None
+    for e in events:
+        if isinstance(e, PermissionRequestEvent) and e.task_name == task_name:
+            open_req = e
+        elif isinstance(e, (GrantEvent, GrantDeniedEvent)):
+            if open_req is not None and e.scope == open_req.scope:
+                open_req = None
+    return open_req
+
+
+def _reconstruct_inputs(events, inputs_dataclass):
+    """Rebuild the task's input instance from the original TaskStartEvent."""
+    from agex.agent.events import TaskStartEvent
+
+    ts = next((e for e in reversed(events) if isinstance(e, TaskStartEvent)), None)
+    if ts is None or not getattr(ts, "inputs", None):
+        return inputs_dataclass()
+    return inputs_dataclass(**ts.inputs)
+
+
 def _reactivate_result(result, agent):
     """Reactivate sandbox wrappers returned from external execution.
 
@@ -528,6 +562,78 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 else:
                     # Live state - just set normally
                     state[cancel_key] = True
+
+            def resume(self, *, response, session: str = "default"):
+                """Resume a task suspended on a permission request.
+
+                Applies the host's decision — grant updates the session's
+                granted-scope set and appends a ``GrantEvent``; deny appends a
+                ``GrantDeniedEvent`` — then re-enters the same loop *without* a
+                fresh ``TaskStartEvent`` (the original framing and partial work
+                are already in the committed log). The decision is buffered on
+                the same state the loop runs against, so it commits atomically
+                with the resumed turn.
+
+                Returns the task's result, or raises ``PermissionPending``
+                again if the resumed turn requests another scope.
+                """
+                if self.__agex_is_async__:
+                    raise NotImplementedError(
+                        "resume() is not yet implemented for async tasks"
+                    )
+                agent = getattr(self, "__agex_agent__", None)
+                if agent is None:
+                    raise RuntimeError("TaskWrapper has no associated agent")
+
+                from agex.agent.loop.event_factories import (
+                    create_grant_denied_event,
+                    create_grant_event,
+                )
+                from agex.state.log import add_event_to_log, get_events_from_log
+                from agex.state.scopes import GRANT_SET_KEY, read_grants
+
+                state = agent._host.resolve_state(
+                    agent._state_config, session, agent.fingerprint or ""
+                )
+                evs = get_events_from_log(state)
+                open_req = _find_open_request(evs, task_name)
+                if open_req is None:
+                    raise ValueError(
+                        f"No open permission request for task '{task_name}' "
+                        f"on session '{session}'."
+                    )
+
+                if response.granted:
+                    current = read_grants(state)
+                    current.add(open_req.scope)
+                    state[GRANT_SET_KEY] = current
+                    decision = create_grant_event(
+                        agent.name, open_req.scope, response.note
+                    )
+                else:
+                    decision = create_grant_denied_event(
+                        agent.name, open_req.scope, response.note
+                    )
+                add_event_to_log(state, decision)
+
+                inputs_instance = _reconstruct_inputs(evs, inputs_dataclass)
+                try:
+                    return agent._run_task_loop(
+                        task_name=task_name,
+                        docstring=effective_docstring,
+                        inputs_dataclass=inputs_dataclass,
+                        inputs_instance=inputs_instance,
+                        return_type=return_type,
+                        state=state,
+                        session=session,
+                        on_conflict=on_conflict,
+                        max_conflict_retries=max_conflict_retries,
+                        emit_task_start=False,
+                    )
+                except _TaskPending as p:
+                    raise PermissionPending(
+                        scope=p.scope, task_name=task_name, reason=p.reason
+                    ) from None
 
         # Helper to bind and validate arguments for both sync and async wrappers
         def _bind_and_validate(*args, **kwargs):
