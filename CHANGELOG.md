@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- **Capability scopes & human-in-the-loop permissions.**  Any
+  registration can be tagged `scope=`, making it locked by default and
+  available only in sessions granted that scope.  An agent requests
+  locked capabilities at runtime via
+  `task_request_permission(scopes, reason=...)`, which suspends the task
+  and surfaces a `PermissionPending` to the host; the host decides and
+  resumes with `task.resume(session=..., response=...)` (`aresume` for
+  async tasks).  Grants live in host-private, versioned session state
+  managed via the `scopes(state)` accessor (`grant`/`revoke`/`has`/
+  `list`); the open request is a durable `PermissionRequestEvent` and the
+  host's decision a `PermissionEvent` (carrying granted/denied/revoked
+  lists, mirroring `FileEvent`).  `agent.scope_names` lists the declared
+  scopes, and the system primer gains a permission section only when an
+  agent declares scopes.  Requests carry a *set* of scopes (decided
+  atomically in v1); scoped agents are top-level only (the sibling
+  constraint).
+
+### Fixed
+- **`@agent.task` now types as `Task[T]`.**  The type stub exposes the
+  task wrapper's `resume`/`aresume`/`cancel` methods — previously a
+  decorated task typed as a bare `Callable[..., T]`, so those methods
+  were off the typed surface — while still preserving the return type.
+
+
 ## [0.12.3] - 2026-05-07
 
 ### Changed
