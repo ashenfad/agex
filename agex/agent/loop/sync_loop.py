@@ -295,8 +295,16 @@ class SyncLoopMixin:
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
         setup: str | None = None,
+        emit_task_start: bool = True,
     ):
-        """Generator that yields events as they happen during task execution."""
+        """Generator that yields events as they happen during task execution.
+
+        ``emit_task_start=False`` is used by resume: the original
+        ``TaskStartEvent`` (and the agent's partial work) is already in the
+        committed log, so re-entry must not start a fresh turn — it continues
+        the suspended task, reading the existing history (including the
+        Grant/Deny decision the host just appended).
+        """
         # Initialize state
         exec_state, versioned_state = initialize_exec_state(
             self.name, state, inputs_instance, return_type, session=session
@@ -310,17 +318,19 @@ class SyncLoopMixin:
             docstring, inputs_dataclass, inputs_instance, return_type
         )
 
-        # Create and yield task start event
-        task_start_event = create_task_start_event(
-            self.name,
-            task_name,
-            inputs_dataclass,
-            inputs_instance,
-            initial_task_message,
-        )
-        add_event_to_log(exec_state, task_start_event, on_event=on_event)
-        yield task_start_event
-        events_yielded += 1
+        # Create and yield task start event (skipped on resume — the original
+        # is already in the committed log).
+        if emit_task_start:
+            task_start_event = create_task_start_event(
+                self.name,
+                task_name,
+                inputs_dataclass,
+                inputs_instance,
+                initial_task_message,
+            )
+            add_event_to_log(exec_state, task_start_event, on_event=on_event)
+            yield task_start_event
+            events_yielded += 1
 
         # Execute setup code if provided — a synthetic "setup" ActionEvent
         # with a single PythonEmission so rendering is consistent with
@@ -603,6 +613,7 @@ class SyncLoopMixin:
         setup: str | None = None,
         on_conflict: str = "retry",
         max_conflict_retries: int = 3,
+        emit_task_start: bool = True,
     ):
         """Execute the agent task loop with automatic retry on concurrency conflicts."""
         versioned_state, fs, fs_metadata_before = prepare_task_loop(
@@ -625,6 +636,7 @@ class SyncLoopMixin:
                     on_event=on_event,
                     on_token=on_token,
                     setup=setup,
+                    emit_task_start=emit_task_start,
                 )
 
                 try:
