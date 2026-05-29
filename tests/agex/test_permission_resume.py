@@ -49,7 +49,7 @@ def test_resume_grant_round_trip():
         ]
     )
     p = _suspend(chat, "s")
-    assert p.scope == "email"
+    assert p.scopes == {"email"}
 
     # Grant and resume: the scoped fn is now real, so the task completes.
     result = chat.resume(session="s", response=p.respond(granted=True))
@@ -86,7 +86,7 @@ def test_full_hitl_loop_via_stub():
         ]
     )
     p = _suspend(chat, "n")
-    assert p.scope == "email"
+    assert p.scopes == {"email"}
 
     result = chat.resume(session="n", response=p.respond(granted=True))
     assert result == "sent to boss"
@@ -125,12 +125,12 @@ def test_resume_re_suspends_on_second_scope():
         """Chat."""
 
     p = _suspend(chat, "s2")
-    assert p.scope == "email"
+    assert p.scopes == {"email"}
     try:
         chat.resume(session="s2", response=p.respond(granted=True))
         raise AssertionError("expected second PermissionPending")
     except PermissionPending as p2:
-        assert p2.scope == "net"
+        assert p2.scopes == {"net"}
 
 
 @pytest.mark.asyncio
@@ -159,7 +159,47 @@ async def test_async_resume_round_trip():
 
     with pytest.raises(PermissionPending) as ei:
         await chat("hi", session="as")
-    assert ei.value.scope == "email"
+    assert ei.value.scopes == {"email"}
 
     result = await chat.aresume(session="as", response=ei.value.respond(granted=True))
     assert result == "sent to boss"
+
+
+def test_multi_scope_request_granted_atomically():
+    # One request for a set of scopes → one suspension → an atomic grant
+    # unlocks the whole set.
+    clear_agent_registry()
+    a = Agent(
+        name="multi",
+        llm=Dummy(
+            responses=[
+                make_response(
+                    code="task_request_permission(['email', 'calendar'], reason='both')"
+                ),
+                make_response(code="task_success(send('x') + '|' + cal('y'))"),
+            ]
+        ),
+        state=connect_state(type="versioned", storage="memory"),
+    )
+
+    @a.fn(scope="email")
+    def send(t):
+        return f"sent {t}"
+
+    @a.fn(scope="calendar")
+    def cal(t):
+        return f"cal {t}"
+
+    @a.task
+    def chat(m: str) -> str:
+        """Chat."""
+
+    p = None
+    try:
+        chat("hi", session="m")
+    except PermissionPending as e:
+        p = e
+    assert p is not None and p.scopes == {"email", "calendar"}
+
+    result = chat.resume(session="m", response=p.respond(granted=True))
+    assert result == "sent x|cal y"

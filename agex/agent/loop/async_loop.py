@@ -509,7 +509,7 @@ class AsyncLoopMixin:
             except _TaskPending as task_pending:
                 request_event = create_permission_request_event(
                     self.name,
-                    task_pending.scope,
+                    task_pending.scopes,
                     task_name,
                     task_pending.reason,
                 )

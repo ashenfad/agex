@@ -241,6 +241,41 @@ event = CancelledEvent(
 
 See [Task - Task Cancellation](task.md#task-cancellation) for details on the cancellation mechanism.
 
+### Permission Events
+
+Emitted by the capability-scope flow — see [Task - Requesting Permission](task.md#requesting-permission-scopes) and [Security - Capability Scopes](../concepts/security.md#capability-scopes-human-in-the-loop). There are two, mirroring the request/notification split: `PermissionRequestEvent` (a *terminal disposition* — the task suspended by asking, like `FailEvent`/`ClarifyEvent`) and `PermissionEvent` (a *state-change notification* — the `FileEvent` analog for grant state).
+
+#### `PermissionRequestEvent`
+Generated when a task suspends to request capability scope(s). The durable record of an open request (the live, in-process view is the `PermissionPending` exception). An *unresolved* request is one with no following resolving `PermissionEvent`.
+
+```python
+from agex.agent.events import PermissionRequestEvent
+
+# Event structure
+event = PermissionRequestEvent(
+    scopes={"email"},              # set[str] - the requested scope(s)
+    task_name="chat",              # str - the suspended task
+    reason="to send the summary",  # str | None - why the agent needs it
+)
+```
+
+#### `PermissionEvent`
+Generated when the host changes the session's granted scopes — granting, denying, or revoking. Mirrors `FileEvent`: one event type carrying a list per action kind (`granted`/`denied`/`revoked`, paralleling `added`/`modified`/`removed`).
+
+```python
+from agex.agent.events import PermissionEvent
+
+# Event structure
+event = PermissionEvent(
+    granted=["email"],   # list[str] - scopes granted
+    denied=[],           # list[str] - scopes denied
+    revoked=[],          # list[str] - scopes revoked
+    note="approved",     # str | None
+)
+```
+
+A v1 atomic decision grants or denies the *whole* requested set, so a resolving event populates one of `granted`/`denied`. Out-of-band `scopes(state).revoke(...)` produces a `revoked` event. (Partial grants — mixed lists — are a future extension the shape already accommodates.)
+
 ### Event Properties
 
 All events share these common properties from `BaseEvent`:

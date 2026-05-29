@@ -38,7 +38,7 @@ def test_request_permission_suspends_with_pending_and_event():
         chat("hi", session="s")
         raise AssertionError("expected PermissionPending")
     except PermissionPending as p:
-        assert p.scope == "email"
+        assert p.scopes == {"email"}
         assert p.task_name == "chat"
         assert p.reason == "to send the summary"
         resp = p.respond(granted=True, note="ok")
@@ -49,7 +49,7 @@ def test_request_permission_suspends_with_pending_and_event():
     evs = events(a.state("s"))
     reqs = [e for e in evs if isinstance(e, PermissionRequestEvent)]
     assert len(reqs) == 1
-    assert reqs[0].scope == "email"
+    assert reqs[0].scopes == {"email"}
     assert reqs[0].task_name == "chat"
     assert reqs[0].reason == "to send the summary"
 
@@ -63,7 +63,7 @@ def test_request_permission_without_reason():
         chat("hi", session="s")
         raise AssertionError("expected PermissionPending")
     except PermissionPending as p:
-        assert p.scope == "net"
+        assert p.scopes == {"net"}
         assert p.reason is None
 
 
@@ -89,9 +89,9 @@ async def test_async_request_permission_suspends():
 
     with pytest.raises(PermissionPending) as ei:
         await achat("hi", session="s")
-    assert ei.value.scope == "email"
+    assert ei.value.scopes == {"email"}
     assert ei.value.reason == "r"
 
     reqs = [e for e in events(a.state("s")) if isinstance(e, PermissionRequestEvent)]
     assert len(reqs) == 1
-    assert reqs[0].scope == "email"
+    assert reqs[0].scopes == {"email"}

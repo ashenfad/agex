@@ -39,15 +39,18 @@ class PermissionPending(Exception):
             df = clean_data(df, session="abc")
         except PermissionPending as p:
             df = clean_data.resume(session="abc", response=p.respond(granted=True))
+
+    ``scopes`` is the set of requested capability scopes (one or more). An
+    atomic ``respond(granted=...)`` grants or denies the whole set.
     """
 
     def __init__(
-        self, *, scope: str, task_name: str, reason: str | None = None
+        self, *, scopes: set[str], task_name: str, reason: str | None = None
     ) -> None:
-        self.scope = scope
+        self.scopes = scopes
         self.task_name = task_name
         self.reason = reason
-        msg = f"task {task_name!r} is awaiting a grant of scope {scope!r}"
+        msg = f"task {task_name!r} is awaiting grants for {sorted(scopes)!r}"
         if reason:
             msg += f" ({reason})"
         super().__init__(msg)

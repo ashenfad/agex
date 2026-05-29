@@ -76,7 +76,7 @@ class _TaskPending(_AgentExit):
     loop raises in this signal's place at the boundary.
     """
 
-    scope: str
+    scopes: set[str]
     reason: str | None = None
 
 

@@ -315,9 +315,7 @@ class BaseEvent(BaseModel):
             "ChapterEvent": "📖",
             "ErrorEvent": "⚠️",
             "PermissionRequestEvent": "🔐",
-            "GrantEvent": "🔓",
-            "GrantDeniedEvent": "🚫",
-            "RevokeEvent": "🔒",
+            "PermissionEvent": "🔑",
         }
         emoji = emoji_map.get(class_name, "📋")
 
@@ -762,20 +760,20 @@ class FailEvent(BaseEvent):
 
 
 class PermissionRequestEvent(BaseEvent):
-    """Fired when a task suspends to request a capability scope from the host.
+    """Fired when a task suspends to request capability scope(s) from the host.
 
     The durable, canonical record of an open request (the live in-process view
     is ``PermissionPending``). An *unresolved* request is one with no following
-    ``GrantEvent``/``GrantDeniedEvent`` in the session log.
+    resolving ``PermissionEvent`` (granted/denied) in the session log.
     """
 
-    scope: str
+    scopes: set[str]
     task_name: str
     reason: str | None = None
 
     @model_validator(mode="after")
     def _compute_tokens(self):
-        text = f"🔐 Requesting scope '{self.scope}' for task '{self.task_name}'"
+        text = f"🔐 Requesting {sorted(self.scopes)} for task '{self.task_name}'"
         if self.reason:
             text += f": {self.reason}"
         tokens = count_tokens(text)
@@ -786,10 +784,13 @@ class PermissionRequestEvent(BaseEvent):
     def __str__(self) -> str:
         base = super().__str__()
         reason = f"\n  Reason: {self.reason}" if self.reason else ""
-        return f"{base}\n  Scope: {self.scope}\n  Task: {self.task_name}{reason}"
+        return (
+            f"{base}\n  Scopes: {sorted(self.scopes)}\n  Task: {self.task_name}{reason}"
+        )
 
     def _repr_html_(self) -> str:
-        detail = f"scope <code>{html.escape(self.scope)}</code>"
+        names = ", ".join(f"<code>{html.escape(s)}</code>" for s in sorted(self.scopes))
+        detail = f"scope(s) {names}"
         if self.reason:
             detail += f" — {html.escape(self.reason)}"
         content = _event_section("🔐 Permission requested:", detail, "#b08800")
@@ -803,15 +804,32 @@ class PermissionRequestEvent(BaseEvent):
         )
 
 
-class GrantEvent(BaseEvent):
-    """Fired when the host grants a capability scope to the session."""
+class PermissionEvent(BaseEvent):
+    """Host-side change to the session's granted scopes.
 
-    scope: str
+    The notification counterpart to ``PermissionRequestEvent`` — the
+    ``FileEvent`` analog for grant state, carrying a list per action kind
+    (``granted``/``denied``/``revoked``, paralleling
+    ``added``/``modified``/``removed``). A v1 atomic decision grants or denies
+    the whole requested set; partial grants (mixed lists) are a future
+    extension the shape already accommodates.
+    """
+
+    granted: list[str] = []
+    denied: list[str] = []
+    revoked: list[str] = []
     note: str | None = None
 
     @model_validator(mode="after")
     def _compute_tokens(self):
-        text = f"🔓 Granted scope '{self.scope}'"
+        parts = []
+        if self.granted:
+            parts.append(f"granted {self.granted}")
+        if self.denied:
+            parts.append(f"denied {self.denied}")
+        if self.revoked:
+            parts.append(f"revoked {self.revoked}")
+        text = "🔑 " + ("; ".join(parts) or "(none)")
         if self.note:
             text += f": {self.note}"
         tokens = count_tokens(text)
@@ -821,89 +839,38 @@ class GrantEvent(BaseEvent):
 
     def __str__(self) -> str:
         base = super().__str__()
+        bits = []
+        if self.granted:
+            bits.append(f"granted={self.granted}")
+        if self.denied:
+            bits.append(f"denied={self.denied}")
+        if self.revoked:
+            bits.append(f"revoked={self.revoked}")
         note = f"\n  Note: {self.note}" if self.note else ""
-        return f"{base}\n  Granted scope: {self.scope}{note}"
+        return f"{base}\n  {', '.join(bits) or '(none)'}{note}"
 
     def _repr_html_(self) -> str:
-        detail = f"scope <code>{html.escape(self.scope)}</code>"
+        sections = []
+        if self.granted:
+            sections.append(
+                _event_section("🔓 Granted:", ", ".join(self.granted), "#28a745")
+            )
+        if self.denied:
+            sections.append(
+                _event_section("🚫 Denied:", ", ".join(self.denied), "#d73a49")
+            )
+        if self.revoked:
+            sections.append(
+                _event_section("🔒 Revoked:", ", ".join(self.revoked), "#6a737d")
+            )
         if self.note:
-            detail += f" — {html.escape(self.note)}"
-        content = _event_section("🔓 Scope granted:", detail, "#28a745")
+            sections.append(
+                _event_section("📝 Note:", html.escape(self.note), "#6a737d")
+            )
+        content = "".join(sections) or _event_section("🔑 Scopes:", "(none)", "#6a737d")
         return _event_html_container(
-            "🔓",
-            "GrantEvent",
-            self.full_namespace,
-            self.timestamp,
-            content,
-            self.commit_hash,
-        )
-
-
-class GrantDeniedEvent(BaseEvent):
-    """Fired when the host denies a capability-scope request."""
-
-    scope: str
-    note: str | None = None
-
-    @model_validator(mode="after")
-    def _compute_tokens(self):
-        text = f"🚫 Denied scope '{self.scope}'"
-        if self.note:
-            text += f": {self.note}"
-        tokens = count_tokens(text)
-        self.full_detail_tokens = tokens
-        self.low_detail_tokens = tokens
-        return self
-
-    def __str__(self) -> str:
-        base = super().__str__()
-        note = f"\n  Note: {self.note}" if self.note else ""
-        return f"{base}\n  Denied scope: {self.scope}{note}"
-
-    def _repr_html_(self) -> str:
-        detail = f"scope <code>{html.escape(self.scope)}</code>"
-        if self.note:
-            detail += f" — {html.escape(self.note)}"
-        content = _event_section("🚫 Scope denied:", detail, "#d73a49")
-        return _event_html_container(
-            "🚫",
-            "GrantDeniedEvent",
-            self.full_namespace,
-            self.timestamp,
-            content,
-            self.commit_hash,
-        )
-
-
-class RevokeEvent(BaseEvent):
-    """Fired when the host revokes a previously-granted capability scope."""
-
-    scope: str
-    note: str | None = None
-
-    @model_validator(mode="after")
-    def _compute_tokens(self):
-        text = f"🔒 Revoked scope '{self.scope}'"
-        if self.note:
-            text += f": {self.note}"
-        tokens = count_tokens(text)
-        self.full_detail_tokens = tokens
-        self.low_detail_tokens = tokens
-        return self
-
-    def __str__(self) -> str:
-        base = super().__str__()
-        note = f"\n  Note: {self.note}" if self.note else ""
-        return f"{base}\n  Revoked scope: {self.scope}{note}"
-
-    def _repr_html_(self) -> str:
-        detail = f"scope <code>{html.escape(self.scope)}</code>"
-        if self.note:
-            detail += f" — {html.escape(self.note)}"
-        content = _event_section("🔒 Scope revoked:", detail, "#6a737d")
-        return _event_html_container(
-            "🔒",
-            "RevokeEvent",
+            "🔑",
+            "PermissionEvent",
             self.full_namespace,
             self.timestamp,
             content,
@@ -1193,9 +1160,7 @@ Event = (
     | ChapterEvent
     | FileEvent
     | PermissionRequestEvent
-    | GrantEvent
-    | GrantDeniedEvent
-    | RevokeEvent
+    | PermissionEvent
 )
 
 
@@ -1229,9 +1194,7 @@ def _register_ipython_formatters():
             html_formatter.for_type(ClarifyEvent, as_html)  # type: ignore[attr-defined]
             html_formatter.for_type(ChapterEvent, as_html)  # type: ignore[attr-defined]
             html_formatter.for_type(PermissionRequestEvent, as_html)  # type: ignore[attr-defined]
-            html_formatter.for_type(GrantEvent, as_html)  # type: ignore[attr-defined]
-            html_formatter.for_type(GrantDeniedEvent, as_html)  # type: ignore[attr-defined]
-            html_formatter.for_type(RevokeEvent, as_html)  # type: ignore[attr-defined]
+            html_formatter.for_type(PermissionEvent, as_html)  # type: ignore[attr-defined]
 
     except ImportError:
         # IPython not available - that's fine, we'll use the default _repr_markdown_

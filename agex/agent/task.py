@@ -109,24 +109,20 @@ def _report_tap(on_event, agent_name):
 def _find_open_request(events, task_name):
     """Return the latest *unresolved* PermissionRequestEvent for ``task_name``.
 
-    A request is resolved by a following GrantEvent/GrantDeniedEvent for the
-    same scope. With at most one open request per session, this yields that
-    request (or None if none is open). Abandoned requests from earlier task
-    segments are ignored (they're dead history, like an unhandled task_fail).
+    A request is resolved by a following PermissionEvent that grants or denies
+    (a revoke-only event doesn't resolve a request). With at most one open
+    request per session, this yields that request (or None if none is open).
+    Abandoned requests from earlier task segments are ignored (they're dead
+    history, like an unhandled task_fail).
     """
-    from agex.agent.events import (
-        GrantDeniedEvent,
-        GrantEvent,
-        PermissionRequestEvent,
-    )
+    from agex.agent.events import PermissionEvent, PermissionRequestEvent
 
     open_req = None
     for e in events:
         if isinstance(e, PermissionRequestEvent) and e.task_name == task_name:
             open_req = e
-        elif isinstance(e, (GrantEvent, GrantDeniedEvent)):
-            if open_req is not None and e.scope == open_req.scope:
-                open_req = None
+        elif isinstance(e, PermissionEvent) and (e.granted or e.denied):
+            open_req = None
     return open_req
 
 
@@ -567,19 +563,17 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 """Shared resume preamble: apply the host's decision and
                 reconstruct inputs. Returns (agent, state, inputs_instance).
 
-                Grant updates the session's granted-scope set and appends a
-                GrantEvent; deny appends a GrantDeniedEvent. The decision is
-                buffered on the same state the loop runs against, so it commits
-                atomically with the resumed turn.
+                The decision is *atomic* over the requested set: grant adds all
+                requested scopes to the session's grant set and appends a
+                PermissionEvent(granted=...); deny appends a
+                PermissionEvent(denied=...). It's buffered on the same state the
+                loop runs against, so it commits atomically with the resumed turn.
                 """
                 agent = getattr(self, "__agex_agent__", None)
                 if agent is None:
                     raise RuntimeError("TaskWrapper has no associated agent")
 
-                from agex.agent.loop.event_factories import (
-                    create_grant_denied_event,
-                    create_grant_event,
-                )
+                from agex.agent.loop.event_factories import create_permission_event
                 from agex.state.log import add_event_to_log, get_events_from_log
                 from agex.state.scopes import GRANT_SET_KEY, read_grants
 
@@ -594,16 +588,17 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         f"on session '{session}'."
                     )
 
+                requested = sorted(open_req.scopes)
                 if response.granted:
                     current = read_grants(state)
-                    current.add(open_req.scope)
+                    current |= open_req.scopes
                     state[GRANT_SET_KEY] = current
-                    decision = create_grant_event(
-                        agent.name, open_req.scope, response.note
+                    decision = create_permission_event(
+                        agent.name, granted=requested, note=response.note
                     )
                 else:
-                    decision = create_grant_denied_event(
-                        agent.name, open_req.scope, response.note
+                    decision = create_permission_event(
+                        agent.name, denied=requested, note=response.note
                     )
                 add_event_to_log(state, decision)
 
@@ -636,7 +631,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     )
                 except _TaskPending as p:
                     raise PermissionPending(
-                        scope=p.scope, task_name=task_name, reason=p.reason
+                        scopes=p.scopes, task_name=task_name, reason=p.reason
                     ) from None
 
             async def aresume(self, *, response, session: str = "default"):
@@ -662,7 +657,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     )
                 except _TaskPending as p:
                     raise PermissionPending(
-                        scope=p.scope, task_name=task_name, reason=p.reason
+                        scopes=p.scopes, task_name=task_name, reason=p.reason
                     ) from None
 
         # Helper to bind and validate arguments for both sync and async wrappers
@@ -746,7 +741,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 except _TaskPending as p:
                     # Public boundary: surface the suspend as PermissionPending.
                     raise PermissionPending(
-                        scope=p.scope, task_name=task_name, reason=p.reason
+                        scopes=p.scopes, task_name=task_name, reason=p.reason
                     ) from None
 
         # Create the actual task function (async or sync based on original function)
@@ -799,7 +794,7 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         )
                     except _TaskPending as p:
                         raise PermissionPending(
-                            scope=p.scope, task_name=task_name, reason=p.reason
+                            scopes=p.scopes, task_name=task_name, reason=p.reason
                         ) from None
 
         else:

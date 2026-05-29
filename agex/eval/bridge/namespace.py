@@ -137,14 +137,16 @@ def _task_clarify(message=""):
     raise TaskClarify(message)
 
 
-def _task_request_permission(scope, reason=None):
-    """Suspend the task to request a capability scope from the host.
+def _task_request_permission(scopes, reason=None):
+    """Suspend the task to request capability scope(s) from the host.
 
-    Ends the turn (a terminal control, like task_success/task_fail). The host
-    sees a PermissionPending, decides, and resumes; on grant the scoped
-    capability becomes available.
+    ``scopes`` may be a single scope name or an iterable of names. Ends the
+    turn (a terminal control, like task_success/task_fail). The host sees a
+    PermissionPending, decides, and resumes; on grant the scoped capabilities
+    become available.
     """
-    raise _TaskPending(scope=scope, reason=reason)
+    scope_set = {scopes} if isinstance(scopes, str) else set(scopes)
+    raise _TaskPending(scopes=scope_set, reason=reason)
 
 
 class _AgentDir:
