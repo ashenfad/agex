@@ -191,6 +191,19 @@ class RegistrationMixin(BaseAgent):
             # Check for nested Modal hosts - not supported
             # If this is a task from another agent with a Modal host, reject it
             if owning_agent is not None:
+                # Sibling-composition constraint (scope-interrupt v1): a scoped
+                # agent is top-level only. Registering it as another agent's fn
+                # would create a nested agent whose scope-needs aren't supported
+                # yet (see roadmap/scope-interrupt.md §12). Caught here, at
+                # composition time, before anything runs.
+                if owning_agent.scope_names:
+                    raise ValueError(
+                        f"Cannot register task '{final_name}' from agent "
+                        f"'{owning_agent.name}' as a sub-agent: it has scoped "
+                        f"registrations ({sorted(owning_agent.scope_names)}). "
+                        f"Scoped agents are top-level only in v1."
+                    )
+
                 from agex.host.local import Local
 
                 sub_agent_host = getattr(owning_agent, "_host", None)

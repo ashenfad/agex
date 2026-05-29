@@ -221,6 +221,37 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                     lines.append(f"- {name}")
             parts.append("\n".join(lines))
 
+        # Permission scopes — included only when the agent declares scoped
+        # capabilities. Gated on the *static* scope set (never per-session
+        # grant state), so the system prompt stays cache-stable across
+        # grants/revokes. Omitted entirely when there are no scopes, so an
+        # agent without gated capabilities can't hallucinate requests.
+        scope_names = self.scope_names
+        if scope_names:
+            parts.append(
+                "\n".join(
+                    [
+                        "# Permission Scopes",
+                        "",
+                        "Some capabilities are gated behind a *scope* and stay "
+                        "locked until the user grants it for this session. "
+                        "Using a locked capability raises a ScopeRequired error "
+                        "naming the scope.",
+                        "",
+                        "To request a scope, end your turn with:",
+                        "  task_request_permission(scope='<name>', reason='<why>')",
+                        "",
+                        "This suspends the task until the user decides; you then "
+                        "resume with their decision. Request proactively when "
+                        "you can see a capability you'll need is locked. If a "
+                        "request is denied, adapt or fail gracefully — do not "
+                        "re-request the same scope.",
+                        "",
+                        "Declarable scopes: " + ", ".join(sorted(scope_names)),
+                    ]
+                )
+            )
+
         if self.primer:
             parts.append(self.primer)
 
