@@ -28,6 +28,7 @@ agent.fn(
 | `docstring` | `str | None` | `None` | Override the function's docstring for the agent |
 | `host_fs_access` | `bool` | `False` | Allow this function to access the host filesystem even when VFS/IsolatedFS is active (see [FileSystem docs](fs.md#host-filesystem-access)) |
 | `network_access` | `bool` | `False` | Allow this function to make network connections (see [Security - Network Access](../concepts/security.md#network-access-control)) |
+| `scope` | `str | None` | `None` | Gate this function behind a named capability *scope*: locked by default, available only in sessions that have been granted the scope. See [Scoped Capabilities](#scoped-capabilities). |
 
 ### Visibility Levels
 
@@ -124,6 +125,7 @@ agent.cls(
 | `configure` | `dict[str, MemberSpec] | None` | `None` | Per-member configuration overrides |
 | `host_fs_access` | `bool` | `False` | Allow this class and its methods to access the host filesystem (see [FileSystem docs](fs.md#host-filesystem-access)) |
 | `network_access` | `bool` | `False` | Allow this class and its methods to make network connections (see [Security - Network Access](../concepts/security.md#network-access-control)) |
+| `scope` | `str | None` | `None` | Gate this class behind a named capability *scope* (see [Scoped Capabilities](#scoped-capabilities)). |
 
 ### Usage Patterns
 
@@ -227,6 +229,7 @@ agent.module(
 | `recursive` | `bool` | `False` | If `True`, recursively register all sub-modules of the given module. |
 | `host_fs_access` | `bool` | `False` | Allow all functions/classes in this module to access the host filesystem (see [FileSystem docs](fs.md#host-filesystem-access)) |
 | `network_access` | `bool` | `False` | Allow all functions/classes in this module to make network connections (see [Security - Network Access](../concepts/security.md#network-access-control)) |
+| `scope` | `str | None` | `None` | Gate this whole module/instance behind a named capability *scope* (see [Scoped Capabilities](#scoped-capabilities)). |
 
 ### A Note on Instance Registration
 
@@ -573,6 +576,44 @@ Key behaviors:
 - **All file writes are automatically tracked** — there is no staging area or `git add`.
 - **History is virtualized** — only agent-tagged commits (those with a message) appear in `git log`. System commits from the framework are filtered out.
 - **`git reset --hard`** restores files without moving kvgit's real HEAD, preserving session state.
+
+## Scoped Capabilities
+
+Any registration can be tagged with a `scope=` — a named capability that is
+**locked by default** and only available in sessions that have been *granted*
+that scope. This is the gating half of human-in-the-loop permissions; the
+agent requests a locked scope at runtime and the host decides (see
+[Task — Requesting permission](task.md#requesting-permission-scopes)).
+
+```python
+agent.fn(send_mail, scope="email")
+agent.fn(read_inbox, scope="email")    # same scope → a bundle: one grant unlocks both
+agent.module(requests, scope="net")
+agent.fn(clean_data)                   # no scope → always available (unchanged behavior)
+```
+
+- A `scope` names a **capability bundle**: registrations sharing a scope are
+  unlocked together by a single grant. Granularity is whatever you register
+  (a whole module, a single function), composing with `include`/`exclude`.
+- **Unscoped registrations are always available** — fully backward compatible.
+- Scoped registrations are **locked by default**. In a session without the
+  grant, using one raises a `ScopeRequired` error that names the scope; the
+  agent reacts by requesting it.
+
+### Discovering declared scopes
+
+```python
+agent.scope_names   # -> {"email", "net"}  — the scopes this agent declares
+```
+
+`agent.scope_names` is static (derived from registrations), distinct from
+`scopes(state).list()` which reports the scopes currently *granted* in a given
+session. Granting/revoking is done with the `scopes(state)` accessor — see
+[State](state.md) — and the request/resume flow in [Task](task.md#requesting-permission-scopes).
+
+> **v1 constraint:** a scoped agent is *top-level only* — registering a scoped
+> agent's task as another agent's `.fn()` raises, because scoped capabilities
+> in a sub-agent aren't supported yet.
 
 ## Next Steps
 
