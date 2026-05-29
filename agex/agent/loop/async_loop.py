@@ -284,8 +284,12 @@ class AsyncLoopMixin:
         on_event: Callable[[Any], None] | None = None,
         on_token: Callable[[Any], None] | None = None,
         setup: str | None = None,
+        emit_task_start: bool = True,
     ):
-        """Async version of :meth:`SyncLoopMixin._task_loop_generator`."""
+        """Async version of :meth:`SyncLoopMixin._task_loop_generator`.
+
+        ``emit_task_start=False`` is used by resume — see the sync version.
+        """
         loop = asyncio.get_running_loop()
 
         exec_state, versioned_state = initialize_exec_state(
@@ -299,20 +303,21 @@ class AsyncLoopMixin:
             docstring, inputs_dataclass, inputs_instance, return_type
         )
 
-        task_start_event = create_task_start_event(
-            self.name,
-            task_name,
-            inputs_dataclass,
-            inputs_instance,
-            initial_task_message,
-        )
-        add_event_to_log(exec_state, task_start_event, on_event=None)
-        if on_event:
-            res = call_sync_or_async(on_event, task_start_event)
-            if inspect.isawaitable(res):
-                await res
-        yield task_start_event
-        events_yielded += 1
+        if emit_task_start:
+            task_start_event = create_task_start_event(
+                self.name,
+                task_name,
+                inputs_dataclass,
+                inputs_instance,
+                initial_task_message,
+            )
+            add_event_to_log(exec_state, task_start_event, on_event=None)
+            if on_event:
+                res = call_sync_or_async(on_event, task_start_event)
+                if inspect.isawaitable(res):
+                    await res
+            yield task_start_event
+            events_yielded += 1
 
         def thread_safe_on_event(event):
             if on_event:
@@ -601,6 +606,7 @@ class AsyncLoopMixin:
         setup: str | None = None,
         on_conflict: str = "retry",
         max_conflict_retries: int = 3,
+        emit_task_start: bool = True,
     ):
         """Async version of _run_task_loop."""
 
@@ -625,6 +631,7 @@ class AsyncLoopMixin:
                     on_event=on_event,
                     on_token=on_token,
                     setup=setup,
+                    emit_task_start=emit_task_start,
                 )
 
                 async for event in generator:

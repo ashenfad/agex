@@ -3,6 +3,8 @@ the suspended task — grant makes the scoped capability real, deny lets the
 agent adapt.
 """
 
+import pytest
+
 from agex import Agent, clear_agent_registry, connect_state
 from agex.agent.permission import PermissionPending
 from agex.llm import Dummy
@@ -129,3 +131,35 @@ def test_resume_re_suspends_on_second_scope():
         raise AssertionError("expected second PermissionPending")
     except PermissionPending as p2:
         assert p2.scope == "net"
+
+
+@pytest.mark.asyncio
+async def test_async_resume_round_trip():
+    clear_agent_registry()
+    a = Agent(
+        name="ar",
+        llm=Dummy(
+            responses=[
+                make_response(
+                    code="task_request_permission('email', reason='to send')"
+                ),
+                make_response(code="task_success(send_mail('boss'))"),
+            ]
+        ),
+        state=connect_state(type="versioned", storage="memory"),
+    )
+
+    @a.fn(scope="email")
+    def send_mail(to):
+        return f"sent to {to}"
+
+    @a.task
+    async def chat(msg: str) -> str:
+        """Chat."""
+
+    with pytest.raises(PermissionPending) as ei:
+        await chat("hi", session="as")
+    assert ei.value.scope == "email"
+
+    result = await chat.aresume(session="as", response=ei.value.respond(granted=True))
+    assert result == "sent to boss"

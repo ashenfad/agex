@@ -563,24 +563,15 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     # Live state - just set normally
                     state[cancel_key] = True
 
-            def resume(self, *, response, session: str = "default"):
-                """Resume a task suspended on a permission request.
+            def _prepare_resume(self, session, response):
+                """Shared resume preamble: apply the host's decision and
+                reconstruct inputs. Returns (agent, state, inputs_instance).
 
-                Applies the host's decision — grant updates the session's
-                granted-scope set and appends a ``GrantEvent``; deny appends a
-                ``GrantDeniedEvent`` — then re-enters the same loop *without* a
-                fresh ``TaskStartEvent`` (the original framing and partial work
-                are already in the committed log). The decision is buffered on
-                the same state the loop runs against, so it commits atomically
-                with the resumed turn.
-
-                Returns the task's result, or raises ``PermissionPending``
-                again if the resumed turn requests another scope.
+                Grant updates the session's granted-scope set and appends a
+                GrantEvent; deny appends a GrantDeniedEvent. The decision is
+                buffered on the same state the loop runs against, so it commits
+                atomically with the resumed turn.
                 """
-                if self.__agex_is_async__:
-                    raise NotImplementedError(
-                        "resume() is not yet implemented for async tasks"
-                    )
                 agent = getattr(self, "__agex_agent__", None)
                 if agent is None:
                     raise RuntimeError("TaskWrapper has no associated agent")
@@ -617,8 +608,47 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 add_event_to_log(state, decision)
 
                 inputs_instance = _reconstruct_inputs(evs, inputs_dataclass)
+                return agent, state, inputs_instance
+
+            def resume(self, *, response, session: str = "default"):
+                """Resume a sync task suspended on a permission request.
+
+                Re-enters the same loop *without* a fresh TaskStartEvent (the
+                original framing and partial work are already in the committed
+                log). Returns the task's result, or raises ``PermissionPending``
+                again if the resumed turn requests another scope.
+                """
+                if self.__agex_is_async__:
+                    raise NotImplementedError("use aresume() to resume an async task")
+                agent, state, inputs_instance = self._prepare_resume(session, response)
                 try:
                     return agent._run_task_loop(
+                        task_name=task_name,
+                        docstring=effective_docstring,
+                        inputs_dataclass=inputs_dataclass,
+                        inputs_instance=inputs_instance,
+                        return_type=return_type,
+                        state=state,
+                        session=session,
+                        on_conflict=on_conflict,
+                        max_conflict_retries=max_conflict_retries,
+                        emit_task_start=False,
+                    )
+                except _TaskPending as p:
+                    raise PermissionPending(
+                        scope=p.scope, task_name=task_name, reason=p.reason
+                    ) from None
+
+            async def aresume(self, *, response, session: str = "default"):
+                """Resume an async task suspended on a permission request.
+
+                Async counterpart to :meth:`resume`.
+                """
+                if not self.__agex_is_async__:
+                    raise NotImplementedError("use resume() to resume a sync task")
+                agent, state, inputs_instance = self._prepare_resume(session, response)
+                try:
+                    return await agent._arun_task_loop(
                         task_name=task_name,
                         docstring=effective_docstring,
                         inputs_dataclass=inputs_dataclass,
