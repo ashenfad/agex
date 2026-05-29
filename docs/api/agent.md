@@ -98,6 +98,17 @@ Maximum time for a single block of agent-generated code to execute (*not* LLM ca
 
 Maximum think-act cycles per task. Raises `TaskTimeout` if exceeded.
 
+### `.scope_names`
+**Type:** `set[str]`
+
+The capability scopes this agent *declares* across its registrations — the scopes that can be granted. Static (derived from registrations), and distinct from `scopes(state).list()`, which reports the scopes currently *granted* in a given session. See [Registration — Scoped Capabilities](registration.md#scoped-capabilities).
+
+```python
+agent.fn(send_mail, scope="email")
+agent.module(requests, scope="net")
+print(agent.scope_names)  # {"email", "net"}
+```
+
 ## Class Methods
 
 ### `Agent.clone_registrations(source, *, name=None, **kwargs)`
