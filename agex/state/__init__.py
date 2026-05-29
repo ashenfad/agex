@@ -17,6 +17,7 @@ from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
 
 from .config import StateConfig
 from .live import Live
+from .scopes import ScopeSet, scopes
 
 __all__ = [
     # kvgit types (direct)
@@ -39,6 +40,8 @@ __all__ = [
     "state_diffs",
     "connect_state",
     "events",
+    "scopes",
+    "ScopeSet",
 ]
 
 

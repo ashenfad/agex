@@ -68,17 +68,28 @@ def translate_policy(
     agent: "BaseAgent",
     timeout: float | None = None,
     tick_limit: int | None = None,
+    grants: set[str] | None = None,
 ) -> Policy:
     """Convert an agent's policy registrations into a sandtrap Policy.
+
+    The *effective* policy is a function of ``(agent, grants)``: registrations
+    with no ``scope`` are always included; a scoped registration is included
+    as the real member only when its scope is in ``grants`` — otherwise a
+    ``ScopeRequired``-raising stand-in is registered in its place (see
+    ``agex/eval/bridge/stubs.py``). This is recomputed per execution, so a
+    grant/revoke takes effect on the agent's next emission.
 
     Args:
         agent: The agent whose policy to translate.
         timeout: Execution timeout in seconds. Defaults to agent.eval_timeout_seconds.
         tick_limit: Max checkpoint ticks. Defaults to agent.eval_tick_limit.
+        grants: Scopes granted in the current session. None → no scopes
+            granted (all scoped registrations are locked).
 
     Returns:
         A sandtrap Policy with equivalent registrations.
     """
+    granted: set[str] = grants or set()
     effective_timeout = timeout if timeout is not None else agent.eval_timeout_seconds
     effective_tick_limit = (
         tick_limit
@@ -94,11 +105,11 @@ def translate_policy(
 
     for ns_name, ns in agent._policy.namespaces.items():
         if ns_name == "__main__" and ns.kind == "virtual":
-            _translate_main_namespace(policy, ns, agent)
+            _translate_main_namespace(policy, ns, agent, granted)
         elif ns.kind == "module":
-            _translate_module_namespace(policy, ns)
+            _translate_module_namespace(policy, ns, granted)
         elif ns.kind in ("instance", "inherited"):
-            _translate_instance_namespace(policy, ns, agent)
+            _translate_instance_namespace(policy, ns, agent, granted)
 
     return policy
 
@@ -147,9 +158,13 @@ def _wrap_sub_agent_task(fn_obj):
     return wrapper
 
 
-def _translate_main_namespace(policy: Policy, ns, agent: "BaseAgent") -> None:
+def _translate_main_namespace(
+    policy: Policy, ns, agent: "BaseAgent", granted: set[str]
+) -> None:
     """Translate the __main__ virtual namespace (registered fns and classes)."""
     import builtins as _builtins
+
+    from agex.eval.bridge.stubs import make_cls_stub, make_fn_stub
 
     # Register functions
     for fn_name, fn_obj in ns.fn_objects.items():
@@ -157,18 +172,32 @@ def _translate_main_namespace(policy: Policy, ns, agent: "BaseAgent") -> None:
         if fn_obj is _builtins.open:
             continue
 
+        spec = ns.fns.get(fn_name)
+        scope = getattr(spec, "scope", None) if spec else None
+
+        # Scoped-but-ungranted → register a ScopeRequired-raising stand-in.
+        if scope and scope not in granted:
+            policy.fn(make_fn_stub(fn_name, scope), name=fn_name)
+            continue
+
         # Wrap sub-agent task functions to convert TaskClarify/TaskFail → EvalError
         actual_fn = fn_obj
         if hasattr(fn_obj, "__agex_task_namespace__"):
             actual_fn = _wrap_sub_agent_task(fn_obj)
 
-        spec = ns.fns.get(fn_name)
         host_fs = getattr(spec, "host_fs_access", False) if spec else False
         net = getattr(spec, "network_access", False) if spec else False
         policy.fn(actual_fn, name=fn_name, host_fs_access=host_fs, network_access=net)
 
     # Register classes
     for cls_name, resolved_cls in ns.classes.items():
+        scope = getattr(resolved_cls, "scope", None)
+        if scope and scope not in granted:
+            policy.cls(
+                make_cls_stub(cls_name, scope), name=cls_name, constructable=True
+            )
+            continue
+
         constructable = getattr(resolved_cls, "constructable", True)
         actual_cls = resolved_cls.cls
         host_fs = getattr(actual_cls, "__agex_host_fs_access__", False)
@@ -182,8 +211,15 @@ def _translate_main_namespace(policy: Policy, ns, agent: "BaseAgent") -> None:
         )
 
 
-def _translate_module_namespace(policy: Policy, ns) -> None:
+def _translate_module_namespace(policy: Policy, ns, granted: set[str]) -> None:
     """Translate a module namespace."""
+    from agex.eval.bridge.stubs import make_module_stub
+
+    # Scoped-but-ungranted → register a raising stand-in under the same name.
+    if ns.scope and ns.scope not in granted:
+        policy.module(make_module_stub(ns.name, ns.scope), name=ns.name, include="*")
+        return
+
     try:
         mod = ns._ensure_module_loaded()
     except Exception:
@@ -202,8 +238,16 @@ def _translate_module_namespace(policy: Policy, ns) -> None:
     )
 
 
-def _translate_instance_namespace(policy: Policy, ns, agent: "BaseAgent") -> None:
+def _translate_instance_namespace(
+    policy: Policy, ns, agent: "BaseAgent", granted: set[str]
+) -> None:
     """Translate an instance namespace (live object)."""
+    from agex.eval.bridge.stubs import make_module_stub
+
+    if ns.scope and ns.scope not in granted:
+        policy.module(make_module_stub(ns.name, ns.scope), name=ns.name, include="*")
+        return
+
     obj = agent._host_object_registry.get(ns.name)
     if obj is None:
         return
