@@ -314,6 +314,10 @@ class BaseEvent(BaseModel):
             "ClarifyEvent": "❓",
             "ChapterEvent": "📖",
             "ErrorEvent": "⚠️",
+            "PermissionRequestEvent": "🔐",
+            "GrantEvent": "🔓",
+            "GrantDeniedEvent": "🚫",
+            "RevokeEvent": "🔒",
         }
         emoji = emoji_map.get(class_name, "📋")
 
@@ -757,6 +761,156 @@ class FailEvent(BaseEvent):
         )
 
 
+class PermissionRequestEvent(BaseEvent):
+    """Fired when a task suspends to request a capability scope from the host.
+
+    The durable, canonical record of an open request (the live in-process view
+    is ``PermissionPending``). An *unresolved* request is one with no following
+    ``GrantEvent``/``GrantDeniedEvent`` in the session log.
+    """
+
+    scope: str
+    task_name: str
+    reason: str | None = None
+
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        text = f"🔐 Requesting scope '{self.scope}' for task '{self.task_name}'"
+        if self.reason:
+            text += f": {self.reason}"
+        tokens = count_tokens(text)
+        self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens
+        return self
+
+    def __str__(self) -> str:
+        base = super().__str__()
+        reason = f"\n  Reason: {self.reason}" if self.reason else ""
+        return f"{base}\n  Scope: {self.scope}\n  Task: {self.task_name}{reason}"
+
+    def _repr_html_(self) -> str:
+        detail = f"scope <code>{html.escape(self.scope)}</code>"
+        if self.reason:
+            detail += f" — {html.escape(self.reason)}"
+        content = _event_section("🔐 Permission requested:", detail, "#b08800")
+        return _event_html_container(
+            "🔐",
+            "PermissionRequestEvent",
+            self.full_namespace,
+            self.timestamp,
+            content,
+            self.commit_hash,
+        )
+
+
+class GrantEvent(BaseEvent):
+    """Fired when the host grants a capability scope to the session."""
+
+    scope: str
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        text = f"🔓 Granted scope '{self.scope}'"
+        if self.note:
+            text += f": {self.note}"
+        tokens = count_tokens(text)
+        self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens
+        return self
+
+    def __str__(self) -> str:
+        base = super().__str__()
+        note = f"\n  Note: {self.note}" if self.note else ""
+        return f"{base}\n  Granted scope: {self.scope}{note}"
+
+    def _repr_html_(self) -> str:
+        detail = f"scope <code>{html.escape(self.scope)}</code>"
+        if self.note:
+            detail += f" — {html.escape(self.note)}"
+        content = _event_section("🔓 Scope granted:", detail, "#28a745")
+        return _event_html_container(
+            "🔓",
+            "GrantEvent",
+            self.full_namespace,
+            self.timestamp,
+            content,
+            self.commit_hash,
+        )
+
+
+class GrantDeniedEvent(BaseEvent):
+    """Fired when the host denies a capability-scope request."""
+
+    scope: str
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        text = f"🚫 Denied scope '{self.scope}'"
+        if self.note:
+            text += f": {self.note}"
+        tokens = count_tokens(text)
+        self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens
+        return self
+
+    def __str__(self) -> str:
+        base = super().__str__()
+        note = f"\n  Note: {self.note}" if self.note else ""
+        return f"{base}\n  Denied scope: {self.scope}{note}"
+
+    def _repr_html_(self) -> str:
+        detail = f"scope <code>{html.escape(self.scope)}</code>"
+        if self.note:
+            detail += f" — {html.escape(self.note)}"
+        content = _event_section("🚫 Scope denied:", detail, "#d73a49")
+        return _event_html_container(
+            "🚫",
+            "GrantDeniedEvent",
+            self.full_namespace,
+            self.timestamp,
+            content,
+            self.commit_hash,
+        )
+
+
+class RevokeEvent(BaseEvent):
+    """Fired when the host revokes a previously-granted capability scope."""
+
+    scope: str
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _compute_tokens(self):
+        text = f"🔒 Revoked scope '{self.scope}'"
+        if self.note:
+            text += f": {self.note}"
+        tokens = count_tokens(text)
+        self.full_detail_tokens = tokens
+        self.low_detail_tokens = tokens
+        return self
+
+    def __str__(self) -> str:
+        base = super().__str__()
+        note = f"\n  Note: {self.note}" if self.note else ""
+        return f"{base}\n  Revoked scope: {self.scope}{note}"
+
+    def _repr_html_(self) -> str:
+        detail = f"scope <code>{html.escape(self.scope)}</code>"
+        if self.note:
+            detail += f" — {html.escape(self.note)}"
+        content = _event_section("🔒 Scope revoked:", detail, "#6a737d")
+        return _event_html_container(
+            "🔒",
+            "RevokeEvent",
+            self.full_namespace,
+            self.timestamp,
+            content,
+            self.commit_hash,
+        )
+
+
 class CancelledEvent(BaseEvent):
     """Fired when the task is cancelled via external request."""
 
@@ -1038,6 +1192,10 @@ Event = (
     | ClarifyEvent
     | ChapterEvent
     | FileEvent
+    | PermissionRequestEvent
+    | GrantEvent
+    | GrantDeniedEvent
+    | RevokeEvent
 )
 
 
@@ -1070,6 +1228,10 @@ def _register_ipython_formatters():
             html_formatter.for_type(FailEvent, as_html)  # type: ignore[attr-defined]
             html_formatter.for_type(ClarifyEvent, as_html)  # type: ignore[attr-defined]
             html_formatter.for_type(ChapterEvent, as_html)  # type: ignore[attr-defined]
+            html_formatter.for_type(PermissionRequestEvent, as_html)  # type: ignore[attr-defined]
+            html_formatter.for_type(GrantEvent, as_html)  # type: ignore[attr-defined]
+            html_formatter.for_type(GrantDeniedEvent, as_html)  # type: ignore[attr-defined]
+            html_formatter.for_type(RevokeEvent, as_html)  # type: ignore[attr-defined]
 
     except ImportError:
         # IPython not available - that's fine, we'll use the default _repr_markdown_

@@ -14,9 +14,10 @@ from typing import Any, Callable
 from kvgit import Staged
 
 from agex.agent.base import BaseAgent
-from agex.agent.datatypes import TaskClarify, TaskFail
+from agex.agent.datatypes import TaskClarify, TaskFail, _TaskPending
 from agex.agent.events import ActionEvent, OutputEvent
 from agex.agent.loop import TaskLoopMixin
+from agex.agent.permission import PermissionPending
 from agex.agent.utils import call_sync_or_async, is_function_body_empty
 from agex.eval.objects import PrintAction
 from agex.eval.validation import validate_with_sampling
@@ -591,20 +592,26 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                 state = self._host.resolve_state(
                     self._state_config, session, self.fingerprint or ""
                 )
-                return self._run_task_loop(
-                    task_name=task_name,
-                    docstring=effective_docstring,
-                    inputs_dataclass=inputs_dataclass,
-                    inputs_instance=inputs_instance,
-                    return_type=return_type,
-                    state=state,
-                    session=session,
-                    on_event=tapped_on_event,
-                    on_token=on_token,
-                    setup=setup,
-                    on_conflict=on_conflict,
-                    max_conflict_retries=max_conflict_retries,
-                )
+                try:
+                    return self._run_task_loop(
+                        task_name=task_name,
+                        docstring=effective_docstring,
+                        inputs_dataclass=inputs_dataclass,
+                        inputs_instance=inputs_instance,
+                        return_type=return_type,
+                        state=state,
+                        session=session,
+                        on_event=tapped_on_event,
+                        on_token=on_token,
+                        setup=setup,
+                        on_conflict=on_conflict,
+                        max_conflict_retries=max_conflict_retries,
+                    )
+                except _TaskPending as p:
+                    # Public boundary: surface the suspend as PermissionPending.
+                    raise PermissionPending(
+                        scope=p.scope, task_name=task_name, reason=p.reason
+                    ) from None
 
         # Create the actual task function (async or sync based on original function)
         if inspect.iscoroutinefunction(func):
@@ -639,20 +646,25 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     state = self._host.resolve_state(
                         self._state_config, session, self.fingerprint or ""
                     )
-                    return await self._arun_task_loop(
-                        task_name=task_name,
-                        docstring=effective_docstring,
-                        inputs_dataclass=inputs_dataclass,
-                        inputs_instance=inputs_instance,
-                        return_type=return_type,
-                        state=state,
-                        session=session,
-                        on_event=tapped_on_event,
-                        on_token=on_token,
-                        setup=setup,
-                        on_conflict=on_conflict,
-                        max_conflict_retries=max_conflict_retries,
-                    )
+                    try:
+                        return await self._arun_task_loop(
+                            task_name=task_name,
+                            docstring=effective_docstring,
+                            inputs_dataclass=inputs_dataclass,
+                            inputs_instance=inputs_instance,
+                            return_type=return_type,
+                            state=state,
+                            session=session,
+                            on_event=tapped_on_event,
+                            on_token=on_token,
+                            setup=setup,
+                            on_conflict=on_conflict,
+                            max_conflict_retries=max_conflict_retries,
+                        )
+                    except _TaskPending as p:
+                        raise PermissionPending(
+                            scope=p.scope, task_name=task_name, reason=p.reason
+                        ) from None
 
         else:
             task_wrapper = sync_task_func
