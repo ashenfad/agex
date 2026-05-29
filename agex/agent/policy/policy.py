@@ -106,6 +106,7 @@ class AgentPolicy:
         recursive: bool = False,
         host_fs_access: bool = False,
         network_access: bool = False,
+        scope: str | None = None,
     ) -> Namespace:
         mod_name = name or (module if isinstance(module, str) else module.__name__)
         spec = Namespace(
@@ -119,6 +120,7 @@ class AgentPolicy:
             recursive=recursive,
             host_fs_access=host_fs_access,
             network_access=network_access,
+            scope=scope,
         )
         self.namespaces[mod_name] = spec
 
@@ -156,6 +158,7 @@ class AgentPolicy:
         configure: dict[str, MemberSpec] | None = None,
         host_fs_access: bool = False,
         network_access: bool = False,
+        scope: str | None = None,
     ) -> Namespace:
         spec = Namespace(
             name=name,
@@ -168,6 +171,7 @@ class AgentPolicy:
             recursive=False,
             host_fs_access=host_fs_access,
             network_access=network_access,
+            scope=scope,
         )
         self.namespaces[name] = spec
         return spec
@@ -189,6 +193,7 @@ class AgentPolicy:
         docstring: str | None = None,
         host_fs_access: bool = False,
         network_access: bool = False,
+        scope: str | None = None,
     ) -> Namespace:
         final_name = name or getattr(func, "__name__", None) or "fn"
         if final_name in RESERVED_NAMES:
@@ -205,6 +210,7 @@ class AgentPolicy:
             docstring=final_doc,
             host_fs_access=host_fs_access,
             network_access=network_access,
+            scope=scope,
         )
         main.fn_objects[final_name] = func
         return main
@@ -221,6 +227,7 @@ class AgentPolicy:
         configure: dict[str, MemberSpec] | None = None,
         host_fs_access: bool = False,
         network_access: bool = False,
+        scope: str | None = None,
     ) -> Namespace:
         # Build a class spec using a synthetic namespace spec carrying filters
         temp_spec = Namespace(
@@ -240,6 +247,7 @@ class AgentPolicy:
             temp_spec.configure[cls.__name__] = cfg
 
         rc = _build_registered_class(cls, temp_spec)
+        rc.scope = scope
         main = self._get_or_create_main()
         class_key = name or cls.__name__
         main.classes[class_key] = rc

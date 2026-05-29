@@ -99,7 +99,12 @@ def _prepare_sandbox(
 
         register_io(agent)
 
-    policy = translate_policy(agent, timeout=timeout, tick_limit=tick_limit)
+    from agex.state.scopes import read_grants
+
+    grants = read_grants(state)
+    policy = translate_policy(
+        agent, timeout=timeout, tick_limit=tick_limit, grants=grants
+    )
 
     # Under process / kernel isolation we register an RPC handler so
     # the worker's ``RemoteCache`` proxy can reach back into the

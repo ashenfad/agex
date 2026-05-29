@@ -49,6 +49,10 @@ class Namespace:
     recursive: bool = False
     host_fs_access: bool = False
     network_access: bool = False
+    # Capability scope for module/instance namespaces: when set, the whole
+    # namespace is locked by default and only available in sessions granted
+    # this scope.
+    scope: str | None = None
 
     # Inheritance: view onto another namespace
     parent: "Namespace | None" = None

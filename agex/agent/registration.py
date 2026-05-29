@@ -142,6 +142,7 @@ class RegistrationMixin(BaseAgent):
         docstring: str | None = None,
         host_fs_access: bool = False,
         network_access: bool = False,
+        scope: str | None = None,
     ) -> F: ...
 
     @overload
@@ -154,6 +155,7 @@ class RegistrationMixin(BaseAgent):
         docstring: str | None = None,
         host_fs_access: bool = False,
         network_access: bool = False,
+        scope: str | None = None,
     ) -> Callable[[F], F]: ...
 
     def fn(
@@ -165,6 +167,7 @@ class RegistrationMixin(BaseAgent):
         docstring: str | None = None,
         host_fs_access: bool = False,
         network_access: bool = False,
+        scope: str | None = None,
     ) -> Callable[..., Any] | Callable[[Callable[..., Any]], Callable[..., Any]]:
         """
         Registers a function with the agent.
@@ -252,6 +255,7 @@ class RegistrationMixin(BaseAgent):
                 docstring=final_doc,
                 host_fs_access=host_fs_access,
                 network_access=effective_network_access,
+                scope=scope,
             )
 
             self._update_fingerprint()
@@ -285,6 +289,7 @@ class RegistrationMixin(BaseAgent):
         configure: dict[str, MemberSpec] | None = None,
         host_fs_access: bool = False,
         network_access: bool = False,
+        scope: str | None = None,
     ) -> T: ...
 
     @overload
@@ -299,6 +304,7 @@ class RegistrationMixin(BaseAgent):
         configure: dict[str, MemberSpec] | None = None,
         host_fs_access: bool = False,
         network_access: bool = False,
+        scope: str | None = None,
     ) -> Callable[[T], T]: ...
 
     def cls(
@@ -313,6 +319,7 @@ class RegistrationMixin(BaseAgent):
         configure: dict[str, MemberSpec] | None = None,
         host_fs_access: bool = False,
         network_access: bool = False,
+        scope: str | None = None,
     ) -> T | Callable[[T], T]:
         """
         Registers a class with the agent.
@@ -410,6 +417,7 @@ class RegistrationMixin(BaseAgent):
                 configure=sec_final_configure,
                 host_fs_access=host_fs_access,
                 network_access=network_access,
+                scope=scope,
             )
 
             # Attach host_fs_access and network_access to the class itself
@@ -440,6 +448,7 @@ class RegistrationMixin(BaseAgent):
         recursive: bool = False,
         host_fs_access: bool = False,
         network_access: bool = False,
+        scope: str | None = None,
     ) -> None:
         """
         Registers a module or instance object and its members with the agent.
@@ -473,6 +482,7 @@ class RegistrationMixin(BaseAgent):
                 recursive=True,
                 host_fs_access=host_fs_access,
                 network_access=network_access,
+                scope=scope,
             )
             # Track module for lazy dependency resolution
             self._track_module(obj.__name__ if hasattr(obj, "__name__") else None)
@@ -505,6 +515,7 @@ class RegistrationMixin(BaseAgent):
                 recursive=False,
                 host_fs_access=host_fs_access,
                 network_access=network_access,
+                scope=scope,
             )
             # Track module for lazy dependency resolution
             self._track_module(obj.__name__ if hasattr(obj, "__name__") else None)
@@ -547,6 +558,7 @@ class RegistrationMixin(BaseAgent):
                 configure=sec_configure,
                 host_fs_access=host_fs_access,
                 network_access=network_access,
+                scope=scope,
             )
             # Store the live instance in the host registry for runtime access
             self._host_object_registry[name] = obj

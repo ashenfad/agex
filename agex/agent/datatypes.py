@@ -165,6 +165,10 @@ class MemberSpec:
     constructable: bool | None = None
     host_fs_access: bool = False
     network_access: bool = False
+    # Capability scope: when set, this member is locked by default and only
+    # available in sessions that have been granted this scope (see
+    # agex/eval/bridge/stubs.py and the scope-interrupt design).
+    scope: str | None = None
 
 
 @dataclass
@@ -187,6 +191,7 @@ class RegisteredClass(RegisteredItem):
     # 'visibility' on RegisteredItem is the default.
     attrs: dict[str, MemberSpec] = field(default_factory=dict)
     methods: dict[str, MemberSpec] = field(default_factory=dict)
+    scope: str | None = None
 
 
 @dataclass

@@ -395,6 +395,27 @@ class BaseAgent:
 
         self._host.warmup(deps)
 
+    @property
+    def scope_names(self) -> set[str]:
+        """The capability scopes declared across this agent's registrations
+        (the scopes that *can* be granted).
+
+        Static — derived from the registration set, not from any session's
+        grant state. Distinct from ``scopes(state)`` which reports the scopes
+        currently *granted* in a given session.
+        """
+        names: set[str] = set()
+        for ns in self._policy.namespaces.values():
+            if ns.scope:
+                names.add(ns.scope)
+            for spec in ns.fns.values():
+                if getattr(spec, "scope", None):
+                    names.add(spec.scope)  # type: ignore[arg-type]
+            for rc in ns.classes.values():
+                if getattr(rc, "scope", None):
+                    names.add(rc.scope)  # type: ignore[arg-type]
+        return names
+
     def state(self, session: str = "default") -> "MutableMapping[str, Any]":
         """
         Get the state object for a session.
