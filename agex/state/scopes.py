@@ -51,19 +51,37 @@ class ScopeSet:
         if scope in current:
             return
         current.add(scope)
-        self._write(current)
+        self._apply(current, granted=[scope])
 
     def revoke(self, scope: str) -> None:
         current = self.list()
         if scope not in current:
             return
         current.discard(scope)
-        self._write(current)
+        self._apply(current, revoked=[scope])
 
-    def _write(self, scope_set: set[str]) -> None:
-        self._state[GRANT_SET_KEY] = scope_set
+    def _apply(
+        self,
+        scope_set: set[str],
+        *,
+        granted: list[str] | None = None,
+        revoked: list[str] | None = None,
+    ) -> None:
+        from agex.agent.loop.event_factories import create_permission_event
         from agex.state import commit_state, is_live_root
+        from agex.state.log import add_event_to_log
 
+        self._state[GRANT_SET_KEY] = scope_set
+        # A standalone grant/revoke is a host action — emit the PermissionEvent
+        # notification (agent_name="System", like SystemNoteEvent) so it's
+        # narrated/audited, mirroring how a file write emits a FileEvent. (The
+        # request/resume flow emits its own event with the real agent name.)
+        add_event_to_log(
+            self._state,
+            create_permission_event(
+                "System", granted=granted or [], revoked=revoked or []
+            ),
+        )
         if not is_live_root(self._state):
             commit_state(self._state)
 
