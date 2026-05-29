@@ -44,6 +44,7 @@ from .common import (
     TaskSuccess,
     TaskTimeout,
     _AgentExit,
+    _TaskPending,
     add_event_to_log,
     apply_file_edit,
     apply_file_write,
@@ -55,6 +56,7 @@ from .common import (
     create_fail_event,
     create_guidance_output,
     create_no_progress_guidance,
+    create_permission_request_event,
     create_success_event,
     create_task_start_event,
     events,
@@ -489,6 +491,27 @@ class SyncLoopMixin:
                     raise EvalError(f"Sub-agent failed: {task_fail.message}")
                 else:
                     raise
+
+            except _TaskPending as task_pending:
+                request_event = create_permission_request_event(
+                    self.name,
+                    task_pending.scope,
+                    task_name,
+                    task_pending.reason,
+                )
+                yield from self._handle_terminal_condition(
+                    exec_state,
+                    versioned_state,
+                    fs,
+                    fs_metadata_before,
+                    events_yielded,
+                    request_event,
+                    on_event,
+                )
+                # Re-raise the internal signal; _run_task_loop flushes file
+                # events and re-raises, and the public boundary
+                # (sync_task_func) converts it to PermissionPending.
+                raise
 
             except LLMFail:
                 raise

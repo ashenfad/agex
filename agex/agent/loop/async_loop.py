@@ -49,6 +49,7 @@ from .common import (
     TaskSuccess,
     TaskTimeout,
     _AgentExit,
+    _TaskPending,
     add_event_to_log,
     apply_file_edit,
     apply_file_write,
@@ -60,6 +61,7 @@ from .common import (
     create_fail_event,
     create_guidance_output,
     create_no_progress_guidance,
+    create_permission_request_event,
     create_success_event,
     create_task_start_event,
     events,
@@ -498,6 +500,25 @@ class AsyncLoopMixin:
                     raise EvalError(f"Sub-agent failed: {task_fail.message}")
                 else:
                     raise
+
+            except _TaskPending as task_pending:
+                request_event = create_permission_request_event(
+                    self.name,
+                    task_pending.scope,
+                    task_name,
+                    task_pending.reason,
+                )
+                async for event in self._ahandle_terminal_condition(
+                    exec_state,
+                    versioned_state,
+                    fs,
+                    fs_metadata_before,
+                    events_yielded,
+                    request_event,
+                    on_event,
+                ):
+                    yield event
+                raise
 
             except LLMFail:
                 raise

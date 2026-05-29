@@ -13,7 +13,7 @@ import builtins as _builtins
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Callable
 
-from agex.agent.datatypes import TaskClarify, TaskFail, TaskSuccess
+from agex.agent.datatypes import TaskClarify, TaskFail, TaskSuccess, _TaskPending
 from agex.cache import Cache
 from agex.eval.bridge.policy import _current_emission_id
 from agex.eval.objects import ImageAction
@@ -88,6 +88,7 @@ def build_namespace(
     namespace["task_success"] = _task_success
     namespace["task_fail"] = _task_fail
     namespace["task_clarify"] = _task_clarify
+    namespace["task_request_permission"] = _task_request_permission
 
     # Inject __outputs__ list and picklable view_image.
     # view_image appends to __outputs__; handle_result drains it into events.
@@ -99,6 +100,7 @@ def build_namespace(
         "task_success",
         "task_fail",
         "task_clarify",
+        "task_request_permission",
         "view_image",
         "__outputs__",
         "dir",
@@ -133,6 +135,16 @@ def _task_fail(message=""):
 def _task_clarify(message=""):
     """Signal that more information is needed."""
     raise TaskClarify(message)
+
+
+def _task_request_permission(scope, reason=None):
+    """Suspend the task to request a capability scope from the host.
+
+    Ends the turn (a terminal control, like task_success/task_fail). The host
+    sees a PermissionPending, decides, and resumes; on grant the scoped
+    capability becomes available.
+    """
+    raise _TaskPending(scope=scope, reason=reason)
 
 
 class _AgentDir:

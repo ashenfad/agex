@@ -66,6 +66,20 @@ class LLMFail(_AgentExit):
     retries: int = 0
 
 
+@dataclass
+class _TaskPending(_AgentExit):
+    """Signal that the agent has suspended the task to request a capability
+    scope from the host (the interrupt of interrupt/resume).
+
+    Internal/generic on purpose — the public, host-facing surface is
+    ``PermissionPending`` (see ``agex/agent/permission.py``), which the task
+    loop raises in this signal's place at the boundary.
+    """
+
+    scope: str
+    reason: str | None = None
+
+
 class UnpicklableVariableError(Exception):
     """Raised when attempting to access a variable that was not persisted due to being unpicklable."""
 

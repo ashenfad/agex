@@ -15,7 +15,11 @@ from agex.agent.events import (
     BaseEvent,
     ClarifyEvent,
     FailEvent,
+    GrantDeniedEvent,
+    GrantEvent,
     OutputEvent,
+    PermissionRequestEvent,
+    RevokeEvent,
     SuccessEvent,
     SystemNoteEvent,
     TaskStartEvent,
@@ -113,6 +117,36 @@ def create_clarify_event(agent_name: str, message: str) -> ClarifyEvent:
 def create_fail_event(agent_name: str, message: str) -> FailEvent:
     """Create a FailEvent."""
     return FailEvent(agent_name=agent_name, message=message)
+
+
+def create_permission_request_event(
+    agent_name: str, scope: str, task_name: str, reason: str | None = None
+) -> PermissionRequestEvent:
+    """Create a PermissionRequestEvent (a task suspended to request a scope)."""
+    return PermissionRequestEvent(
+        agent_name=agent_name, scope=scope, task_name=task_name, reason=reason
+    )
+
+
+def create_grant_event(
+    agent_name: str, scope: str, note: str | None = None
+) -> GrantEvent:
+    """Create a GrantEvent (host granted a scope to the session)."""
+    return GrantEvent(agent_name=agent_name, scope=scope, note=note)
+
+
+def create_grant_denied_event(
+    agent_name: str, scope: str, note: str | None = None
+) -> GrantDeniedEvent:
+    """Create a GrantDeniedEvent (host denied a scope request)."""
+    return GrantDeniedEvent(agent_name=agent_name, scope=scope, note=note)
+
+
+def create_revoke_event(
+    agent_name: str, scope: str, note: str | None = None
+) -> RevokeEvent:
+    """Create a RevokeEvent (host revoked a previously-granted scope)."""
+    return RevokeEvent(agent_name=agent_name, scope=scope, note=note)
 
 
 def create_error_output(
