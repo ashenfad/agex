@@ -10,7 +10,8 @@ import math
 
 from sandtrap import Sandbox
 
-from agex import Agent, clear_agent_registry, connect_state, scopes
+from agex import Agent, clear_agent_registry, connect_state, events, scopes
+from agex.agent.events import PermissionEvent
 from agex.eval.bridge.policy import translate_policy
 from agex.eval.error import ScopeRequired
 from agex.llm import Dummy
@@ -77,6 +78,51 @@ def test_scopes_accessor_versioned_persists():
 
     scopes(agent.state("s")).revoke("email")
     assert read_grants(agent.state("s")) == set()
+
+
+def test_scopes_accessor_emits_permission_event():
+    clear_agent_registry()
+    agent = Agent(
+        name="ge", llm=Dummy(), state=connect_state(type="versioned", storage="memory")
+    )
+
+    @agent.task
+    def noop() -> None:
+        """Do nothing."""
+
+    agent.llm.responses = [make_response(thinking="done", code="task_success(None)")]
+    noop(session="s")
+
+    # grant → a PermissionEvent(granted=...) by the host ("System")
+    scopes(agent.state("s")).grant("email")
+    grants = [
+        e
+        for e in events(agent.state("s"))
+        if isinstance(e, PermissionEvent) and e.granted
+    ]
+    assert len(grants) == 1
+    assert grants[0].granted == ["email"]
+    assert grants[0].agent_name == "System"
+
+    # revoke → a PermissionEvent(revoked=...)
+    scopes(agent.state("s")).revoke("email")
+    revokes = [
+        e
+        for e in events(agent.state("s"))
+        if isinstance(e, PermissionEvent) and e.revoked
+    ]
+    assert len(revokes) == 1
+    assert revokes[0].revoked == ["email"]
+
+    # idempotent: granting an already-granted scope emits nothing new
+    scopes(agent.state("s")).grant("email")
+    scopes(agent.state("s")).grant("email")  # no-op
+    grant_events = [
+        e
+        for e in events(agent.state("s"))
+        if isinstance(e, PermissionEvent) and e.granted == ["email"]
+    ]
+    assert len(grant_events) == 2  # first grant + the re-grant after revoke
 
 
 # --- effective-policy overlay ----------------------------------------------

@@ -52,6 +52,37 @@ def test_cls_stub_raises_on_construction():
     assert result.error.scope == "email"
 
 
+def test_cls_stub_raises_on_class_attr_access():
+    # Class-level access (a constant) before constructing must raise the
+    # instructional ScopeRequired, not a bare AttributeError.
+    policy = Policy()
+    policy.cls(
+        make_cls_stub("EmailClient", "email"),
+        name="EmailClient",
+        constructable=True,
+    )
+
+    result = _run(policy, "x = EmailClient.DEFAULT_PORT")
+
+    assert isinstance(result.error, ScopeRequired)
+    assert result.error.scope == "email"
+    assert "EmailClient.DEFAULT_PORT" in str(result.error)
+
+
+def test_cls_stub_raises_on_classmethod_call():
+    policy = Policy()
+    policy.cls(
+        make_cls_stub("EmailClient", "email"),
+        name="EmailClient",
+        constructable=True,
+    )
+
+    result = _run(policy, "x = EmailClient.from_config()")
+
+    assert isinstance(result.error, ScopeRequired)
+    assert result.error.scope == "email"
+
+
 def test_module_stub_raises_on_attr_access():
     policy = Policy()
     policy.module(make_module_stub("requests", "net"), name="requests", include="*")

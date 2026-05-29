@@ -49,12 +49,26 @@ def make_fn_stub(name: str, scope: str):
 
 
 def make_cls_stub(name: str, scope: str) -> type:
-    """A class stand-in that raises :class:`ScopeRequired` on construction."""
+    """A class stand-in that raises :class:`ScopeRequired` on construction *or*
+    class-level attribute access.
+
+    A metaclass intercepts class-level access (constants, classmethods,
+    staticmethods) so ``Cls.SOMETHING`` raises the instructional error too, not
+    just ``Cls(...)``. Dunder access falls through to ``AttributeError`` so
+    sandtrap's internal probing of the class isn't tripped.
+    """
+
+    class _MetaStub(type):
+        def __getattr__(cls, attr: str):
+            if attr.startswith("__") and attr.endswith("__"):
+                raise AttributeError(attr)
+            member = f"{name}.{attr}"
+            raise ScopeRequired(_message(member, scope), scope=scope, name=member)
 
     def _init(self: Any, *args: Any, **kwargs: Any):
         raise ScopeRequired(_message(name, scope), scope=scope, name=name)
 
-    return type(name, (), {"__init__": _init})
+    return _MetaStub(name, (), {"__init__": _init})
 
 
 def make_module_stub(name: str, scope: str):
