@@ -196,6 +196,42 @@ Register function with network_access=True to allow network operations.
 
 See [Registration Methods](../api/registration.md) for details on the `network_access` parameter.
 
+## Capability Scopes (Human-in-the-Loop)
+
+Network access is one fixed gate. **Scopes** generalize the idea: any
+registration can be tagged with a named `scope=`, making it **locked by
+default** and available only in sessions that have been *granted* it.
+
+This shifts the capability model. Normally an agent's surface is **static** —
+it either can or can't do a thing, decided at registration. With scopes the
+effective surface is a function of **`(agent, session)`**, and — crucially —
+the agent can **request** access at runtime rather than the host hard-coding
+every gate:
+
+- **Least privilege by default.** A scoped capability is simply absent from a
+  session's effective policy until granted — so using it fails exactly as any
+  unregistered name would. There's no new enforcement boundary; gating rides
+  the same sandbox you already trust (the locked capability is replaced by a
+  stand-in that raises `ScopeRequired`).
+- **The agent asks; the human decides.** The agent ends its turn with
+  `task_request_permission(scope, reason)`, which suspends the task. The host
+  sees the request, decides, and resumes. The agent **cannot grant itself** a
+  scope: grants live in host-private session state the sandboxed code can't
+  read or write.
+- **Grants are per-`(agent, session)` and durable.** A request is committed to
+  the event log, so it can be surfaced and resolved later — even after a
+  restart, on versioned state — making genuine "approve it next week"
+  human-in-the-loop flows possible, not just synchronous prompts.
+
+This is the security-relevant half (conditional, least-privilege capability
+access); the control-flow mechanics (the suspend/resume cycle) are covered in
+[Task — Requesting Permission](../api/task.md#requesting-permission-scopes),
+and declaring scopes in [Registration — Scoped Capabilities](../api/registration.md#scoped-capabilities).
+
+> Scoped capabilities are **top-level only** in v1 — an agent with scopes
+> can't be composed as a sub-agent, since scope-needs in a sub-agent aren't
+> resolved yet.
+
 ## Sandbox Isolation
 
 By default, agent code runs in-process (`isolation="none"`), relying on AST-level validation for security. For stronger guarantees, agex supports subprocess and kernel-level isolation via [sandtrap](https://github.com/ashenfad/sandtrap).
