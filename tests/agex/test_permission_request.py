@@ -67,6 +67,24 @@ def test_request_permission_without_reason():
         assert p.reason is None
 
 
+def test_request_permission_scope_keyword():
+    """The ``scope=`` keyword spelling the primer documents must work (the
+    builtin's parameter is named ``scope``, matching the primer/stub/docs)."""
+    a, chat = _agent()
+    a.llm.responses = [
+        make_response(
+            thinking="ask",
+            code="task_request_permission(scope='email', reason='to send')",
+        )
+    ]
+    try:
+        chat("hi", session="s")
+        raise AssertionError("expected PermissionPending")
+    except PermissionPending as p:
+        assert p.scopes == {"email"}
+        assert p.reason == "to send"
+
+
 @pytest.mark.asyncio
 async def test_async_request_permission_suspends():
     clear_agent_registry()

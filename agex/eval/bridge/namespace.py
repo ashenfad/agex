@@ -152,15 +152,15 @@ def _task_clarify(message=""):
     raise TaskClarify(message)
 
 
-def _task_request_permission(scopes, reason=None):
+def _task_request_permission(scope, reason=None):
     """Suspend the task to request capability scope(s) from the host.
 
-    ``scopes`` may be a single scope name or an iterable of names. Ends the
+    ``scope`` may be a single scope name or an iterable of names. Ends the
     turn (a terminal control, like task_success/task_fail). The host sees a
     PermissionPending, decides, and resumes; on grant the scoped capabilities
     become available.
     """
-    scope_set = {scopes} if isinstance(scopes, str) else set(scopes)
+    scope_set = {scope} if isinstance(scope, str) else set(scope)
     raise _TaskPending(scopes=scope_set, reason=reason)
 
 
