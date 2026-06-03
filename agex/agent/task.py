@@ -136,52 +136,6 @@ def _reconstruct_inputs(events, inputs_dataclass):
     return inputs_dataclass(**ts.inputs)
 
 
-def _reactivate_result(result, agent):
-    """Reactivate sandbox wrappers returned from external execution.
-
-    When StFunction/StClass/StInstance objects cross a process boundary
-    (process isolation, Modal, HTTP), they arrive inactive.  This rebuilds
-    gates from the agent's policy and reactivates them so they're callable.
-    """
-    from sandtrap.wrappers import StClass, StFunction, StInstance, activate_value
-
-    if isinstance(result, (StFunction, StClass, StInstance)):
-        needs_activation = True
-    elif isinstance(result, (list, tuple)):
-        needs_activation = any(
-            isinstance(item, (StFunction, StClass, StInstance)) for item in result
-        )
-    elif isinstance(result, dict):
-        needs_activation = any(
-            isinstance(v, (StFunction, StClass, StInstance)) for v in result.values()
-        )
-    else:
-        return result
-
-    if not needs_activation:
-        return result
-
-    from sandtrap.gates import make_gates
-
-    from agex.eval.bridge.policy import translate_policy
-
-    policy = translate_policy(agent, timeout=None, tick_limit=None)
-    gates = make_gates(policy)
-
-    if isinstance(result, (StFunction, StClass, StInstance)):
-        activate_value(result, gates)
-    elif isinstance(result, dict):
-        for v in result.values():
-            if isinstance(v, (StFunction, StClass, StInstance)):
-                activate_value(v, gates)
-    else:
-        for item in result:
-            if isinstance(item, (StFunction, StClass, StInstance)):
-                activate_value(item, gates)
-
-    return result
-
-
 def _register_dataclass_for_pickling(dc_class: type, name: str) -> None:
     """
     Register a dynamic dataclass so cloudpickle can serialize it by value.
@@ -707,17 +661,14 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                     raw_kwargs.pop("session", None)
                     raw_kwargs.pop("on_event", None)
                     raw_kwargs.pop("on_token", None)
-                    return _reactivate_result(
-                        self._host.execute(
-                            agent=self,
-                            task_name=task_name,
-                            args=(),
-                            kwargs=raw_kwargs,
-                            session=session,
-                            on_event=tapped_on_event,
-                            on_token=on_token,
-                        ),
-                        self,
+                    return self._host.execute(
+                        agent=self,
+                        task_name=task_name,
+                        args=(),
+                        kwargs=raw_kwargs,
+                        session=session,
+                        on_event=tapped_on_event,
+                        on_token=on_token,
                     )
                 # Resolve state from session using agent's state config
                 state = self._host.resolve_state(
@@ -761,17 +712,14 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
                         raw_kwargs.pop("session", None)
                         raw_kwargs.pop("on_event", None)
                         raw_kwargs.pop("on_token", None)
-                        return _reactivate_result(
-                            await self._host.aexecute(
-                                agent=self,
-                                task_name=task_name,
-                                args=(),
-                                kwargs=raw_kwargs,
-                                session=session,
-                                on_event=tapped_on_event,
-                                on_token=on_token,
-                            ),
-                            self,
+                        return await self._host.aexecute(
+                            agent=self,
+                            task_name=task_name,
+                            args=(),
+                            kwargs=raw_kwargs,
+                            session=session,
+                            on_event=tapped_on_event,
+                            on_token=on_token,
                         )
                     # Resolve state from session using agent's state config
                     state = self._host.resolve_state(

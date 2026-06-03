@@ -41,68 +41,41 @@ from typing import Any, Callable, Iterable
 SpawnHandle = concurrent.futures.Future
 
 
-def _nested_sandbox_classes(annotation: Any, st_class: type) -> list:
-    """Find sandbox-defined classes (``StClass``) nested inside a generic
-    annotation (``list[Tile]``, ``dict[str, Tile]``, ...), recursively."""
+def _referenced_classes(annotation: Any) -> list:
+    """The classes named by an annotation — the annotation itself plus any
+    nested in generics (``list[Tile]``, ``dict[str, Tile]``), recursively."""
     from typing import get_args
 
-    found = []
+    out = []
+    if isinstance(annotation, type):
+        out.append(annotation)
     for arg in get_args(annotation):
-        if isinstance(arg, st_class):
-            found.append(arg)
-        found.extend(_nested_sandbox_classes(arg, st_class))
-    return found
+        out.extend(_referenced_classes(arg))
+    return out
 
 
-def _collect_seed_classes(task_wrapper: Any) -> dict[str, bytes]:
-    """Collect sandbox-defined classes referenced in a spawn task's signature
-    as inactive pickle bytes, keyed by class name.
+def _collect_seed_classes(task_wrapper: Any) -> dict[str, type]:
+    """Collect the **sandbox-defined** classes referenced in a spawn task's
+    signature (return type + parameters, including generics), keyed by name.
 
-    These are ``StClass`` wrappers (sandtrap) for classes the agent defined in
-    its own sandbox. A spawn clone is a *separate* sandbox without them, so they
-    must be reconstructed inside the clone. Pickling an ``StClass`` strips its
-    active binding (``__getstate__`` clears ``_compiled_cls``/``_gates``), so the
-    bytes reconstruct an *inactive* wrapper the clone re-binds to its own gates.
-
-    v1 scope: the **top-level** return type. A sandbox class nested in a generic
-    return type (``list[Tile]``) can't be reconstructed in the clone yet, so we
-    **fail fast** with a clear message at definition time rather than let the
-    clone ``NameError`` into a 10-iteration timeout. Parameter types already
-    cross as instances (read-only, duck-typed) and need no seeding. Full
-    generic/param support is a follow-up (see roadmap/spawn-type-sharing.md and
-    roadmap/unwrapped.md).
+    A spawn clone is a *separate* sandbox, so a class the agent defined in its
+    own code isn't in the clone's namespace. We inject the **real class objects**
+    (by reference — no serialization) into the clone's ``__setup_namespace__`` so
+    the clone can construct/validate them natively. Sandbox-defined classes are
+    identified by ``__module__ == "__sandtrap__"``; registered/builtin types are
+    already available in the clone (it shares the parent's policy) and are
+    skipped. The class's methods close over the parent's gates, which is fine —
+    the clone shares the parent's policy.
     """
-    import pickle
-
-    try:
-        from sandtrap.wrappers import StClass
-    except Exception:
-        return {}
-
-    seed: dict[str, bytes] = {}
-    rt = getattr(task_wrapper, "_return_type", None)
-    if isinstance(rt, StClass):
-        name = getattr(rt, "_name", None) or getattr(rt, "__name__", None)
-        if name:
-            try:
-                seed[name] = pickle.dumps(rt)
-            except Exception:
-                pass  # unpicklable class → skip; the clone NameErrors as before
-        return seed
-
-    # Sandbox class nested in a generic return type → not supported yet; fail
-    # fast (a runtime NameError in the clone would otherwise burn the iteration
-    # budget and surface as an opaque TaskTimeout).
-    nested = _nested_sandbox_classes(rt, StClass)
-    if nested:
-        names = ", ".join(sorted(getattr(c, "_name", None) or "?" for c in nested))
-        task_name = getattr(task_wrapper, "_task_name", None) or "?"
-        raise TypeError(
-            f"spawn task '{task_name}': return type references sandbox-defined "
-            f"class(es) [{names}] nested in a generic, which spawn can't yet "
-            f"reconstruct in the clone. Return the class directly (e.g. "
-            f"'-> Tile'), or use a registered/builtin type."
-        )
+    seed: dict[str, type] = {}
+    annotations = [getattr(task_wrapper, "_return_type", None)]
+    sig = getattr(task_wrapper, "__signature__", None)
+    if sig is not None:
+        annotations.extend(p.annotation for p in sig.parameters.values())
+    for ann in annotations:
+        for cls in _referenced_classes(ann):
+            if getattr(cls, "__module__", None) == "__sandtrap__":
+                seed[cls.__name__] = cls
     return seed
 
 
@@ -122,13 +95,10 @@ class SpawnTaskWrapper:
         sig = getattr(task_wrapper, "__signature__", None)
         if sig is not None:
             self.__signature__ = sig
-        # Sandbox-defined classes referenced in the signature must be made
-        # available *inside* the clone (a separate sandbox). Capture them as
-        # inactive pickle bytes now; each invocation reconstructs a fresh
-        # inactive copy and seeds it into the clone's namespace, where the
-        # clone's auto-activation binds it to the clone's gates. v1 scope:
-        # the top-level return type. See roadmap/spawn-type-sharing.md.
-        self._seed_classes: dict[str, bytes] = _collect_seed_classes(task_wrapper)
+        # Sandbox-defined classes named in the signature (return + params, incl.
+        # generics) must be available *inside* the clone (a separate sandbox).
+        # Inject the real class objects by reference into the clone's namespace.
+        self._seed_classes: dict[str, type] = _collect_seed_classes(task_wrapper)
 
     def __call__(self, *args: Any) -> Any:
         # Direct call: run the clone loop inline (blocking) on the calling thread.
@@ -210,16 +180,10 @@ class Spawn:
 
     @staticmethod
     def _resolve_task(spawn_task: Any, where: str) -> "SpawnTaskWrapper":
-        """Return the underlying ``SpawnTaskWrapper`` for a task passed back
-        from agent code. Sandtrap wraps a host callable returned into the
-        sandbox in an ``StFunction`` (the original sits on ``._compiled``), so
-        when the agent passes the task to ``spawn.submit``/``map`` we receive
-        the wrapper, not the original — unwrap it here."""
+        """Validate that ``spawn_task`` is a ``@spawn.task`` function (a
+        ``SpawnTaskWrapper``, identified by ``_is_spawn_task``)."""
         if getattr(spawn_task, "_is_spawn_task", False):
             return spawn_task
-        inner = getattr(spawn_task, "_compiled", None)
-        if getattr(inner, "_is_spawn_task", False):
-            return inner
         raise TypeError(
             f"spawn.{where}() expects a @spawn.task function as its first "
             f"argument, got {type(spawn_task).__name__}."
@@ -265,26 +229,12 @@ class Spawn:
         # Per-invocation labeled, non-versioned state for event-stream demux.
         state = Namespaced(Live(), f"spawn:{name}:{idx}")
 
-        # Seed sandbox-defined signature classes into the clone (fresh inactive
-        # copy per invocation; the clone's auto-activation binds them). Pass the
-        # seeded copy as the return type so validation matches the clone's own
-        # reconstruction rather than the parent's distinct class object.
-        import pickle
-
-        return_type = task._return_type
+        # Inject the agent's sandbox-defined signature classes into the clone (by
+        # reference, via the ephemeral Live setup-namespace — no serialization).
+        # The clone constructs and validates them natively; the return type is
+        # the real class, so standard validation applies.
         if spawn_task._seed_classes:
-            seed = {nm: pickle.loads(b) for nm, b in spawn_task._seed_classes.items()}
-            state["__setup_namespace__"] = seed
-            rt_name = getattr(return_type, "_name", None) or getattr(
-                return_type, "__name__", None
-            )
-            if rt_name in seed:
-                # Validate against the freshly-seeded class the clone actually
-                # constructs from: the returned StInstance carries this exact
-                # StClass as its _st_class, so validation is a real identity
-                # check (see validate_with_sampling's StClass branch), not the
-                # Pydantic "arbitrary type, allow anything" no-op.
-                return_type = seed[rt_name]
+            state["__setup_namespace__"] = dict(spawn_task._seed_classes)
 
         try:
             return self._clone._run_task_loop(
@@ -292,7 +242,7 @@ class Spawn:
                 docstring=task._effective_docstring,
                 inputs_dataclass=task._inputs_dataclass,
                 inputs_instance=inputs_instance,
-                return_type=return_type,
+                return_type=task._return_type,
                 state=state,
                 session=session,
                 on_event=on_event,

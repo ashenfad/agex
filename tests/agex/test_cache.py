@@ -185,20 +185,20 @@ class TestCacheNamespaceInjection:
         with pytest.raises(CacheError):
             execute_sandboxed("cache['fn'] = lambda x: x + 1", agent, state)
 
-    def test_sandbox_function_passes_validation(self):
-        """Sandbox-defined functions (``StFunction``) are picklable via
-        stdlib pickle — they define ``__getstate__`` / ``__setstate__``
-        — so the validator accepts them.  This is the intended path
-        for caching agent-defined helpers across tasks."""
+    def test_sandbox_function_not_cacheable(self):
+        """Sandbox-defined functions are plain (unpicklable) objects under raw
+        mode, so caching one raises CacheError (the cache holds data)."""
+        from agex.cache import CacheError
+
         agent = Agent(name="t")
         state = Live()
         state["__event_log__"] = []
-        execute_sandboxed(
-            'def fn(x):\n    return x + 1\ncache["fn"] = fn',
-            agent,
-            state,
-        )
-        assert PREFIX + "fn" in state
+        with pytest.raises(CacheError):
+            execute_sandboxed(
+                'def fn(x):\n    return x + 1\ncache["fn"] = fn',
+                agent,
+                state,
+            )
 
 
 # -----------------------------------------------------------------------------
@@ -336,66 +336,28 @@ class TestCacheSubAgentIsolation:
 # -----------------------------------------------------------------------------
 
 
-class TestCacheStFunction:
-    """Sandbox-defined functions can be cached and called across tasks.
-
-    Cross-task activation is delivered by sandtrap's
-    ``__sandtrap_activate__`` container hook (>= 0.2.0), which Cache
-    implements: on every ``exec`` sandtrap walks Cache values and
-    re-activates any inactive ``StFunction``/``StClass`` it finds.
-    """
+class TestCacheSandboxFunctionNotCacheable:
+    """Sandbox-defined functions are plain (unpicklable) objects under raw
+    mode, so they cannot be cached. The cache holds data; reusable code goes
+    in ``helpers/``."""
 
     def setup_method(self):
         clear_agent_registry()
 
-    def test_sandbox_function_storeable_within_task(self):
-        """An StFunction can be cached and retrieved within the same
-        task (where it remains active in memory)."""
+    def test_caching_a_sandbox_function_raises(self):
+        """``cache["fn"] = a_sandbox_function`` raises CacheError — the function
+        is unpicklable, so it can't be cached."""
+        from agex.cache import CacheError
+
         agent = Agent(name="t")
         state = Live()
         state["__event_log__"] = []
-        execute_sandboxed(
-            'def add(a, b):\n    return a + b\ncache["add"] = add',
-            agent,
-            state,
-        )
-        assert PREFIX + "add" in state
-
-    def test_sandbox_function_round_trips_across_tasks(self):
-        """A function cached in one task is callable in the next."""
-        config = connect_state(type="versioned", storage="memory")
-        agent = Agent(name="t", llm=Dummy(), state=config)
-
-        @agent.task
-        def define() -> None:
-            """Define a helper and stash it."""
-            pass
-
-        @agent.task
-        def use() -> int:
-            """Retrieve and call the helper."""
-            pass
-
-        agent.llm.responses = [
-            make_response(
-                thinking="define and stash",
-                code=(
-                    "def add(a, b):\n    return a + b\n"
-                    'cache["add"] = add\n'
-                    "task_success(None)"
-                ),
+        with pytest.raises(CacheError):
+            execute_sandboxed(
+                'def add(a, b):\n    return a + b\ncache["add"] = add',
+                agent,
+                state,
             )
-        ]
-        define(session="s")
-
-        agent.llm.responses = [
-            make_response(
-                thinking="retrieve and use",
-                code='fn = cache["add"]\ntask_success(fn(2, 3))',
-            )
-        ]
-        result = use(session="s")
-        assert result == 5
 
 
 # -----------------------------------------------------------------------------
@@ -483,169 +445,3 @@ def test_cache_writes_persist_through_task_fail():
         make_response(thinking="recall", code='task_success(cache["x"])')
     ]
     assert recall(session="s") == 7
-
-
-# -----------------------------------------------------------------------------
-# Wrapper-index: only sandbox-defined wrappers are walked by the
-# activation hook, so data-only caches don't pay a per-emission decode.
-# -----------------------------------------------------------------------------
-
-
-class TestCacheWrapperIndex:
-    """The Cache tracks which keys hold sandtrap wrappers so the
-    activation hook walks only those keys, not the entire cache."""
-
-    def setup_method(self):
-        clear_agent_registry()
-
-    def _make_stfunction(self):
-        """Define a sandbox function and return its StFunction wrapper."""
-        agent = Agent(name="t")
-        state = Live()
-        state["__event_log__"] = []
-        ns = execute_sandboxed("def helper(x):\n    return x * 2", agent, state)
-        return ns["helper"]
-
-    def test_data_only_cache_has_empty_wrapper_index(self):
-        """A cache with only data values doesn't write the wrapper
-        index at all — keeps the state clean for the common case."""
-        from agex.cache import _WRAPPER_INDEX_KEY
-
-        state: dict = {}
-        cache = Cache(state)
-        cache["x"] = 1
-        cache["y"] = [1, 2, 3]
-        cache["z"] = {"k": "v"}
-        assert _WRAPPER_INDEX_KEY not in state
-        assert cache._wrapper_keys() == set()
-
-    def test_storing_a_wrapper_adds_it_to_the_index(self):
-        from agex.cache import _WRAPPER_INDEX_KEY
-
-        helper = self._make_stfunction()
-        state: dict = {}
-        cache = Cache(state)
-        cache["helper"] = helper
-        assert state[_WRAPPER_INDEX_KEY] == {"helper"}
-
-    def test_mixed_cache_indexes_only_the_wrapper(self):
-        helper = self._make_stfunction()
-        state: dict = {}
-        cache = Cache(state)
-        cache["data"] = [1, 2, 3]
-        cache["helper"] = helper
-        cache["more_data"] = "hello"
-        assert cache._wrapper_keys() == {"helper"}
-
-    def test_overwriting_wrapper_with_data_drops_from_index(self):
-        helper = self._make_stfunction()
-        state: dict = {}
-        cache = Cache(state)
-        cache["slot"] = helper
-        assert cache._wrapper_keys() == {"slot"}
-        cache["slot"] = 42  # plain int now
-        assert cache._wrapper_keys() == set()
-
-    def test_overwriting_data_with_wrapper_adds_to_index(self):
-        helper = self._make_stfunction()
-        state: dict = {}
-        cache = Cache(state)
-        cache["slot"] = "data"
-        assert cache._wrapper_keys() == set()
-        cache["slot"] = helper
-        assert cache._wrapper_keys() == {"slot"}
-
-    def test_del_removes_wrapper_from_index(self):
-        helper = self._make_stfunction()
-        state: dict = {}
-        cache = Cache(state)
-        cache["a"] = helper
-        cache["b"] = helper
-        assert cache._wrapper_keys() == {"a", "b"}
-        del cache["a"]
-        assert cache._wrapper_keys() == {"b"}
-        del cache["b"]
-        assert cache._wrapper_keys() == set()
-
-    def test_del_data_key_does_not_touch_index(self):
-        from agex.cache import _WRAPPER_INDEX_KEY
-
-        state: dict = {}
-        cache = Cache(state)
-        cache["x"] = 1
-        del cache["x"]
-        # Index was never written; still absent.
-        assert _WRAPPER_INDEX_KEY not in state
-
-    def test_wrapper_index_is_invisible_in_user_iteration(self):
-        """The wrapper-index key lives outside the ``__cache__/``
-        prefix, so it doesn't show up when iterating the cache."""
-        helper = self._make_stfunction()
-        state: dict = {}
-        cache = Cache(state)
-        cache["data"] = 1
-        cache["helper"] = helper
-        # Iteration / len / membership all see only user-facing keys.
-        assert sorted(cache) == ["data", "helper"]
-        assert len(cache) == 2
-        assert "__cache_wrappers__" not in cache
-
-    def test_hook_walks_only_wrapper_keys(self):
-        """The activation hook decodes only wrapper-indexed values.
-
-        Use a state proxy that records which keys were read so we can
-        assert the hook didn't pull data values out of state.
-        """
-        helper = self._make_stfunction()
-
-        # Wrap a real Live() so its semantics match production but
-        # we get visibility into reads.
-        underlying = Live()
-        reads: list[str] = []
-
-        class _SpyState:
-            def __init__(self, inner):
-                self._inner = inner
-
-            def __getitem__(self, key):
-                reads.append(key)
-                return self._inner[key]
-
-            def __setitem__(self, key, value):
-                self._inner[key] = value
-
-            def __delitem__(self, key):
-                del self._inner[key]
-
-            def __contains__(self, key):
-                return key in self._inner
-
-            def get(self, key, default=None):
-                return self._inner.get(key, default)
-
-            def keys(self):
-                return self._inner.keys()
-
-        spy = _SpyState(underlying)
-        cache = Cache(spy)
-        cache["helper"] = helper
-        cache["big_data"] = list(range(10000))
-        cache["other"] = "hello"
-
-        # Reset the read log; we only care about hook reads.
-        reads.clear()
-
-        # Stand-in activator that records what it was given.
-        activated: list = []
-
-        def fake_activate(val, gates, *, sandbox=None, namespace=None):
-            activated.append(val)
-
-        cache.__sandtrap_activate__(fake_activate, {}, None, {})
-
-        # Exactly one decode: the wrapper key.  big_data / other
-        # aren't touched.
-        assert reads == [PREFIX + "helper"]
-        # And the activator saw exactly the helper.
-        assert len(activated) == 1
-        assert activated[0] is cache["helper"]

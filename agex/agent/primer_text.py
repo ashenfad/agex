@@ -65,7 +65,7 @@ A persistent dict scoped to your agent session — survives across actions and t
 - `del cache["model"]` — forget
 - `list(cache)` or `print(cache)` — see what's there (keys only, cheap; no values are decoded)
 
-Cache values must be picklable; sandbox-defined functions and classes are fine.  For files (text, binaries, generated artifacts), prefer the VFS — cache is for in-memory Python objects.
+Cache values must be picklable **data**.  Functions and classes you define in an action aren't picklable, so they can't be cached — cache their *results*, and put reusable *code* under `helpers/` (which you import on demand).  For files (text, binaries, generated artifacts), prefer the VFS — cache is for in-memory data objects.
 
 `cache` is a `python_action`-only name.  Helpers in `helpers/` don't see it — bare `cache` references inside a helper module raise `NameError`.  If a helper needs cache access, take it as an argument: `def my_helper(cache, ...): ...` and pass it in from the action.  Don't rely on module-level dicts in helpers for cross-action memoization either; helpers reload on each import, so module-level state is action-local.  `cache` is the durable channel.
 
