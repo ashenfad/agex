@@ -363,3 +363,73 @@ def test_spawn_under_async_parent():
         pass
 
     assert asyncio.run(run()) == 42
+
+
+# --------------------------------------------------------------------------- #
+# Decorator-factory form, bad-arg rejection, scope-request surfacing          #
+# --------------------------------------------------------------------------- #
+
+
+def test_spawn_task_factory_form():
+    """`@spawn.task()` (called, possibly with kwargs) works like the bare form
+    — the forward-compat guardrail so `@spawn.task(fs=...)` can be added later."""
+    responses = [
+        make_response(
+            thinking="factory",
+            code=(
+                "@spawn.task()\n"
+                "def gen(x: int) -> int:\n"
+                '    """double"""\n'
+                "    pass\n"
+                "task_success(gen(21))\n"
+            ),
+        ),
+        _clone("42"),
+    ]
+    parent = Agent(name="p_factory", llm=Dummy(responses=responses))
+
+    @parent.task
+    def run() -> int:
+        """use spawn"""
+        pass
+
+    assert run() == 42
+
+
+def test_submit_rejects_non_task():
+    """submit/map raise TypeError when the first arg isn't a @spawn.task."""
+    from agex.agent.spawn import Spawn
+
+    parent = Agent(name="p_badarg")
+    spawn = Spawn(parent._get_spawn_clone(), parent)
+    with pytest.raises(TypeError):
+        spawn.submit(object(), 1)
+    with pytest.raises(TypeError):
+        spawn.map(lambda y: y, [1])
+
+
+def test_clone_scope_request_is_recoverable():
+    """A clone that requests a capability scope cannot durably suspend (it's
+    ephemeral); the need surfaces to the parent as a recoverable EvalError
+    naming the scope, raised through the Future."""
+    from agex.agent.spawn import Spawn
+    from agex.eval.error import EvalError
+
+    llm = Dummy(
+        responses=[
+            make_response(thinking="ask", code="task_request_permission('email')")
+        ]
+    )
+    parent = Agent(name="p_scope", llm=llm)
+    spawn = Spawn(parent._get_spawn_clone(), parent)
+
+    def gen(x: int) -> int:
+        """d"""
+        pass
+
+    gen_task = spawn.task(gen)
+    handle = spawn.submit(gen_task, 1)  # host-side submit: exercises the
+    with pytest.raises(EvalError) as excinfo:  # raw-wrapper resolve path too
+        handle.result()
+    assert "email" in str(excinfo.value)
+    spawn.close()
