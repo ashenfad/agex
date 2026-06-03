@@ -69,6 +69,32 @@ objects pass by reference; no pickling is needed):
 So there is a real case that wrapped mode is over-applied. spawn is evidence the
 tax is concrete, not theoretical.
 
+## Evidence: spawn type-sharing, wrapped vs. raw (measured)
+
+Forcing `mode="raw"` and returning a sandbox-defined class from a task:
+
+| | wrapped (today) | raw |
+|---|---|---|
+| returned object | `StInstance` wrapper | a real instance of the real class |
+| `-> Tile` validation | bespoke `StClass`-identity branch | native `isinstance` |
+| `-> list[Tile]` | **fails** (nested class unseeded → timeout; now a fail-fast) | native Pydantic validation, **free** |
+| getting the class into a clone | pickle→inactive→seed→auto-activate | put the real class in the namespace |
+| `isinstance(result, Tile)` in parent | False (reconstructed ≠ original) | True (same class object) |
+
+So the entire spawn type-sharing apparatus (`_collect_seed_classes`, the
+per-invocation round-trip, the validator branch, the generic fail-fast) exists
+*only* to work around wrapping, and would largely **delete** under raw.
+
+**Critical caveat that rules out wholesale removal:** process/kernel isolation
+returns results across a process boundary **by pickle** — you can't pass real
+objects by reference across processes. A raw sandbox-defined instance is
+unpicklable, so *removing wrapping entirely would break returning sandbox-defined
+types from process/kernel-isolated tasks* — a security headline, not a niche.
+Wrapping (or some serialization) is genuinely required there.
+
+This reframes the target: not "remove wrapping" but **"stop wrapping in-process;
+serialize only at the boundary that needs it."**
+
 ## Options
 
 - **A — keep wrapped (status quo).** Zero migration risk; keeps cache-of-code,
@@ -81,13 +107,19 @@ tax is concrete, not theoretical.
   instances become unpicklable). Real tests fail; needs a "what relies on this"
   pass and a migration story. Note: raw mode is a first-class, tested sandtrap
   mode (`sandtrap/tests/test_sandbox_factory.py`, `test_wrappers.py`).
-- **C — less-leaky wrapped (middle path).** Keep picklability, but stop the
+- **C — less-leaky wrapped (sandtrap-side).** Keep picklability, but stop the
   wrapping from leaking: make `StClass` behave type-like (support `isinstance`
   via a metaclass `__instancecheck__`, so the validator needs no special
   branch); don't re-wrap host objects returned into the sandbox (kills the
-  `_resolve_task` unwrap); expose a public `unwrap`/identity helper. This is
-  **sandtrap-side** work but could remove most of the cost while keeping the
-  value — possibly the best answer.
+  `_resolve_task` unwrap); expose a public `unwrap`/identity helper.
+- **D — per-context (raw in-process, serialize at the boundary).** Default to
+  `raw` for in-process + ephemeral execution (the common path, and **every spawn
+  clone** — clones are always in-process), and serialize sandbox-defined
+  code/instances only where it's actually required: crossing a process/kernel
+  boundary, or persisting to versioned state. This makes spawn type-sharing free
+  and complete *and* keeps isolation/persistence working. The cost is a decision
+  rule (which mode applies) and handling "a raw agent tries to cache/persist
+  code" (clear error vs. on-demand serialize). **Current lean.**
 
 ## What to investigate before deciding
 
@@ -104,9 +136,15 @@ tax is concrete, not theoretical.
 
 ## Recommendation
 
-Don't fold this into spawn. Ship spawn (and its type-sharing) within wrapped
-mode (done). Evaluate this separately, starting from the question "what
-actually relies on picklable sandbox-defined code?" — the answer largely
-decides between B (drop it) and C (keep it, de-leak it). Current lean: **C** —
-the value (picklability where wanted) is real but the leakage is the actual
-problem, and fixing the leakage is cheaper than losing the capability.
+Don't fold this into spawn. Ship spawn and its (interim, brittle) type-sharing
+within wrapped mode — done in PR #68 — then do this as an **immediate follow-on
+PR**. Current lean: **D** (per-context: raw in-process, serialize only at the
+process/persistence boundary). It keeps the one capability wrapping genuinely
+earns — serialization where it's actually required (process/kernel isolation,
+versioned persistence) — while making the common in-process path raw, which
+deletes the spawn type-sharing apparatus and makes generics/params/identity work
+natively. D subsumes the good parts of B (raw simplicity) without B's fatal flaw
+(breaking process/kernel isolation), and may pull in pieces of C (a type-like
+`StClass`) for the still-wrapped boundary. The follow-on should open with the
+"what actually relies on picklable sandbox-defined code?" audit, then specify
+the decision rule and the cache/`task.py`/`_reactivate_result` changes.

@@ -535,3 +535,70 @@ def test_sandbox_class_return_type_under_fanout():
         pass
 
     assert run() == ["x", "x", "x"]
+
+
+def test_sandbox_class_param():
+    """A sandbox-defined class works as a @spawn.task *parameter*: the parent
+    constructs the instance, it crosses in, and the clone reads it (duck-typed).
+    Input validation passes via the same StInstance-identity check."""
+    responses = [
+        make_response(
+            thinking="define+spawn",
+            code=(
+                "class Tile:\n"
+                "    def __init__(self, name):\n"
+                "        self.name = name\n"
+                "@spawn.task\n"
+                "def describe(tile: Tile) -> str:\n"
+                '    """describe the tile"""\n'
+                "    pass\n"
+                'task_success(describe(Tile(name="castle")))\n'
+            ),
+        ),
+        make_response(
+            thinking="clone",
+            code='task_success("a tile called " + inputs.tile.name)',
+        ),
+    ]
+    parent = Agent(name="p_sbparam", llm=Dummy(responses=responses))
+
+    @parent.task
+    def run() -> str:
+        """t"""
+        pass
+
+    assert run() == "a tile called castle"
+
+
+def test_generic_sandbox_return_fails_fast():
+    """A sandbox class nested in a generic return type isn't supported yet; it
+    must fail fast at definition with a clear, catchable error — NOT spin to a
+    TaskTimeout."""
+    responses = [
+        make_response(
+            thinking="x",
+            code=(
+                "class Tile:\n"
+                "    def __init__(self, name):\n"
+                "        self.name = name\n"
+                "try:\n"
+                "    @spawn.task\n"
+                "    def make_tiles(n: int) -> list[Tile]:\n"
+                '        """make n tiles"""\n'
+                "        pass\n"
+                '    task_success("NO ERROR")\n'
+                "except Exception as e:\n"
+                '    task_success("caught" if "nested in a generic" in str(e) else "miss")\n'
+            ),
+        ),
+    ]
+    parent = Agent(name="p_genfail", llm=Dummy(responses=responses))
+
+    @parent.task
+    def run() -> str:
+        """t"""
+        pass
+
+    assert run() == "caught"
+    # one turn only — no spin/timeout
+    assert parent.llm.call_count == 1
