@@ -3,7 +3,7 @@
 !!! success "Implemented"
 
     Landed on branch `nxt-retool` ahead of 0.11.  See the
-    `[Unreleased]` block in [CHANGELOG.md](../../CHANGELOG.md) for the
+    `[Unreleased]` block in [CHANGELOG.md](https://github.com/ashenfad/agex/blob/main/CHANGELOG.md) for the
     shipping summary; package READMEs
     (`agex/llm/formats/tool_use/README.md` for the wire format,
     `agex/llm/README.md` for per-provider reasoning) carry the
