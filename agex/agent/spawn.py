@@ -41,6 +41,40 @@ from typing import Any, Callable, Iterable
 SpawnHandle = concurrent.futures.Future
 
 
+def _collect_seed_classes(task_wrapper: Any) -> dict[str, bytes]:
+    """Collect sandbox-defined classes referenced in a spawn task's signature
+    as inactive pickle bytes, keyed by class name.
+
+    These are ``StClass`` wrappers (sandtrap) for classes the agent defined in
+    its own sandbox. A spawn clone is a *separate* sandbox without them, so they
+    must be reconstructed inside the clone. Pickling an ``StClass`` strips its
+    active binding (``__getstate__`` clears ``_compiled_cls``/``_gates``), so the
+    bytes reconstruct an *inactive* wrapper the clone re-binds to its own gates.
+
+    v1 scope: the top-level return type. Parameter types and types nested in
+    generics (``list[Tile]``) are a documented follow-up — params already cross
+    as instances (read-only, duck-typed), and nested-generic validation needs
+    the leniency extension (see roadmap/spawn-type-sharing.md).
+    """
+    import pickle
+
+    try:
+        from sandtrap.wrappers import StClass
+    except Exception:
+        return {}
+
+    seed: dict[str, bytes] = {}
+    rt = getattr(task_wrapper, "_return_type", None)
+    if isinstance(rt, StClass):
+        name = getattr(rt, "_name", None) or getattr(rt, "__name__", None)
+        if name:
+            try:
+                seed[name] = pickle.dumps(rt)
+            except Exception:
+                pass  # unpicklable class → skip; the clone NameErrors as before
+    return seed
+
+
 class SpawnTaskWrapper:
     """What ``@spawn.task`` returns: a blocking callable that runs an ephemeral
     clone loop and returns the typed result. Also accepted by
@@ -57,6 +91,13 @@ class SpawnTaskWrapper:
         sig = getattr(task_wrapper, "__signature__", None)
         if sig is not None:
             self.__signature__ = sig
+        # Sandbox-defined classes referenced in the signature must be made
+        # available *inside* the clone (a separate sandbox). Capture them as
+        # inactive pickle bytes now; each invocation reconstructs a fresh
+        # inactive copy and seeds it into the clone's namespace, where the
+        # clone's auto-activation binds it to the clone's gates. v1 scope:
+        # the top-level return type. See roadmap/spawn-type-sharing.md.
+        self._seed_classes: dict[str, bytes] = _collect_seed_classes(task_wrapper)
 
     def __call__(self, *args: Any) -> Any:
         # Direct call: run the clone loop inline (blocking) on the calling thread.
@@ -193,13 +234,34 @@ class Spawn:
         # Per-invocation labeled, non-versioned state for event-stream demux.
         state = Namespaced(Live(), f"spawn:{name}:{idx}")
 
+        # Seed sandbox-defined signature classes into the clone (fresh inactive
+        # copy per invocation; the clone's auto-activation binds them). Pass the
+        # seeded copy as the return type so validation matches the clone's own
+        # reconstruction rather than the parent's distinct class object.
+        import pickle
+
+        return_type = task._return_type
+        if spawn_task._seed_classes:
+            seed = {nm: pickle.loads(b) for nm, b in spawn_task._seed_classes.items()}
+            state["__setup_namespace__"] = seed
+            rt_name = getattr(return_type, "_name", None) or getattr(
+                return_type, "__name__", None
+            )
+            if rt_name in seed:
+                # Validate against the freshly-seeded class the clone actually
+                # constructs from: the returned StInstance carries this exact
+                # StClass as its _st_class, so validation is a real identity
+                # check (see validate_with_sampling's StClass branch), not the
+                # Pydantic "arbitrary type, allow anything" no-op.
+                return_type = seed[rt_name]
+
         try:
             return self._clone._run_task_loop(
                 task_name=name,
                 docstring=task._effective_docstring,
                 inputs_dataclass=task._inputs_dataclass,
                 inputs_instance=inputs_instance,
-                return_type=task._return_type,
+                return_type=return_type,
                 state=state,
                 session=session,
                 on_event=on_event,
