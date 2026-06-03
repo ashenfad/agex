@@ -4,7 +4,7 @@
 
     Landed on branch `nxt-retool` ahead of 0.11.  Phases 1–5
     complete; Phase 6 (agex-studio follow-up) is separate-repo work.
-    See the `[Unreleased]` block in [CHANGELOG.md](../../CHANGELOG.md)
+    See the `[Unreleased]` block in [CHANGELOG.md](https://github.com/ashenfad/agex/blob/main/CHANGELOG.md)
     for the shipping summary; package READMEs
     (`agex/llm/formats/tool_use/README.md`, `agex/llm/README.md`)
     carry the implementation-level reference.  This page is kept as
