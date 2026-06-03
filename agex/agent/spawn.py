@@ -317,7 +317,23 @@ class Spawn:
             ) from None
 
     def close(self) -> None:
-        """Shut the thread pool down (bounds threads to one emission)."""
+        """Shut the thread pool down (bounds clone threads to one emission).
+
+        On the async path ``close()`` runs in the bridge's ``finally`` on the
+        event-loop thread, so a blocking ``shutdown(wait=True)`` would freeze
+        the loop if a not-yet-collected (fire-and-forget) clone is still
+        running. Detect a running loop and don't wait in that case (the clone
+        finishes in the background); on the sync path, wait for deterministic
+        teardown. In the common submit+``.result()``-in-one-emission case the
+        pool is already idle, so this is instant either way.
+        """
         if self._pool is not None:
-            self._pool.shutdown(wait=True)
+            import asyncio
+
+            try:
+                asyncio.get_running_loop()
+                wait = False
+            except RuntimeError:
+                wait = True
+            self._pool.shutdown(wait=wait)
             self._pool = None
