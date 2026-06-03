@@ -502,3 +502,36 @@ def test_sandbox_class_return_is_validated():
     assert run() == "castle"
     # parent turn + two clone turns (wrong, then corrected)
     assert parent.llm.call_count == 3
+
+
+def test_sandbox_class_return_type_under_fanout():
+    """A sandbox-defined return type also works through the threaded
+    submit/map path: each clone reconstructs a fresh copy of the class
+    (per-invocation), so concurrent fan-out is safe."""
+    responses = [
+        make_response(
+            thinking="fanout",
+            code=(
+                "class Tile:\n"
+                "    def __init__(self, name):\n"
+                "        self.name = name\n"
+                "@spawn.task\n"
+                "def make_tile(p: str) -> Tile:\n"
+                '    """make a tile"""\n'
+                "    pass\n"
+                'tiles = spawn.map(make_tile, ["a", "b", "c"])\n'
+                "task_success([t.name for t in tiles])\n"
+            ),
+        ),
+    ] + [
+        make_response(thinking="c", code='task_success(Tile(name="x"))')
+        for _ in range(3)
+    ]
+    parent = Agent(name="p_sbfanout", llm=SafeDummy(responses=responses), max_spawns=3)
+
+    @parent.task
+    def run() -> list:
+        """t"""
+        pass
+
+    assert run() == ["x", "x", "x"]
