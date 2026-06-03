@@ -41,6 +41,19 @@ from typing import Any, Callable, Iterable
 SpawnHandle = concurrent.futures.Future
 
 
+def _nested_sandbox_classes(annotation: Any, st_class: type) -> list:
+    """Find sandbox-defined classes (``StClass``) nested inside a generic
+    annotation (``list[Tile]``, ``dict[str, Tile]``, ...), recursively."""
+    from typing import get_args
+
+    found = []
+    for arg in get_args(annotation):
+        if isinstance(arg, st_class):
+            found.append(arg)
+        found.extend(_nested_sandbox_classes(arg, st_class))
+    return found
+
+
 def _collect_seed_classes(task_wrapper: Any) -> dict[str, bytes]:
     """Collect sandbox-defined classes referenced in a spawn task's signature
     as inactive pickle bytes, keyed by class name.
@@ -51,10 +64,13 @@ def _collect_seed_classes(task_wrapper: Any) -> dict[str, bytes]:
     active binding (``__getstate__`` clears ``_compiled_cls``/``_gates``), so the
     bytes reconstruct an *inactive* wrapper the clone re-binds to its own gates.
 
-    v1 scope: the top-level return type. Parameter types and types nested in
-    generics (``list[Tile]``) are a documented follow-up — params already cross
-    as instances (read-only, duck-typed), and nested-generic validation needs
-    the leniency extension (see roadmap/spawn-type-sharing.md).
+    v1 scope: the **top-level** return type. A sandbox class nested in a generic
+    return type (``list[Tile]``) can't be reconstructed in the clone yet, so we
+    **fail fast** with a clear message at definition time rather than let the
+    clone ``NameError`` into a 10-iteration timeout. Parameter types already
+    cross as instances (read-only, duck-typed) and need no seeding. Full
+    generic/param support is a follow-up (see roadmap/spawn-type-sharing.md and
+    roadmap/unwrapped.md).
     """
     import pickle
 
@@ -72,6 +88,21 @@ def _collect_seed_classes(task_wrapper: Any) -> dict[str, bytes]:
                 seed[name] = pickle.dumps(rt)
             except Exception:
                 pass  # unpicklable class → skip; the clone NameErrors as before
+        return seed
+
+    # Sandbox class nested in a generic return type → not supported yet; fail
+    # fast (a runtime NameError in the clone would otherwise burn the iteration
+    # budget and surface as an opaque TaskTimeout).
+    nested = _nested_sandbox_classes(rt, StClass)
+    if nested:
+        names = ", ".join(sorted(getattr(c, "_name", None) or "?" for c in nested))
+        task_name = getattr(task_wrapper, "_task_name", None) or "?"
+        raise TypeError(
+            f"spawn task '{task_name}': return type references sandbox-defined "
+            f"class(es) [{names}] nested in a generic, which spawn can't yet "
+            f"reconstruct in the clone. Return the class directly (e.g. "
+            f"'-> Tile'), or use a registered/builtin type."
+        )
     return seed
 
 
