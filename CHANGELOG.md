@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- **In-agent spawn sub-tasks.**  Agent code can define `@spawn.task`
+  functions and run ephemeral, memoryless clones of itself to fulfill
+  typed sub-tasks — directly (blocking) or concurrently via
+  `spawn.submit` / `spawn.map` (a blocking, `concurrent.futures`-shaped
+  surface).  Bounded by `Agent(max_spawns=...)`; clones inherit the
+  parent's policy and grant snapshot.
+
+### Changed
+- **Sandbox-defined functions/classes are now plain objects (raw mode).**
+  agex no longer wraps them as picklable `StFunction`/`StClass`, which
+  simplifies the runtime and makes spawn type-sharing work natively
+  (including generics).  Consequence: a function, class, or instance the
+  agent *defines* can't be cached or returned across a process/kernel/
+  remote boundary — return data instead, and use `helpers/` for reusable
+  code.  Regenerate any pickled state that held cached sandbox code.
+
+
 ## [v0.12.4] - 2026-05-29
 
 ### Added

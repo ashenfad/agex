@@ -4,8 +4,6 @@ import inspect
 import textwrap
 from typing import Awaitable, Callable, TypeVar
 
-from sandtrap.wrappers import StFunction
-
 
 def is_function_body_empty(func: Callable) -> bool:
     """
@@ -13,10 +11,9 @@ def is_function_body_empty(func: Callable) -> bool:
 
     Returns True if the function body is effectively empty (suitable for @agent.task).
     """
-    # StFunction (sandbox-defined): can't inspect source, assume empty-bodied
-    if isinstance(func, StFunction):
-        return True
-
+    # Sandbox-defined functions (and other dynamically-created functions) have no
+    # retrievable source — ``inspect.getsource`` raises ``OSError`` and the handler
+    # below treats them as empty-bodied, which is correct for ``@task`` stubs.
     try:
         source = inspect.getsource(func)
 

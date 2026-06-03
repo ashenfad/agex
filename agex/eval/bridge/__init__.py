@@ -130,7 +130,7 @@ def _prepare_sandbox(
     sb = create_sandbox(
         policy,
         isolation=agent.isolation,
-        mode="wrapped",
+        mode="raw",
         filesystem=fs,
         snapshot_prints=True,
         rpc_handlers=rpc_handlers,

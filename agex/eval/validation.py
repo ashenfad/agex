@@ -32,31 +32,6 @@ def validate_with_sampling(value: Any, annotation: Any) -> Any:
     Raises:
         ValidationError: If validation fails for the object or its samples.
     """
-    # Sandbox-defined classes (sandtrap ``StClass``) are not Python types, so
-    # neither ``isinstance`` nor Pydantic can validate against them (Pydantic
-    # only warns and passes everything). A value built by ``SomeClass(...)`` in
-    # the sandbox is an ``StInstance`` carrying the ``StClass`` that built it, so
-    # validate by that identity. This only triggers for spawn return types
-    # (host annotations are never ``StClass``). See roadmap/spawn-type-sharing.md.
-    try:
-        from sandtrap.wrappers import StClass, StInstance
-    except Exception:  # pragma: no cover - sandtrap always present in practice
-        StClass = StInstance = ()  # type: ignore[assignment]
-    if isinstance(annotation, StClass):
-        if isinstance(value, StInstance):
-            st_class = object.__getattribute__(value, "_st_class")
-            if st_class is annotation or (
-                getattr(st_class, "_compiled_cls", None) is not None
-                and getattr(st_class, "_compiled_cls", None)
-                is getattr(annotation, "_compiled_cls", None)
-            ):
-                return value
-        raise TypeError(
-            f"Expected an instance of sandbox class "
-            f"'{getattr(annotation, '_name', annotation)}', "
-            f"got {type(value).__name__}"
-        )
-
     # Peek validation for numpy arrays
     try:
         import numpy as np

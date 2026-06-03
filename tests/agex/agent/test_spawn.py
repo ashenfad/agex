@@ -570,10 +570,10 @@ def test_sandbox_class_param():
     assert run() == "a tile called castle"
 
 
-def test_generic_sandbox_return_fails_fast():
-    """A sandbox class nested in a generic return type isn't supported yet; it
-    must fail fast at definition with a clear, catchable error — NOT spin to a
-    TaskTimeout."""
+def test_generic_sandbox_return_type():
+    """A sandbox class nested in a generic return type (``list[Tile]``) works:
+    the class is injected into the clone, which builds and returns a list of
+    instances; native validation accepts ``list[Tile]``."""
     responses = [
         make_response(
             thinking="x",
@@ -581,24 +581,24 @@ def test_generic_sandbox_return_fails_fast():
                 "class Tile:\n"
                 "    def __init__(self, name):\n"
                 "        self.name = name\n"
-                "try:\n"
-                "    @spawn.task\n"
-                "    def make_tiles(n: int) -> list[Tile]:\n"
-                '        """make n tiles"""\n'
-                "        pass\n"
-                '    task_success("NO ERROR")\n'
-                "except Exception as e:\n"
-                '    task_success("caught" if "nested in a generic" in str(e) else "miss")\n'
+                "@spawn.task\n"
+                "def make_tiles(n: int) -> list[Tile]:\n"
+                '    """make n tiles"""\n'
+                "    pass\n"
+                "tiles = make_tiles(2)\n"
+                "task_success([t.name for t in tiles])\n"
             ),
         ),
+        make_response(
+            thinking="clone",
+            code='task_success([Tile(name="a"), Tile(name="b")])',
+        ),
     ]
-    parent = Agent(name="p_genfail", llm=Dummy(responses=responses))
+    parent = Agent(name="p_generic", llm=Dummy(responses=responses))
 
     @parent.task
-    def run() -> str:
+    def run() -> list:
         """t"""
         pass
 
-    assert run() == "caught"
-    # one turn only — no spin/timeout
-    assert parent.llm.call_count == 1
+    assert run() == ["a", "b"]

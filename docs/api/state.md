@@ -254,7 +254,7 @@ See [Task - Concurrency Control](task.md#concurrency-control) for details.
 
 Local variables defined inside a `python_action` are turn-local; they're never serialized.  The agent only persists values it deliberately writes to one of the durable channels:
 
-- `cache[k] = v` — validated for picklability at write time using stdlib `pickle.HIGHEST_PROTOCOL` (the protocol the state codec uses underneath).  Unpicklable values raise `CacheError` immediately so the agent can choose a different representation rather than silently markering on a later read.  Sandbox-defined functions and classes (`StFunction` / `StClass`) define `__getstate__` / `__setstate__` and pass validation; lambdas and other locally-defined functions outside the sandbox do not.  Cached wrappers are re-activated on every emission via sandtrap's `__sandtrap_activate__` hook.
+- `cache[k] = v` — validated for picklability at write time using stdlib `pickle.HIGHEST_PROTOCOL` (the protocol the state codec uses underneath).  Unpicklable values raise `CacheError` immediately so the agent can choose a different representation rather than silently markering on a later read.  The cache holds **data**: functions and classes the agent defines in an action are plain (unpicklable) objects and can't be cached — cache their results, and carry reusable *code* in `helpers/` (source, re-imported on demand).
 - VFS file writes — file contents are bytes/strings, which pickle trivially.
 - Init-supplied values (see below) — go through the state codec on first session creation.
 

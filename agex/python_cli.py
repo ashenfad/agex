@@ -210,7 +210,7 @@ def _run_code(
     sb = create_sandbox(
         policy,
         isolation=agent.isolation,
-        mode="wrapped",
+        mode="raw",
         filesystem=fs,
         snapshot_prints=True,
     )
