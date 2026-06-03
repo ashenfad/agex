@@ -104,6 +104,20 @@ while not (review := critique(report)).approved:
     report = hone_report(review.feedback, report)
 ```
 
+**Spawning sub-tasks.** The orchestration above is wired by the developer. Agents can *also* initiate it themselves: `spawn` is injected into agent code so the agent can define a typed sub-task and run it on an ephemeral, memoryless clone of itself — useful for generating sample data, drafting an artifact, or researching a point and getting a validated result back.
+
+```python
+@spawn.task
+def make_svg(prompt: str) -> str:
+    """Return SVG markup for a 64x64 tile."""
+    pass
+
+svg   = make_svg("a small castle")              # blocks, returns the typed result
+tiles = spawn.map(make_svg, ["a", "b", "c"])    # concurrent fan-out
+```
+
+The clone inherits the parent's capabilities (and granted [scopes](security.md#capability-scopes-human-in-the-loop)) but none of its memory, cache, or files — data crosses in through the typed argument. The surface mirrors `concurrent.futures` (`submit` / `map` / `.result()`), is always blocking (no `async`/`await` in agent code), and runs on a thread pool bounded by [`Agent(max_spawns=...)`](../api/agent.md). This is the ergonomic successor to the [dogfood pattern](../examples/dogfood.md) for the common ephemeral case.
+
 **Agent-authored libraries.** Agents can write helper modules to the Virtual Filesystem (`helpers/utils.py`) and `import` them in subsequent tasks - useful for non-trivial logic that would otherwise be re-derived each call. A "Workspace Recap" surfaces the agent's self-authored modules in its system message so it remembers what it's built.
 
 **Skills.** Where registration tells the agent *what* it can use, skills tell it *how* to use it effectively. `agent.skill(...)` mounts markdown documentation that the agent reads on-demand - useful for libraries with non-obvious APIs.

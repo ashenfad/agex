@@ -21,6 +21,7 @@ Agent(
     max_open_files: int | None = None,
     eval_tick_limit: int | None = 100_000,
     isolation: Literal["none", "process", "kernel"] = "none",
+    max_spawns: int = 8,
 )
 ```
 
@@ -43,6 +44,7 @@ Agent(
 | `max_open_files` | `int \| None` | `None` | Maximum file descriptors per task (Unix only). See [Resource Limits](#resource-limits). |
 | `eval_tick_limit` | `int \| None` | `100_000` | Maximum Python control-flow checkpoints (loop iterations, function entries) per code execution. Set to `None` to disable. |
 | `isolation` | `Literal["none", "process", "kernel"]` | `"none"` | Sandbox isolation level. See [Sandbox Isolation](#sandbox-isolation). |
+| `max_spawns` | `int` | `8` | Maximum number of concurrent in-agent [spawn](../concepts/big-picture.md#what-this-enables) clones. Bounds the thread pool backing `spawn.submit` / `spawn.map`. |
 
 ### Basic Example
 
