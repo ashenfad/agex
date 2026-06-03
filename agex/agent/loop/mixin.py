@@ -252,6 +252,46 @@ class TaskLoopMixin(SyncLoopMixin, AsyncLoopMixin, BaseAgent):
                 )
             )
 
+        # Spawn — ephemeral in-agent clones. Taught only when `spawn` is
+        # actually injected (top-level, in-process agents); clones and
+        # process/kernel-isolated agents omit it so they can't reference a
+        # `spawn` they don't have. Mode-free: the agent never reasons about
+        # sync vs async — spawn always blocks.
+        if getattr(self, "_spawn_enabled", True) and (
+            getattr(self, "isolation", "none") == "none"
+        ):
+            parts.append(
+                "\n".join(
+                    [
+                        "# Spawn (sub-tasks)",
+                        "",
+                        "`spawn` runs an ephemeral, memoryless clone of yourself "
+                        "to fulfill a typed sub-task (generate data, draft an "
+                        "artifact, research a point) and returns a validated "
+                        "result. Define the contract like a task — signature, "
+                        "docstring, return type — and call it:",
+                        "",
+                        "  @spawn.task",
+                        "  def make_svg(prompt: str) -> str:",
+                        '      """Return SVG markup for a 64x64 tile."""',
+                        "      pass",
+                        "",
+                        "  svg = make_svg('a small castle')   # blocks, returns the typed result",
+                        "",
+                        "To run several at once, use the concurrent.futures-style "
+                        "surface (all blocking — no async/await):",
+                        "  h = spawn.submit(make_svg, 'a castle'); h.result()",
+                        "  tiles = spawn.map(make_svg, ['a', 'b', 'c'])",
+                        "",
+                        "Each spawn runs a full agent loop (it has your "
+                        "capabilities but none of your memory, cache, or files), "
+                        "so reserve it for self-contained sub-tasks worth that "
+                        "cost. Submit and collect within the same action — "
+                        "handles don't survive to the next turn.",
+                    ]
+                )
+            )
+
         if self.primer:
             parts.append(self.primer)
 

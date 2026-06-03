@@ -77,6 +77,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         max_open_files: int | None = None,
         eval_tick_limit: int | None = 100_000,
         isolation: "Isolation" = "none",
+        max_spawns: int = 8,
     ) -> "Agent":
         """
         Create a new agent with copied registrations but independent state/fs/host.
@@ -130,6 +131,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             max_open_files=max_open_files,
             eval_tick_limit=eval_tick_limit,
             isolation=isolation,
+            max_spawns=max_spawns,
         )
 
         # Copy the policy so modifications don't affect source
@@ -176,6 +178,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
         eval_tick_limit: int | None = 100_000,
         # Sandbox isolation level (passed to sandtrap)
         isolation: "Isolation" = "none",
+        # Max concurrent in-agent spawn clones (bounds the spawn thread pool)
+        max_spawns: int = 8,
         # Advanced: Override the built-in system instructions
         agex_primer_override: str | None = None,
     ):
@@ -210,6 +214,8 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             isolation: Sandbox isolation level. "none" (default) runs in-process.
                 "process" runs in a subprocess for crash protection. "kernel" adds
                 kernel-level filesystem, syscall, and network restrictions.
+            max_spawns: Maximum number of concurrent in-agent spawn clones. Bounds
+                the thread pool backing `spawn.submit` / `spawn.map`. Defaults to 8.
             agex_primer_override: (Advanced) Override the built-in system instructions
                 that define the agent's core behavior and event protocol.
         """
@@ -229,6 +235,7 @@ class Agent(RegistrationMixin, TaskMixin, TaskLoopMixin, BaseAgent):
             max_open_files=max_open_files,
             eval_tick_limit=eval_tick_limit,
             isolation=isolation,
+            max_spawns=max_spawns,
             agex_primer_override=agex_primer_override,
         )
 

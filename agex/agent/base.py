@@ -71,6 +71,8 @@ class BaseAgent:
         eval_tick_limit: int | None = 100_000,
         # Sandbox isolation level (passed to sandtrap)
         isolation: Isolation = "none",
+        # Max concurrent in-agent spawn clones (bounds the spawn thread pool)
+        max_spawns: int = 8,
         # Advanced: Override the builtin system instructions
         agex_primer_override: str | None = None,
     ):
@@ -123,6 +125,17 @@ class BaseAgent:
 
         # Sandbox isolation level (passed to sandtrap's sandbox() factory)
         self.isolation: Isolation = isolation
+
+        # Max concurrent in-agent spawn clones (bounds the spawn thread pool).
+        self.max_spawns = max_spawns
+
+        # Whether `spawn` is injected into this agent's sandbox. Spawn clones
+        # set this False so they are depth-1 leaf workers (no recursive spawn).
+        self._spawn_enabled = True
+
+        # Lazily-built, cached clone template used by the injected `spawn`
+        # object (see _get_spawn_clone). Policy clone of this agent.
+        self._spawn_clone: "BaseAgent | None" = None
 
         # File descriptor limits (per-task, Unix only)
         self._resource_limits = ResourceLimits(
@@ -181,6 +194,36 @@ class BaseAgent:
         """Invalidate fingerprint and dependency caches after registration changes."""
         self._cached_dependencies = None
         self._fingerprint = None
+
+    def _get_spawn_clone(self) -> "BaseAgent":
+        """Lazily build and cache the policy-clone used by the injected ``spawn``.
+
+        The clone shares this agent's registrations (policy, host objects,
+        tracked modules) but runs on fresh ephemeral state with its own VFS,
+        in-process, and with ``spawn`` itself stripped from its namespace so
+        clones are depth-1 leaf workers (no recursive spawning). Built once;
+        ``@spawn.task`` definitions accumulate on the clone's own policy and
+        never leak back to this agent.
+        """
+        if self._spawn_clone is None:
+            from agex.agent import Agent
+
+            clone = Agent.clone_registrations(
+                self,  # type: ignore[arg-type]
+                name=f"{self.name}:spawn",
+                primer=self.primer,
+                llm=self.llm,
+                eval_timeout_seconds=self.eval_timeout_seconds,
+                max_iterations=self.max_iterations,
+                max_memory_mb=self.max_memory_mb,
+                eval_tick_limit=self.eval_tick_limit,
+                state=None,  # ephemeral: fresh Live per invocation
+                isolation="none",  # clones run in-process (v1)
+                max_spawns=self.max_spawns,
+            )
+            clone._spawn_enabled = False
+            self._spawn_clone = clone
+        return self._spawn_clone
 
     def __getstate__(self) -> dict[str, Any]:
         """

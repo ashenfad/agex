@@ -265,11 +265,13 @@ _BRIDGE_INJECTED_NAMES = frozenset(
         "task_success",
         "task_fail",
         "task_clarify",
+        "task_request_permission",
         "view_image",
         "__outputs__",
         "dir",
         "inputs",
         "cache",
+        "spawn",
     }
 )
 

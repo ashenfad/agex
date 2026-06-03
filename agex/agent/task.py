@@ -808,6 +808,19 @@ class TaskMixin(TaskLoopMixin, BaseAgent):
         # Attach agent instance for @remote decorator access
         wrapper.__agex_agent__ = self  # type: ignore
 
+        # Expose the task-loop closure values so `spawn` (agex/agent/spawn.py)
+        # can drive `_run_task_loop` directly with a custom (Namespaced/Live)
+        # state for per-invocation event-stream labeling. Private (underscore)
+        # so they stay out of the sandbox's allowed attribute surface.
+        wrapper._task_name = task_name  # type: ignore
+        wrapper._return_type = return_type  # type: ignore
+        wrapper._inputs_dataclass = inputs_dataclass  # type: ignore
+        wrapper._effective_docstring = effective_docstring  # type: ignore
+        wrapper._setup = setup  # type: ignore
+        wrapper._on_conflict = on_conflict  # type: ignore
+        wrapper._max_conflict_retries = max_conflict_retries  # type: ignore
+        wrapper._bind_and_validate = _bind_and_validate  # type: ignore
+
         return wrapper
 
     def _create_inputs_dataclass(self, task_name: str, signature: inspect.Signature):

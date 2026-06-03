@@ -90,6 +90,19 @@ def build_namespace(
     namespace["task_clarify"] = _task_clarify
     namespace["task_request_permission"] = _task_request_permission
 
+    # Inject `spawn` — ephemeral in-agent clones (see agex/agent/spawn.py).
+    # Gated to top-level agents only: spawn clones set ``_spawn_enabled=False``
+    # so they are depth-1 leaf workers. v1 is in-process only — under process /
+    # kernel isolation `spawn` is omitted (an RpcProxyMarker path can be added
+    # later, as ``cache`` does for those modes).
+    _spawn_on = getattr(agent, "_spawn_enabled", True) and (
+        getattr(agent, "isolation", "none") == "none"
+    )
+    if _spawn_on:
+        from agex.agent.spawn import Spawn
+
+        namespace["spawn"] = Spawn(agent._get_spawn_clone(), agent, on_event)
+
     # Inject __outputs__ list and picklable view_image.
     # view_image appends to __outputs__; handle_result drains it into events.
     outputs: list = []
@@ -109,6 +122,8 @@ def build_namespace(
         injected_keys.add("inputs")
     if "cache" in namespace:
         injected_keys.add("cache")
+    if "spawn" in namespace:
+        injected_keys.add("spawn")
     if state is not None:
         injected_keys.update(state.get("__setup_namespace__") or {})
 
