@@ -433,3 +433,72 @@ def test_clone_scope_request_is_recoverable():
         handle.result()
     assert "email" in str(excinfo.value)
     spawn.close()
+
+
+# --------------------------------------------------------------------------- #
+# Sandbox-defined types flow into clones (roadmap/spawn-type-sharing.md)       #
+# --------------------------------------------------------------------------- #
+
+
+def test_sandbox_class_return_type():
+    """An agent can define a class in its own sandbox and use it as a
+    @spawn.task return type — the class is seeded into the clone, which
+    constructs it; the instance crosses back with attributes intact."""
+    responses = [
+        make_response(
+            thinking="define+spawn",
+            code=(
+                "class Tile:\n"
+                "    def __init__(self, name):\n"
+                "        self.name = name\n"
+                "@spawn.task\n"
+                "def make_tile(p: str) -> Tile:\n"
+                '    """Make a tile named after the prompt."""\n'
+                "    pass\n"
+                'task_success(make_tile("castle").name)\n'
+            ),
+        ),
+        make_response(thinking="clone", code='task_success(Tile(name="castle"))'),
+    ]
+    parent = Agent(name="p_sbtype", llm=Dummy(responses=responses))
+
+    @parent.task
+    def run() -> str:
+        """t"""
+        pass
+
+    assert run() == "castle"
+
+
+def test_sandbox_class_return_is_validated():
+    """The seeded class is the real expected type: a clone that returns the
+    wrong type is rejected and recovers (the contract is enforced, not a
+    Pydantic no-op)."""
+    responses = [
+        make_response(
+            thinking="define+spawn",
+            code=(
+                "class Tile:\n"
+                "    def __init__(self, name):\n"
+                "        self.name = name\n"
+                "@spawn.task\n"
+                "def make_tile(p: str) -> Tile:\n"
+                '    """make a tile"""\n'
+                "    pass\n"
+                'task_success(make_tile("castle").name)\n'
+            ),
+        ),
+        # clone returns the wrong type first (must be rejected), then corrects
+        make_response(thinking="oops", code='task_success("just a string")'),
+        make_response(thinking="fixed", code='task_success(Tile(name="castle"))'),
+    ]
+    parent = Agent(name="p_sbvalid", llm=Dummy(responses=responses))
+
+    @parent.task
+    def run() -> str:
+        """t"""
+        pass
+
+    assert run() == "castle"
+    # parent turn + two clone turns (wrong, then corrected)
+    assert parent.llm.call_count == 3

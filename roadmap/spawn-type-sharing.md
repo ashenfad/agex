@@ -1,14 +1,23 @@
 # Spawn type-sharing: sandbox-defined classes flow into clones
 
-!!! note "Status: design — grounded against source, depends on `spawn`"
+!!! success "Status: v1 implemented (top-level return types); extensions open"
 
-    Captured from discussion and verified against agex/sandtrap source (the
-    `StClass` round-trip, the auto-activation hook, the `RemoteCache`
-    cross-process reactivation model, and the dataclass structural-validation
-    path). Builds on [`spawn.md`](spawn.md) (shipped). Targets the **agent's
-    own** sandbox-defined types crossing into spawn clones — *not* host-level
-    implicit registration of types in a `@agent.task` signature, which is a
-    separate (security-sensitive) follow-up (see Non-goals).
+    The core path is shipped on `feat/spawn`: a sandbox-defined class used as a
+    `@spawn.task` **return type** is captured as inactive pickle bytes
+    (`Spawn._collect_seed_classes`), reconstructed fresh per invocation, seeded
+    into the clone's `__setup_namespace__`, and bound by the clone's
+    auto-activation — so the clone constructs it natively. Validation is **real,
+    not skipped**: the returned `StInstance` carries the `StClass` that built
+    it, so `validate_with_sampling` accepts it by identity (the seeded class is
+    passed as the expected type) and rejects a wrong type. Tests:
+    `test_sandbox_class_return_type`, `test_sandbox_class_return_is_validated`.
+
+    **Still open (deferred):** parameter types referenced *by name* in the
+    clone, types nested in generics (`list[Tile]`), and transitive/referential
+    classes — see Open questions. Host-level implicit registration remains a
+    separate follow-up (Non-goals).
+
+    Original design notes (grounded against agex/sandtrap source) follow.
 
 ## Summary
 
