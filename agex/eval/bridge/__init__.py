@@ -22,6 +22,19 @@ if TYPE_CHECKING:
     from agex.agent.base import BaseAgent
 
 
+def _close_spawn(namespace: dict[str, Any]) -> None:
+    """Shut down the per-emission spawn thread pool, if one was created.
+
+    ``spawn`` (agex/agent/spawn.py) lazily creates a bounded ThreadPoolExecutor
+    on first ``submit``; closing it at emission end bounds clone threads to a
+    single emission and frees them deterministically.
+    """
+    spawn = namespace.get("spawn")
+    close = getattr(spawn, "close", None)
+    if callable(close):
+        close()
+
+
 def _make_cache_handler(
     state: MutableMapping[str, Any],
 ) -> Callable[[str, tuple, dict], Any]:
@@ -188,6 +201,7 @@ def execute_sandboxed(
         with sb:
             result = sb.exec(program, namespace=namespace)
     finally:
+        _close_spawn(namespace)
         _current_session.reset(session_token)
         _current_on_event.reset(event_token)
         _current_on_token.reset(token_token)
@@ -264,6 +278,7 @@ async def aexecute_sandboxed(
         with sb:
             result = await sb.aexec(program, namespace=namespace)
     finally:
+        _close_spawn(namespace)
         _current_session.reset(session_token)
         _current_on_event.reset(event_token)
         _current_on_token.reset(token_token)
