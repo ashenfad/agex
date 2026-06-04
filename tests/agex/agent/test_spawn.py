@@ -296,6 +296,47 @@ def test_clone_failure_is_recoverable():
     assert run() == "caught"
 
 
+def test_clone_failure_does_not_break_out_to_host():
+    """A clone's task_fail is a recoverable error in the parent, NOT a terminal
+    TaskFail that escapes to the host. Even *uncaught*, the parent gets fed the
+    error and reacts on its next turn — so the host never sees TaskFail."""
+    from agex.agent.datatypes import TaskFail
+
+    responses = [
+        # turn 1: parent calls the (failing) clone WITHOUT a try/except
+        make_response(
+            thinking="call",
+            code=(
+                "@spawn.task\n"
+                "def gen(x: int) -> int:\n"
+                '    """d"""\n'
+                "    pass\n"
+                "task_success(gen(1))\n"
+            ),
+        ),
+        # the clone fails
+        make_response(thinking="clone-fails", code="task_fail('clone boom')"),
+        # turn 2: the parent, having seen the recoverable error, adapts
+        make_response(thinking="recover", code="task_success('recovered')"),
+    ]
+    parent = Agent(name="p_breakout", llm=Dummy(responses=responses))
+
+    @parent.task
+    def run() -> str:
+        """use spawn"""
+        pass
+
+    # If the clone's TaskFail escaped to the host, this would raise TaskFail and
+    # never reach the recovery turn. Instead the parent recovers.
+    try:
+        result = run()
+    except TaskFail as e:  # pragma: no cover - the failure mode we guard against
+        raise AssertionError(
+            f"clone TaskFail broke out to the host: {e.message}"
+        ) from None
+    assert result == "recovered"
+
+
 # --------------------------------------------------------------------------- #
 # Concurrency: pool bounded by max_spawns, torn down per emission             #
 # --------------------------------------------------------------------------- #
