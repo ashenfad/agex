@@ -194,8 +194,7 @@ class RegistrationMixin(BaseAgent):
                 # Sibling-composition constraint (scope-interrupt v1): a scoped
                 # agent is top-level only. Registering it as another agent's fn
                 # would create a nested agent whose scope-needs aren't supported
-                # yet (see roadmap/scope-interrupt.md §12). Caught here, at
-                # composition time, before anything runs.
+                # yet. Caught here, at composition time, before anything runs.
                 if owning_agent.scope_names:
                     raise ValueError(
                         f"Cannot register task '{final_name}' from agent "
