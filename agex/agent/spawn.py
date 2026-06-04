@@ -1,6 +1,6 @@
 """In-agent ephemeral clones — the ``spawn`` object injected into agent code.
 
-See ``roadmap/spawn.md``. ``spawn`` lets agent code define and run ephemeral,
+``spawn`` lets agent code define and run ephemeral,
 memoryless clones of the parent agent to fulfill typed subtasks, with a
 blocking, ``concurrent.futures``-shaped surface (so the agent reaches for
 ``submit`` / ``.result()`` / ``map`` — the API it already knows — and never
@@ -54,6 +54,20 @@ def _referenced_classes(annotation: Any) -> list:
     return out
 
 
+def _has_string_annotation(annotation: Any) -> bool:
+    """True if the annotation is, or nests, a quoted type — a bare string or a
+    ``typing.ForwardRef`` (e.g. ``"Tile"`` or ``list["Tile"]``). These can't be
+    resolved to a real class object, and resolving them safely would require
+    evaluating an agent-controlled string outside the sandbox (a sandbox
+    escape), so we reject them instead."""
+    import typing
+    from typing import get_args
+
+    if isinstance(annotation, (str, typing.ForwardRef)):
+        return True
+    return any(_has_string_annotation(a) for a in get_args(annotation))
+
+
 def _collect_seed_classes(task_wrapper: Any) -> dict[str, type]:
     """Collect the **sandbox-defined** classes referenced in a spawn task's
     signature (return type + parameters, including generics), keyed by name.
@@ -66,6 +80,12 @@ def _collect_seed_classes(task_wrapper: Any) -> dict[str, type]:
     already available in the clone (it shares the parent's policy) and are
     skipped. The class's methods close over the parent's gates, which is fine —
     the clone shares the parent's policy.
+
+    Quoted annotations (``-> "Tile"``) arrive as strings/ForwardRefs that can't
+    be resolved to the real class, so they're rejected at definition time with a
+    clear message (rather than failing later as an opaque ``NameError`` in the
+    clone). There's never a need to quote: the class is defined in the same
+    emission, so ``-> Tile`` always works.
     """
     seed: dict[str, type] = {}
     annotations = [getattr(task_wrapper, "_return_type", None)]
@@ -73,6 +93,13 @@ def _collect_seed_classes(task_wrapper: Any) -> dict[str, type]:
     if sig is not None:
         annotations.extend(p.annotation for p in sig.parameters.values())
     for ann in annotations:
+        if _has_string_annotation(ann):
+            task_name = getattr(task_wrapper, "_task_name", None) or "?"
+            raise TypeError(
+                f"spawn task '{task_name}': type annotations must be written "
+                f'unquoted (e.g. `-> Tile`, not `-> "Tile"`). A quoted forward '
+                f"reference can't be resolved to your sandbox-defined class."
+            )
         for cls in _referenced_classes(ann):
             if getattr(cls, "__module__", None) == "__sandtrap__":
                 seed[cls.__name__] = cls

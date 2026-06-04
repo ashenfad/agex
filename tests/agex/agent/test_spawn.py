@@ -602,3 +602,38 @@ def test_generic_sandbox_return_type():
         pass
 
     assert run() == ["a", "b"]
+
+
+def test_quoted_annotation_rejected_at_definition():
+    """A quoted forward-ref annotation (``-> "Tile"``) can't be resolved to the
+    real class, so it's rejected with a clear error when ``@spawn.task`` is
+    applied — not as an opaque NameError inside the clone later. (There's never
+    a need to quote: the class is defined in the same emission.)"""
+    responses = [
+        make_response(
+            thinking="x",
+            code=(
+                "class Tile:\n"
+                "    def __init__(self, name):\n"
+                "        self.name = name\n"
+                "try:\n"
+                "    @spawn.task\n"
+                '    def make_tile(p: str) -> "Tile":\n'
+                '        """make a tile"""\n'
+                "        pass\n"
+                '    task_success("NO ERROR")\n'
+                "except Exception as e:\n"
+                '    task_success("caught" if "unquoted" in str(e) else "miss")\n'
+            ),
+        ),
+    ]
+    parent = Agent(name="p_quoted", llm=Dummy(responses=responses))
+
+    @parent.task
+    def run() -> str:
+        """t"""
+        pass
+
+    assert run() == "caught"
+    # one turn — fails fast at definition, no clone call / spin
+    assert parent.llm.call_count == 1
