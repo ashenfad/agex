@@ -45,6 +45,14 @@ class Local(Host):
         if config is None:
             return  # Ephemeral is always valid
 
+        if config.type == "resolver":
+            if config.resolver is None:
+                raise ValueError(
+                    "State type 'resolver' requires a resolver instance "
+                    "(use connect_state(type='resolver', resolver=...))"
+                )
+            return
+
         if config.storage not in (None, "memory", "disk", "indexeddb"):
             raise ValueError(
                 f"Local host does not support storage '{config.storage}'. "
@@ -59,10 +67,23 @@ class Local(Host):
     ) -> MutableMapping[str, Any]:
         """Create or retrieve a State instance for this session."""
         from agex.state.kv import Disk, Memory
+        from agex.state.resolver import assert_safe_session
 
         # Ephemeral: fresh Live instance per call
         if config is None:
             return Live()
+
+        # Bring-your-own resolver: delegate entirely. The resolver owns
+        # caching, init, and codec choice — no host-side session cache,
+        # so the embedder controls whether repeated resolves share a
+        # staging area or get independent working trees.
+        if config.type == "resolver":
+            assert config.resolver is not None  # validate_state enforces
+            return config.resolver.resolve(session)
+
+        # Session ids are embedded in disk paths and IndexedDB names below;
+        # reject ids that could traverse out of the configured namespace.
+        assert_safe_session(session)
 
         # For memory storage, use session cache
         if config.storage == "memory":

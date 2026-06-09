@@ -117,6 +117,14 @@ class HTTP(Host):
         if config is None:
             return  # Ephemeral is always valid
 
+        if config.type == "resolver":
+            raise ValueError(
+                "Custom state resolvers are not supported on the HTTP host — "
+                "a resolver is a live in-process object and state is resolved "
+                "server-side. Use the Local host, or configure storage the "
+                "server can reconstruct (e.g. type='versioned', storage='disk')."
+            )
+
         # HTTP host only supports disk storage (server resolves it)
         if config.storage not in (None, "disk"):
             raise ValueError(

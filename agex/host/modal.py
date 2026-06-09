@@ -183,6 +183,15 @@ def _validate_modal_state(config: "StateConfig | None") -> None:
     state_type = getattr(config, "type", "ephemeral")
     storage = getattr(config, "storage", None)
 
+    # A resolver is a live in-process object — it can't travel to a
+    # Modal container.
+    if state_type == "resolver":
+        raise ValueError(
+            "Custom state resolvers are not supported on Modal — a resolver "
+            "is a live in-process object and cannot be serialized to a "
+            "container. Use the Local host, or type='versioned' storage."
+        )
+
     # Live state doesn't work on Modal - no persistence between invocations
     if state_type == "live":
         raise ValueError(
