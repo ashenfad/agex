@@ -33,7 +33,16 @@ from .llm import LLM, connect_llm
 from .render.capabilities import summarize_capabilities
 from .render.token_count import estimate_log_tokens, system_token_count
 from .render.view import view
-from .state import Live, Namespaced, Staged, connect_state, events, scopes
+from .state import (
+    Live,
+    Namespaced,
+    Staged,
+    StateResolver,
+    connect_state,
+    events,
+    scopes,
+    staged_state,
+)
 
 __all__ = [
     # Core Classes
@@ -45,6 +54,8 @@ __all__ = [
     # State Management
     "connect_state",
     "Staged",
+    "StateResolver",
+    "staged_state",
     "Live",
     "Namespaced",
     "events",

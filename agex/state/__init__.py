@@ -17,6 +17,12 @@ from agex.agent.datatypes import UnpicklableMarker, UnpicklableVariableError
 
 from .config import StateConfig
 from .live import Live
+from .resolver import (
+    SAFE_SESSION_RE,
+    StateResolver,
+    assert_safe_session,
+    staged_state,
+)
 from .scopes import ScopeSet, scopes
 
 __all__ = [
@@ -30,7 +36,11 @@ __all__ = [
     "KVStore",
     # agex types
     "StateConfig",
+    "StateResolver",
     # Utility functions
+    "staged_state",
+    "assert_safe_session",
+    "SAFE_SESSION_RE",
     "get_root",
     "is_live_root",
     "raw_set",
@@ -258,7 +268,7 @@ def state_diffs(staged: Staged, commit_hash: str | None = None) -> dict[str, Any
 
 
 def connect_state(
-    type: Literal["ephemeral", "versioned", "live"],
+    type: Literal["ephemeral", "versioned", "live", "resolver"],
     storage: str | None = None,
     init: "Callable[[], dict[str, Any]] | dict[str, Any] | None" = None,
     **kwargs,
@@ -266,9 +276,9 @@ def connect_state(
     """Create a state configuration.
 
     Args:
-        type: State semantics ("ephemeral", "versioned", or "live")
+        type: State semantics ("ephemeral", "versioned", "live", or "resolver")
         storage: Storage backend ("memory", "disk", or "indexeddb").
-            Not required for ephemeral.
+            Not required for ephemeral or resolver.
         init: Callable or dict to initialize state variables on first session creation.
         **kwargs: Storage-specific arguments
 
@@ -277,10 +287,39 @@ def connect_state(
             path: str - Directory path (required for disk storage)
         indexeddb:
             db_name: str - IndexedDB database name (default: "kvgit")
+        resolver:
+            resolver: StateResolver - bring-your-own per-session state
+                lookup (required). The built-in storages give each
+                session its own substrate; a custom resolver can express
+                shapes they can't — e.g. one shared store with a kvgit
+                branch per session (see ``agex.state.staged_state``).
+                Local host only; the resolver owns caching and init.
 
     Returns:
         A StateConfig instance
     """
+    # Bring-your-own resolver: hand it back wrapped in config, untouched.
+    if type == "resolver":
+        resolver = kwargs.pop("resolver", None)
+        if resolver is None or not callable(getattr(resolver, "resolve", None)):
+            raise ValueError(
+                "State type 'resolver' requires a 'resolver' argument with a "
+                "resolve(session) method (see agex.state.StateResolver)"
+            )
+        if storage is not None:
+            raise ValueError(
+                "State type 'resolver' does not take a storage backend — the "
+                "resolver owns storage"
+            )
+        if init is not None:
+            raise ValueError(
+                "State type 'resolver' does not take init — apply initial "
+                "values inside the resolver"
+            )
+        if kwargs:
+            raise ValueError(f"Unknown arguments for resolver state: {list(kwargs)}")
+        return StateConfig(type="resolver", resolver=resolver)
+
     # Validate storage requirements
     if type != "ephemeral" and storage is None:
         raise ValueError(f"State type '{type}' requires storage parameter")

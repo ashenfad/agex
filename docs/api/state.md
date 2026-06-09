@@ -14,10 +14,11 @@ State does **not** hold the agent's local variables, imported modules, or defini
 from agex import connect_state
 
 state_config = connect_state(
-    type: Literal["versioned", "live"] = "versioned",
+    type: Literal["versioned", "live", "resolver"] = "versioned",
     storage: Literal["memory", "disk"] = "memory",
     path: str | None = None,  # Required for disk storage
     init: Callable[[], dict] | dict | None = None,  # Initialize state vars
+    resolver: StateResolver | None = None,  # Required for type="resolver"
 )
 ```
 
@@ -25,10 +26,11 @@ state_config = connect_state(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `type` | `str` | `"versioned"` | State type: `"versioned"` (with checkpointing) or `"live"` (in-memory only) |
+| `type` | `str` | `"versioned"` | State type: `"versioned"` (with checkpointing), `"live"` (in-memory only), or `"resolver"` (bring-your-own, see [Custom State Resolvers](#custom-state-resolvers)) |
 | `storage` | `str` | `"memory"` | Storage backend: `"memory"` or `"disk"` |
 | `path` | `str \| None` | `None` | Path for disk storage (required when `storage="disk"`) |
 | `init` | `Callable \| dict \| None` | `None` | Initialize state variables on first session creation |
+| `resolver` | `StateResolver \| None` | `None` | Per-session state lookup (required and only valid when `type="resolver"`) |
 
 ## State Types
 
@@ -136,6 +138,68 @@ If you don't specify a session, the default session `"default"` is used:
 chat("Hello")
 chat("Hello", session="default")
 ```
+
+### Session Ids
+
+Session ids are embedded into storage namespaces (disk paths, IndexedDB
+names), so the Local host validates them: ids must match
+`[A-Za-z0-9_-][A-Za-z0-9_.-]*` — typical shapes like `"default"` or
+`"chat-3f2a"` pass; anything with path separators, leading dots, or
+whitespace is rejected with a `ValueError`. If session ids flow from
+untrusted input (e.g. the HTTP server), this is what stops a crafted id
+from escaping the state directory.
+
+### Custom State Resolvers
+
+The built-in storages give every session its own substrate — a separate
+diskcache directory, a separate IndexedDB name. That isolation is usually
+what you want, but it can't express *one shared substrate with a kvgit
+branch per session*: many working trees over one repo, where sessions
+fork cheaply and concurrent writers reconcile through kvgit's CAS +
+three-way merge instead of last-write-wins.
+
+For those shapes, bring your own resolver — an object with a
+`resolve(session)` method and a `versioned` flag (the
+`agex.state.StateResolver` protocol). The host delegates session lookup
+to it entirely; the resolver owns caching, initialization, and codec
+choice. Build kvgit-backed states with `agex.state.staged_state`, which
+applies agex's encoder/decoder (required for chunked numpy/pandas values
+to round-trip):
+
+```python
+from agex import Agent, connect_state
+from agex.state import assert_safe_session, staged_state
+from agex.state.kv import Disk
+
+store = Disk("/srv/agent/shared")     # one substrate...
+
+class BranchResolver:
+    versioned = True
+    def __init__(self):
+        self._cache = {}
+    def resolve(self, session):
+        assert_safe_session(session)
+        if session not in self._cache:
+            self._cache[session] = staged_state(store, branch=session)
+        return self._cache[session]  # ...a branch per session
+
+agent = Agent(state=connect_state(type="resolver", resolver=BranchResolver()))
+```
+
+Caching is the resolver's contract to honor: returning the same instance
+per session keeps the task loop, `agent.fs()`, and `agent.state()` on one
+staging area. Return fresh instances deliberately if you want independent
+working trees over the same branch (e.g. optimistic concurrency between a
+background loop and an interactive channel in one process).
+
+Resolvers are **Local host only** — they're live in-process objects and
+can't be serialized to the HTTP or Modal hosts (those reject resolver
+configs with a clear error).
+
+> [!NOTE]
+> This mirrors agex-ts's `StateResolver`, added for agex-studio's
+> concurrent-sessions work, where each studio session is a branch over
+> one shared store.
 
 ## Storage Options
 
