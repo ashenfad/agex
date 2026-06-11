@@ -2,6 +2,7 @@ from .agent import Agent, MemberSpec, TaskFail, clear_agent_registry
 from .agent.chapter import CHAPTER_TASK
 from .agent.console import pprint_events, pprint_tokens
 from .agent.datatypes import (
+    LLMFail,
     TaskCancelled,
     TaskClarify,
     TaskTimeout,
@@ -69,6 +70,7 @@ __all__ = [
     "TaskClarify",
     "TaskTimeout",
     "TaskCancelled",
+    "LLMFail",
     # Emissions (assistant-turn units)
     "TextEmission",
     "ThinkingEmission",
