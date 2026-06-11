@@ -40,6 +40,7 @@ flag anything over $100", then watch the next cron tick obey. Then
 /grant email and watch drafts become sends.
 """
 
+import getpass
 import json
 import os
 import sys
@@ -47,7 +48,15 @@ import tempfile
 import threading
 import time
 
-from agex import Agent, connect_llm, connect_state, scopes
+from agex import (
+    Agent,
+    LLMFail,
+    TaskFail,
+    TaskTimeout,
+    connect_llm,
+    connect_state,
+    scopes,
+)
 from agex.state import assert_safe_session, commit_state, staged_state
 from agex.state.kv import Disk
 
@@ -55,7 +64,10 @@ from agex.state.kv import Disk
 # Shared substrate: one store, one branch, a working tree per entry point
 # ---------------------------------------------------------------------------
 
-HOME = os.path.join(tempfile.gettempdir(), "agex-resident")
+# tempdir keeps the demo self-cleaning (a real resident would live
+# somewhere durable); the username suffix avoids collisions on shared
+# machines.
+HOME = os.path.join(tempfile.gettempdir(), f"agex-resident-{getpass.getuser()}")
 BRANCH = "home"
 INBOX_PATH = os.path.join(HOME, "inbox.json")
 OUTBOX_PATH = os.path.join(HOME, "outbox.json")
@@ -239,20 +251,30 @@ def seed() -> None:
 def run_cron(tick_seconds: float = 20.0) -> None:
     seed()
     while True:
-        inbox = _read_json(INBOX_PATH, {"pending": [], "unread": []})
-        if inbox["pending"]:
-            arrived = inbox["pending"].pop(0)
-            inbox["unread"].append(arrived)
-            print(f"\n[cron] arrived: {arrived['subject']!r}")
-        if inbox["unread"]:
-            _refresh("cron")  # see chat's latest policy edits and grants
-            handled = triage(list(inbox["unread"]), session="cron")
-            if handled is None:  # abandoned on conflict; next tick redoes
-                print("[cron] tick abandoned (concurrent commit); will retry")
-            else:
-                inbox["unread"] = [m for m in inbox["unread"] if m["id"] not in handled]
-                print(f"[cron] handled: {handled or 'nothing'}")
-        _write_json(INBOX_PATH, inbox)
+        try:
+            inbox = _read_json(INBOX_PATH, {"pending": [], "unread": []})
+            if inbox["pending"]:
+                arrived = inbox["pending"].pop(0)
+                inbox["unread"].append(arrived)
+                print(f"\n[cron] arrived: {arrived['subject']!r}")
+            if inbox["unread"]:
+                _refresh("cron")  # see chat's latest policy edits and grants
+                handled = triage(list(inbox["unread"]), session="cron")
+                if handled is None:  # abandoned on conflict; next tick redoes
+                    print("[cron] tick abandoned (concurrent commit); will retry")
+                else:
+                    inbox["unread"] = [
+                        m for m in inbox["unread"] if m["id"] not in handled
+                    ]
+                    print(f"[cron] handled: {handled or 'nothing'}")
+            _write_json(INBOX_PATH, inbox)
+        except (TaskFail, TaskTimeout, LLMFail) as e:
+            # Task-control exceptions are BaseException (so sandboxed agent
+            # code can't swallow them) — the host loop is where they land.
+            # A failed tick redoes naturally: unhandled emails stay unread.
+            print(f"[cron] tick failed: {type(e).__name__}: {e}")
+        except Exception as e:
+            print(f"[cron] error during tick: {e}")
         time.sleep(tick_seconds)
 
 
