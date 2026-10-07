@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **`Agent` and `agent.session(ws)`.** A session drives a nontainer workspace turn by turn with `say`, `asay` or `stream`, each turn a `ws.turn` that runs the workspace's tools, delivers inbox notes on their results and stores the run on the conversation plane as `harness="agex"`; `say` returns an `Outcome`.
+- **`agex.conformance.AgexHarness`.** agex under nontainer's harness corpus; it passes every scenario that needs no capability.
 - **Provider protocol: `agex.providers.Provider`.** `stream(messages, tools, settings)` yields text and reasoning deltas, then the whole reply; `PydanticAIProvider` implements it over `pydantic_ai.direct`, and `ScriptedProvider` replies from a script, for tests.
 - **Stored run record v0: `agex.record`.** `Run` and `Message` with text, reasoning, tool-call and tool-result parts, stable message ids and usage; `dump_run` / `load_run` read and write it as JSON.
 

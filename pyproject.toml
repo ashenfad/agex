@@ -52,6 +52,12 @@ dev = [
     "ruff",
 ]
 
+[tool.uv.sources]
+# During the rebuild agex tracks nontainer's main, which gains what agex
+# needs before it is released. At the shape freeze, nontainer releases
+# and this goes, leaving the floor above.
+nontainer = { git = "https://github.com/ashenfad/nontainer", branch = "main" }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
