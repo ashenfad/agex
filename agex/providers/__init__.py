@@ -24,7 +24,7 @@ from nontainer.turns import TextDelta, ThinkingDelta
 
 from ..record import Message
 
-__all__ = ["Provider", "ProviderEvent", "Reply", "Settings", "ToolSpec"]
+__all__ = ["Provider", "ProviderEvent", "Reply", "Settings", "Thinking", "ToolSpec"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -46,13 +46,24 @@ class ToolSpec:
         )
 
 
+Thinking = Literal["minimal", "low", "medium", "high", "xhigh"]
+"""How hard a model reasons before it answers, where it can."""
+
+
 @dataclass(frozen=True, kw_only=True)
 class Settings:
-    """A request's settings. ``extra`` passes provider-specific ones
-    through as they are (cache controls, reasoning effort)."""
+    """A request's settings.
+
+    ``thinking`` asks for reasoning (``True``, or an effort) on any
+    provider that offers it, each in its own terms; ``False`` asks for
+    none, and ``None`` leaves the provider's default. ``extra`` passes
+    provider-specific settings through as they are (cache controls, a
+    reasoning budget).
+    """
 
     max_tokens: int | None = None
     temperature: float | None = None
+    thinking: bool | Thinking | None = None
     extra: Mapping[str, Any] = field(default_factory=dict)
 
 

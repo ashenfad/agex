@@ -100,19 +100,34 @@ def _request_parts(message: Message) -> list[pai.ModelRequestPart]:
 
 def _response_part(part: Part) -> pai.ModelResponsePart | None:
     if isinstance(part, Text):
-        return pai.TextPart(content=part.text)
+        return pai.TextPart(
+            content=part.text,
+            id=part.id,
+            provider_name=part.provider,
+            provider_details=part.details,
+        )
     if isinstance(part, Thinking):
         return pai.ThinkingPart(
             content=part.text,
             signature=part.signature,
+            id=part.id,
             provider_name=part.provider,
             provider_details=part.details,
         )
     if isinstance(part, ToolCall):
         return pai.ToolCallPart(
-            tool_name=part.name, args=dict(part.args), tool_call_id=part.call_id
+            tool_name=part.name,
+            args=dict(part.args),
+            tool_call_id=part.call_id,
+            id=part.id,
+            provider_name=part.provider,
+            provider_details=part.details,
         )
     return None
+
+
+def _details(details: Any) -> dict[str, Any] | None:
+    return dict(details) if details else None
 
 
 def to_messages(messages: Sequence[Message]) -> list[pai.ModelMessage]:
@@ -157,16 +172,22 @@ def from_response(response: pai.ModelResponse, *, id: str | None = None) -> Mess
     parts: list[Part] = []
     for part in response.parts:
         if isinstance(part, pai.TextPart):
-            parts.append(Text(text=part.content))
+            parts.append(
+                Text(
+                    text=part.content,
+                    id=part.id,
+                    provider=part.provider_name,
+                    details=_details(part.provider_details),
+                )
+            )
         elif isinstance(part, pai.ThinkingPart):
             parts.append(
                 Thinking(
                     text=part.content,
                     signature=part.signature,
+                    id=part.id,
                     provider=part.provider_name,
-                    details=dict(part.provider_details)
-                    if part.provider_details
-                    else None,
+                    details=_details(part.provider_details),
                 )
             )
         elif isinstance(part, pai.ToolCallPart):
@@ -175,6 +196,9 @@ def from_response(response: pai.ModelResponse, *, id: str | None = None) -> Mess
                     call_id=part.tool_call_id,
                     name=part.tool_name,
                     args=part.args_as_dict(),
+                    id=part.id,
+                    provider=part.provider_name,
+                    details=_details(part.provider_details),
                 )
             )
         else:
@@ -299,6 +323,8 @@ def _model_settings(settings: Settings) -> ModelSettings | None:
         merged["max_tokens"] = settings.max_tokens
     if settings.temperature is not None:
         merged["temperature"] = settings.temperature
+    if settings.thinking is not None:
+        merged["thinking"] = settings.thinking
     return ModelSettings(**merged) if merged else None
 
 
