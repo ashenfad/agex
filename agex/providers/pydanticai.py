@@ -20,6 +20,7 @@ from typing import Any
 from nontainer.turns import TextDelta, ThinkingDelta
 from pydantic_ai import messages as pai
 from pydantic_ai.direct import model_request_stream
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models import Model, ModelRequestParameters, infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import ToolDefinition
@@ -40,6 +41,9 @@ from . import ProviderEvent, Reply, Settings, ToolSpec
 __all__ = ["PydanticAIProvider", "from_messages", "from_response", "to_messages"]
 
 _logger = logging.getLogger(__name__)
+
+#: HTTP statuses below 500 that a later attempt may get past.
+TRANSIENT_STATUS = frozenset({408, 409, 425, 429})
 
 
 # -- agex messages to pydantic-ai ---------------------------------------------------
@@ -288,6 +292,15 @@ class PydanticAIProvider:
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} {self.name}>"
+
+    def transient(self, error: BaseException) -> bool:
+        """An HTTP error the provider may get past: a timeout (408), a
+        conflict or too-early (409, 425), a rate limit (429), or any
+        server-side error (5xx, 529 included)."""
+        if isinstance(error, ModelHTTPError):
+            code = error.status_code
+            return code in TRANSIENT_STATUS or code >= 500
+        return False
 
     async def stream(
         self,

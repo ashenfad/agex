@@ -23,14 +23,11 @@ from nontainer import Workspace
 from nontainer.conformance.runner import Clock, RunView
 from nontainer.turns import TurnEvent
 
-from .agent import Agent, Session
+from .agent import CLOSING_NOTE, Agent, Session
 from .providers.scripted import ScriptedProvider
 from .record import Run, ToolResult
 
-__all__ = ["CLOSING_NOTE", "AgexHarness", "AgexSession"]
-
-CLOSING_NOTE = "[turn ended early:"
-"""How the note closing a cancelled or failed run begins."""
+__all__ = ["AgexHarness", "AgexSession"]
 
 
 def _closes_early(run: Run) -> bool:
@@ -56,10 +53,13 @@ class AgexSession:
         return asyncio.run(collect())
 
     def resume(self) -> list[TurnEvent]:
-        raise NotImplementedError("agex does not resume a run yet")
+        async def collect() -> list[TurnEvent]:
+            return [event async for event in self.session.stream(resume=True)]
+
+        return asyncio.run(collect())
 
     def cancel(self) -> None:
-        raise NotImplementedError("agex does not cancel a run yet")
+        self.session.cancel()
 
     def runs(self) -> list[RunView]:
         return [
@@ -90,7 +90,7 @@ class AgexHarness:
     name = "agex"
 
     def __init__(self) -> None:
-        self.capabilities: frozenset[str] = frozenset()
+        self.capabilities: frozenset[str] = frozenset({"resume", "keeps-aborted-runs"})
         self.known_gaps: dict[str, dict[str, str]] = {}
 
     def open(self, ws: Workspace, clock: Clock) -> AgexSession:

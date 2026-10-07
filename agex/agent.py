@@ -53,7 +53,15 @@ from .record import (
     new_id,
 )
 
-__all__ = ["HARNESS", "Agent", "Outcome", "RunStream", "Session"]
+__all__ = [
+    "CLOSING_NOTE",
+    "HARNESS",
+    "Agent",
+    "Outcome",
+    "RunStream",
+    "Session",
+    "closing_note",
+]
 
 _logger = logging.getLogger(__name__)
 
@@ -63,6 +71,48 @@ conversation index."""
 
 MAX_STEPS = 100
 """How many model calls a run may make before it is stopped."""
+
+CLOSING_NOTE = "[turn ended early:"
+"""How the note closing a cancelled or failed run begins: the run keeps
+the work it did, and the model reads that it was cut short."""
+
+STOPPED = "stopped"
+"""Why a turn :meth:`Session.cancel` stopped ended."""
+
+UNANSWERED = "not run: the turn ended before this call returned"
+"""The result a tool call gets when its turn ended first."""
+
+
+def closing_note(reason: str) -> Message:
+    """The assistant message closing a cancelled or failed run."""
+    return Message(
+        id=new_id(),
+        role="assistant",
+        parts=(
+            Text(
+                text=f"{CLOSING_NOTE} {reason}. The work above this point is "
+                "real and done.]"
+            ),
+        ),
+    )
+
+
+def _describe(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+
+
+def _block(coro: Any, name: str) -> Outcome:
+    """Run ``coro`` to its end on a loop of its own, from code that has
+    none; refused where a loop is running, which this would block."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    coro.close()
+    raise RuntimeError(
+        "this blocks, and this thread is running an event loop; "
+        f"use `await session.{name}(...)` there"
+    )
 
 
 @dataclass(frozen=True)
@@ -131,8 +181,15 @@ class Session:
 
     A turn is a task of its own, so it belongs to the session, not to
     whoever watches it: leaving a stream early stops watching, and the
-    turn goes on to its end. One turn runs at a time; ``running`` says
-    whether one is.
+    turn goes on to its end; ``cancel`` stops it. One turn runs at a
+    time; ``running`` says whether one is.
+
+    A turn ends ``completed``, ``cancelled``, ``failed`` (an error, or
+    ``max_steps`` model calls) or ``interrupted`` (a provider error worth
+    retrying, see :meth:`~agex.providers.Provider.transient`), which
+    ``resume`` continues in place. A cancelled or failed turn keeps its
+    work with a closing note, so the model remembers what it did; none
+    of the endings raise.
 
     A workspace whose conversation another harness wrote is refused: the
     runs it holds are in that harness's format.
@@ -154,6 +211,8 @@ class Session:
         self.last: Outcome | None = None
         """The outcome of the last turn that ended."""
         self._in_flight: set[asyncio.Task[Outcome]] = set()
+        self._cancel_requested = False
+        self._live = False
 
     def __repr__(self) -> str:
         return f"<Session {self.ws.session!r} of {self.agent!r}>"
@@ -206,58 +265,131 @@ class Session:
 
     def say(self, prompt: str) -> Outcome:
         """Run one turn; its outcome. From a coroutine, ``await asay``."""
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(self.asay(prompt))
-        raise RuntimeError(
-            "say() blocks, and this thread is running an event loop; "
-            "use `await session.asay(...)` there"
-        )
+        return _block(self.asay(prompt), "asay")
 
     async def asay(self, prompt: str) -> Outcome:
         """Run one turn; its outcome."""
         return await self.stream(prompt).wait()
 
-    def stream(self, prompt: str) -> RunStream:
-        """Start a turn when first iterated (or waited on), and hand back
-        its events as they happen. When it ends, ``last`` holds the
-        outcome."""
-        return RunStream(self, prompt)
+    def resume(self) -> Outcome:
+        """Continue the last turn in place, which an interruption cut
+        short; its outcome. From a coroutine, ``await aresume``."""
+        return _block(self.aresume(), "aresume")
 
-    async def _run(self, prompt: str, emit: Callable[[TurnEvent], None]) -> Outcome:
+    async def aresume(self) -> Outcome:
+        """Continue the last turn in place; its outcome."""
+        return await self.stream(resume=True).wait()
+
+    def stream(self, prompt: str | None = None, *, resume: bool = False) -> RunStream:
+        """Start a turn when first iterated (or waited on), and hand back
+        its events as they happen: a new turn on ``prompt``, or with
+        ``resume`` the last turn continued in place. When it ends,
+        ``last`` holds the outcome."""
+        if resume == (prompt is not None):
+            raise ValueError("a turn takes a prompt, or resumes the last one")
+        return RunStream(self, prompt, resume=resume)
+
+    def cancel(self) -> bool:
+        """Stop the turn that is running; whether one was.
+
+        The turn stops at the next point it can (between model calls and
+        tool calls, or by interrupting the one in flight), and ends
+        ``cancelled``: its work so far is kept, with a closing note. A
+        tool already running on its worker thread finishes there. Safe
+        to call from any thread.
+        """
+        running = [task for task in self._in_flight if not task.done()]
+        if not running:
+            return False
+        self._cancel_requested = True
+        try:
+            here: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            here = None
+        for task in running:
+            loop = task.get_loop()
+            if here is loop:
+                self._interrupt(task)
+            else:
+                loop.call_soon_threadsafe(self._interrupt, task)
+        return True
+
+    def _interrupt(self, task: asyncio.Task[Outcome]) -> None:
+        """On the turn's own loop: interrupt what the turn is waiting on.
+        A turn not yet live, or cancelling itself (from a tool, or a
+        scripted clock), stops at its next check instead."""
+        if self._live and task is not asyncio.current_task() and not task.done():
+            task.cancel()
+
+    def _check_cancel(self) -> None:
+        if self._cancel_requested:
+            raise asyncio.CancelledError()
+
+    def _last_interrupted(self) -> Run:
+        runs = self.runs
+        if not runs or runs[-1].status != "interrupted":
+            ended = f"ended {runs[-1].status}" if runs else "never ran"
+            raise ValueError(
+                f"there is no interrupted turn to resume: the last turn {ended}"
+            )
+        return runs[-1]
+
+    async def _run(
+        self,
+        prompt: str | None,
+        emit: Callable[[TurnEvent], None],
+        *,
+        resume: bool = False,
+    ) -> Outcome:
         """One turn, start to end: every event goes to ``emit`` as it
         happens, and the outcome comes back."""
-        run_id = new_id()
         events: list[TurnEvent] = []
 
         def push(event: TurnEvent) -> None:
             events.append(event)
             emit(event)
 
-        history = self._history()
+        if resume:
+            prior = self._last_interrupted()
+            run_id = prior.run_id
+            started = prior.started_at or time.time()
+            messages = list(prior.messages)
+            history = [m for run in self.runs[:-1] for m in run.messages]
+        else:
+            run_id = new_id()
+            started = time.time()
+            messages = [
+                Message(id=new_id(), role="user", parts=(Text(text=prompt or ""),))
+            ]
+            history = self._history()
         system = self._system()
-        messages: list[Message] = [
-            Message(id=new_id(), role="user", parts=(Text(text=prompt),))
-        ]
-        started = time.time()
         status: RunStatus = "completed"
         message: str | None = None
         text = ""
-        turn = self.ws.turn(run_id, inbox=self.inbox, harness=HARNESS)
+        external: BaseException | None = None
+        calls: list[ToolCall] = []
+        results: list[ToolResult] = []
+        inflight: ToolCall | None = None
+        in_request = False
+        turn = self.ws.turn(run_id, resume=resume, inbox=self.inbox, harness=HARNESS)
+        self._live = True
         try:
             push(RunStarted(run_id=run_id))
             for _ in range(self.agent.max_steps):
+                self._check_cancel()
                 reply: Message | None = None
+                in_request = True
                 async for event in self.agent.provider.stream(
                     [system, *history, *messages],
                     self._specs,
                     self.agent.settings,
                 ):
+                    self._check_cancel()
                     if isinstance(event, Reply):
                         reply = event.message
                     else:
                         push(event)
+                in_request = False
                 if reply is None:
                     raise RuntimeError("the provider's stream ended without a reply")
                 messages.append(reply)
@@ -272,22 +404,71 @@ class Session:
                 if not calls:
                     text = reply.text
                     break
-                results: list[ToolResult] = []
+                results = []
                 for call in calls:
+                    self._check_cancel()
+                    inflight = call
                     results.append(await self._run_tool(call, turn, push))
+                    inflight = None
                 messages.append(Message(id=new_id(), role="tool", parts=tuple(results)))
+                calls = []
             else:
                 status = "failed"
                 message = (
                     f"the model made {self.agent.max_steps} calls without "
                     "finishing the turn"
                 )
+        except asyncio.CancelledError as exc:
+            status = "cancelled"
+            if self._cancel_requested:
+                message = STOPPED
+                # a stop asked for is handled here, so the task ends with
+                # the outcome rather than cancelled (3.11+ counts requests)
+                uncancel = getattr(asyncio.current_task(), "uncancel", None)
+                if uncancel is not None:
+                    uncancel()
+            else:
+                message = "cancelled"
+                external = exc
+        except Exception as exc:  # noqa: BLE001 - the outcome says how it ended
+            transient = in_request and self.agent.provider.transient(exc)
+            status = "interrupted" if transient else "failed"
+            message = _describe(exc)
+            if not in_request:
+                _logger.warning("turn %s failed", run_id, exc_info=True)
         except BaseException as exc:
-            status = "failed" if isinstance(exc, Exception) else "cancelled"
-            message = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
-            raise
+            status, message, external = "cancelled", _describe(exc), exc
         finally:
+            self._live = False
             if turn.open:
+                if inflight is not None:
+                    push(
+                        ToolEnded(
+                            call_id=inflight.call_id,
+                            name=inflight.name,
+                            result=UNANSWERED,
+                            is_error=True,
+                        )
+                    )
+                if calls:
+                    # every tool call needs its result, or the next request
+                    # is refused: the ones the turn never answered say so
+                    answered = {r.call_id for r in results}
+                    unanswered = [
+                        ToolResult(
+                            call_id=c.call_id,
+                            name=c.name,
+                            content=UNANSWERED,
+                            is_error=True,
+                        )
+                        for c in calls
+                        if c.call_id not in answered
+                    ]
+                    messages.append(
+                        Message(id=new_id(), role="tool", parts=(*results, *unanswered))
+                    )
+                if status in ("cancelled", "failed"):
+                    messages.append(closing_note(message or status))
                 run = Run(
                     run_id=run_id,
                     status=status,
@@ -305,6 +486,8 @@ class Session:
             events=tuple(events),
             message=message,
         )
+        if external is not None:
+            raise external
         return self.last
 
     # -- the loop's parts -----------------------------------------------------------
@@ -365,24 +548,26 @@ class RunStream:
     error that ended the turn is raised to whoever iterates or waits.
     """
 
-    def __init__(self, session: Session, prompt: str) -> None:
+    def __init__(
+        self, session: Session, prompt: str | None, *, resume: bool = False
+    ) -> None:
         self._session = session
         self._prompt = prompt
+        self._resume = resume
         self._queue: asyncio.Queue[Any] = asyncio.Queue()
         self._task: asyncio.Task[Outcome] | None = None
 
     def _start(self) -> asyncio.Task[Outcome]:
         if self._task is None:
-            queue = self._queue
-
-            async def drive() -> Outcome:
-                try:
-                    return await self._session._run(self._prompt, queue.put_nowait)
-                finally:
-                    queue.put_nowait(_END)
-
-            loop = asyncio.get_running_loop()
-            self._task = self._session._track(loop.create_task(drive()))
+            session = self._session
+            session._cancel_requested = False
+            task = asyncio.get_running_loop().create_task(
+                session._run(self._prompt, self._queue.put_nowait, resume=self._resume)
+            )
+            # the end of the stream, however the task ends: even cancelled
+            # before it ran a line
+            task.add_done_callback(lambda _: self._queue.put_nowait(_END))
+            self._task = session._track(task)
         return self._task
 
     @property

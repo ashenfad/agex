@@ -88,3 +88,10 @@ class Provider(Protocol):
         """Stream the reply to ``messages``: deltas, then one
         :class:`Reply`. A failed request raises."""
         ...
+
+    def transient(self, error: BaseException) -> bool:
+        """Whether a request that raised ``error`` is worth resuming:
+        the provider was overloaded, rate-limited or briefly down, so
+        the same request may succeed later. A run that hits one is
+        interrupted, not failed."""
+        ...
