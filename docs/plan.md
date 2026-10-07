@@ -392,6 +392,9 @@ PRs, with A8 between them.
   schema for data types.
 - **The `task` host object** with `task.success` and `task.fail`, and
   its swappable slot. Agent code sees each argument by name.
+- **Inputs are values:** tables as shallow copies, arrays as read-only
+  views, other data as deep copies. A live input is bound as a host
+  object of the fork, and a `HostObjectGrant` around it narrows it.
 - **Validation:** strict, by the declared type, with a `TypeError` at
   the call site. A model that stops without finishing is nudged up to
   twice, then the task fails.
@@ -399,11 +402,14 @@ PRs, with A8 between them.
   - a scratch world from `agent.profile` via the memory store;
   - `world=` always forks, through `Store.fork(..., profile=...)`;
   - `keep=`.
-- **The early check:** a world off in-process is refused before any
-  model call until B3b.
+- **The check, at call time:** against the world the task runs in. A
+  world off in-process is refused before any model call until B3b.
 
 **Exit.** Tests pass:
 - a task leaves the caller's world untouched;
+- a task that changes its inputs in place leaves the caller's objects
+  untouched;
+- a live input wrapped in a grant reaches agent code narrowed;
 - a validation error is fixed within one script;
 - a model that stops is nudged, then the task fails;
 - each status: success, failed, cancelled, interrupted;
@@ -411,20 +417,25 @@ PRs, with A8 between them.
 - a world off in-process is refused before any model call.
 
 **B3b. Needs input, the `__task__` plane, and isolated worlds.**
-- `task.needs_input` and `out.resume(answer)`; a plain call raises
-  `NeedsInput` or `TaskFailed`.
+- `task.needs_input`; a plain call raises `NeedsInput` or
+  `TaskFailed`.
+- **Resuming:** a `needs_input` outcome always keeps its fork.
+  `grade.resume(ref, answer, **live_inputs)` continues it by ref, and
+  `out.resume(answer)` is the in-process shortcut.
 - **The `__task__` plane:** the spec, the encoded inputs and the
   encoded value, in the same commit as the call.
-- **Resume with stored inputs.** A live input has to be supplied again
-  after a restart.
+- **Resume with stored inputs.** Encodable inputs come back from the
+  `__task__` plane; a live input is supplied again, and a missing one is
+  refused by name. A scratch world resumes only within the process.
 - **Process isolation and dud**, through A8.
 - **The shape corpus begins**, as agex's extension of the corpus
   format.
 
 **Exit:**
 - Shape scenarios pass:
-  - needs input, then resume, including after a restart with
-    encodable inputs;
+  - needs input, then resume, including by ref after a restart on a
+    persistent world, with a live input supplied again;
+  - a resume missing a live input is refused by name;
   - the same value comes back on in-process, process isolation and
     dud, for data, tables, arrays and bytes;
   - a live type is refused off in-process.

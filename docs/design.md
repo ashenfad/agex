@@ -168,8 +168,7 @@ opens.
   task-level ones:
   - `success`, with `value`;
   - `failed`, from `task.fail(reason)` or an error;
-  - `needs_input`, with the question; `out.resume(answer)` continues
-    it;
+  - `needs_input`, with the question; see "Resuming" below;
   - `cancelled`;
   - `interrupted`.
 
@@ -184,6 +183,18 @@ opens.
   - `world=ws` always forks, through `Store.fork(..., profile=...)`
     with `task` and the inputs added;
   - `keep=True` keeps the fork, and `out.ref` names it.
+- **Resuming.** A `needs_input` outcome always keeps its fork,
+  whatever `keep=` says, and `out.ref` names it.
+  - `grade.resume(ref, answer, **live_inputs)` continues it by ref.
+    Encodable inputs come back from the `__task__` plane. Live inputs
+    are supplied again and bound as host objects; a missing one is
+    refused by name.
+  - `out.resume(answer)` is the in-process shortcut, reusing the
+    outcome's own inputs.
+  - **Surviving a restart needs a persistent world.** A scratch world
+    lives in a memory store, so it resumes only within the process. A
+    request approved next week runs with `world=` on a disk or
+    Postgres store.
 
 ### Spawn folds into delegation
 
@@ -339,10 +350,13 @@ The `task` channel then carries only built-in values, so a restricted
 unpickler needs nothing beyond the built-ins on that path.
 
 **The check runs as soon as the rung is known, and never mid-run:**
-- when `@agent.task` is applied, against `agent.profile`;
-- when a task is called with `world=`, against that world, before any
-  model call;
+- when a task is called, against the world it will run in (the scratch
+  world from `agent.profile`, or `world=`), before any model call;
 - in the kernel, when agent code defines a task there.
+
+Applying `@agent.task` checks nothing: a task whose types only an
+in-process world carries is still valid with an in-process `world=`,
+whatever `agent.profile` says.
 
 The error names the type, the rung and the ways out:
 
@@ -359,9 +373,25 @@ for an `int` both ways.
 
 ### Inputs
 
-- **In-process:** the caller's own objects, passed by reference, the
-  way a function call works.
-- **Elsewhere:** encoded copies.
+**Inputs are values on every rung.** A task never changes what its
+caller passed, in-process included. Copies stay cheap (checked on
+pandas 3.0.3):
+- **tables:** a shallow copy. Under pandas 3's copy-on-write, the
+  task's writes, `inplace=True` included, never reach the caller's
+  frame;
+- **arrays:** a read-only view. An in-place write raises "assignment
+  destination is read-only", which tells the model to copy first;
+- **other data:** a deep copy. These are small;
+- **off in-process:** encoded copies.
+
+**A live input is a capability, not a value.** A client or callable
+passed as an argument is bound as a host object of the task's fork,
+which the caller opens, so it goes through the same policy as any host
+object. Wrapping the argument narrows it:
+`clean(df, db=HostObjectGrant(db, include=["query"]))`. That is the
+opener setting the environment, which "Capabilities belong to the
+world" allows. Agent code can't pass live values through `ask`, so a
+delegate gains nothing this way.
 - **Large values spill to blobs in the reserved `__task__` plane,
   never to files in the agent's tree.** curation's rule ("no agent's
   tree has a second author") keeps loop-written data out of the file
@@ -369,7 +399,7 @@ for an `int` both ways.
   settle: dud already moves large cache values on binary frames, and
   its hostcall payloads are specced small.
 - **A live input can't be stored**, so resuming after a restart needs
-  the embedder to supply it again.
+  the embedder to supply it again (see "Resuming").
 
 ### The `__task__` plane
 
@@ -1042,7 +1072,10 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
   - In-process carries anything. Every other path carries exactly the
     encodable kinds, process isolation included, so moving a world
     from process to dud is never a breaking change.
-  - The check runs as soon as the rung is known, never mid-run.
+  - The check runs when a task is called, against the world it runs
+    in, never mid-run.
+  - Inputs are values on every rung; a live input is a capability,
+    bound as a host object of the task's fork.
   - A JSON schema exists only for data, and matters only where a
     value leaves Python: agent-defined tasks, apps and TS.
   - The encoding lives in nontainer, generalizing the handler-returns
