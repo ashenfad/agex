@@ -31,8 +31,11 @@ in:
   uses it from a local editable install. B6's tests, which run the
   studio over both loops in CI, take agex as a git dependency.
   `0.13.0` goes out at the shape freeze. The CHANGELOG says plainly
-  that it is a new API. Work on a fresh branch from `main`, not
-  `nxt`.
+  that it is a new API.
+- **Phase B lands on `rebuild`, not `main`.** Each step is a PR into
+  `rebuild` (CI runs there too), so `main` stays the working 0.12 code.
+  At the shape freeze, `rebuild` merges into `main` with a merge commit,
+  keeping each step's history, and `0.13.0` is released from it.
 
 ## The stages
 
