@@ -15,8 +15,38 @@ This is the 0.13 rebuild, in progress. The 0.12 line is at the
 ``v0.12.4`` tag.
 """
 
-from .agent import Agent, Outcome, Session
-from .task import Task, TaskError, TaskFailed, TaskInterrupted, TaskSpec
+from __future__ import annotations
+
+import importlib
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .agent import Agent, Outcome, Session
+    from .task import Task, TaskError, TaskFailed, TaskInterrupted, TaskSpec
+
+_HOMES = {
+    "Agent": ".agent",
+    "Outcome": ".agent",
+    "Session": ".agent",
+    "Task": ".task",
+    "TaskError": ".task",
+    "TaskFailed": ".task",
+    "TaskInterrupted": ".task",
+    "TaskSpec": ".task",
+}
+"""Where each name lives, imported on first use: code that runs agent
+work in a worker or a dud guest imports ``agex.stubs``, and importing
+the package for it must not bring in the loop and its providers."""
+
+
+def __getattr__(name: str) -> Any:
+    home = _HOMES.get(name)
+    if home is None:
+        raise AttributeError(f"module 'agex' has no attribute {name!r}")
+    value = getattr(importlib.import_module(home, __name__), name)
+    globals()[name] = value
+    return value
+
 
 __all__ = [
     "Agent",

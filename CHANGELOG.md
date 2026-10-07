@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
-- **Tasks: `@agent.task`.** A typed call that runs the agent on a scratch world or a fork of `world=` and returns the value its code passes to `task.success`, checked against the return type; `run` / `arun` return an `Outcome` with `value`, and `keep=True` keeps the fork as `ref`.
+- **Tasks: `@agent.task`.** A typed call that runs the agent on a scratch world or a fork of `world=` and returns the value its code passes to `task.success`, built as the return type; `run` / `arun` return an `Outcome` with `value`, and `keep=True` keeps the fork as `ref`.
+- **Tasks on every rung.** A task runs in-process, under process isolation or on a dud machine the same way: inputs arrive by value, a fresh copy each run, and a value that doesn't fit is a `TypeError` at `task.success`; what can't cross (a live return type, say) is refused before any model call.
 - **`Agent` and `agent.session(ws)`.** A session drives a nontainer workspace turn by turn with `say`, `asay` or `stream`, each turn a `ws.turn` that runs the workspace's tools, delivers inbox notes on their results and stores the run on the conversation plane as `harness="agex"`; `say` returns an `Outcome`.
 - **Models from OpenRouter, Anthropic, OpenAI and Google, or a local endpoint.** A model name with its extra (`agex[anthropic]`, …), or any pydantic-ai `Model` (an OpenAI-compatible server on the machine, say); reasoning round-trips with its signature, tool calls keep what the provider attached to them, and cache reads and writes reach the usage.
 - **`Settings(thinking=...)`.** Asks for reasoning (`True`, or `"minimal"` to `"xhigh"`) on any provider that offers it, in its own terms.

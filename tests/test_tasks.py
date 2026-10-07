@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Union
 
 import pytest
-from nontainer import NotSupportedError, Profile, PythonConfig, Store
+from nontainer import Profile, PythonConfig, Store
 from nontainer.conformance.corpus import ModelStep, ToolCall, calls, fails, says
 from nontainer.turns import ToolEnded
 from pydantic import BaseModel
@@ -208,7 +208,7 @@ def test_a_value_that_does_not_fit_is_a_type_error_the_script_can_fix():
     a, _ = agent(
         python(
             "try:\n"
-            "    task.success({'best': 'ada', 'total': 7})\n"
+            "    task.success(Report(best='ada', total='7'))\n"
             "except TypeError as e:\n"
             "    print('refused:', e)\n"
             "task.success(Report(best='ada', total=7))"
@@ -222,11 +222,17 @@ def test_an_uncaught_type_error_is_a_result_the_model_reads_and_fixes():
     out = best_of(a).run(RESPONSES)
     assert out.status == "success"
     first, second = [e for e in out.events if isinstance(e, ToolEnded)]
-    assert first.is_error and "task.success's value must be Report" in first.result
+    assert first.is_error
+    assert first.result.endswith(
+        "TypeError: task.success(): at value: expected Report, got str 'ada'"
+    )
     assert (second.result, second.is_error) == (FINISHED, False)
 
 
-def test_a_class_of_the_same_name_defined_in_the_world_is_refused_with_a_hint():
+def test_a_record_of_the_agent_own_making_arrives_as_the_declared_type():
+    """A value crosses by its shape, decoded as the return type, so a
+    class the agent defined with the same fields comes back as the one
+    the task declared."""
     a, _ = agent(
         python(
             "from dataclasses import dataclass\n"
@@ -235,13 +241,11 @@ def test_a_class_of_the_same_name_defined_in_the_world_is_refused_with_a_hint():
             "    best: str\n"
             "    total: int\n"
             "task.success(Report(best='ada', total=7))"
-        ),
-        FIND_BEST,
+        )
     )
-    out = best_of(a).run(RESPONSES)
-    first = next(e for e in out.events if isinstance(e, ToolEnded))
-    assert first.is_error and "already bound by name" in first.result
-    assert out.value == Report(best="ada", total=7)
+    report = best_of(a)(RESPONSES)
+    assert type(report) is Report
+    assert report == Report(best="ada", total=7)
 
 
 def test_the_check_is_strict():
@@ -253,7 +257,7 @@ def test_the_check_is_strict():
 
     out = answer.run()
     first = next(e for e in out.events if isinstance(e, ToolEnded))
-    assert first.is_error and "must be int" in first.result
+    assert first.is_error and "at value: expected int, got str '42'" in first.result
     assert out.value == 42
 
 
@@ -521,27 +525,6 @@ def test_the_scratch_world_is_built_from_the_agent_profile():
     assert greet() == "hi"
 
 
-def test_a_scratch_world_whose_code_runs_elsewhere_is_refused_before_the_model():
-    a, provider = agent(
-        FIND_BEST, profile=Profile(python=PythonConfig(isolation="process"))
-    )
-    with pytest.raises(NotSupportedError, match="isolation='process'"):
-        best_of(a)(RESPONSES)
-    assert provider.seen == []
-
-
-def test_a_world_whose_code_runs_elsewhere_is_refused_before_forking(store):
-    ws = store.open("main", profile=Profile(python=PythonConfig(isolation="process")))
-    try:
-        a, provider = agent(FIND_BEST)
-        with pytest.raises(NotSupportedError, match="isolation='process'"):
-            best_of(a)(RESPONSES, world=ws)
-        assert provider.seen == []
-        assert store.sessions() == ["main"]
-    finally:
-        ws.close()
-
-
 # -- inputs ----------------------------------------------------------------------------
 
 
@@ -597,12 +580,14 @@ def test_a_table_input_changed_in_place_leaves_the_caller_frame_alone():
     assert mine.to_dict("list") == {"name": ["ada", "bo"], "score": [1, 2]}
 
 
-def test_an_array_input_is_read_only():
+def test_an_array_input_changed_in_place_leaves_the_caller_array_alone():
+    """Each run gets its own copy, as it would in a worker or on a dud
+    machine."""
     np = pytest.importorskip("numpy")
     from nontainer.presets import dataframes
 
     a, _ = agent(
-        python("values[0] = 99"),
+        python("values[0] = 99\nprint(int(values.sum()))"),
         python("task.success(int(values.sum()))"),
         profile=Profile(python=PythonConfig(modules=[dataframes()])),
     )
@@ -614,9 +599,9 @@ def test_an_array_input_is_read_only():
     mine = np.array([1, 2, 3])
     out = total.run(mine)
     first = next(e for e in out.events if isinstance(e, ToolEnded))
-    assert first.is_error and "read-only" in first.result
+    assert not first.is_error and first.result.strip() == "104"
     assert out.value == 6
-    assert mine.tolist() == [1, 2, 3] and mine.flags.writeable
+    assert mine.tolist() == [1, 2, 3]
 
 
 def test_a_user_dict_input_is_copied():

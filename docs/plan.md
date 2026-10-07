@@ -1,6 +1,6 @@
 # agex rebuild: implementation plan
 
-Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B2 are merged, and B3 is next.
+Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3a are merged, and B3b is under way.
 
 This plan covers *when* and *in what order*. The *what* and *why* live
 in:
@@ -299,6 +299,16 @@ A4's and A5's scenarios exist.
 
 ### A8. The value encoding (between B3a and B3b)
 
+**Status:**
+- **A8a, the module (`nontainer.values`):** merged (nontainer #205).
+- **A8b, the transport on each rung:** typed host data and classes
+  (#206) and stubbed host objects (#207) are merged; a spec standing
+  for its type (#208) is open.
+- **A8c, still to do:** large values spilling to the plane, which
+  needs dud#39's binary frames (until then, one call off in-process
+  carries 6 MiB encoded), and converging the apps encoder
+  (`nt__Encoder`) onto it.
+
 The encoding from the redesign doc's "Task values":
 - **Kinds:** data (JSON), tables (Arrow IPC), arrays (`.npy`), bytes
   and file refs. Embedders can register more.
@@ -382,11 +392,11 @@ passes.
 
 ### B3. Tasks and the outcome host object
 
-The shape is the redesign doc's "Task calls" and "Task values". Two
-PRs, with A8 between them.
+The shape is the redesign doc's "Task calls" and "Task values". Three
+PRs, with A8 between the first two.
 
-**B3a. Tasks on in-process worlds.** Status: agex PR open (branch
-`feat/tasks`). Checked live on the four providers' small models.
+**B3a. Tasks on in-process worlds.** Status: merged (agex #78).
+Checked live on the four providers' small models.
 - `@agent.task`: typed inputs and a validated return, sync and
   `async def`.
 - **`TaskSpec`:** the Python types, the kinds each one needs, and a
@@ -419,7 +429,44 @@ PRs, with A8 between them.
 - a live value comes back in-process;
 - a world off in-process is refused before any model call.
 
-**B3b. Needs input, the `__task__` plane, and isolated worlds.**
+**B3b-1. Tasks on every rung.** Status: agex PR open (branch
+`feat/task-rungs`), on nontainer #208. Checked live on the four
+providers' small models, in-process and under process isolation.
+- **`task` is a stubbed host object:** `HostObject(TaskHost, stub=TaskStub)`.
+  The stub lives in `agex.stubs`, standard library only, so a dud
+  guest rebuilds it from source. It sends the value to the host half,
+  which decodes it by the return type, then stops the script. A value
+  that doesn't fit is a `TypeError` at the call, the same on every
+  rung.
+- **Inputs are typed host data:** `HostObject(value, type=spec)`, by
+  value on every rung, a fresh copy each run. A live input is a host
+  object as it is, reached through a proxy where the world's code runs
+  elsewhere.
+- **Types are nontainer's** (`nontainer.values`): the kinds, the strict
+  check of inputs, and the decoding of the value. Each type is
+  compiled once with the names it needs and handed to nontainer as a
+  spec. pydantic stays only for data types' JSON schemas.
+- **The task's types go in `PythonConfig.classes`**, bound by name on
+  every rung.
+- **What can't cross is refused before any model call, off
+  in-process:**
+  - a return type with a live part;
+  - an input mixing data with a live part;
+  - a live object where an input's type allows anything.
+- **agex's package exports load lazily**, so a worker importing
+  `agex.stubs` doesn't load the loop. That brings a task under process
+  isolation down from about 0.5 s to 0.3 s, and on dud from 0.8 s to
+  0.4 s.
+
+**Exit.** Tests pass:
+- the same value comes back on in-process, process isolation and dud,
+  for data, tables, arrays and bytes;
+- a refusal reads the same on every rung, at the agent's line;
+- a live input is a capability on every rung;
+- a live return type, and an input mixing data with a live part, are
+  refused off in-process before any model call.
+
+**B3b-2. Needs input, the `__task__` plane, and resuming.**
 - `task.needs_input`; a plain call raises `NeedsInput` or
   `TaskFailed`.
 - **Resuming:** a `needs_input` outcome always keeps its fork.
@@ -430,7 +477,6 @@ PRs, with A8 between them.
 - **Resume with stored inputs.** Encodable inputs come back from the
   `__task__` plane; a live input is supplied again, and a missing one is
   refused by name. A scratch world resumes only within the process.
-- **Process isolation and dud**, through A8.
 - **The shape corpus begins**, as agex's extension of the corpus
   format.
 
