@@ -656,6 +656,32 @@ def test_a_live_input_is_bound_as_it_is():
     assert client.calls == ["ada"]
 
 
+def test_a_container_of_live_objects_is_the_task_own_sharing_them():
+    """Its data is copied, so the caller's container is untouched; its
+    live objects are the caller's own."""
+    a, _ = agent(
+        python(
+            "clients['b'].lookup('x')\n"
+            "clients.clear()\n"
+            "things.append(3)\n"
+            "things[0].lookup('y')\n"
+            "task.success(len(clients) + len(things))"
+        )
+    )
+
+    @a.task
+    def use(clients: dict[str, Client], things: list) -> int:
+        """Use the clients."""
+
+    first, second = Client(), Client()
+    clients = {"a": first, "b": second}
+    things = [first, {"n": [1, 2]}]
+    assert use(clients, things) == 3
+    assert clients == {"a": first, "b": second}
+    assert things == [first, {"n": [1, 2]}]
+    assert second.calls == ["x"] and first.calls == ["y"]
+
+
 # -- the spec --------------------------------------------------------------------------
 
 

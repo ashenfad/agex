@@ -441,7 +441,9 @@ providers' small models, in-process and under process isolation.
 - **Inputs are typed host data:** `HostObject(value, type=spec)`, by
   value on every rung, a fresh copy each run. A live input is a host
   object as it is, reached through a proxy where the world's code runs
-  elsewhere.
+  elsewhere. A value mixing data with live objects, which only
+  in-process can carry, gets one copy of its data for the task, its
+  live objects shared.
 - **Types are nontainer's** (`nontainer.values`): the kinds, the strict
   check of inputs, and the decoding of the value. Each type is
   compiled once with the names it needs and handed to nontainer as a
