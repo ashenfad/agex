@@ -389,7 +389,22 @@ def test_an_error_openrouter_relays_from_upstream_is_worth_resuming():
     }
     assert provider.transient(ModelHTTPError(404, "meta/x", body=relayed))
     assert provider.transient(ModelHTTPError(400, "meta/x", body=relayed))
+    # from a response or mid-stream, pydantic-ai passes only the message,
+    # and the object (if any) rides on the SDK error that caused it
+    assert provider.transient(
+        ModelHTTPError(404, "meta/x", body="Provider returned error")
+    )
+    streamed = ModelHTTPError(400, "meta/x", body="the upstream said no")
+
+    class APIError(Exception):
+        body = {"error": relayed}
+
+    streamed.__cause__ = APIError()
+    assert provider.transient(streamed)
     # OpenRouter's own refusals keep their status's verdict
+    assert not provider.transient(
+        ModelHTTPError(400, "meta/x", body="meta/x is not a valid model ID")
+    )
     own = {"message": "meta/x is not a valid model ID", "code": 400}
     assert not provider.transient(ModelHTTPError(400, "meta/x", body=own))
     assert not provider.transient(ModelHTTPError(402, "meta/x", body={"code": 402}))
