@@ -26,10 +26,13 @@ in:
   - tests through `uv run pytest`;
   - Conventional Commits.
 - **agex is a clean break, released as 0.13.0.** That is a breaking
-  minor, which 0.x allows, and the user is its only real user. Use
-  pre-releases (`0.13.0a1`, …) during Phase B and `0.13.0` at the
-  shape freeze. The CHANGELOG says plainly that it is a new API. Work
-  on a fresh branch from `main`, not `nxt`.
+  minor, which 0.x allows, and the user is its only real user. Nothing
+  is published during Phase B: it stays `0.13.0.dev0`, and the studio
+  uses it from a local editable install. B6's tests, which run the
+  studio over both loops in CI, take agex as a git dependency.
+  `0.13.0` goes out at the shape freeze. The CHANGELOG says plainly
+  that it is a new API. Work on a fresh branch from `main`, not
+  `nxt`.
 
 ## The stages
 
