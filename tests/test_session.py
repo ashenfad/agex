@@ -19,7 +19,7 @@ from nontainer.turns import (
 from pydantic_ai import messages as pai
 
 from agex import Agent, Outcome
-from agex.agent import HARNESS
+from agex.agent import CLOSING_NOTE, HARNESS
 from agex.providers.scripted import ScriptedProvider
 from agex.record import Text, ToolCall, ToolResult
 
@@ -227,20 +227,25 @@ def test_one_turn_at_a_time(ws):
     assert asyncio.run(go()).text == "a"
 
 
-def test_an_error_that_ends_a_turn_reaches_whoever_watches(ws):
-    session = agent(fails("error")).session(ws)
+def test_an_error_ends_the_turn_failed_and_keeps_its_work(ws):
+    """No ending raises: the stream closes with RunEnded, the outcome
+    says why, and the run keeps what it did with a closing note."""
+    session = agent(writes("/workspace/a.txt", "A"), fails("error")).session(ws)
 
     async def go():
         stream = session.stream("go")
-        with pytest.raises(RuntimeError, match="scripted model failed"):
-            async for _ in stream:
-                pass
-        with pytest.raises(RuntimeError, match="scripted model failed"):
-            await stream.wait()
+        events = [e async for e in stream]
+        return events, await stream.wait()
 
-    asyncio.run(go())
-    assert session.runs[0].status == "failed"
-    assert ws.turns.current is None
+    events, outcome = asyncio.run(go())
+    assert isinstance(events[-1], RunEnded) and events[-1].status == "failed"
+    assert outcome.status == "failed" and "scripted model failed" in outcome.message
+    (run,) = session.runs
+    assert run.status == "failed"
+    assert run.messages[-1].text.startswith(CLOSING_NOTE)
+    assert "scripted model failed" in run.messages[-1].text
+    assert ws.files.read("/workspace/a.txt") == b"A"
+    assert ws.log(limit=1)[0].info["runs"] == {outcome.run_id: "failed"}
 
 
 def test_say_refuses_to_block_a_running_loop(ws):
