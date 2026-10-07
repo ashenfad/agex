@@ -47,6 +47,7 @@ import enum
 import functools
 import inspect
 import pathlib
+import sys
 import textwrap
 import types
 import typing
@@ -202,6 +203,29 @@ def _fields(tp: Any, names: Names = None) -> dict[str, Any] | None:
     return typing.get_type_hints(tp, localns=dict(names) if names else None)
 
 
+def _scope(tp: type, names: Names) -> dict[str, Any]:
+    """The names a record's annotations resolve with: its module's, then
+    ``names``."""
+    module = sys.modules.get(tp.__module__)
+    scope = dict(vars(module)) if module is not None else {}
+    scope.update(names or {})
+    return scope
+
+
+def _evaluate(ref: str | typing.ForwardRef, names: Names) -> Any:
+    """What a postponed annotation left as text names. Python 3.10's
+    ``get_type_hints`` leaves the text inside a built-in generic
+    (``list["Tree"]``) as it is; this resolves it, or raises
+    ``NameError``."""
+    text = ref.__forward_arg__ if isinstance(ref, typing.ForwardRef) else ref
+    try:
+        return eval(text, dict(names or {}))  # noqa: S307 - an annotation's own text
+    except NameError:
+        raise
+    except Exception as error:  # noqa: BLE001 - said as the name it couldn't find
+        raise NameError(f"annotation {text!r} can't be resolved: {error}") from None
+
+
 def kinds_of(tp: Any, *, names: Names = None) -> frozenset[Kind]:
     """What values of ``tp`` need carried, as the set of kinds its parts
     are: ``list[Response]`` is data, ``dict[str, DataFrame]`` data and a
@@ -215,8 +239,10 @@ def _kinds(tp: Any, seen: frozenset[type], names: Names) -> set[Kind]:
         return {"any"}
     if tp is None or tp is type(None):
         return {"data"}
-    if isinstance(tp, (TypeVar, str, typing.ForwardRef)):
+    if isinstance(tp, TypeVar):
         return {"any"}
+    if isinstance(tp, (str, typing.ForwardRef)):
+        return _kinds(_evaluate(tp, names), seen, names)
     supertype = getattr(tp, "__supertype__", None)  # a NewType
     if supertype is not None:
         return _kinds(supertype, seen, names)
@@ -249,7 +275,7 @@ def _kinds(tp: Any, seen: frozenset[type], names: Names) -> set[Kind]:
         return {"data"}
     fields = _fields(tp, names)
     if fields is not None:
-        return _all({"data"}, fields.values(), seen | {tp}, names)
+        return _all({"data"}, fields.values(), seen | {tp}, _scope(tp, names))
     if _is_table_type(tp):
         return {"table"}
     if _is_array_type(tp):
@@ -270,6 +296,8 @@ def _named_types(
 ) -> None:
     """Collect the record and enum classes ``tp`` names, by name: what
     agent code needs bound to build a value of ``tp``."""
+    if isinstance(tp, (str, typing.ForwardRef)):
+        tp = _evaluate(tp, names)
     if id(tp) in seen:
         return
     seen.add(id(tp))
@@ -289,8 +317,9 @@ def _named_types(
                     f"two types named {tp.__name__!r} ({_qualified(other)} and "
                     f"{_qualified(tp)}): agent code sees types by name"
                 )
+        scope = _scope(tp, names)
         for annotation in (_fields(tp, names) or {}).values():
-            _named_types(annotation, found, seen, names)
+            _named_types(annotation, found, seen, scope)
 
 
 def _qualified(tp: type) -> str:
@@ -517,6 +546,8 @@ class TaskSpec:
         hints = typing.get_type_hints(
             fn, localns=dict(names) if names else None, include_extras=True
         )
+        # what the hints still hold as text resolves with these
+        names = {**getattr(fn, "__globals__", {}), **(names or {})}
         params: dict[str, ValueSpec] = {}
         for param in signature.parameters.values():
             if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
