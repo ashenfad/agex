@@ -165,16 +165,48 @@ def from_response(response: pai.ModelResponse, *, id: str | None = None) -> Mess
 
 
 def from_messages(messages: Sequence[pai.ModelMessage]) -> list[Message]:
-    """pydantic-ai messages as agex's, each with a fresh id: a system
-    prompt, a user prompt and a request's tool results each become one
-    message, and each response one assistant message."""
+    """pydantic-ai messages as agex's, each with a fresh id, in order: a
+    system prompt and a user prompt each become one message, a run of
+    consecutive tool results one tool message, and each response one
+    assistant message."""
     out: list[Message] = []
+    results: list[Part] = []
+
+    def flush() -> None:
+        if results:
+            out.append(Message(id=new_id(), role="tool", parts=tuple(results)))
+            results.clear()
+
     for message in messages:
         if isinstance(message, pai.ModelResponse):
+            flush()
             out.append(from_response(message))
             continue
-        results: list[Part] = []
         for part in message.parts:
+            if isinstance(part, pai.ToolReturnPart):
+                results.append(
+                    ToolResult(
+                        call_id=part.tool_call_id,
+                        name=part.tool_name,
+                        content=part.content
+                        if isinstance(part.content, str)
+                        else part.model_response_str(),
+                        is_error=part.outcome == "failed",
+                    )
+                )
+                continue
+            if isinstance(part, pai.RetryPromptPart) and part.tool_name:
+                results.append(
+                    ToolResult(
+                        call_id=part.tool_call_id,
+                        name=part.tool_name,
+                        content=part.model_response(),
+                        is_error=True,
+                    )
+                )
+                continue
+            # anything else follows the results before it
+            flush()
             if isinstance(part, pai.SystemPromptPart):
                 out.append(
                     Message(
@@ -195,26 +227,6 @@ def from_messages(messages: Sequence[pai.ModelMessage]) -> list[Message]:
                         parts=tuple(Text(text=t) for t in texts),
                     )
                 )
-            elif isinstance(part, pai.ToolReturnPart):
-                results.append(
-                    ToolResult(
-                        call_id=part.tool_call_id,
-                        name=part.tool_name,
-                        content=part.content
-                        if isinstance(part.content, str)
-                        else part.model_response_str(),
-                        is_error=part.outcome == "failed",
-                    )
-                )
-            elif isinstance(part, pai.RetryPromptPart) and part.tool_name:
-                results.append(
-                    ToolResult(
-                        call_id=part.tool_call_id,
-                        name=part.tool_name,
-                        content=part.model_response(),
-                        is_error=True,
-                    )
-                )
             elif isinstance(part, pai.RetryPromptPart):
                 out.append(
                     Message(
@@ -223,8 +235,7 @@ def from_messages(messages: Sequence[pai.ModelMessage]) -> list[Message]:
                         parts=(Text(text=part.model_response()),),
                     )
                 )
-        if results:
-            out.append(Message(id=new_id(), role="tool", parts=tuple(results)))
+        flush()
     return out
 
 

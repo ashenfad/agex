@@ -273,3 +273,38 @@ def test_a_part_agex_does_not_keep_is_left_out_and_logged(caplog):
     message = from_response(response)
     assert message.parts == (Text(text="see file"),)
     assert "left out a file part" in caplog.text
+
+
+def test_a_requests_parts_keep_their_order():
+    """A prompt that followed a tool result in one request still follows
+    it: results gather into one tool message only while they run on."""
+    request = pai.ModelRequest(
+        parts=[
+            pai.ToolReturnPart(tool_name="t", content="first", tool_call_id="c1"),
+            pai.UserPromptPart(content="also, use tabs"),
+            pai.ToolReturnPart(tool_name="t", content="second", tool_call_id="c2"),
+            pai.ToolReturnPart(tool_name="t", content="third", tool_call_id="c3"),
+        ]
+    )
+    messages = from_messages([request])
+    assert [
+        (m.role, [getattr(p, "content", None) or p.text for p in m.parts])
+        for m in messages
+    ] == [
+        ("tool", ["first"]),
+        ("user", ["also, use tabs"]),
+        ("tool", ["second", "third"]),
+    ]
+    (back,) = to_messages(messages)
+    assert [type(p).__name__ for p in back.parts] == [
+        "ToolReturnPart",
+        "UserPromptPart",
+        "ToolReturnPart",
+        "ToolReturnPart",
+    ]
+    assert [getattr(p, "tool_call_id", None) for p in back.parts] == [
+        "c1",
+        None,
+        "c2",
+        "c3",
+    ]
