@@ -18,8 +18,9 @@ inbox and lands one commit stamped with how the run ended.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -52,7 +53,9 @@ from .record import (
     new_id,
 )
 
-__all__ = ["HARNESS", "Agent", "Outcome", "Session"]
+__all__ = ["HARNESS", "Agent", "Outcome", "RunStream", "Session"]
+
+_logger = logging.getLogger(__name__)
 
 HARNESS = "agex"
 """The name agex's conversations are stored under, in the workspace's
@@ -122,9 +125,14 @@ class Session:
     """An agent driving one workspace, turn by turn.
 
     ``say`` runs a turn and returns its :class:`Outcome`; ``asay`` is the
-    same from a coroutine; ``stream`` yields the turn's events as they
-    happen (``nontainer.turns``), and leaves the outcome on ``last``.
-    ``inbox`` takes notes mid-turn: each lands on the next tool result.
+    same from a coroutine; ``stream`` starts a turn and hands back its
+    events as they happen (a :class:`RunStream`). ``inbox`` takes notes
+    mid-turn: each lands on the next tool result.
+
+    A turn is a task of its own, so it belongs to the session, not to
+    whoever watches it: leaving a stream early stops watching, and the
+    turn goes on to its end. One turn runs at a time; ``running`` says
+    whether one is.
 
     A workspace whose conversation another harness wrote is refused: the
     runs it holds are in that harness's format.
@@ -144,9 +152,31 @@ class Session:
         self._tools: dict[str, Tool] = {t.name: t for t in self.toolset.tools()}
         self._specs = [ToolSpec.of(t) for t in self._tools.values()]
         self.last: Outcome | None = None
+        """The outcome of the last turn that ended."""
+        self._in_flight: set[asyncio.Task[Outcome]] = set()
 
     def __repr__(self) -> str:
         return f"<Session {self.ws.session!r} of {self.agent!r}>"
+
+    @property
+    def running(self) -> bool:
+        """Whether a turn is running."""
+        return any(not task.done() for task in self._in_flight)
+
+    def _track(self, task: asyncio.Task[Outcome]) -> asyncio.Task[Outcome]:
+        # asyncio keeps only weak references to tasks: a turn nobody
+        # watches must still run to its end, so the session holds it
+        self._in_flight.add(task)
+        task.add_done_callback(self._settled)
+        return task
+
+    def _settled(self, task: asyncio.Task[Outcome]) -> None:
+        self._in_flight.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            # retrieved here, so a turn nobody watched does not log
+            # "exception was never retrieved"; the stored run says how
+            # it ended
+            _logger.debug("turn ended with %r", task.exception())
 
     # -- the stored conversation ---------------------------------------------------
 
@@ -187,17 +217,24 @@ class Session:
 
     async def asay(self, prompt: str) -> Outcome:
         """Run one turn; its outcome."""
-        async for _ in self.stream(prompt):
-            pass
-        assert self.last is not None
-        return self.last
+        return await self.stream(prompt).wait()
 
-    async def stream(self, prompt: str) -> AsyncIterator[TurnEvent]:
-        """Run one turn, yielding its events as they happen. When the
-        stream ends, ``last`` holds the outcome. Leaving the stream
-        before its end cancels the run."""
+    def stream(self, prompt: str) -> RunStream:
+        """Start a turn when first iterated (or waited on), and hand back
+        its events as they happen. When it ends, ``last`` holds the
+        outcome."""
+        return RunStream(self, prompt)
+
+    async def _run(self, prompt: str, emit: Callable[[TurnEvent], None]) -> Outcome:
+        """One turn, start to end: every event goes to ``emit`` as it
+        happens, and the outcome comes back."""
         run_id = new_id()
         events: list[TurnEvent] = []
+
+        def push(event: TurnEvent) -> None:
+            events.append(event)
+            emit(event)
+
         history = self._history()
         system = self._system()
         messages: list[Message] = [
@@ -209,9 +246,7 @@ class Session:
         text = ""
         turn = self.ws.turn(run_id, inbox=self.inbox, harness=HARNESS)
         try:
-            opened = RunStarted(run_id=run_id)
-            events.append(opened)
-            yield opened
+            push(RunStarted(run_id=run_id))
             for _ in range(self.agent.max_steps):
                 reply: Message | None = None
                 async for event in self.agent.provider.stream(
@@ -221,28 +256,25 @@ class Session:
                 ):
                     if isinstance(event, Reply):
                         reply = event.message
-                        continue
-                    events.append(event)
-                    yield event
+                    else:
+                        push(event)
                 if reply is None:
                     raise RuntimeError("the provider's stream ended without a reply")
                 messages.append(reply)
                 if reply.usage is not None:
-                    usage = Usage(
-                        input_tokens=reply.usage.input_tokens,
-                        cached_tokens=reply.usage.cache_read_tokens,
+                    push(
+                        Usage(
+                            input_tokens=reply.usage.input_tokens,
+                            cached_tokens=reply.usage.cache_read_tokens,
+                        )
                     )
-                    events.append(usage)
-                    yield usage
                 calls = [p for p in reply.parts if isinstance(p, ToolCall)]
                 if not calls:
                     text = reply.text
                     break
                 results: list[ToolResult] = []
                 for call in calls:
-                    async for event in self._run_tool(call, turn, results):
-                        events.append(event)
-                        yield event
+                    results.append(await self._run_tool(call, turn, push))
                 messages.append(Message(id=new_id(), role="tool", parts=tuple(results)))
             else:
                 status = "failed"
@@ -264,8 +296,7 @@ class Session:
                     ended_at=time.time(),
                 )
                 turn.end(status, body=dump_run(run), message=message)
-        ended = RunEnded(status=status, message=message)
-        events.append(ended)
+        push(RunEnded(status=status, message=message))
         self.last = Outcome(
             status=status,
             text=text,
@@ -274,38 +305,37 @@ class Session:
             events=tuple(events),
             message=message,
         )
-        yield ended
+        return self.last
 
     # -- the loop's parts -----------------------------------------------------------
 
     async def _run_tool(
-        self, call: ToolCall, turn: Any, results: list[ToolResult]
-    ) -> AsyncIterator[TurnEvent]:
-        """Run one tool call: its start, the notes its result delivers,
-        its end. The result, notes included, goes into ``results`` for
-        the model."""
-        yield ToolStarted(call_id=call.call_id, name=call.name, args=dict(call.args))
+        self, call: ToolCall, turn: Any, push: Callable[[TurnEvent], None]
+    ) -> ToolResult:
+        """Run one tool call, pushing its start, the notes its result
+        delivers, and its end; the result, notes included, for the
+        model."""
+        push(ToolStarted(call_id=call.call_id, name=call.name, args=dict(call.args)))
         output, is_error = await self._call(call)
         delivered, notes = await turn.adeliver(output)
         if notes:
-            yield Delivered(
-                notes=tuple(
-                    DeliveredNote(
-                        id=n.id, text=n.text, kind=n.kind, label=n.label, job=n.job
+            push(
+                Delivered(
+                    notes=tuple(
+                        DeliveredNote(
+                            id=n.id, text=n.text, kind=n.kind, label=n.label, job=n.job
+                        )
+                        for n in notes
                     )
-                    for n in notes
                 )
             )
-        yield ToolEnded(
-            call_id=call.call_id, name=call.name, result=output, is_error=is_error
-        )
-        results.append(
-            ToolResult(
-                call_id=call.call_id,
-                name=call.name,
-                content=delivered,
-                is_error=is_error,
+        push(
+            ToolEnded(
+                call_id=call.call_id, name=call.name, result=output, is_error=is_error
             )
+        )
+        return ToolResult(
+            call_id=call.call_id, name=call.name, content=delivered, is_error=is_error
         )
 
     async def _call(self, call: ToolCall) -> tuple[str, bool]:
@@ -321,3 +351,64 @@ class Session:
         except Exception as exc:  # noqa: BLE001 - the model reads it
             return f"{type(exc).__name__}: {exc}", True
         return output.text, output.is_error
+
+
+_END: Any = object()
+
+
+class RunStream:
+    """One turn's events, as they happen.
+
+    The turn is a task of its own, started by the first iteration or by
+    :meth:`wait`. Iterating watches it: leaving early stops watching,
+    and the turn goes on to its end, landing its commit as usual. An
+    error that ended the turn is raised to whoever iterates or waits.
+    """
+
+    def __init__(self, session: Session, prompt: str) -> None:
+        self._session = session
+        self._prompt = prompt
+        self._queue: asyncio.Queue[Any] = asyncio.Queue()
+        self._task: asyncio.Task[Outcome] | None = None
+
+    def _start(self) -> asyncio.Task[Outcome]:
+        if self._task is None:
+            queue = self._queue
+
+            async def drive() -> Outcome:
+                try:
+                    return await self._session._run(self._prompt, queue.put_nowait)
+                finally:
+                    queue.put_nowait(_END)
+
+            loop = asyncio.get_running_loop()
+            self._task = self._session._track(loop.create_task(drive()))
+        return self._task
+
+    @property
+    def outcome(self) -> Outcome | None:
+        """The turn's outcome, once it has ended."""
+        task = self._task
+        if task is None or not task.done() or task.cancelled():
+            return None
+        return task.result() if task.exception() is None else None
+
+    def __aiter__(self) -> RunStream:
+        return self
+
+    async def __anext__(self) -> TurnEvent:
+        task = self._start()
+        item = await self._queue.get()
+        if item is _END:
+            self._queue.put_nowait(_END)  # every later call ends too
+            error = None if task.cancelled() else task.exception()
+            if error is not None:
+                raise error
+            raise StopAsyncIteration
+        return item
+
+    async def wait(self) -> Outcome:
+        """Run the turn to its end, if it is not running already, and
+        return its outcome. A waiter that is cancelled leaves the turn
+        running."""
+        return await asyncio.shield(self._start())

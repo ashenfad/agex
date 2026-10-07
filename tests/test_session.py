@@ -5,7 +5,7 @@ import asyncio
 
 import pytest
 from nontainer import NotSupportedError, Store, TurnInProgress, conversation
-from nontainer.conformance.corpus import calls, says, writes
+from nontainer.conformance.corpus import calls, fails, says, writes
 from nontainer.conversation import Index
 from nontainer.turns import (
     Delivered,
@@ -174,20 +174,44 @@ def test_a_run_that_never_stops_calling_tools_is_stopped(ws):
     assert ws.log(limit=1)[0].info["runs"] == {outcome.run_id: "failed"}
 
 
-def test_leaving_the_stream_early_cancels_the_run(ws):
-    session = agent(says("never read"), says("next")).session(ws)
+def test_leaving_the_stream_early_stops_watching_and_the_turn_goes_on(ws):
+    """A plain ``break`` closes nothing: the turn is the session's, so it
+    runs to its end, lands its commit, and leaves the session free."""
+    session = agent(writes("/workspace/a.txt", "A"), says("done")).session(ws)
 
     async def go():
-        stream = session.stream("go")
+        stream = session.stream("write a")
         async for event in stream:
             assert isinstance(event, RunStarted)
             break
-        await stream.aclose()
+        return await stream.wait()
 
-    asyncio.run(go())
-    assert ws.turns.current is None
-    assert session.runs[0].status == "cancelled"
-    assert session.say("again").status == "completed"
+    outcome = asyncio.run(go())
+    assert (outcome.status, outcome.text) == ("completed", "done")
+    assert ws.files.read("/workspace/a.txt") == b"A"
+    assert ws.turns.current is None and not session.running
+    assert session.runs[0].status == "completed"
+
+
+def test_an_abandoned_stream_does_not_hold_the_session(ws):
+    """A stream left mid-turn and never closed: its turn still ends on
+    its own, and the next turn is free to start."""
+    session = agent(says("first"), says("second")).session(ws)
+
+    async def go():
+        held = session.stream("one")
+        await held.__anext__()  # watch the start, then stop watching
+        for _ in range(1000):
+            if not session.running:
+                break
+            await asyncio.sleep(0)
+        assert not session.running
+        return held, await session.asay("two")
+
+    held, second = asyncio.run(go())
+    assert held.outcome is not None and held.outcome.text == "first"
+    assert second.text == "second"
+    assert [run.status for run in session.runs] == ["completed", "completed"]
 
 
 def test_one_turn_at_a_time(ws):
@@ -198,9 +222,25 @@ def test_one_turn_at_a_time(ws):
         await first.__anext__()
         with pytest.raises(TurnInProgress):
             await session.stream("two").__anext__()
-        await first.aclose()
+        return await first.wait()
+
+    assert asyncio.run(go()).text == "a"
+
+
+def test_an_error_that_ends_a_turn_reaches_whoever_watches(ws):
+    session = agent(fails("error")).session(ws)
+
+    async def go():
+        stream = session.stream("go")
+        with pytest.raises(RuntimeError, match="scripted model failed"):
+            async for _ in stream:
+                pass
+        with pytest.raises(RuntimeError, match="scripted model failed"):
+            await stream.wait()
 
     asyncio.run(go())
+    assert session.runs[0].status == "failed"
+    assert ws.turns.current is None
 
 
 def test_say_refuses_to_block_a_running_loop(ws):
