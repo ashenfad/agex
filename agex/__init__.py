@@ -1,110 +1,12 @@
-from .agent import Agent, MemberSpec, TaskFail, clear_agent_registry
-from .agent.chapter import CHAPTER_TASK
-from .agent.console import pprint_events, pprint_tokens
-from .agent.datatypes import (
-    LLMFail,
-    TaskCancelled,
-    TaskClarify,
-    TaskTimeout,
-)
-from .agent.emissions import (
-    FileEditEmission,
-    FileWriteEmission,
-    PythonEmission,
-    TerminalEmission,
-    TextEmission,
-    ThinkingEmission,
-)
-from .agent.events import (
-    ActionEvent,
-    CancelledEvent,
-    ChapterEvent,
-    ClarifyEvent,
-    ErrorEvent,
-    Event,
-    FailEvent,
-    OutputEvent,
-    SuccessEvent,
-    TaskStartEvent,
-)
-from .eval.core import run_file_in_sandbox
-from .fs import connect_fs
-from .host import Host, connect_host
-from .llm import LLM, connect_llm
-from .render.capabilities import summarize_capabilities
-from .render.token_count import estimate_log_tokens, system_token_count
-from .render.view import view
-from .state import (
-    Live,
-    Namespaced,
-    Staged,
-    StateResolver,
-    connect_state,
-    events,
-    scopes,
-    staged_state,
-)
+"""agex: agents that work in a versioned world.
 
-__all__ = [
-    # Core Classes
-    "Agent",
-    "LLM",
-    # Host abstraction
-    "Host",
-    "connect_host",
-    # State Management
-    "connect_state",
-    "Staged",
-    "StateResolver",
-    "staged_state",
-    "Live",
-    "Namespaced",
-    "events",
-    "scopes",
-    # FileSystem
-    "connect_fs",
-    # Sandbox Execution
-    "run_file_in_sandbox",
-    # Task Control Exceptions & Functions
-    "TaskFail",
-    "TaskClarify",
-    "TaskTimeout",
-    "TaskCancelled",
-    "LLMFail",
-    # Emissions (assistant-turn units)
-    "TextEmission",
-    "ThinkingEmission",
-    "PythonEmission",
-    "TerminalEmission",
-    "FileWriteEmission",
-    "FileEditEmission",
-    # Registration
-    "MemberSpec",
-    # Events
-    "Event",
-    "TaskStartEvent",
-    "ActionEvent",
-    "OutputEvent",
-    "SuccessEvent",
-    "FailEvent",
-    "CancelledEvent",
-    "ClarifyEvent",
-    "ChapterEvent",
-    "ErrorEvent",
-    # Chapter constants
-    "CHAPTER_TASK",
-    # Agent Registry
-    "clear_agent_registry",
-    # LLM Client Factory
-    "connect_llm",
-    # View
-    "view",
-    # Token counting
-    "estimate_log_tokens",
-    "system_token_count",
-    # Capabilities
-    "summarize_capabilities",
-    # Console
-    "pprint_events",
-    "pprint_tokens",
-]
+agex is a loop over nontainer. A session drives a workspace turn by
+turn, and a task runs on a fork of one and hands back a typed value;
+both keep their conversation in the workspace's branch, so a checkout
+rewinds memory with the files and a fork carries it.
+
+This is the 0.13 rebuild, and the package is empty until its pieces
+land. The 0.12 line is at the ``v0.12.4`` tag.
+"""
+
+__all__: list[str] = []
