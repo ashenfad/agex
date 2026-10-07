@@ -49,14 +49,35 @@ TRANSIENT_STATUS = frozenset({408, 409, 425, 429})
 _UNREACHABLE_NAMES = frozenset({"APIConnectionError", "APITimeoutError"})
 
 
+RELAYED = "Provider returned error"
+"""How OpenRouter words an error it passes on from the upstream provider."""
+
+
 def _relayed(error: ModelHTTPError) -> bool:
     """Whether OpenRouter relayed this error from the upstream provider
-    rather than refusing the request itself."""
-    body = error.body
+    rather than refusing the request itself.
+
+    pydantic-ai raises it in two shapes. Before the stream opens, the body
+    is OpenRouter's error object, with the upstream named in its
+    ``metadata``. From a response or mid-stream, the body is just the
+    error's message, and the object (when there is one) is on the SDK
+    error that caused it.
+    """
+    if _relayed_body(error.body):
+        return True
+    cause = error.__cause__
+    return cause is not None and _relayed_body(getattr(cause, "body", None))
+
+
+def _relayed_body(body: Any) -> bool:
+    if isinstance(body, str):
+        return body.strip() == RELAYED
     if not isinstance(body, dict):
         return False
+    if isinstance(body.get("error"), dict):  # an SDK error's body, wrapped
+        body = body["error"]
     metadata = body.get("metadata")
-    return body.get("message") == "Provider returned error" or (
+    return body.get("message") == RELAYED or (
         isinstance(metadata, dict) and "provider_name" in metadata
     )
 
