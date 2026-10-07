@@ -12,7 +12,7 @@ from nontainer.turns import RunEnded, RunStarted, ToolEnded
 from pydantic_ai.models.function import FunctionModel
 
 from agex import Agent
-from agex.agent import CLOSING_NOTE, STOPPED, UNANSWERED
+from agex.agent import CLOSING_NOTE, CUT_OFF, STOPPED, UNANSWERED
 from agex.providers.pydanticai import PydanticAIProvider
 from agex.providers.scripted import ScriptedProvider
 from agex.record import ToolCall, ToolResult
@@ -248,11 +248,11 @@ def test_a_tool_call_cut_off_mid_flight_is_ended_in_the_stream(ws):
     outcome = asyncio.run(go())
     assert outcome.status == "cancelled"
     ended = [e for e in outcome.events if isinstance(e, ToolEnded)]
-    assert len(ended) == 1 and ended[0].is_error and ended[0].result == UNANSWERED
+    assert len(ended) == 1 and ended[0].is_error and ended[0].result == CUT_OFF
     assert isinstance(outcome.events[-1], RunEnded)
     (run,) = session.runs
     (tool,) = [m for m in run.messages if m.role == "tool"]
-    assert [r.content for r in tool.parts] == [UNANSWERED]
+    assert [r.content for r in tool.parts] == [CUT_OFF]
 
 
 def test_a_cancel_before_the_turn_has_started_stops_it_at_its_first_check(ws):
@@ -286,3 +286,43 @@ def test_a_stream_whose_task_was_cancelled_before_it_ran_still_ends(ws):
 
     assert asyncio.run(go()) == []
     assert not session.running and ws.turns.current is None
+
+
+def test_a_cancel_during_delivery_keeps_what_the_tool_did(ws):
+    """The tool ran (and wrote its file) before the turn was cancelled
+    while its result was being delivered: the run keeps the tool's own
+    output, so the model is not told to do it again, and the notes that
+    never reached it go back to the queue."""
+    from nontainer.inbox import Inbox
+
+    reached = []
+
+    async def go():
+        stalled = asyncio.Event()
+
+        async def slow(notes):
+            reached.extend(notes)
+            stalled.set()
+            await asyncio.sleep(10)
+
+        session = agent(writes("/workspace/a.txt", "A"), says("never")).session(
+            ws, inbox=Inbox(on_delivered=slow)
+        )
+        note = session.inbox.put("also b")
+        stream = session.stream("write a")
+        waiting = asyncio.ensure_future(stream.wait())
+        await stalled.wait()
+        session.cancel()
+        return session, note, await waiting
+
+    session, note, outcome = asyncio.run(go())
+    assert outcome.status == "cancelled"
+    assert ws.files.read("/workspace/a.txt") == b"A"
+    (ended,) = [e for e in outcome.events if isinstance(e, ToolEnded)]
+    assert not ended.is_error and ended.result not in (CUT_OFF, UNANSWERED)
+    (run,) = session.runs
+    (tool,) = [m for m in run.messages if m.role == "tool"]
+    (result,) = tool.parts
+    assert result.content == ended.result and not result.is_error
+    assert "also b" not in result.content
+    assert session.inbox.pending() == [note] and reached == [note]

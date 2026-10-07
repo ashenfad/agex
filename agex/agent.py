@@ -20,14 +20,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from typing import Any
 
 from nontainer import NotSupportedError, Profile, Workspace, conversation
 from nontainer.adapters.render import toolkit_instructions
 from nontainer.adapters.tools import Tool, Toolset
-from nontainer.inbox import Inbox
+from nontainer.inbox import Inbox, Note
 from nontainer.turns import (
     Delivered,
     DeliveredNote,
@@ -55,6 +55,7 @@ from .record import (
 
 __all__ = [
     "CLOSING_NOTE",
+    "CUT_OFF",
     "HARNESS",
     "Agent",
     "Outcome",
@@ -79,8 +80,15 @@ the work it did, and the model reads that it was cut short."""
 STOPPED = "stopped"
 """Why a turn :meth:`Session.cancel` stopped ended."""
 
-UNANSWERED = "not run: the turn ended before this call returned"
-"""The result a tool call gets when its turn ended first."""
+UNANSWERED = "not run: the turn ended before this call started"
+"""The result a tool call gets when its turn ended before running it."""
+
+CUT_OFF = (
+    "no result: the turn ended while this call was running, and it may "
+    "have finished anyway; check the workspace before repeating it"
+)
+"""The result a tool call gets when its turn ended while it ran: a tool
+on its worker thread runs on to its end."""
 
 
 def closing_note(reason: str) -> Message:
@@ -94,6 +102,15 @@ def closing_note(reason: str) -> Message:
                 "real and done.]"
             ),
         ),
+    )
+
+
+def _delivered(notes: Sequence[Note]) -> Delivered:
+    return Delivered(
+        notes=tuple(
+            DeliveredNote(id=n.id, text=n.text, kind=n.kind, label=n.label, job=n.job)
+            for n in notes
+        )
     )
 
 
@@ -369,7 +386,9 @@ class Session:
         external: BaseException | None = None
         calls: list[ToolCall] = []
         results: list[ToolResult] = []
-        inflight: ToolCall | None = None
+        # the ToolEnded a call still owes the stream: UNANSWERED until the
+        # tool returns, its own output once it has
+        unended: ToolEnded | None = None
         in_request = False
         turn = self.ws.turn(run_id, resume=resume, inbox=self.inbox, harness=HARNESS)
         self._live = True
@@ -407,9 +426,40 @@ class Session:
                 results = []
                 for call in calls:
                     self._check_cancel()
-                    inflight = call
-                    results.append(await self._run_tool(call, turn, push))
-                    inflight = None
+                    push(
+                        ToolStarted(
+                            call_id=call.call_id, name=call.name, args=dict(call.args)
+                        )
+                    )
+                    unended = ToolEnded(
+                        call_id=call.call_id,
+                        name=call.name,
+                        result=CUT_OFF,
+                        is_error=True,
+                    )
+                    output, is_error = await self._call(call)
+                    # the tool ran, and may have changed the workspace: its
+                    # result stands from here, however the turn ends
+                    unended = ToolEnded(
+                        call_id=call.call_id,
+                        name=call.name,
+                        result=output,
+                        is_error=is_error,
+                    )
+                    results.append(
+                        ToolResult(
+                            call_id=call.call_id,
+                            name=call.name,
+                            content=output,
+                            is_error=is_error,
+                        )
+                    )
+                    delivered, notes = await turn.adeliver(output)
+                    if notes:
+                        push(_delivered(notes))
+                        results[-1] = replace(results[-1], content=delivered)
+                    push(unended)
+                    unended = None
                 messages.append(Message(id=new_id(), role="tool", parts=tuple(results)))
                 calls = []
             else:
@@ -441,24 +491,18 @@ class Session:
         finally:
             self._live = False
             if turn.open:
-                if inflight is not None:
-                    push(
-                        ToolEnded(
-                            call_id=inflight.call_id,
-                            name=inflight.name,
-                            result=UNANSWERED,
-                            is_error=True,
-                        )
-                    )
+                if unended is not None:
+                    push(unended)
                 if calls:
                     # every tool call needs its result, or the next request
                     # is refused: the ones the turn never answered say so
                     answered = {r.call_id for r in results}
+                    cut_off = unended.call_id if unended is not None else None
                     unanswered = [
                         ToolResult(
                             call_id=c.call_id,
                             name=c.name,
-                            content=UNANSWERED,
+                            content=CUT_OFF if c.call_id == cut_off else UNANSWERED,
                             is_error=True,
                         )
                         for c in calls
@@ -491,35 +535,6 @@ class Session:
         return self.last
 
     # -- the loop's parts -----------------------------------------------------------
-
-    async def _run_tool(
-        self, call: ToolCall, turn: Any, push: Callable[[TurnEvent], None]
-    ) -> ToolResult:
-        """Run one tool call, pushing its start, the notes its result
-        delivers, and its end; the result, notes included, for the
-        model."""
-        push(ToolStarted(call_id=call.call_id, name=call.name, args=dict(call.args)))
-        output, is_error = await self._call(call)
-        delivered, notes = await turn.adeliver(output)
-        if notes:
-            push(
-                Delivered(
-                    notes=tuple(
-                        DeliveredNote(
-                            id=n.id, text=n.text, kind=n.kind, label=n.label, job=n.job
-                        )
-                        for n in notes
-                    )
-                )
-            )
-        push(
-            ToolEnded(
-                call_id=call.call_id, name=call.name, result=output, is_error=is_error
-            )
-        )
-        return ToolResult(
-            call_id=call.call_id, name=call.name, content=delivered, is_error=is_error
-        )
 
     async def _call(self, call: ToolCall) -> tuple[str, bool]:
         """The tool's text and whether it failed. A tool the model made
