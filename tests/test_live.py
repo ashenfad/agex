@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
-from nontainer import Store
+from nontainer import Profile, PythonConfig, Store
 from nontainer.turns import ThinkingDelta, ToolEnded, Usage
 
 from agex import Agent
@@ -252,10 +252,16 @@ class Ranking:
     scores: list[Score]
 
 
-def test_a_task_hands_back_a_typed_value(live):
+@pytest.mark.parametrize("isolation", ["none", "process"])
+def test_a_task_hands_back_a_typed_value(live, isolation):
     """A task's brief is enough for the model to build the value with
-    the types bound in its world, and finish with task.success."""
-    agent = Agent(live.model, settings=live.settings())
+    the types bound in its world, and finish with task.success, in this
+    process or in a worker."""
+    agent = Agent(
+        live.model,
+        settings=live.settings(),
+        profile=Profile(python=PythonConfig(isolation=isolation)),
+    )
 
     @agent.task
     def rank(answers: dict[str, list[int]]) -> Ranking:

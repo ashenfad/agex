@@ -4,8 +4,8 @@
 the docstring is the job, and the body stays empty. Calling the task
 runs the agent on a fresh world, a scratch one built from
 ``agent.profile`` or a fork of ``world=``, and hands back the value the
-agent's code passed to ``task.success``, checked against the return
-annotation. The caller's world is never touched.
+agent's code passed to ``task.success``, built as the return type. The
+caller's world is never touched.
 
     @agent.task
     def grade(responses: list[Response]) -> Report:
@@ -22,49 +22,49 @@ the record and enum types the signature names, and ``task``:
 model that stops without either call is nudged to finish, twice; then
 the task fails.
 
-Inputs are values: a task can't change what its caller passed. Data is
-deep-copied, a table shallow-copied (pandas' copy-on-write keeps the
-task's writes to itself), and an array passed as a read-only view. A
-live input (a client, a callable) is a capability: it is bound as a host
-object of the task's world, under that world's host-object policy.
+A task runs on any world: in this process, under process isolation or
+on a dud machine, the same way. Types are nontainer's
+(:mod:`nontainer.values`):
 
-Values travel only within the process so far, so a world whose code
-runs elsewhere (process isolation, a dud machine) is refused before any
-model call.
+- **Inputs are values.** Each is checked against its annotation and
+  reaches the task's code by value, a fresh copy each run, so a task
+  can't change what its caller passed. A live input (a client, a
+  callable) is a capability: it is bound as a host object of the
+  task's world as it is, under that world's host-object policy, and
+  reached through a proxy where the world's code runs elsewhere.
+- **The value comes back built as the return type.** ``task`` is a
+  stubbed host object (``nontainer.remote``): agent code holds
+  :class:`agex.stubs.TaskStub`, and what it passes to ``task.success``
+  is encoded and decoded by the return type, on every rung, so a value
+  of the agent's own making arrives as the declared type or is refused.
+- **Off in-process only data, bytes, tables and arrays cross.** A task
+  whose return type has a live part, or an input that mixes data with a
+  live part, is refused on such a world before any model call. Tables
+  cross as Arrow, so they need pyarrow.
 """
 
 from __future__ import annotations
 
 import ast
 import asyncio
-import collections
-import collections.abc
-import copy
-import dataclasses
-import datetime
-import decimal
-import enum
 import functools
 import inspect
-import pathlib
-import sys
 import textwrap
-import types
 import typing
-import uuid
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Literal
 
 import reprobate
-from nontainer import NotSupportedError, Profile, Store, Workspace
+from nontainer import HostObject, NotSupportedError, Profile, Store, Workspace, values
 from nontainer.executor import LocalExecutor
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
-from pydantic.errors import PydanticSchemaGenerationError
+from nontainer.values import Kind, kinds_of
+from pydantic import TypeAdapter
 
 from .agent import Outcome, Session, Status, _block
 from .record import Message, Text, new_id
+from .stubs import TaskStub
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -76,18 +76,12 @@ __all__ = [
     "Task",
     "TaskError",
     "TaskFailed",
+    "TaskHost",
     "TaskInterrupted",
-    "TaskObject",
     "TaskSpec",
     "ValueSpec",
     "kinds_of",
 ]
-
-Kind = Literal["data", "bytes", "table", "array", "live", "any"]
-"""What a type needs carried: plain data (scalars, containers, records),
-bytes, a table (a DataFrame, an Arrow table), an array, a live object
-(a callable, a client, a generator), or anything (``Any``, no
-annotation)."""
 
 RESERVED = frozenset({"task", "host", "world", "keep"})
 """Names a task's parameters can't take: ``task`` and ``host`` are bound
@@ -118,73 +112,7 @@ there, so fix it and call again.
 be done.
 Either call ends the script it is in: nothing after it runs."""
 
-_SCALARS: tuple[type, ...] = (
-    bool,
-    int,
-    float,
-    str,
-    decimal.Decimal,
-    datetime.date,
-    datetime.time,
-    datetime.timedelta,
-    uuid.UUID,
-    pathlib.PurePath,
-)
-
-_CONTAINERS = frozenset(
-    {
-        list,
-        tuple,
-        set,
-        frozenset,
-        dict,
-        collections.abc.Sequence,
-        collections.abc.MutableSequence,
-        collections.abc.Set,
-        collections.abc.MutableSet,
-        collections.abc.Mapping,
-        collections.abc.MutableMapping,
-    }
-)
-
 _EMPTY = inspect.Parameter.empty
-
-_BUILTIN_CONTAINERS = (list, tuple, set, frozenset, dict)
-
-_USER_CONTAINERS = (collections.UserDict, collections.UserList, collections.UserString)
-"""The standard library's plain wrappers around a dict, a list and a
-str: data, however they are subclassed."""
-
-
-# -- what a type needs carried ---------------------------------------------------------
-
-
-def _root(tp: type) -> str:
-    return (tp.__module__ or "").split(".")[0]
-
-
-def _is_table_type(tp: type) -> bool:
-    return (
-        (_root(tp) == "pandas" and tp.__name__ in ("DataFrame", "Series"))
-        or (_root(tp) == "pyarrow" and tp.__name__ in ("Table", "RecordBatch"))
-        or hasattr(tp, "__arrow_c_stream__")
-    )
-
-
-def _is_array_type(tp: type) -> bool:
-    return _root(tp) == "numpy" and tp.__name__ == "ndarray"
-
-
-def _is_record(tp: Any) -> bool:
-    """Whether ``tp`` is a record type: a dataclass, a pydantic model, a
-    TypedDict or a NamedTuple."""
-    return isinstance(tp, type) and (
-        dataclasses.is_dataclass(tp)
-        or issubclass(tp, BaseModel)
-        or typing.is_typeddict(tp)
-        or (issubclass(tp, tuple) and hasattr(tp, "_fields"))
-    )
-
 
 Names = Mapping[str, Any] | None
 """Names to resolve postponed annotations with, beside a type's own
@@ -192,233 +120,7 @@ module: those of the code that defined it, for a type defined in a
 function."""
 
 
-def _fields(tp: Any, names: Names = None) -> dict[str, Any] | None:
-    """The field annotations of a record type, or ``None`` for any other
-    type. An annotation naming something that can't be found raises
-    ``NameError``."""
-    if not _is_record(tp):
-        return None
-    if issubclass(tp, BaseModel):
-        return {name: f.annotation for name, f in tp.model_fields.items()}
-    return typing.get_type_hints(tp, localns=dict(names) if names else None)
-
-
-def _scope(tp: type, names: Names) -> dict[str, Any]:
-    """The names a record's annotations resolve with: its module's, then
-    ``names``."""
-    module = sys.modules.get(tp.__module__)
-    scope = dict(vars(module)) if module is not None else {}
-    scope.update(names or {})
-    return scope
-
-
-def _evaluate(ref: str | typing.ForwardRef, names: Names) -> Any:
-    """What a postponed annotation left as text names. Python 3.10's
-    ``get_type_hints`` leaves the text inside a built-in generic
-    (``list["Tree"]``) as it is; this resolves it, or raises
-    ``NameError``."""
-    text = ref.__forward_arg__ if isinstance(ref, typing.ForwardRef) else ref
-    try:
-        return eval(text, dict(names or {}))  # noqa: S307 - an annotation's own text
-    except NameError:
-        raise
-    except Exception as error:  # noqa: BLE001 - said as the name it couldn't find
-        raise NameError(f"annotation {text!r} can't be resolved: {error}") from None
-
-
-def kinds_of(tp: Any, *, names: Names = None) -> frozenset[Kind]:
-    """What values of ``tp`` need carried, as the set of kinds its parts
-    are: ``list[Response]`` is data, ``dict[str, DataFrame]`` data and a
-    table, ``Callable[[int], int]`` live. ``names`` resolve postponed
-    annotations of records defined in a function."""
-    return frozenset(_kinds(tp, frozenset(), names))
-
-
-def _kinds(tp: Any, seen: frozenset[type], names: Names) -> set[Kind]:
-    if tp is Any or tp is object or tp is _EMPTY:
-        return {"any"}
-    if tp is None or tp is type(None):
-        return {"data"}
-    if isinstance(tp, TypeVar):
-        return {"any"}
-    if isinstance(tp, (str, typing.ForwardRef)):
-        return _kinds(_evaluate(tp, names), seen, names)
-    supertype = getattr(tp, "__supertype__", None)  # a NewType
-    if supertype is not None:
-        return _kinds(supertype, seen, names)
-    origin = typing.get_origin(tp)
-    if origin is not None:
-        args = typing.get_args(tp)
-        if origin is typing.Annotated:
-            return _kinds(args[0], seen, names)
-        if origin is Literal:
-            return {"data"}
-        if origin is Union or origin is types.UnionType:
-            return _all(set(), args, seen, names)
-        if origin in _CONTAINERS:
-            inner = [a for a in args if a is not Ellipsis]
-            if not inner:
-                return {"data", "any"}
-            return _all({"data"}, inner, seen, names)
-        if _is_record(origin):
-            return _kinds(origin, seen, names)
-        return {"live"}
-    if not isinstance(tp, type):
-        return {"live"}
-    if issubclass(tp, enum.Enum) or issubclass(tp, _SCALARS):
-        return {"data"}
-    if issubclass(tp, (bytes, bytearray, memoryview)):
-        return {"bytes"}
-    if tp in (list, tuple, set, frozenset, dict):
-        return {"data", "any"}
-    if tp in seen:
-        return {"data"}
-    fields = _fields(tp, names)
-    if fields is not None:
-        return _all({"data"}, fields.values(), seen | {tp}, _scope(tp, names))
-    if _is_table_type(tp):
-        return {"table"}
-    if _is_array_type(tp):
-        return {"array"}
-    return {"live"}
-
-
-def _all(
-    kinds: set[Kind], parts: Iterable[Any], seen: frozenset[type], names: Names
-) -> set[Kind]:
-    for part in parts:
-        kinds |= _kinds(part, seen, names)
-    return kinds
-
-
-def _named_types(
-    tp: Any, found: dict[str, type], seen: set[int], names: Names = None
-) -> None:
-    """Collect the record and enum classes ``tp`` names, by name: what
-    agent code needs bound to build a value of ``tp``."""
-    if isinstance(tp, (str, typing.ForwardRef)):
-        tp = _evaluate(tp, names)
-    if id(tp) in seen:
-        return
-    seen.add(id(tp))
-    for arg in typing.get_args(tp):
-        if isinstance(arg, list):  # Callable's parameter list
-            for a in arg:
-                _named_types(a, found, seen, names)
-        else:
-            _named_types(arg, found, seen, names)
-    if not isinstance(tp, type):
-        return
-    if issubclass(tp, enum.Enum) or _is_record(tp):
-        if tp.__module__ != "builtins":
-            other = found.setdefault(tp.__name__, tp)
-            if other is not tp:
-                raise TypeError(
-                    f"two types named {tp.__name__!r} ({_qualified(other)} and "
-                    f"{_qualified(tp)}): agent code sees types by name"
-                )
-        scope = _scope(tp, names)
-        for annotation in (_fields(tp, names) or {}).values():
-            _named_types(annotation, found, seen, scope)
-
-
-def _qualified(tp: type) -> str:
-    return f"{tp.__module__}.{tp.__qualname__}"
-
-
-# -- checking a value against a type ----------------------------------------------------
-
-
-class _Unchecked(Exception):
-    """An annotation no check can be built for."""
-
-
-_ABSTRACT: tuple[tuple[type, Callable[[Any], Any]], ...] = (
-    (collections.abc.MutableMapping, dict),
-    (collections.abc.Mapping, dict),
-    (collections.abc.MutableSequence, list),
-    (collections.abc.Sequence, list),
-    (collections.abc.MutableSet, set),
-    (collections.abc.Set, set),
-)
-
-
-def _as_builtin(tp: Any, value: Any) -> Any:
-    """``value`` as the built-in container an abstract container type
-    stands for, when ``tp`` is one and ``value`` is an instance of it (a
-    ``UserDict`` for ``Mapping[str, int]``); ``None`` otherwise. Strict
-    checking takes only the built-ins, and an instance of the abstract
-    type is no coercion."""
-    origin = typing.get_origin(tp) or tp
-    for abstract, builtin in _ABSTRACT:
-        if origin is abstract:
-            if isinstance(value, abstract) and not isinstance(
-                value, (str, bytes, bytearray)
-            ):
-                return builtin(value)
-            return None
-    return None
-
-
-def _adapter(tp: Any, names: Names) -> TypeAdapter[Any] | None:
-    try:
-        adapter: TypeAdapter[Any] = TypeAdapter(tp)
-    except PydanticSchemaGenerationError:
-        try:
-            adapter = TypeAdapter(tp, config=ConfigDict(arbitrary_types_allowed=True))
-        except Exception:  # noqa: BLE001 - checked by isinstance instead
-            return None
-    except Exception:  # noqa: BLE001
-        return None
-    if not adapter.pydantic_complete and names:
-        # built here, away from the code that defined the types it names
-        adapter.rebuild(_types_namespace=dict(names), raise_errors=False)
-    return adapter if adapter.pydantic_complete else None
-
-
-def _checker(tp: Any, names: Names = None) -> Callable[[Any], None]:
-    """A strict check of a value against ``tp``, raising pydantic's
-    ``ValidationError`` or a ``TypeError``: no coercion, so ``"42"`` is
-    not an ``int``, while an instance of an abstract container type is
-    taken for it. A class pydantic can't build a validator for is
-    checked by ``isinstance``, ``Any`` accepts anything, and any other
-    annotation no check can be built for raises ``_Unchecked``."""
-    if tp is Any or tp is object or tp is _EMPTY:
-        return lambda value: None
-    adapter = _adapter(tp, names)
-    if adapter is not None:
-
-        def validate(value: Any) -> None:
-            try:
-                adapter.validate_python(value, strict=True)
-            except ValidationError:
-                plain = _as_builtin(tp, value)
-                if plain is None:
-                    raise
-                adapter.validate_python(plain, strict=True)
-
-        return validate
-    if isinstance(tp, type):
-
-        def check(value: Any) -> None:
-            if not isinstance(value, tp):
-                raise TypeError(
-                    f"got {type(value).__name__}, not an instance of {tp.__name__}"
-                )
-
-        return check
-    raise _Unchecked(f"no check can be built for {_fmt(tp)}")
-
-
-def _summary(error: Exception) -> str:
-    if isinstance(error, ValidationError):
-        problems = [
-            f"{'.'.join(map(str, e['loc'])) or 'the value'}: {e['msg']}"
-            for e in error.errors()[:5]
-        ]
-        more = error.error_count() - len(problems)
-        return "; ".join(problems) + (f"; and {more} more" if more > 0 else "")
-    return str(error)
+# -- one input or the return ---------------------------------------------------------------
 
 
 def _schema(tp: Any, kinds: frozenset[Kind]) -> Mapping[str, Any] | None:
@@ -432,43 +134,35 @@ def _schema(tp: Any, kinds: frozenset[Kind]) -> Mapping[str, Any] | None:
 
 @dataclass(frozen=True)
 class ValueSpec:
-    """One input or the return of a task: its annotation, the kinds of
-    value it needs carried, and its JSON schema when it is plain data."""
+    """One input or the return of a task: its annotation, compiled with
+    the names it needed (``spec``), the kinds of value it needs
+    carried, and its JSON schema when it is plain data."""
 
     annotation: Any
     kinds: frozenset[Kind]
+    spec: values.Spec = field(repr=False, compare=False)
     schema: Mapping[str, Any] | None = field(default=None, compare=False)
-    _check: Callable[[Any], None] = field(
-        default=lambda value: None, repr=False, compare=False
-    )
 
     @classmethod
     def of(cls, annotation: Any, *, names: Names = None) -> ValueSpec:
-        kinds = kinds_of(annotation, names=names)
+        """``annotation`` compiled; ``values.Unsupported`` for one no
+        check can be built for."""
+        spec = values.Spec.of(annotation, names=names)
         return cls(
             annotation=annotation,
-            kinds=kinds,
-            schema=_schema(annotation, kinds),
-            _check=_checker(annotation, names),
+            kinds=spec.kinds,
+            spec=spec,
+            schema=_schema(annotation, spec.kinds),
         )
 
-    def check(self, value: Any, what: str, *, bound: bool = False) -> None:
+    def check(self, value: Any, what: str) -> None:
         """Refuse ``value`` with a ``TypeError`` naming ``what``, unless
-        it fits. ``bound`` says the value was built in a world where the
-        types are bound by name, which a class of the same name defined
-        there does not match."""
+        it fits, strictly."""
         try:
-            self._check(value)
-        except (ValidationError, TypeError) as error:
-            summary = _summary(error)
-            if bound and "instance of" in summary:
-                summary += (
-                    ". Build it from the types already bound by name: a class "
-                    "defined in your code is a different type, even with the "
-                    "same name"
-                )
+            self.spec.check(value)
+        except values.Mismatch as mismatch:
             raise TypeError(
-                f"{what} must be {_fmt(self.annotation)}: {summary}"
+                f"{what} must be {values.fmt(self.annotation)}: {mismatch}"
             ) from None
 
 
@@ -537,7 +231,7 @@ class TaskSpec:
                 "define the types its annotations name before the task, or at "
                 "module level"
             ) from None
-        except _Unchecked as error:
+        except values.Unsupported as error:
             raise TypeError(f"task {name!r}: {error}") from None
 
     @classmethod
@@ -567,9 +261,15 @@ class TaskSpec:
             hints.get("return", signature.return_annotation), names=names
         )
         found: dict[str, type] = {}
-        seen: set[int] = set()
         for spec in (*params.values(), returns):
-            _named_types(spec.annotation, found, seen, names)
+            for tp in spec.spec.types:
+                other = found.setdefault(tp.__name__, tp)
+                if other is not tp:
+                    raise TypeError(
+                        f"task {name!r} names two types called {tp.__name__!r} "
+                        f"({_qualified(other)} and {_qualified(tp)}): agent "
+                        "code sees types by name"
+                    )
         clash = sorted(set(found) & set(params))
         if clash:
             raise TypeError(
@@ -586,135 +286,49 @@ class TaskSpec:
         )
 
     def bind(self, args: tuple[Any, ...], kwargs: Mapping[str, Any]) -> dict[str, Any]:
-        """The inputs of a call, checked against their annotations and
-        made the values the task receives: a ``TypeError`` for a call
-        that doesn't fit."""
+        """The inputs of a call, by name, each checked against its
+        annotation: a ``TypeError`` for a call that doesn't fit."""
         try:
             bound = self.signature.bind(*args, **kwargs)
         except TypeError as error:
             raise TypeError(f"{self.name}(): {error}") from None
         bound.apply_defaults()
-        inputs: dict[str, Any] = {}
         for name, value in bound.arguments.items():
-            spec = self.params[name]
-            spec.check(value, f"{self.name}()'s argument {name!r}")
-            try:
-                inputs[name] = _as_input(value, spec.kinds)
-            except Exception as error:  # noqa: BLE001 - says which input
-                raise TypeError(
-                    f"{self.name}()'s argument {name!r} can't be copied for the "
-                    f"task ({type(error).__name__}: {error}); pass data, or a "
-                    "live object the task may use as it is"
-                ) from None
-        return inputs
+            self.params[name].check(value, f"{self.name}()'s argument {name!r}")
+        return dict(bound.arguments)
+
+
+def _qualified(tp: type) -> str:
+    return f"{tp.__module__}.{tp.__qualname__}"
 
 
 # -- inputs as the task receives them ----------------------------------------------------
 
 
-def _value_kind(value: Any) -> Kind:
-    if value is None or isinstance(value, (*_SCALARS, enum.Enum)):
-        return "data"
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        return "bytes"
-    tp = type(value)
-    if _is_record(tp) or isinstance(value, (*_BUILTIN_CONTAINERS, *_USER_CONTAINERS)):
-        return "data"
-    if _is_table_type(tp):
-        return "table"
-    if _is_array_type(tp):
-        return "array"
-    return "live"
-
-
-def _shallow_table(table: Any) -> Any:
-    """A copy of ``table`` whose writes don't reach the original, made
-    without copying its data where the library allows."""
-    if _root(type(table)) == "pandas":
-        import pandas
-
-        # copy-on-write is how pandas works from 3.0: a shallow copy is
-        # cheap, and a write to either copies what it touches
-        deep = int(pandas.__version__.split(".")[0]) < 3
-        return table.copy(deep=deep)
-    clone = getattr(table, "clone", None)  # polars
-    if callable(clone):
-        return clone()
-    return table  # Arrow tables don't change in place
-
-
-def _as_input(value: Any, declared: frozenset[Kind]) -> Any:
-    """``value`` as a task receives it: data copied, a table shallow-copied,
-    an array as a read-only view, and a live object as it is. The
-    declared kinds come first: a value passes as it is only where its
-    type allows a live part (or anything), so a mapping of some class of
-    its own, passed where ``MutableMapping[str, int]`` is declared, is
-    copied all the same."""
-    kind = _value_kind(value)
-    if kind == "live":
-        if "live" in declared or "any" in declared:
-            return value
-        return copy.deepcopy(value)
-    if kind == "table":
-        return _shallow_table(value)
-    if kind == "array":
-        view = value.view()
-        view.flags.writeable = False
-        return view
-    if kind == "bytes":
-        return value if isinstance(value, bytes) else bytes(value)
-    tp = type(value)
-    if tp is list:
-        return [_as_input(v, declared) for v in value]
-    if tp is tuple:
-        return tuple(_as_input(v, declared) for v in value)
-    if tp is dict:
-        return {k: _as_input(v, declared) for k, v in value.items()}
-    return copy.deepcopy(value)
+def _entry(spec: ValueSpec, value: Any) -> Any:
+    """The host object entry for one input: data sent by value, a fresh
+    copy each run on every rung, or a live object as it is. A live
+    object where the type allows anything is passed as it is too, which
+    only in-process can carry (:func:`_unsendable`)."""
+    if not spec.spec.travels:
+        return value
+    if "any" in spec.kinds and values.find_live(value) is not None:
+        return value
+    return HostObject(value, type=spec.spec)
 
 
 # -- the brief the model starts from -------------------------------------------------------
-
-
-def _fmt(tp: Any) -> str:
-    """``tp`` written the way the agent's code would write it."""
-    if tp is _EMPTY or tp is Any:
-        return "Any"
-    if tp is None or tp is type(None):
-        return "None"
-    origin = typing.get_origin(tp)
-    if origin is not None:
-        args = typing.get_args(tp)
-        if origin is typing.Annotated:
-            return _fmt(args[0])
-        if origin is Union or origin is types.UnionType:
-            return " | ".join(_fmt(a) for a in args)
-        if origin is Literal:
-            return f"Literal[{', '.join(map(repr, args))}]"
-        name = getattr(origin, "__name__", None) or repr(origin).replace("typing.", "")
-        parts = [
-            "[" + ", ".join(_fmt(x) for x in a) + "]"
-            if isinstance(a, list)
-            else "..."
-            if a is Ellipsis
-            else _fmt(a)
-            for a in args
-        ]
-        return f"{name}[{', '.join(parts)}]" if parts else name
-    if isinstance(tp, type):
-        return tp.__name__
-    return repr(tp).replace("typing.", "")
 
 
 def _source(tp: type) -> str:
     try:
         return textwrap.dedent(inspect.getsource(tp)).strip()
     except (OSError, TypeError):
-        try:
-            fields = _fields(tp) or {}
-        except NameError:
-            fields = {}
-        body = "\n".join(f"    {n}: {_fmt(t)}" for n, t in fields.items())
+        hints = getattr(tp, "__annotations__", {})
+        body = "\n".join(
+            f"    {n}: {t if isinstance(t, str) else values.fmt(t)}"
+            for n, t in hints.items()
+        )
         return f"class {tp.__name__}:\n{body or '    ...'}"
 
 
@@ -724,7 +338,7 @@ def _brief(spec: TaskSpec, inputs: Mapping[str, Any]) -> str:
     parts = [spec.instructions or f"Do the task {spec.name!r}."]
     if inputs:
         lines = [
-            f"- `{name}: {_fmt(spec.params[name].annotation)}` = "
+            f"- `{name}: {values.fmt(spec.params[name].annotation)}` = "
             f"{reprobate.render(value, budget=PREVIEW)}"
             for name, value in inputs.items()
         ]
@@ -734,13 +348,13 @@ def _brief(spec: TaskSpec, inputs: Mapping[str, Any]) -> str:
         parts.append("When it's done, call `task.success()`.")
     else:
         parts.append(
-            f"When it's done, call `task.success(value)` with a `{_fmt(returns)}`."
+            f"When it's done, call `task.success(value)` with a `{values.fmt(returns)}`."
         )
     if spec.types:
         sources = "\n\n".join(_source(tp) for tp in spec.types.values())
         parts.append(
-            "The types, already bound by name (use these: a class you define "
-            f"yourself is a different type):\n```python\n{sources}\n```"
+            "The types, already bound by name; build values from these:"
+            f"\n```python\n{sources}\n```"
         )
     return "\n\n".join(parts)
 
@@ -748,44 +362,36 @@ def _brief(spec: TaskSpec, inputs: Mapping[str, Any]) -> str:
 # -- the run ------------------------------------------------------------------------------
 
 
-class _Finished(BaseException):
-    """Stops the script that ended its task. A ``BaseException``, so the
-    agent code's ``except Exception`` lets it through."""
+class TaskHost:
+    """The host half of ``task``: what :class:`~agex.stubs.TaskStub`'s
+    calls reach, wherever the world's code runs, typed by the task's
+    return. It records the result; the loop reads the record, never the
+    script's error, so a script that catches the stop still ends the
+    task."""
 
-
-class TaskObject:
-    """``task`` in agent code: how a task's run hands back its result.
-
-    It records the result and stops the script; the loop reads the
-    record, never the script's error, so a script that catches the stop
-    still ends the task.
-    """
-
-    def __init__(self, returns: ValueSpec) -> None:
-        self._returns = returns
+    def __init__(self, returns: values.Spec) -> None:
         self._result: tuple[Literal["success", "failed"], Any] | None = None
 
-    def __repr__(self) -> str:
-        return f"<task returning {_fmt(self._returns.annotation)}>"
+        def success(value: Any) -> None:
+            self._result = ("success", value)
 
-    def success(self, value: Any = None) -> None:
-        """End the task with ``value``, which must fit its return type;
-        one that doesn't raises ``TypeError`` here."""
-        self._returns.check(value, "task.success's value", bound=True)
-        self._result = ("success", value)
-        raise _Finished("task.success")
+        # nontainer types the call by these: the return type, compiled
+        # with the names it needed, so the value arrives built as it
+        success.__annotations__ = {"value": returns, "return": None}
+        self.success = success
+
+    def __repr__(self) -> str:
+        return "<task host>"
 
     def fail(self, reason: str) -> None:
-        """End the task without a value, saying why it can't be done."""
-        self._result = ("failed", str(reason))
-        raise _Finished("task.fail")
+        self._result = ("failed", reason)
 
 
 class _TaskSession(Session):
     """A session over a task's world: it ends when ``task`` records a
     result, and nudges a model that stops without one."""
 
-    def __init__(self, agent: Agent, ws: Workspace, task: TaskObject) -> None:
+    def __init__(self, agent: Agent, ws: Workspace, task: TaskHost) -> None:
         super().__init__(agent, ws)
         self._task = task
         self._nudged = 0
@@ -845,33 +451,75 @@ def _unwrap(name: str, outcome: Outcome) -> Any:
     raise error(name, outcome)
 
 
-def _where(ws: Workspace) -> str | None:
-    """Where ``ws``'s code runs, when it is not this process."""
-    executor = ws.runtime.executor
-    if not isinstance(executor, LocalExecutor):
+def _where(executor: Any, isolation: str) -> str | None:
+    """Where code runs on ``executor`` (``None`` for the default, a
+    ``LocalExecutor``) under ``isolation``, when it is not this
+    process."""
+    if executor is not None and not isinstance(executor, LocalExecutor):
         return f"on {type(executor).__name__}"
-    isolation = Profile.of(ws).python.isolation
     return None if isolation == "none" else f"under isolation={isolation!r}"
 
 
-def _refuse_elsewhere(name: str, ws: Workspace) -> None:
-    where = _where(ws)
-    if where is not None:
+def _unsendable(spec: TaskSpec, entries: Mapping[str, Any]) -> str | None:
+    """Why the task can't run where only data, bytes, tables and arrays
+    cross, or ``None`` when it can: a return type with a live part, or
+    an input passed as it is that isn't a live object as a whole (which
+    a proxy reaches)."""
+    if not spec.returns.spec.travels:
+        return (
+            f"it returns {values.fmt(spec.returns.annotation)}, which has a live part"
+        )
+    for name, entry in entries.items():
+        param = spec.params[name]
+        if isinstance(entry, HostObject) or param.kinds == {"live"}:
+            continue
+        if param.spec.travels:
+            return (
+                f"its argument {name!r} holds a live object where its type "
+                f"allows anything ({values.find_live(entry)})"
+            )
+        return (
+            f"its argument {name!r} is {values.fmt(param.annotation)}, which "
+            "mixes data with a live part"
+        )
+    return None
+
+
+def _refuse_unsendable(
+    spec: TaskSpec, entries: Mapping[str, Any], where: str | None
+) -> None:
+    why = _unsendable(spec, entries) if where is not None else None
+    if why is not None:
         raise NotSupportedError(
-            f"task {name!r} can't run on this world: its code runs {where}, "
-            "and task values travel only within this process so far"
+            f"task {spec.name!r} can't run on this world: its code runs {where}, "
+            f"where only data, bytes, tables and arrays cross, and {why}"
         )
 
 
-def _with_objects(profile: Profile, objects: Mapping[str, Any]) -> Profile:
-    held = profile.python.host_objects
+def _with_objects(
+    profile: Profile, objects: Mapping[str, Any], classes: tuple[type, ...]
+) -> Profile:
+    python = profile.python
+    held = python.host_objects
     clash = sorted(set(held) & set(objects))
     if clash:
         raise ValueError(
             f"the world already has host objects named {', '.join(clash)}, "
             "which the task binds too; rename the input or the type"
         )
-    python = replace(profile.python, host_objects={**held, **objects})
+    have = {klass.__name__: klass for klass in python.classes}
+    more = tuple(klass for klass in classes if have.get(klass.__name__) is not klass)
+    twice = sorted(klass.__name__ for klass in more if klass.__name__ in have)
+    if twice:
+        raise ValueError(
+            f"the world already has a class named {twice[0]!r}, a different "
+            "one from the task's; rename one of them"
+        )
+    python = replace(
+        python,
+        host_objects={**held, **objects},
+        classes=(*python.classes, *more),
+    )
     return replace(profile, python=python)
 
 
@@ -964,9 +612,11 @@ class Task:
                 "gone once the task ends"
             )
         inputs = self.spec.bind(args, kwargs)
-        task = TaskObject(self.spec.returns)
-        objects = {**self.spec.types, **inputs, "task": task}
-        opening = _WORLDS.submit(self._open, world, keep, objects)
+        entries = {
+            name: _entry(self.spec.params[name], v) for name, v in inputs.items()
+        }
+        task = TaskHost(self.spec.returns.spec)
+        opening = _WORLDS.submit(self._open, world, keep, entries, task)
         try:
             opened = await asyncio.wrap_future(opening)
         except BaseException:
@@ -987,10 +637,25 @@ class Task:
         return self._outcome(ran, task, opened.ref)
 
     def _open(
-        self, world: Workspace | None, keep: bool, objects: Mapping[str, Any]
+        self,
+        world: Workspace | None,
+        keep: bool,
+        entries: Mapping[str, Any],
+        task: TaskHost,
     ) -> _World:
+        objects = {**entries, "task": HostObject(task, stub=TaskStub)}
+        classes = tuple(self.spec.types.values())
         if world is None:
-            profile = _with_objects(self.agent.profile or Profile(), objects)
+            profile = self.agent.profile or Profile()
+            # made here, to see where its code runs before the world opens
+            # (opening refuses what can't cross, less clearly than this)
+            made = profile.executor_factory() if profile.executor_factory else None
+            _refuse_unsendable(
+                self.spec, entries, _where(made, profile.python.isolation)
+            )
+            if made is not None:
+                profile = replace(profile, executor_factory=lambda: made)
+            profile = _with_objects(profile, objects, classes)
             store = Store(memory=True)
             try:
                 ws = store.open(self.spec.name, profile=profile)
@@ -1002,14 +667,13 @@ class Task:
                 ws.close()
                 store.close()
 
-            try:
-                _refuse_elsewhere(self.spec.name, ws)
-            except BaseException:
-                discard()
-                raise
             return _World(ws, discard, None)
 
-        _refuse_elsewhere(self.spec.name, world)
+        _refuse_unsendable(
+            self.spec,
+            entries,
+            _where(world.runtime.executor, Profile.of(world).python.isolation),
+        )
         store = world.store
         if store is None:
             raise NotSupportedError(
@@ -1017,7 +681,7 @@ class Task:
                 "opened from a Store can be forked for a task, and this one "
                 "wasn't"
             )
-        profile = _with_objects(Profile.of(world), objects)
+        profile = _with_objects(Profile.of(world), objects, classes)
         name = f"{world.session}.{self.spec.name}-{new_id()[:8]}"
         # from the last commit, so the caller's branch gains nothing,
         # not even a commit of the writes it has pending
@@ -1035,7 +699,7 @@ class Task:
 
         return _World(fork, close, name if keep else None)
 
-    def _outcome(self, ran: Outcome, task: TaskObject, ref: str | None) -> Outcome:
+    def _outcome(self, ran: Outcome, task: TaskHost, ref: str | None) -> Outcome:
         result = task._result
         status: Status = ran.status
         value: Any = None

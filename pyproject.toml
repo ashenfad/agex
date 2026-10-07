@@ -47,8 +47,11 @@ Issues = "https://github.com/ashenfad/agex/issues"
 [dependency-groups]
 dev = [
     "jsonschema",
-    # Tables and arrays as task inputs (pulls in numpy).
+    # Tasks on a dud machine (its subprocess backend, Python 3.11+).
+    "nontainer[dud]",
+    # Tables and arrays as task values (pulls in numpy); tables cross as Arrow.
     "pandas>=2",
+    "pyarrow",
     "pre-commit",
     "pyright",
     "pytest",

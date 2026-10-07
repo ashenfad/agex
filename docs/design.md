@@ -366,23 +366,31 @@ can carry (this world runs under isolation="process"). Return data, a table or
 a file instead, or open the world with isolation="none".
 ```
 
-**Validation is strict and by the declared type:** in Python mode
-in-process, in JSON mode across a boundary. The only difference is
-that JSON can't tell a list from a set or a tuple. `"42"` is refused
-for an `int` both ways.
+**Validation is by the declared type, the same on every rung.** The
+caller's inputs are checked strictly, as the Python values they are.
+The value agent code passes to `task.success` is encoded and decoded
+by the return type, in-process too, so what reaches the caller is
+built afresh as the declared types, whatever the agent passed. That
+makes the encoding's looseness the rule everywhere: a list passes for
+a tuple or a set, and a dict with a record's fields (or a record of
+the agent's own with them) for the record. `"42"` is refused for an
+`int` either way.
 
 ### Inputs
 
 **Inputs are values on every rung.** A task never changes what its
-caller passed, in-process included. Copies stay cheap (checked on
-pandas 3.0.3):
-- **tables:** a shallow copy. Under pandas 3's copy-on-write, the
-  task's writes, `inplace=True` included, never reach the caller's
-  frame;
-- **arrays:** a read-only view. An in-place write raises "assignment
-  destination is read-only", which tells the model to copy first;
-- **other data:** a deep copy. These are small;
-- **off in-process:** encoded copies.
+caller passed, in-process included. Each input is typed host data
+(`HostObject(value, type=...)`), so the task's code gets a fresh copy
+each run, as a worker's unpickled one is:
+- **in-process:** `nontainer.values.copy`. Data and pandas tables are
+  deep-copied and arrays copied: a read-only view can be made writable
+  again, and a copy-on-write table's `to_numpy()` hands back the shared
+  buffer, so neither keeps the caller's object safe. Arrow and polars
+  tables, whose buffers refuse writes, pass as they are;
+- **off in-process:** pickled in, host to sandbox, the safe direction.
+
+A change the task's code makes to an input lasts the run it was made
+in; a value it wants to keep, it binds to a name of its own.
 
 **A live input is a capability, not a value.** A client or callable
 passed as an argument is bound as a host object of the task's fork,
