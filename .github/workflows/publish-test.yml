@@ -39,10 +39,14 @@ jobs:
       run: |
         # Wait a moment for TestPyPI to process
         sleep 30
-        
+
+        # The version just built: pip skips pre-release and dev versions
+        # unless asked, and a bare `agex` would install the latest full
+        # release from PyPI instead of this build.
+        VERSION=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+
         # Install from TestPyPI with main PyPI as fallback for dependencies
-        pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agex
-        
-        # Test basic import
-        python -c "import agex; print('✅ agex imported successfully from TestPyPI')"
-        python -c "from agex import Agent; print('✅ Agent class imported successfully')"
+        pip install --pre --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "agex==$VERSION"
+
+        # The installed package is this build, and it imports
+        python -c "import agex, importlib.metadata as m; v = m.version('agex'); assert v == '$VERSION', v; print('agex', v, 'imported from TestPyPI')"
