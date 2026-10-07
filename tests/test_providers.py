@@ -372,3 +372,26 @@ def test_a_providers_ids_and_details_go_back_with_its_parts():
     assert sent_text.id == "msg_1"
     assert (sent_call.id, sent_call.tool_call_id) == ("fc_1", "call_1")
     assert sent_call.provider_details == {"thought_signature": "sig=="}
+
+
+def test_an_error_openrouter_relays_from_upstream_is_worth_resuming():
+    pytest.importorskip("openai")
+    from pydantic_ai.models.openrouter import OpenRouterModel
+    from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+    provider = PydanticAIProvider(
+        OpenRouterModel("meta/x", provider=OpenRouterProvider(api_key="test-key"))
+    )
+    relayed = {
+        "message": "Provider returned error",
+        "code": 404,
+        "metadata": {"provider_name": "Meta", "provider_error_code": "model_not_found"},
+    }
+    assert provider.transient(ModelHTTPError(404, "meta/x", body=relayed))
+    assert provider.transient(ModelHTTPError(400, "meta/x", body=relayed))
+    # OpenRouter's own refusals keep their status's verdict
+    own = {"message": "meta/x is not a valid model ID", "code": 400}
+    assert not provider.transient(ModelHTTPError(400, "meta/x", body=own))
+    assert not provider.transient(ModelHTTPError(402, "meta/x", body={"code": 402}))
+    # the rule is OpenRouter's alone
+    assert not ScriptedProvider([]).transient(ModelHTTPError(404, "m", body=relayed))
