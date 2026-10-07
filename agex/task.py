@@ -31,7 +31,10 @@ on a dud machine, the same way. Types are nontainer's
   can't change what its caller passed. A live input (a client, a
   callable) is a capability: it is bound as a host object of the
   task's world as it is, under that world's host-object policy, and
-  reached through a proxy where the world's code runs elsewhere.
+  reached through a proxy where the world's code runs elsewhere. A
+  value mixing the two (``dict[str, Client]``), which only in-process
+  can carry, gets one copy of its data for the task, its live objects
+  shared.
 - **The value comes back built as the return type.** ``task`` is a
   stubbed host object (``nontainer.remote``): agent code holds
   :class:`agex.stubs.TaskStub`, and what it passes to ``task.success``
@@ -47,6 +50,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import dataclasses
 import functools
 import inspect
 import textwrap
@@ -307,14 +311,43 @@ def _qualified(tp: type) -> str:
 
 def _entry(spec: ValueSpec, value: Any) -> Any:
     """The host object entry for one input: data sent by value, a fresh
-    copy each run on every rung, or a live object as it is. A live
-    object where the type allows anything is passed as it is too, which
-    only in-process can carry (:func:`_unsendable`)."""
-    if not spec.spec.travels:
-        return value
-    if "any" in spec.kinds and values.find_live(value) is not None:
-        return value
-    return HostObject(value, type=spec.spec)
+    copy each run on every rung, or a live object as it is. A value
+    mixing the two (under a type with a live part, or a live object
+    where the type allows anything), which only in-process can carry
+    (:func:`_unsendable`), is one copy of its data for the task,
+    sharing its live objects."""
+    if spec.spec.travels and not (
+        "any" in spec.kinds and values.find_live(value, full=True) is not None
+    ):
+        return HostObject(value, type=spec.spec)
+    return _detach(value)
+
+
+def _detach(value: Any) -> Any:
+    """``value``'s data copied and its live objects shared: built-in
+    containers, dataclasses and named tuples are rebuilt down to the
+    live objects, and a part holding none is copied whole
+    (:func:`nontainer.values.copy`). A live object, or a container of a
+    class of its own that holds one, passes as it is."""
+    if values.find_live(value, full=True) is None:
+        return values.copy(value)
+    kind = type(value)
+    if kind is list:
+        return [_detach(item) for item in value]
+    if kind is tuple:
+        return tuple(_detach(item) for item in value)
+    if kind is dict:
+        return {key: _detach(item) for key, item in value.items()}
+    if kind is set or kind is frozenset:
+        return kind(_detach(item) for item in value)
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        fields = dataclasses.fields(value)
+        return replace(
+            value, **{f.name: _detach(getattr(value, f.name)) for f in fields if f.init}
+        )
+    if isinstance(value, tuple) and hasattr(kind, "_fields"):
+        return kind._make(_detach(item) for item in value)  # type: ignore[attr-defined]
+    return value
 
 
 # -- the brief the model starts from -------------------------------------------------------
