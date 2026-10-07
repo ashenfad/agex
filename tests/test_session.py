@@ -274,5 +274,32 @@ def test_the_run_record_holds_text_parts(ws):
     outcome = agent(says("hi")).session(ws).say("hello")
     body = conversation.read_runs(ws.provider.kv, [outcome.run_id])[outcome.run_id]
     assert body["run_id"] == outcome.run_id and body["status"] == "completed"
-    assert body["messages"][0]["parts"] == [{"kind": "text", "text": "hello"}]
+    assert body["messages"][0]["parts"] == [
+        {"kind": "text", "text": "hello", "id": None, "provider": None, "details": None}
+    ]
     assert Text(text="hello") in agent().session(ws).runs[0].messages[0].parts
+
+
+def test_say_after_say_keeps_the_models_client_working(ws):
+    """A model's client keeps connections on the loop it first ran on, as
+    an HTTP client does: blocking turns all run on one loop, so the second
+    say finds the first one's client still usable."""
+    import asyncio
+
+    from pydantic_ai.models.function import FunctionModel
+
+    from agex.providers.pydanticai import PydanticAIProvider
+
+    loops = []
+
+    async def reply(messages, info):
+        loop = asyncio.get_running_loop()
+        if loops and loops[0] is not loop:
+            raise RuntimeError("Event loop is closed")  # what a client finds
+        loops.append(loop)
+        yield "ok"
+
+    model = FunctionModel(stream_function=reply, model_name="bound")
+    chat = Agent(PydanticAIProvider(model)).session(ws)
+    assert [chat.say("one").status, chat.say("two").status] == ["completed"] * 2
+    assert len(loops) == 2

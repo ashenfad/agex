@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
@@ -119,13 +120,51 @@ def _describe(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
 
 
+class _SyncLoop:
+    """The event loop the blocking front doors (``say``, ``resume``) run
+    their turns on: one for the process, on a thread of its own, made
+    when first needed.
+
+    One loop, not one per call: a model's client keeps the connections it
+    opened, and they belong to the loop they were opened on, so a turn on
+    a fresh loop (``asyncio.run``) would find them on a closed one.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def loop(self) -> asyncio.AbstractEventLoop:
+        with self._lock:
+            if self._loop is None or self._loop.is_closed():
+                loop = asyncio.new_event_loop()
+                threading.Thread(
+                    target=loop.run_forever, name="agex-sync", daemon=True
+                ).start()
+                self._loop = loop
+            return self._loop
+
+    def run(self, coro: Any) -> Any:
+        future = asyncio.run_coroutine_threadsafe(coro, self.loop())
+        try:
+            return future.result()
+        except BaseException:
+            # interrupted while waiting (Ctrl-C): the turn is cancelled,
+            # and ends cancelled on its loop as any other would
+            future.cancel()
+            raise
+
+
+_SYNC = _SyncLoop()
+
+
 def _block(coro: Any, name: str) -> Outcome:
-    """Run ``coro`` to its end on a loop of its own, from code that has
+    """Run ``coro`` to its end on agex's own loop, from code that has
     none; refused where a loop is running, which this would block."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
+        return _SYNC.run(coro)
     coro.close()
     raise RuntimeError(
         "this blocks, and this thread is running an event loop; "

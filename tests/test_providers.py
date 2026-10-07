@@ -144,13 +144,23 @@ async def test_tools_and_settings_reach_the_model():
         WRITE.parameters,
     )
     assert info.model_settings is not None
-    assert {
-        k: info.model_settings.get(k) for k in ("max_tokens", "temperature", "top_p")
-    } == {
+    keys = ("max_tokens", "temperature", "top_p")
+    assert {k: info.model_settings.get(k) for k in keys} == {
         "max_tokens": 200,
         "temperature": 0.5,
         "top_p": 0.9,
     }
+
+
+def test_thinking_becomes_pydantic_ais_own_setting():
+    """pydantic-ai translates it for each provider (and drops it for a
+    model that cannot reason, the scripted one included), so what agex
+    owes it is the setting itself."""
+    from agex.providers.pydanticai import _model_settings
+
+    assert _model_settings(Settings(thinking="high")) == {"thinking": "high"}
+    assert _model_settings(Settings(thinking=False)) == {"thinking": False}
+    assert _model_settings(Settings()) is None
 
 
 def test_a_tool_spec_comes_from_a_workspace_tool():
@@ -329,3 +339,36 @@ def test_which_errors_are_worth_resuming():
     assert provider.transient(ConnectionRefusedError())
     assert not provider.transient(ModelAPIError("m", "the response was filtered"))
     assert not provider.transient(ValueError("a bug"))
+
+
+def test_a_providers_ids_and_details_go_back_with_its_parts():
+    """Gemini signs a tool call (``thought_signature`` in its details),
+    OpenAI's Responses API names each reply item (``fc_...``,
+    ``rs_...``): what the reply carried is sent back as it came."""
+    response = pai.ModelResponse(
+        parts=[
+            pai.ThinkingPart(
+                content="", signature="enc", id="rs_1", provider_name="openai"
+            ),
+            pai.TextPart(content="ok", id="msg_1", provider_name="openai"),
+            pai.ToolCallPart(
+                tool_name="file_write",
+                args={"path": "a"},
+                tool_call_id="call_1",
+                id="fc_1",
+                provider_name="google",
+                provider_details={"thought_signature": "sig=="},
+            ),
+        ],
+        provider_name="openai",
+    )
+    message = from_response(response, id="m1")
+    thinking, text, call = message.parts
+    assert (thinking.id, text.id, call.id) == ("rs_1", "msg_1", "fc_1")
+    assert call.details == {"thought_signature": "sig=="} and call.provider == "google"
+    (back,) = to_messages([message])
+    sent_thinking, sent_text, sent_call = back.parts
+    assert (sent_thinking.id, sent_thinking.signature) == ("rs_1", "enc")
+    assert sent_text.id == "msg_1"
+    assert (sent_call.id, sent_call.tool_call_id) == ("fc_1", "call_1")
+    assert sent_call.provider_details == {"thought_signature": "sig=="}

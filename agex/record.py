@@ -54,10 +54,15 @@ def new_id() -> str:
 
 @dataclass(frozen=True, kw_only=True)
 class Text:
-    """Prose: what a person said, or what the model replied."""
+    """Prose: what a person said, or what the model replied. A model's
+    text keeps the provider's own ``id`` for it and any ``details`` the
+    provider attached, which some send back."""
 
     kind: Literal["text"] = "text"
     text: str
+    id: str | None = None
+    provider: str | None = None
+    details: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -73,6 +78,7 @@ class Thinking:
     kind: Literal["thinking"] = "thinking"
     text: str
     signature: str | None = None
+    id: str | None = None
     provider: str | None = None
     details: dict[str, Any] | None = None
 
@@ -80,12 +86,21 @@ class Thinking:
 @dataclass(frozen=True, kw_only=True)
 class ToolCall:
     """A tool call the model made. ``call_id`` is the provider's id for
-    it, which the matching :class:`ToolResult` carries back."""
+    it, which the matching :class:`ToolResult` carries back.
+
+    ``id`` is the provider's id for the call as an item of its reply (an
+    OpenAI Responses ``fc_...`` id), and ``details`` what else it
+    attached (Gemini's ``thought_signature``). Both go back with the
+    call, or the provider may refuse the next request.
+    """
 
     kind: Literal["tool_call"] = "tool_call"
     call_id: str
     name: str
     args: dict[str, Any] = field(default_factory=dict)
+    id: str | None = None
+    provider: str | None = None
+    details: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

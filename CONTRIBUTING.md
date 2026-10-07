@@ -25,12 +25,15 @@ CI runs all three on every pull request: tests on Python 3.10-3.14,
 lint and types once. Without the extras, the tests that need a
 provider's SDK skip.
 
-Live tests call a real model and are deselected unless asked for. They
-need `OPENROUTER_API_KEY`, and `AGEX_LIVE_MODEL` picks the model
-(`openrouter:meta/muse-spark-1.3-contributor` by default):
+Live tests call real models and are deselected unless asked for. Each
+provider's run when its key is set (`OPENROUTER_API_KEY`,
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`), on a small
+model by default; `AGEX_LIVE_MODEL` (OpenRouter), `AGEX_LIVE_ANTHROPIC`,
+`AGEX_LIVE_OPENAI` and `AGEX_LIVE_GOOGLE` pick others:
 
 ```bash
-uv run --extra openrouter pytest -m live
+uv run --all-extras pytest -m live            # every provider with a key
+uv run --all-extras pytest -m live -k google  # one of them
 ```
 
 ## Commits and changes

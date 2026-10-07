@@ -70,6 +70,9 @@ def test_a_run_reads_back_from_its_json():
         "call_id": "toolu_1",
         "name": "file_write",
         "args": {"path": "a"},
+        "id": None,
+        "provider": None,
+        "details": None,
     }
     assert load_run(data) == run
 
