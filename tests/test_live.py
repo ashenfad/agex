@@ -107,15 +107,12 @@ def ws():
 
 
 def say(chat, prompt):
-    """A turn, tried once more when a router's upstream failed it: an
-    OpenRouter backend sometimes answers "Provider returned error" (a 404
-    for a model it serves) and the next request goes through. Anything
-    else is the turn's own outcome."""
+    """A turn, resumed once if a provider's failure interrupted it: an
+    OpenRouter backend sometimes relays an error (a 404 for a model it
+    serves) that the next request gets past."""
     outcome = chat.say(prompt)
-    if outcome.status == "failed" and "Provider returned error" in (
-        outcome.message or ""
-    ):
-        outcome = chat.say(prompt)
+    if outcome.status == "interrupted":
+        outcome = chat.resume()
     return outcome
 
 

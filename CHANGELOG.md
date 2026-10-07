@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Live tests: `pytest -m live`.** Opt-in, per provider whose key is set, on small models by default.
 - **Turn endings: `cancel()`, `resume()`.** A turn ends `completed`, `cancelled`, `failed` or `interrupted` (a transient provider error), never raising; a cancelled or failed run keeps its work with a closing note, and `resume()` / `aresume()` / `stream(resume=True)` continue an interrupted one in place.
 - **`agex.conformance.AgexHarness`.** agex under nontainer's harness corpus; it passes every scenario, with no known gaps.
-- **Provider protocol: `agex.providers.Provider`.** `stream(messages, tools, settings)` yields text and reasoning deltas, then the whole reply, and `transient(error)` says whether a failed request is worth resuming (an HTTP 408, 409, 425, 429 or 5xx, or a provider that could not be reached); `PydanticAIProvider` implements it over `pydantic_ai.direct`, and `ScriptedProvider` replies from a script, for tests.
+- **Provider protocol: `agex.providers.Provider`.** `stream(messages, tools, settings)` yields text and reasoning deltas, then the whole reply, and `transient(error)` says whether a failed request is worth resuming (an HTTP 408, 409, 425, 429 or 5xx, a provider that could not be reached, or an error OpenRouter relays from the upstream it routed to); `PydanticAIProvider` implements it over `pydantic_ai.direct`, and `ScriptedProvider` replies from a script, for tests.
 - **Stored run record v0: `agex.record`.** `Run` and `Message` with text, reasoning, tool-call and tool-result parts, stable message ids and usage; `dump_run` / `load_run` read and write it as JSON.
 
 ### Fixed

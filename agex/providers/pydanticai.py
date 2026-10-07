@@ -49,6 +49,18 @@ TRANSIENT_STATUS = frozenset({408, 409, 425, 429})
 _UNREACHABLE_NAMES = frozenset({"APIConnectionError", "APITimeoutError"})
 
 
+def _relayed(error: ModelHTTPError) -> bool:
+    """Whether OpenRouter relayed this error from the upstream provider
+    rather than refusing the request itself."""
+    body = error.body
+    if not isinstance(body, dict):
+        return False
+    metadata = body.get("metadata")
+    return body.get("message") == "Provider returned error" or (
+        isinstance(metadata, dict) and "provider_name" in metadata
+    )
+
+
 def _is_httpx_transport(error: BaseException) -> bool:
     # by name: httpx comes with a provider's SDK, not with agex
     return any(
@@ -352,8 +364,17 @@ class PydanticAIProvider:
         server-side error (5xx, 529 included), or a provider that could
         not be reached at all (a connection refused, dropped or timed
         out). Anything else, a refused request or a content filter, is
-        not."""
+        not.
+
+        Through OpenRouter, an error OpenRouter relays from the upstream
+        provider it routed to ("Provider returned error") is transient
+        whatever its status: a backend failing (a 404 for a model it
+        serves, say) is often past on the next request, which may route
+        elsewhere. OpenRouter's own refusals (an unknown model, no
+        credits) are not relayed, and keep their status's verdict."""
         if isinstance(error, ModelHTTPError):
+            if self.model.system == "openrouter" and _relayed(error):
+                return True
             code = error.status_code
             return code in TRANSIENT_STATUS or code >= 500
         return _unreachable(error)
