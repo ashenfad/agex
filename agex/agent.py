@@ -23,7 +23,7 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from nontainer import NotSupportedError, Profile, Workspace, conversation
 from nontainer.adapters.render import toolkit_instructions
@@ -55,6 +55,9 @@ from .record import (
     new_id,
 )
 
+if TYPE_CHECKING:
+    from .task import Task
+
 __all__ = [
     "CLOSING_NOTE",
     "CUT_OFF",
@@ -63,6 +66,7 @@ __all__ = [
     "Outcome",
     "RunStream",
     "Session",
+    "Status",
     "closing_note",
 ]
 
@@ -158,9 +162,10 @@ class _SyncLoop:
 _SYNC = _SyncLoop()
 
 
-def _block(coro: Any, name: str) -> Outcome:
+def _block(coro: Any, instead: str) -> Any:
     """Run ``coro`` to its end on agex's own loop, from code that has
-    none; refused where a loop is running, which this would block."""
+    none; refused where a loop is running, which this would block.
+    ``instead`` names the awaitable to use there (``session.asay``)."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -168,8 +173,16 @@ def _block(coro: Any, name: str) -> Outcome:
     coro.close()
     raise RuntimeError(
         "this blocks, and this thread is running an event loop; "
-        f"use `await session.{name}(...)` there"
+        f"use `await {instead}(...)` there"
     )
+
+
+Status = Literal[
+    "completed", "cancelled", "interrupted", "failed", "success", "needs_input"
+]
+"""How a run ended: a run status (:data:`nontainer.turns.RunStatus`),
+or for a task, ``success`` (it handed back its value) or
+``needs_input``."""
 
 
 @dataclass(frozen=True)
@@ -177,18 +190,26 @@ class Outcome:
     """How a run went.
 
     ``status`` is how it ended, ``text`` the model's last reply, and
-    ``head`` the commit the session stands at afterwards (``None`` on a
-    workspace that does not version). ``events`` are what the run
-    streamed, and ``message`` says why it did not complete, when it
-    did not.
+    ``head`` the commit the run's workspace stands at afterwards
+    (``None`` on a workspace that does not version). ``events`` are what
+    the run streamed, and ``message`` says why it did not complete, when
+    it did not.
+
+    A task's outcome also carries its ``value`` (on ``success``) and,
+    when its world was kept, ``ref``: the session its fork lives on.
+    A session's turn ends with a run status; a task's ends ``success``,
+    ``failed`` (``task.fail``, an error, or no answer), ``cancelled`` or
+    ``interrupted``.
     """
 
-    status: RunStatus
+    status: Status
     text: str
     run_id: str
     head: str | None
     events: tuple[TurnEvent, ...] = ()
     message: str | None = None
+    value: Any = None
+    ref: str | None = None
 
 
 class Agent:
@@ -228,6 +249,14 @@ class Agent:
         """A session driving ``ws``, which may already hold an agex
         conversation (it continues) or none (it starts one)."""
         return Session(self, ws, inbox=inbox)
+
+    def task(self, fn: Callable[..., Any]) -> Task:
+        """A task: ``fn``'s signature and docstring, run by this agent on
+        a world of its own (see :mod:`agex.task`). Use it as a
+        decorator."""
+        from .task import Task
+
+        return Task(self, fn)
 
 
 class Session:
@@ -320,11 +349,28 @@ class Session:
         text = "\n\n".join(t for t in (self.agent.primer, instructions) if t)
         return Message(id="system", role="system", parts=(Text(text=text),))
 
+    # -- where a run may end (a task's loop overrides these) ------------------------
+
+    def _after_call(self, output: str, is_error: bool) -> tuple[str, bool]:
+        """A tool call's result as the model will read it."""
+        return output, is_error
+
+    def _done(self) -> bool:
+        """Whether the run is over once the call just made returns,
+        leaving any calls after it in the same reply unrun."""
+        return False
+
+    def _on_stop(self, reply: Message) -> Message | str | None:
+        """What follows a reply that calls no tool: ``None`` ends the run
+        completed, a message is sent back to the model and the run goes
+        on, and text fails the run, saying why."""
+        return None
+
     # -- the front doors ------------------------------------------------------------
 
     def say(self, prompt: str) -> Outcome:
         """Run one turn; its outcome. From a coroutine, ``await asay``."""
-        return _block(self.asay(prompt), "asay")
+        return _block(self.asay(prompt), "session.asay")
 
     async def asay(self, prompt: str) -> Outcome:
         """Run one turn; its outcome."""
@@ -333,7 +379,7 @@ class Session:
     def resume(self) -> Outcome:
         """Continue the last turn in place, which an interruption cut
         short; its outcome. From a coroutine, ``await aresume``."""
-        return _block(self.aresume(), "aresume")
+        return _block(self.aresume(), "session.aresume")
 
     async def aresume(self) -> Outcome:
         """Continue the last turn in place; its outcome."""
@@ -464,8 +510,15 @@ class Session:
                 calls = [p for p in reply.parts if isinstance(p, ToolCall)]
                 if not calls:
                     text = reply.text
+                    after = self._on_stop(reply)
+                    if isinstance(after, Message):
+                        messages.append(after)
+                        continue
+                    if after is not None:
+                        status, message = "failed", after
                     break
                 results = []
+                done = False
                 for call in calls:
                     self._check_cancel()
                     push(
@@ -479,7 +532,7 @@ class Session:
                         result=CUT_OFF,
                         is_error=True,
                     )
-                    output, is_error = await self._call(call)
+                    output, is_error = self._after_call(*await self._call(call))
                     # the tool ran, and may have changed the workspace: its
                     # result stands from here, however the turn ends
                     unended = ToolEnded(
@@ -502,6 +555,13 @@ class Session:
                         results[-1] = replace(results[-1], content=delivered)
                     push(unended)
                     unended = None
+                    done = self._done()
+                    if done:
+                        break
+                if done:
+                    # the calls left in ``calls`` get their results as the
+                    # run ends, as a cut-short run's do
+                    break
                 messages.append(Message(id=new_id(), role="tool", parts=tuple(results)))
                 calls = []
             else:
