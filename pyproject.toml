@@ -82,3 +82,6 @@ typeCheckingMode = "basic"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Live tests call a real model; run them with `-m live` (see tests/test_live.py).
+addopts = "-m 'not live'"
+markers = ["live: calls a real model over the network (opt in with -m live)"]

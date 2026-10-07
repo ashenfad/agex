@@ -21,9 +21,10 @@ jobs:
         enable-cache: true
         cache-dependency-glob: pyproject.toml
     - name: Install
-      run: uv sync
+      # the provider SDKs too, for the tests against a local endpoint
+      run: uv sync --all-extras
     - name: Run tests
-      run: uv run pytest -v
+      run: uv run --all-extras pytest -v
 
   checks:
     runs-on: ubuntu-latest

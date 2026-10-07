@@ -39,6 +39,7 @@ from nontainer.turns import (
     TurnEvent,
     Usage,
 )
+from pydantic_ai.models import Model
 
 from .providers import Provider, Reply, Settings, ToolSpec
 from .providers.pydanticai import PydanticAIProvider
@@ -154,8 +155,10 @@ class Outcome:
 class Agent:
     """A loop over a model.
 
-    ``model`` is a :class:`~agex.providers.Provider` or a model name
-    pydantic-ai knows (``"anthropic:claude-sonnet-5-5"``). ``primer``
+    ``model`` is a :class:`~agex.providers.Provider`, a model name
+    pydantic-ai knows (``"openrouter:meta/muse-spark-1.3-contributor"``),
+    or a pydantic-ai ``Model`` (one pointed at a local OpenAI-compatible
+    endpoint, say). ``primer``
     opens every request, ahead of the workspace's own tool instructions.
     ``profile`` is the environment for worlds the agent creates itself; a
     session uses its workspace's own. ``max_steps`` bounds the model
@@ -164,7 +167,7 @@ class Agent:
 
     def __init__(
         self,
-        model: Provider | str,
+        model: Provider | Model | str,
         *,
         primer: str = "",
         profile: Profile | None = None,
@@ -172,7 +175,7 @@ class Agent:
         max_steps: int = MAX_STEPS,
     ) -> None:
         self.provider: Provider = (
-            PydanticAIProvider(model) if isinstance(model, str) else model
+            PydanticAIProvider(model) if isinstance(model, (str, Model)) else model
         )
         self.primer = primer
         self.profile = profile

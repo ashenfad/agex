@@ -308,3 +308,24 @@ def test_a_requests_parts_keep_their_order():
         "c2",
         "c3",
     ]
+
+
+def test_which_errors_are_worth_resuming():
+    from pydantic_ai.exceptions import ModelAPIError
+
+    provider = ScriptedProvider([])
+    for code in (408, 409, 425, 429, 500, 502, 503, 529):
+        assert provider.transient(ModelHTTPError(code, "m")), code
+    for code in (400, 401, 402, 403, 404, 422):
+        assert not provider.transient(ModelHTTPError(code, "m")), code
+
+    class APIConnectionError(Exception):
+        """Named as the provider SDKs name it."""
+
+    unreachable = ModelAPIError("m", "Connection error.")
+    unreachable.__cause__ = APIConnectionError()
+    assert provider.transient(unreachable)
+    assert provider.transient(TimeoutError())
+    assert provider.transient(ConnectionRefusedError())
+    assert not provider.transient(ModelAPIError("m", "the response was filtered"))
+    assert not provider.transient(ValueError("a bug"))

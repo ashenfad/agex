@@ -45,6 +45,33 @@ _logger = logging.getLogger(__name__)
 #: HTTP statuses below 500 that a later attempt may get past.
 TRANSIENT_STATUS = frozenset({408, 409, 425, 429})
 
+#: What the provider SDKs name a provider they could not reach.
+_UNREACHABLE_NAMES = frozenset({"APIConnectionError", "APITimeoutError"})
+
+
+def _is_httpx_transport(error: BaseException) -> bool:
+    # by name: httpx comes with a provider's SDK, not with agex
+    return any(
+        cls.__name__ == "TransportError" and cls.__module__.startswith("httpx")
+        for cls in type(error).__mro__
+    )
+
+
+def _unreachable(error: BaseException) -> bool:
+    """Whether ``error`` (or what caused it) says the provider could not
+    be reached: the SDKs' connection and timeout errors, httpx's
+    transport errors, or the builtin connection and timeout errors."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, (ConnectionError, TimeoutError)):
+            return True
+        if type(current).__name__ in _UNREACHABLE_NAMES or _is_httpx_transport(current):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
 
 # -- agex messages to pydantic-ai ---------------------------------------------------
 
@@ -294,13 +321,16 @@ class PydanticAIProvider:
         return f"<{type(self).__name__} {self.name}>"
 
     def transient(self, error: BaseException) -> bool:
-        """An HTTP error the provider may get past: a timeout (408), a
-        conflict or too-early (409, 425), a rate limit (429), or any
-        server-side error (5xx, 529 included)."""
+        """An error the provider may get past: an HTTP timeout (408), a
+        conflict or too-early (409, 425), a rate limit (429) or any
+        server-side error (5xx, 529 included), or a provider that could
+        not be reached at all (a connection refused, dropped or timed
+        out). Anything else, a refused request or a content filter, is
+        not."""
         if isinstance(error, ModelHTTPError):
             code = error.status_code
             return code in TRANSIENT_STATUS or code >= 500
-        return False
+        return _unreachable(error)
 
     async def stream(
         self,
