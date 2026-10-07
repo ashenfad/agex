@@ -81,7 +81,7 @@ and they differ only in their defaults:
 | world | the session's branch, mutated in place | always a **fork**; the caller's world is untouched |
 | transcript | carried across turns | fresh |
 | result | text, plus the new head | a typed value, plus the fork's ref |
-| ends when | the model stops calling tools | `task_success(value)` |
+| ends when | the model stops calling tools | `task.success(value)` |
 
 So "functional" is precise: a task is pure with respect to the world,
 and its only effects go through host objects.
@@ -120,11 +120,13 @@ sync or `async def` tasks). The loop underneath is async-native.
 
 ### Outcomes come back through a host object
 
-`task_success`, `task_fail` and "needs input" (covering both
-clarifying questions and permission requests) are methods on one
-`task` host object. It is a *harness host object*: the loop attaches
-it to each session it runs, through the small hook in plan step 1.
-nontainer needs no knowledge of agex.
+`task.success(value)`, `task.fail(reason)` and
+`task.needs_input(question)` (covering both clarifying questions and
+permission requests) are methods on one `task` host object. It is a
+*harness host object*: the loop attaches it to each session it runs.
+nontainer needs no knowledge of agex. A task's fork gets it through
+`Store.fork(..., profile=...)`, which adds host objects when the fork
+opens.
 
 **Probed on nontainer 0.8.7, in-process and process isolation:**
 - A bare function works as a host object.
@@ -145,16 +147,11 @@ nontainer needs no knowledge of agex.
   plain `RuntimeError`, which `except Exception` could swallow; the
   recorded value still wins there.
 - **One object per session, with a swappable slot.** The loop sets the
-  slot (return schema, destination) before each run. The single-writer
-  rule makes the swap safe. Delegates are their own sessions with
-  their own objects.
-- **The value depends on the rung.**
-  - In-process: the live object (the actual DataFrame).
-  - Process isolation: a pickled copy. That is the known trust seam.
-  - dud: JSON, bytes or file refs only.
-
-  The typed codec (nontainer #110) fixes the last two. It is the same
-  dependency as `ask(returns=)`.
+  slot (the task's spec, the destination) before each run. The
+  single-writer rule makes the swap safe. Delegates are their own
+  sessions with their own objects.
+- **How the value travels depends on the rung**, and the declared type
+  decides what may travel at all. See "Task values" below.
 - **The value is also written to the world.** The handler writes the
   encoded value under a reserved key, through the workspace's
   re-entrant lock (host objects calling back into the workspace is a
@@ -162,6 +159,31 @@ nontainer needs no knowledge of agex.
   resume, or a parent reading a delegate's ref, can find it.
 - **sandtrap cleanup.** sandtrap can drop its leftover agex-specific
   `TaskSuccess` / `TaskContinue` handling.
+
+### Task calls (agreed 2026-10-07)
+
+- **What agent code sees:** each argument bound by its own name, the
+  way a function's parameters read, plus `task`.
+- **Statuses.** `Outcome.status` is a run status or one of two
+  task-level ones:
+  - `success`, with `value`;
+  - `failed`, from `task.fail(reason)` or an error;
+  - `needs_input`, with the question; `out.resume(answer)` continues
+    it;
+  - `cancelled`;
+  - `interrupted`.
+
+  A plain call (`grade(rs)`) returns the value, or raises `TaskFailed`
+  or `NeedsInput`.
+- **A model that stops without finishing** is nudged within the same
+  run to finish with `task.success(...)` or `task.fail(...)`, up to
+  twice. Then the task fails.
+- **Worlds:**
+  - by default, a scratch world in a memory store, built from
+    `agent.profile` and discarded afterwards;
+  - `world=ws` always forks, through `Store.fork(..., profile=...)`
+    with `task` and the inputs added;
+  - `keep=True` keeps the fork, and `out.ref` names it.
 
 ### Spawn folds into delegation
 
@@ -182,8 +204,9 @@ observability and merge-back for free.
 
 There are two real losses:
 - **Live in-process return values.** A spawn could hand back a closure
-  or a live object. Delegates return values through the typed codec,
-  and large artifacts travel as files in the fork.
+  or a live object. A delegate is its own session, so its value
+  crosses through the value encoding ("Task values"), and large
+  artifacts travel as files it writes in its fork.
 - **Cheapness.** A spawn was just a thread. An `ask` is a fork plus a
   runner turn plus commits. Forks are O(1); the real cost is the
   ephemeral-branch GC already planned for step 2.
@@ -239,6 +262,182 @@ The TS side mirrors this at the shape freeze:
 - `agent.task`;
 - a new `agent.session(world)`;
 - no `spawn`.
+
+## Task values (2026-10-07)
+
+How a task's inputs and its value travel between the caller, the
+kernel and the world, on every rung.
+
+**JSON Schema can't be the contract.** It describes JSON values, so it
+covers only the data subset of Python types. Checked on pydantic
+2.13:
+- plain classes, DataFrame-like objects and callables have no schema;
+- `Union[Response, Frame]`, with `Frame` an opaque class, yields
+  `Response`'s schema alone. The other branch is dropped without a
+  warning.
+
+### What crosses today
+
+- **Into the kernel is the safe direction.** The kernel only unpickles
+  what the host wrote. dud already sends app handlers' `Request` in as
+  a host-to-guest pickle.
+- **Out of the kernel is the risky one:**
+  - in-process: there is no boundary, so the caller gets the live
+    object;
+  - process isolation: the host unpickles it, which is the hole in
+    sandtrap's own threat model;
+  - dud: the host never unpickles. Only JSON, bytes and file refs
+    cross, and large payloads are expected as files.
+- **Variables don't survive between `run_python` calls.** Task inputs
+  are bound again on every call, as host objects already are.
+- **nontainer keeps per-call data apart from live resources**
+  (`inputs` vs `host_objects`). Merging them would make moving off
+  in-process "a silent breaking change"; keeping them apart "makes the
+  contract checkable at the right moment". Task values follow the same
+  principle.
+
+### Rule 1: the declared type picks the encoding and drives decoding
+
+Pickle's flaw is that it rebuilds whatever the bytes ask for. Here the
+decoder only ever builds the type the task declared, never what the
+payload claims. Checked on pydantic 2.13:
+- in-process, validating a valid value returns the same object;
+- JSON decoded by the declared type rebuilds sets, tuples, datetimes
+  and enums exactly.
+
+| kind | examples | on the wire | JSON schema | where it can go |
+|---|---|---|---|---|
+| data | primitives, containers, dataclasses, TypedDict, pydantic models, Enum, datetime | JSON | yes | everywhere, including apps and TS |
+| table | DataFrame, Series, `pa.Table`, anything with `__arrow_c_stream__` | Arrow IPC stream | columns only | wherever pyarrow (or apache-arrow in TS) is |
+| array | `ndarray` | `.npy`, loaded with `allow_pickle=False` | no | any Python rung |
+| bytes and files | `bytes`, a file the agent wrote in its world | bytes or a file ref | yes | everywhere |
+| live | callables, clients, generators | none | no | in-process only |
+
+- **Nested values work.** On the wire a value is a JSON tree whose
+  leaves can be tagged references to binary parts, and a tag is
+  accepted only where the declared type allows that kind. So
+  `dict[str, DataFrame]` comes back as a dict of DataFrames. (App
+  handler returns flatten nested tables to rows instead, which is an
+  HTTP choice.)
+- **Embedders can register more kinds.** A kind needs an encoder that
+  can run in the kernel and a decoder on the host.
+- **`Any` or no annotation** means any data off in-process, decoded as
+  plain JSON values.
+
+### Rule 2: two classes of world, checked early
+
+**In-process carries anything. Everything else carries exactly the
+encodable kinds.** "Everything else" is process isolation, dud, apps,
+TS, and anything stored for a later resume.
+
+**Process isolation uses the encoding too, not a restricted
+unpickler.** sandtrap's roadmap leans toward a restricted unpickler
+("option A"). That would let process isolation carry more than dud, and
+moving a world from process to dud would become a breaking change. With
+one encoding, "works under process isolation" implies "works on dud".
+The `task` channel then carries only built-in values, so a restricted
+unpickler needs nothing beyond the built-ins on that path.
+
+**The check runs as soon as the rung is known, and never mid-run:**
+- when `@agent.task` is applied, against `agent.profile`;
+- when a task is called with `world=`, against that world, before any
+  model call;
+- in the kernel, when agent code defines a task there.
+
+The error names the type, the rung and the ways out:
+
+```
+TypeError: clean returns Callable[[Row], bool], which only an in-process world
+can carry (this world runs under isolation="process"). Return data, a table or
+a file instead, or open the world with isolation="none".
+```
+
+**Validation is strict and by the declared type:** in Python mode
+in-process, in JSON mode across a boundary. The only difference is
+that JSON can't tell a list from a set or a tuple. `"42"` is refused
+for an `int` both ways.
+
+### Inputs
+
+- **In-process:** the caller's own objects, passed by reference, the
+  way a function call works.
+- **Elsewhere:** encoded copies.
+- **Large values spill to blobs in the reserved `__task__` plane,
+  never to files in the agent's tree.** curation's rule ("no agent's
+  tree has a second author") keeps loop-written data out of the file
+  tree. The transport for large blobs is the nontainer step's to
+  settle: dud already moves large cache values on binary frames, and
+  its hostcall payloads are specced small.
+- **A live input can't be stored**, so resuming after a restart needs
+  the embedder to supply it again.
+
+### The `__task__` plane
+
+A reserved plane, like `__conversation__`, holding the task's spec,
+its encoded inputs and its encoded value. A resume, a parent reading a
+delegate's ref, or an app reads it there. A live value is not stored;
+the `Outcome` holds it.
+
+### What the model sees
+
+Python, never a schema:
+- the signature;
+- the source of the types involved;
+- a preview of each input (a table's columns and first rows, an
+  array's shape and dtype);
+- for a live object, its type name, docstring and public methods.
+
+Old agex did the same. The model writes Python anyway.
+
+### Who defines tasks
+
+**People embedding agex** annotate normally. Data and tables need no
+registration.
+
+```python
+@agent.task
+def clean(df: pd.DataFrame, rules: list[Rule]) -> pd.DataFrame:
+    """Apply the rules to the table."""
+
+clean(df, rules)                          # in-process: anything, live objects
+clean.run(df, rules, world=isolated_ws)   # Arrow for df, JSON for rules
+```
+
+`Outcome.value` is always the declared type, never a dict or bytes
+stand-in. If it can't be, the check fails before the run.
+
+**Agent code** gets delegation through a harness host object (`ask`,
+see "Delegation from code"), never the embedder's `Agent`:
+- an `Agent`'s public attributes reach the model client and the
+  embedder's full profile, so a scratch world built from it could hold
+  grants the caller's world lacks;
+- a bare `Agent` doesn't know which run called it: no shared budget or
+  depth, no cancel from the parent, no events in the parent's stream;
+- a script has no `ws` to pass. The right default is a fork of the
+  caller's world, or an empty view of it, which is what `ask`'s
+  `inherit` and `paths` give.
+
+Types shared between tasks in agent code live in a module in the
+world. A class defined in a script exists nowhere else, and the host
+can't import it. A fork inherits the files, so parent and child import
+the same class, the value crosses as encoded data, and the kernel side
+rebuilds it. A script-local class is refused with that advice. This is
+the one place a JSON schema is part of a task's contract.
+
+**Apps** carry the data, table and bytes kinds. A data type's schema
+feeds the contracts generated from an app's handlers
+(`scratch/reuse.md`) and TS types, and Arrow is already the apps'
+table format. Calling a task from a handler raises its own questions,
+listed under "Open questions".
+
+### How it fits nontainer and dud
+
+| piece | what it is |
+|---|---|
+| a value encoding in nontainer | Generalizes the handler-returns encoder (`nt__Encoder` in `nontainer/apps/contract.py`), which already encodes in the worker, ships to a dud guest as source, imports numpy, pandas and pyarrow lazily, and does Arrow. #110's allowlist becomes a special case, since `Response` is data. nontainer is the lowest package that needs it. |
+| a kernel stub plus a host half | The kernel side encodes before the host call; in-process it passes the value through. `task`, the handler encoder and a kernel-side task decorator all need this. Today it is done ad hoc; it could become a grant option. |
+| dud | Unchanged. Its JSON, bytes and file values map one-to-one onto the wire above. |
+| the `__task__` plane | A reserved plane next to `__conversation__`. |
 
 ## Capabilities belong to the world (proposal, 2026-10-06)
 
@@ -470,7 +669,8 @@ what it can't run.
      - **harness host objects**: the loop attaches its own objects
        (the `task` outcome object, code-level `ask`) to each session it
        runs. nontainer already does this internally for the `ws-*`
-       verbs on dud;
+       verbs on dud. Deferred (see the decisions log, 2026-10-07):
+       task forks get theirs when they open;
      - **run records**: each run's status, tool calls, tool errors,
        tokens and duration, persisted in the neutral run record. This
        is what curation's `RunInfo` reads, from agno's `RunMetrics`
@@ -526,9 +726,10 @@ what it can't run.
    agno stays the default. Studio conformance tests run the same turn
    scenarios against both loops. nontainer gains three things in
    this step:
-   - a typed value on `Answer`, via `ask(returns=…)`. This needs a
-     typed codec on the view-exec return path (nontainer #110), not
-     pickle;
+   - a typed value on `Answer`, via `ask(returns=…)`. This needs the
+     value encoding from "Task values", not pickle. nontainer #110 as
+     filed is narrower (the return path of app handlers only), and it
+     becomes a special case;
    - a lifecycle for ephemeral branches, for functional-style calls;
    - delegation from code (see below).
 3. **Shape freeze.** Write a versioned shape doc and pin two corpora,
@@ -684,7 +885,20 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
   world that lacks a capability?
 - Should agent code get inline typed stubs, as spawn had with
   `@spawn.task def gen_svg(...) -> Resource`? If so, add them later as
-  sugar over `ask`, not in v1.
+  sugar over `ask` (say `@ask.task`), not in v1. The decorator runs in
+  the kernel and sends a spec, and its types follow "Task values":
+  data, or classes from a module in the world. The name `task` stays
+  reserved for the current run's outcome.
+- How do app handlers call tasks? Handlers run on a frozen snapshot
+  with host objects from whoever serves, so there is no session,
+  parent or budget. It needs:
+  - an explicit grant per published app, since every visitor spends
+    the server's key, plus budgets or rate limits;
+  - a job shape (start, then poll or stream), since a task takes
+    seconds to minutes and a handler is request/response;
+  - a stand-in model for `test_app`, through `bind=`;
+  - in agex-studio, the TS loop running in the tab with the device's
+    own key, because there is no server.
 - On dud, should a terminal host-side error be marked so the guest
   can't swallow the stop signal? (The recorded value already wins.)
 
@@ -804,3 +1018,34 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
   too, as `variables`, applied when the session opens. Read one back
   with `Profile.of(ws)`. The turn stamp's fingerprint key is
   `"profile"`.
+- 2026-10-07: Harness host objects (A3c) are deferred. Host objects
+  stay fixed when a world opens. agex gives each task fork its `task`
+  object through `Store.fork(..., profile=...)`, which already works.
+  - Attaching after open would be additive per executor: in-process,
+    the policy plus each call's namespace; under process isolation, the
+    sandbox's RPC handlers, which needs an add-handler API in sandtrap;
+    on dud, the hostcall allowlist taken at open, with the `ws-*` verbs
+    as precedent.
+  - Human-in-the-loop requests can go through scopes checked at call
+    time (nontainer #143), which return "needs input", rather than attaching
+    objects mid-session.
+  - So nothing is boxed in: agex declares its harness objects in one
+    place, reads host objects per turn, and nobody mutates
+    `host_objects` after open (nontainer #204 makes it read-only).
+- 2026-10-07: The task calls in "Task calls": `task.success` /
+  `task.fail` / `task.needs_input`, arguments bound by name, the
+  `success` and `needs_input` statuses, the nudge, and the world
+  defaults.
+- 2026-10-07: Task values follow "Task values".
+  - The declared type is the contract. It picks the encoding by kind,
+    and decoding only ever builds that type.
+  - In-process carries anything. Every other path carries exactly the
+    encodable kinds, process isolation included, so moving a world
+    from process to dud is never a breaking change.
+  - The check runs as soon as the rung is known, never mid-run.
+  - A JSON schema exists only for data, and matters only where a
+    value leaves Python: agent-defined tasks, apps and TS.
+  - The encoding lives in nontainer, generalizing the handler-returns
+    encoder; dud is unchanged.
+- 2026-10-07: Agent code gets delegation through a harness host object
+  (`ask`), never the embedder's `Agent`.

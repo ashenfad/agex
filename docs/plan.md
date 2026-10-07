@@ -1,6 +1,6 @@
 # agex rebuild: implementation plan
 
-Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06), and Phase B is starting.
+Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B2 are merged, and B3 is next.
 
 This plan covers *when* and *in what order*. The *what* and *why* live
 in:
@@ -52,8 +52,9 @@ A6 early studio fixes (agno only; any time)                                     
 ```
 
 Only A0-A3 come before agex starts. A4, A5 and A7 run alongside
-B1-B3. The studio's `TurnDriver` seam is built in B6, against both
-loops, rather than in Phase A.
+B1-B3. A8, the value encoding, lands between B3a and B3b. The studio's
+`TurnDriver` seam is built in B6, against both loops, rather than in
+Phase A.
 
 ## Phase A: nontainer and the studio
 
@@ -227,6 +228,12 @@ rendered descriptions before and after.
   - **The studio:** its suite passes unchanged (it opens no turns yet).
 - **Split out as A3c:** harness host objects (host objects are fixed at open via PythonConfig today) and the profile fingerprint in the turn stamp (manifest contents undecided). Neither blocks a loop that owns its turns; agex needs host objects by B3.
 - **Milestone release:** due once A3b merges, as A1-A3b. A3c can follow in a later release.
+- **A3c deferred (2026-10-07).** B3 doesn't need it: a task fork gets its `task` object through `Store.fork(..., profile=...)`, which already works. Why it waits, and what keeps it open, is in the redesign doc's decisions log (2026-10-07):
+  - attaching after open is additive per executor (the in-process policy and namespace, sandtrap RPC handlers, dud's hostcall allowlist);
+  - human-in-the-loop requests can use scopes checked at call time (nontainer #143) instead;
+  - the guardrails: agex declares its harness objects in one place and reads host objects per turn, and `PythonConfig.host_objects` is read-only after open (nontainer #204).
+
+  The profile fingerprint waits with it.
 
 ### A4. The compaction algorithm moves into core
 
@@ -290,6 +297,35 @@ A4's and A5's scenarios exist.
 
 **Exit:** a nontainer release. That release is agex's floor.
 
+### A8. The value encoding (between B3a and B3b)
+
+The encoding from the redesign doc's "Task values":
+- **Kinds:** data (JSON), tables (Arrow IPC), arrays (`.npy`), bytes
+  and file refs. Embedders can register more.
+- **Encode in the kernel, decode on the host by the declared type.**
+  The encoder generalizes the handler-returns one (`nt__Encoder`): it
+  ships to a dud guest as source, and imports numpy, pandas and
+  pyarrow lazily.
+- **A JSON tree with tagged leaves**, a tag accepted only where the
+  declared type allows that kind.
+- **Large values spill to blobs in a reserved plane**, with a
+  transport for them on each rung.
+- **The kernel stub plus host half** that `task` needs: the stub
+  encodes before the host call, and passes the value through
+  in-process.
+- **Classification and the early check:** which kinds a type needs,
+  its schema when it is data, and a refusal that names the type, the
+  rung and the ways out.
+
+#110 (the return path of app handlers) becomes a special case.
+
+**Exit:**
+- Each kind round-trips on in-process, process isolation and dud, and
+  process and dud carry exactly the same set.
+- A payload whose tags the declared type doesn't allow is refused.
+- A large value spills and comes back on every rung.
+- The apps suites pass unchanged.
+
 ## Phase B: the agex rebuild
 
 ### B0. Skeleton
@@ -346,28 +382,53 @@ passes.
 
 ### B3. Tasks and the outcome host object
 
-- `@agent.task`: typed inputs, validated returns with a retry on
-  mismatch, sync and `async def`.
-- **The `task` host object** (`task_success` / `task_fail` / needs
-  input), attached as a harness host object, with its swappable slot
-  and the durable outcome key in a reserved plane.
-- **`Outcome`, and the shape of world arguments:**
+The shape is the redesign doc's "Task calls" and "Task values". Two
+PRs, with A8 between them.
+
+**B3a. Tasks on in-process worlds.**
+- `@agent.task`: typed inputs and a validated return, sync and
+  `async def`.
+- **`TaskSpec`:** the Python types, the kinds each one needs, and a
+  schema for data types.
+- **The `task` host object** with `task.success` and `task.fail`, and
+  its swappable slot. Agent code sees each argument by name.
+- **Validation:** strict, by the declared type, with a `TypeError` at
+  the call site. A model that stops without finishing is nudged up to
+  twice, then the task fails.
+- **`Outcome` with `value`**, and the world arguments:
   - a scratch world from `agent.profile` via the memory store;
-  - `world=` always forks;
-  - `keep=`;
-  - needs input followed by `resume`.
+  - `world=` always forks, through `Store.fork(..., profile=...)`;
+  - `keep=`.
+- **The early check:** a world off in-process is refused before any
+  model call until B3b.
+
+**Exit.** Tests pass:
+- a task leaves the caller's world untouched;
+- a validation error is fixed within one script;
+- a model that stops is nudged, then the task fails;
+- each status: success, failed, cancelled, interrupted;
+- a live value comes back in-process;
+- a world off in-process is refused before any model call.
+
+**B3b. Needs input, the `__task__` plane, and isolated worlds.**
+- `task.needs_input` and `out.resume(answer)`; a plain call raises
+  `NeedsInput` or `TaskFailed`.
+- **The `__task__` plane:** the spec, the encoded inputs and the
+  encoded value, in the same commit as the call.
+- **Resume with stored inputs.** A live input has to be supplied again
+  after a restart.
+- **Process isolation and dud**, through A8.
 - **The shape corpus begins**, as agex's extension of the corpus
   format.
 
 **Exit:**
 - Shape scenarios pass:
-  - a task leaves the caller's world untouched;
-  - a validation error is fixed within one script;
-  - needs input, then resume;
-  - each outcome status;
-  - the value comes back on in-process isolation.
-- Process and dud value returns wait for nontainer #110's typed
-  codec and are marked pending.
+  - needs input, then resume, including after a restart with
+    encodable inputs;
+  - the same value comes back on in-process, process isolation and
+    dud, for data, tables, arrays and bytes;
+  - a live type is refused off in-process.
+- The shape corpus JSON is generated, with its drift test.
 
 ### B4. Compaction
 
@@ -387,8 +448,7 @@ shape freeze.
 - a code-level `ask` / `wait` harness host object;
 - `ask(returns=)`;
 - `ask(agent=other)`, inheriting the caller's environment;
-- the delegate's typed value on `Answer`, which also needs #110 off
-  in-process.
+- the delegate's typed value on `Answer`, through A8's value encoding.
 
 **Exit.** Tier 5 scenarios pass on agex. The shape corpus covers the
 replacement for spawn: fan-out, a fresh view, and typed results.
@@ -463,8 +523,8 @@ None of these blocks Phase B except where noted.
   A2: the trace projection reads `__conversation__/index`, and
   `TraceSource` picks a renderer by harness. agex's chaptering follows
   the projection.
-- **nontainer #110**, the typed codec for view-exec returns. B3 and B5
-  need it to return values off in-process.
+- **nontainer #110**, the typed codec for the return path of app
+  handlers. A8 generalizes it, and B3b and B5 need A8.
 
 ## Risks
 
