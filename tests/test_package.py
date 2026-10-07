@@ -7,7 +7,7 @@ import importlib.metadata
 def test_agex_imports():
     import agex
 
-    assert agex.__all__ == []
+    assert set(agex.__all__) == {"Agent", "Outcome", "Session"}
     assert importlib.metadata.version("agex").startswith("0.13")
 
 
