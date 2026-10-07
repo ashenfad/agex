@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 import threading
 import time
 from collections.abc import Callable, Sequence
@@ -169,12 +170,15 @@ def _block(coro: Any, instead: str) -> Any:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return _SYNC.run(coro)
-    coro.close()
-    raise RuntimeError(
-        "this blocks, and this thread is running an event loop; "
-        f"use `await {instead}(...)` there"
-    )
+        pass  # no loop here, so blocking is fine
+    else:
+        coro.close()
+        raise RuntimeError(
+            "this blocks, and this thread is running an event loop; "
+            f"use `await {instead}(...)` there"
+        )
+    # outside the handler, so what the run raises isn't chained to it
+    return _SYNC.run(coro)
 
 
 Status = Literal[
@@ -256,7 +260,9 @@ class Agent:
         decorator."""
         from .task import Task
 
-        return Task(self, fn)
+        # the decorating code's names: a type defined in the same
+        # function resolves under postponed annotations
+        return Task(self, fn, names=dict(sys._getframe(1).f_locals))
 
 
 class Session:

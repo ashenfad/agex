@@ -2,8 +2,10 @@
 hands back the value its code passed to ``task.success``."""
 
 import asyncio
+import collections
 import enum
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 from typing import Any, Union
 
@@ -17,7 +19,15 @@ from pydantic_ai import messages as pai
 from agex import Agent, Outcome, TaskFailed, TaskInterrupted
 from agex.agent import Session
 from agex.providers.scripted import ScriptedProvider
-from agex.task import FINISHED, INSTRUCTIONS, NUDGE, NUDGES, TaskSpec, kinds_of
+from agex.task import (
+    FINISHED,
+    INSTRUCTIONS,
+    NUDGE,
+    NUDGES,
+    Task,
+    TaskSpec,
+    kinds_of,
+)
 
 
 @dataclass
@@ -366,6 +376,35 @@ def test_a_caller_cancelled_while_the_world_opens_leaves_no_fork(store, ws):
     assert provider.seen == []
 
 
+def test_a_cancel_then_the_loop_shutting_down_leaves_no_fork(store, ws, monkeypatch):
+    """The world finishes opening on its thread after the caller has
+    gone and the event loop with it; it is closed and deleted anyway."""
+    opening = Task._open
+
+    def slow_open(self, *args):
+        time.sleep(0.3)
+        return opening(self, *args)
+
+    monkeypatch.setattr(Task, "_open", slow_open)
+    a, provider = agent(FIND_BEST)
+    best = best_of(a)
+
+    async def go():
+        running = asyncio.ensure_future(best.arun(RESPONSES, world=ws))
+        await asyncio.sleep(0.05)  # the world is opening on its thread
+        running.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await running
+
+    asyncio.run(go())  # and the loop is gone, mid-open
+    for _ in range(200):
+        if store.sessions() == ["main"]:
+            break
+        time.sleep(0.01)
+    assert store.sessions() == ["main"]
+    assert provider.seen == []
+
+
 # -- worlds ----------------------------------------------------------------------------
 
 
@@ -508,8 +547,11 @@ def test_a_world_whose_code_runs_elsewhere_is_refused_before_forking(store):
 
 def test_an_argument_that_does_not_fit_is_refused_before_the_model():
     a, provider = agent(FIND_BEST)
-    with pytest.raises(TypeError, match="argument 'responses' must be list"):
+    with pytest.raises(TypeError, match="argument 'responses' must be list") as caught:
         best_of(a)([{"student": "ada", "answers": [1]}])
+    # what the call raised, not chained to the blocking front door's own
+    # check for a running loop
+    assert not isinstance(caught.value.__context__, RuntimeError)
     with pytest.raises(TypeError, match="missing a required argument"):
         best_of(a)()
     assert provider.seen == []
@@ -575,6 +617,46 @@ def test_an_array_input_is_read_only():
     assert first.is_error and "read-only" in first.result
     assert out.value == 6
     assert mine.tolist() == [1, 2, 3] and mine.flags.writeable
+
+
+def test_a_user_dict_input_is_copied():
+    a, _ = agent(python("counts.update(ada=99)\ntask.success(counts['ada'])"))
+
+    @a.task
+    def bump(counts: MutableMapping[str, int]) -> int:
+        """Bump ada."""
+
+    mine = collections.UserDict(ada=1)
+    assert bump(mine) == 99
+    assert dict(mine) == {"ada": 1}
+
+
+class Ledger(Mapping[str, int]):
+    """A mapping of a class of its own, holding its entries in a dict."""
+
+    def __init__(self, **entries: int) -> None:
+        self.entries = dict(entries)
+
+    def __getitem__(self, key: str) -> int:
+        return self.entries[key]
+
+    def __iter__(self):
+        return iter(self.entries)
+
+    def __len__(self) -> int:
+        return len(self.entries)
+
+
+def test_an_input_declared_as_data_is_copied_whatever_its_class():
+    a, _ = agent(python("ledger.entries['ada'] = 99\ntask.success(ledger['ada'])"))
+
+    @a.task
+    def peek(ledger: Mapping[str, int]) -> int:
+        """Peek at ada."""
+
+    mine = Ledger(ada=1)
+    assert peek(mine) == 99
+    assert mine.entries == {"ada": 1}
 
 
 def test_a_live_input_is_bound_as_it_is():
