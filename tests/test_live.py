@@ -240,6 +240,38 @@ def test_a_repeated_prompt_reads_from_the_cache(live):
     assert max(reads[1:]) > 0
 
 
+@dataclass
+class Score:
+    student: str
+    total: int
+
+
+@dataclass
+class Ranking:
+    best: str
+    scores: list[Score]
+
+
+def test_a_task_hands_back_a_typed_value(live):
+    """A task's brief is enough for the model to build the value with
+    the types bound in its world, and finish with task.success."""
+    agent = Agent(live.model, settings=live.settings())
+
+    @agent.task
+    def rank(answers: dict[str, list[int]]) -> Ranking:
+        """Total each student's answers, and name the student with the
+        highest total."""
+
+    out = rank.run({"ada": [3, 4], "bo": [1, 1], "cy": [5, 0]})
+    if out.status == "interrupted":
+        out = rank.run({"ada": [3, 4], "bo": [1, 1], "cy": [5, 0]})
+    assert out.status == "success", out.message
+    assert isinstance(out.value, Ranking)
+    assert out.value.best == "ada"
+    totals = {s.student: s.total for s in out.value.scores}
+    assert totals == {"ada": 7, "bo": 2, "cy": 5}
+
+
 def test_a_refused_request_fails_the_turn(live, ws):
     outcome = Agent(live.bad_model).session(ws).say("hi")
     assert outcome.status == "failed", outcome.message

@@ -385,7 +385,8 @@ passes.
 The shape is the redesign doc's "Task calls" and "Task values". Two
 PRs, with A8 between them.
 
-**B3a. Tasks on in-process worlds.**
+**B3a. Tasks on in-process worlds.** Status: agex PR open (branch
+`feat/tasks`). Checked live on the four providers' small models.
 - `@agent.task`: typed inputs and a validated return, sync and
   `async def`.
 - **`TaskSpec`:** the Python types, the kinds each one needs, and a
@@ -394,7 +395,9 @@ PRs, with A8 between them.
   its swappable slot. Agent code sees each argument by name.
 - **Inputs are values:** tables as shallow copies, arrays as read-only
   views, other data as deep copies. A live input is bound as a host
-  object of the fork, and a `HostObjectGrant` around it narrows it.
+  object of the fork, under the world's host-object policy. Narrowing
+  one with a `HostObjectGrant` around it waits for `HostObjectGrant`
+  itself (the capabilities track).
 - **Validation:** strict, by the declared type, with a `TypeError` at
   the call site. A model that stops without finishing is nudged up to
   twice, then the task fails.
@@ -409,7 +412,7 @@ PRs, with A8 between them.
 - a task leaves the caller's world untouched;
 - a task that changes its inputs in place leaves the caller's objects
   untouched;
-- a live input wrapped in a grant reaches agent code narrowed;
+- a live input reaches agent code as it is;
 - a validation error is fixed within one script;
 - a model that stops is nudged, then the task fails;
 - each status: success, failed, cancelled, interrupted;

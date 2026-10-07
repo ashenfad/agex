@@ -16,5 +16,15 @@ This is the 0.13 rebuild, in progress. The 0.12 line is at the
 """
 
 from .agent import Agent, Outcome, Session
+from .task import Task, TaskError, TaskFailed, TaskInterrupted, TaskSpec
 
-__all__ = ["Agent", "Outcome", "Session"]
+__all__ = [
+    "Agent",
+    "Outcome",
+    "Session",
+    "Task",
+    "TaskError",
+    "TaskFailed",
+    "TaskInterrupted",
+    "TaskSpec",
+]
