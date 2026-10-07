@@ -1,7 +1,0 @@
-# Documentation and demo requirements
-mkdocs-material>=9.4.0
-mkdocs-jupyter>=0.24.0
-
-# Optional enhancements
-mkdocs-git-revision-date-localized-plugin>=1.2.0
-mkdocs-git-committers-plugin-2>=1.2.0 

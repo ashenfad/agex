@@ -1,9 +1,0 @@
-from agex.tokenizers import TiktokenTokenizer, get_tokenizer
-
-
-def test_get_tokenizer_for_openai_model():
-    """Tests that a known gpt model returns a TiktokenTokenizer."""
-    tokenizer = get_tokenizer("gpt-4o")
-    assert isinstance(tokenizer, TiktokenTokenizer)
-    text = "hello world"
-    assert tokenizer.decode(tokenizer.encode(text)) == text

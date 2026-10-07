@@ -6,52 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
-
-### Added
-- **In-agent spawn sub-tasks.**  Agent code can define `@spawn.task`
-  functions and run ephemeral, memoryless clones of itself to fulfill
-  typed sub-tasks — directly (blocking) or concurrently via
-  `spawn.submit` / `spawn.map` (a blocking, `concurrent.futures`-shaped
-  surface).  Bounded by `Agent(max_spawns=...)`; clones inherit the
-  parent's policy and grant snapshot.
-- **Bring-your-own state resolvers.**  `connect_state(type="resolver",
-  resolver=...)` hands the session → state lookup to the embedder (the
-  `StateResolver` protocol: `resolve(session)` + a `versioned` flag).
-  The built-in storages give every session its own substrate; a custom
-  resolver can express shapes they can't — e.g. one shared store with a
-  kvgit branch per session, or independent working trees over one
-  branch for optimistic concurrency between channels in one process.
-  Build kvgit-backed states with the new `staged_state(kv, branch=...)`
-  helper, which applies agex's codec pair.  Local host only; HTTP and
-  Modal reject resolver configs.  Mirrors agex-ts's `StateResolver`
-  from agex-studio's concurrent-sessions work.
-- **Resident-agent example** (`examples/resident.py`).  One long-lived
-  agent identity with two concurrent entry points in one process — a
-  cron inbox-triage loop and an interactive chat — as independent
-  working trees over one shared branch, reconciling via CAS +
-  three-way merge.  Demonstrates scope-gated side effects granted live
-  from chat, policy-on-the-fly via file edits, and cache-claim
-  idempotency across overlapping runs.
+## Unreleased
 
 ### Changed
-- **Sandbox-defined functions/classes are now plain objects (raw mode).**
-  agex no longer wraps them as picklable `StFunction`/`StClass`, which
-  simplifies the runtime and makes spawn type-sharing work natively
-  (including generics).  Consequence: a function, class, or instance the
-  agent *defines* can't be cached or returned across a process/kernel/
-  remote boundary — return data instead, and use `helpers/` for reusable
-  code.  Regenerate any pickled state that held cached sandbox code.
-
-### Security
-- **Session ids are validated on built-in storage paths.**  Ids must
-  match `[A-Za-z0-9_-][A-Za-z0-9_.-]*`; the Local host rejects anything
-  else before it reaches a disk path or IndexedDB name.  Closes a path
-  traversal vector when session ids flow from untrusted input (e.g. the
-  HTTP server's request-supplied `session`).  Custom resolvers own
-  their session handling — call `agex.state.assert_safe_session` if ids
-  are untrusted.
-
+- **Breaking: a new API.** agex 0.13 is rebuilt as a loop over nontainer; none of the 0.12 API remains. The 0.12 line is at the `v0.12.4` tag; the design is in `docs/design.md`.
 
 ## [v0.12.4] - 2026-05-29
 
