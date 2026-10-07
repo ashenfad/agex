@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- **Provider protocol: `agex.providers.Provider`.** `stream(messages, tools, settings)` yields text and reasoning deltas, then the whole reply; `PydanticAIProvider` implements it over `pydantic_ai.direct`, and `ScriptedProvider` replies from a script, for tests.
+- **Stored run record v0: `agex.record`.** `Run` and `Message` with text, reasoning, tool-call and tool-result parts, stable message ids and usage; `dump_run` / `load_run` read and write it as JSON.
+
 ### Changed
 - **Breaking: a new API.** agex 0.13 is rebuilt as a loop over nontainer; none of the 0.12 API remains. The 0.12 line is at the `v0.12.4` tag; the design is in `docs/design.md`.
 
