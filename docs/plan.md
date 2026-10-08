@@ -524,7 +524,7 @@ models: given a class whose methods they can't guess, each finishes in
 one call, where without the description they took four to thirteen
 calls exploring the object.
 
-**B3b-3. The shape corpus.** Status: agex PR open (branch
+**B3b-3. The shape corpus.** Status: agex #82 open (branch
 `feat/shape-corpus`). 16 scenarios pass on in-process, process
 isolation and dud.
 - **Task scenarios as data,** as agex's extension of nontainer's
