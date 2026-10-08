@@ -5,13 +5,15 @@ import asyncio
 import collections
 import enum
 import functools
+import sys
+import threading
 import time
 from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 from typing import Any, Union
 
 import pytest
-from nontainer import Profile, PythonConfig, Store
+from nontainer import HostObject, Profile, PythonConfig, Store
 from nontainer.conformance.corpus import ModelStep, ToolCall, calls, fails, says
 from nontainer.turns import ToolEnded
 from pydantic import BaseModel, ConfigDict
@@ -29,6 +31,7 @@ from agex.task import (
     Task,
     TaskSpec,
     _brief,
+    _entry,
     kinds_of,
 )
 
@@ -131,7 +134,34 @@ class Gradebook:
         """Whether the ledger has been checked."""'''
 
 
+class Catalog(dict):
+    """Titles by code, kept on the host."""
+
+    def title(self, code: str) -> str:
+        """The title filed under a code."""
+        return self[code]
+
+
+class Pool(dict):
+    """Connections by name."""
+
+    def connect(self, name: str) -> Any:
+        return self[name]
+
+
 RESPONSES = [Response("ada", [3, 4]), Response("bo", [1, 1])]
+
+
+def brief_of(fn: Callable[..., Any], inputs: Mapping[str, Any], **kw: Any) -> str:
+    """The brief a task made from ``fn`` opens with, called with
+    ``inputs``: those it is handed as they are described as live."""
+    spec = TaskSpec.of(fn, **kw)
+    live = {
+        name: value
+        for name, value in inputs.items()
+        if not isinstance(_entry(spec.params[name], value), HostObject)
+    }
+    return _brief(spec, inputs, live)
 
 
 def python(code: str) -> ModelStep:
@@ -257,17 +287,14 @@ def test_the_brief_describes_each_live_class_once_wherever_it_is():
     ) -> None:
         """Grade them all."""
 
-    spec = TaskSpec.of(grade_all, names={"Job": Job, "Shelf": Shelf})
     one = Gradebook()
-    brief = _brief(
-        spec,
-        {
-            "books": [one, Gradebook()],
-            "jobs": {"a": Job("a", one)},
-            "shelf": Shelf(book=one),
-            "client": Client(),
-        },
-    )
+    inputs = {
+        "books": [one, Gradebook()],
+        "jobs": {"a": Job("a", one)},
+        "shelf": Shelf(book=one),
+        "client": Client(),
+    }
+    brief = brief_of(grade_all, inputs, names={"Job": Job, "Shelf": Shelf})
     assert brief.count("class Gradebook:") == 1 and "class Shelf:" not in brief
     assert brief.index("class Gradebook:") < brief.index("class Client:")
     assert '    """Stands in for a live resource."""' in brief
@@ -292,13 +319,66 @@ def test_the_brief_describes_a_live_function_by_its_input_name_and_a_class_as_it
         "kind": Gradebook,
         "more": [functools.partial(find, term="spring")],
     }
-    brief = _brief(TaskSpec.of(use), inputs)
+    brief = brief_of(use, inputs)
     usage = brief.split("```python\n")[-1]
     assert "def find(student: str, *, term: str = 'spring') -> int:" in usage
     assert usage.startswith(
         'def lookup(student: str, *, term: str = \'fall\') -> int:\n    """A student\'s mark."""'
     )
     assert "class Gradebook:" in usage and "class type:" not in usage
+
+
+def test_the_brief_describes_a_class_of_its_own_acting_as_a_container():
+    """A dict subclass is handed over as it is, so it is described by
+    its own class, whether it holds data or a live object; data handed
+    over with a live input isn't described."""
+    a, provider = agent(python("task.success(catalog.title('a1'))"))
+
+    @a.task
+    def look(catalog: Catalog, pool: Pool, note: Client | str) -> str:
+        """Look up a1."""
+
+    assert look(Catalog(a1="Dune"), Pool(main=threading.Lock()), "hi") == "Dune"
+    (request,) = provider.seen[0]
+    usage = request.parts[1].content.split("```python\n")[-1]
+    assert (
+        'class Catalog:\n    """Titles by code, kept on the host."""\n\n'
+        "    def title(self, code: str) -> str:\n"
+        '        """The title filed under a code."""'
+    ) in usage
+    assert "class Pool:" in usage and "class lock" not in usage
+    assert "class str" not in usage
+
+
+def test_the_brief_evaluates_no_annotation_of_a_live_class():
+    """One could run code, or name what only a type checker imports."""
+    ran: list[str] = []
+    scope: dict[str, Any] = {"record": lambda: ran.append("record") or str}
+    exec(
+        "class Lazy:\n    def lookup(self, key: 'record()') -> 'Missing': ...\n",
+        scope,
+    )
+
+    def use(lazy: Any) -> None:
+        """Use it."""
+
+    brief = brief_of(use, {"lazy": scope["Lazy"]()})
+    assert "def lookup(self, key: record()) -> Missing: ..." in brief
+    assert ran == []
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 14), reason="annotations are deferred from 3.14"
+)
+def test_the_brief_reads_a_deferred_annotation_without_evaluating_it():
+    scope: dict[str, Any] = {}
+    exec("class Later:\n    def lookup(self, key: Missing) -> Other: ...\n", scope)
+
+    def use(later: Any) -> None:
+        """Use it."""
+
+    brief = brief_of(use, {"later": scope["Later"]()})
+    assert "def lookup(self, key: Missing) -> Other: ..." in brief
 
 
 def test_the_brief_lists_so_many_methods_of_a_live_class():
@@ -311,19 +391,17 @@ def test_the_brief_lists_so_many_methods_of_a_live_class():
     def use(big: Any) -> None:
         """Use it."""
 
-    brief = _brief(TaskSpec.of(use), {"big": Big()})
+    brief = brief_of(use, {"big": Big()})
     assert f"def op{METHODS - 1}(self): ..." in brief
     assert f"def op{METHODS}(" not in brief
     assert "    # and 3 more public methods" in brief
 
 
 def test_the_brief_describes_a_live_class_written_in_c():
-    import threading
-
     def use(lock: Any) -> None:
         """Use it."""
 
-    brief = _brief(TaskSpec.of(use), {"lock": threading.Lock()})
+    brief = brief_of(use, {"lock": threading.Lock()})
     assert "class lock:" in brief and "def acquire(" in brief
 
 

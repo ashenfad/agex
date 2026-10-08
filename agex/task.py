@@ -64,6 +64,7 @@ import asyncio
 import dataclasses
 import functools
 import inspect
+import sys
 import textwrap
 import threading
 import typing
@@ -407,19 +408,26 @@ def _source(tp: type) -> str:
 
 
 def _live(value: Any, name: str | None, found: list[tuple[Any, str]]) -> None:
-    """Add to ``found`` how agent code uses each live object ``value``
-    holds, once each: a function (or a bound method) as itself, under
-    ``name`` when it is the input itself; a class as itself; anything
-    else as its class. Built-in containers and records are looked
-    inside; any other object holding live ones is described as itself,
-    so a class acting as a mapping (a client to a remote store, say)
-    isn't walked."""
-    if values.find_live(value, full=True) is None:
+    """Add to ``found`` how agent code uses each live object in
+    ``value``, an input the task is handed as it is, once each: a
+    function (or a bound method) as itself, under ``name`` when it is
+    the input itself; a class as itself; any other object as its class.
+    What :func:`_detach` looks inside (built-in containers, named tuples
+    and dataclasses) is looked inside, and pydantic models too. A part
+    is live when it holds a live object; the input itself also when its
+    class can't be sent by value (a class of its own acting as a
+    mapping, say). Data is left out."""
+    kind = type(value)
+    if values.find_live(value, full=True) is None and (
+        name is None or _sent_by_value(kind)
+    ):
         return
-    model_fields = getattr(type(value), "model_fields", None)  # pydantic's
-    if isinstance(value, dict):
+    model_fields = getattr(kind, "model_fields", None)  # pydantic's
+    if kind is dict:
         parts: Iterable[Any] = [*value.keys(), *value.values()]
-    elif isinstance(value, (list, tuple, set, frozenset)):
+    elif kind in (list, tuple, set, frozenset) or (
+        isinstance(value, tuple) and hasattr(kind, "_fields")
+    ):
         parts = value
     elif dataclasses.is_dataclass(value) and not isinstance(value, type):
         parts = [getattr(value, f.name) for f in dataclasses.fields(value)]
@@ -429,12 +437,19 @@ def _live(value: Any, name: str | None, found: list[tuple[Any, str]]) -> None:
         if inspect.isroutine(value) or isinstance(value, functools.partial):
             key = value
         else:
-            key = value if isinstance(value, type) else type(value)
+            key = value if isinstance(value, type) else kind
         if not any(k is key for k, _ in found):
             found.append((key, _usage(key, name)))
         return
     for part in parts:
         _live(part, None, found)
+
+
+def _sent_by_value(kind: type) -> bool:
+    try:
+        return values.Spec.of(kind).travels
+    except values.Unsupported:
+        return False
 
 
 def _usage(live: Any, name: str | None) -> str:
@@ -462,12 +477,16 @@ def _written(annotation: Any) -> Any:
 
 
 def _parameters(fn: Any) -> str:
-    """``fn``'s parameters and return, its annotations written the way
-    code writes them, or ``(...)`` when it has no signature to read."""
+    """``fn``'s parameters and return, or ``(...)`` when it has no
+    signature to read. No annotation is evaluated: one could run code,
+    or name what only a type checker imports. One written as text stays
+    as written, and one already evaluated is written as code writes it."""
     try:
-        try:
-            sig = inspect.signature(fn, eval_str=True)
-        except Exception:
+        if sys.version_info >= (3, 14):
+            from annotationlib import Format
+
+            sig = inspect.signature(fn, annotation_format=Format.STRING)
+        else:
             sig = inspect.signature(fn)
     except (TypeError, ValueError):
         return "(...)"
@@ -524,9 +543,10 @@ def _interface(tp: type) -> str:
     return f"class {tp.__name__}:\n" + textwrap.indent(body, "    ")
 
 
-def _brief(spec: TaskSpec, inputs: Mapping[str, Any]) -> str:
+def _brief(spec: TaskSpec, inputs: Mapping[str, Any], live: Mapping[str, Any]) -> str:
     """The task's opening message: the job, the inputs, how to finish,
-    the types it names, and how to use its live inputs."""
+    the types it names, and how to use the inputs in ``live``, those it
+    is handed as they are."""
     parts = [spec.instructions or f"Do the task {spec.name!r}."]
     if inputs:
         lines = [
@@ -548,11 +568,11 @@ def _brief(spec: TaskSpec, inputs: Mapping[str, Any]) -> str:
             "The types, already bound by name; build values from these:"
             f"\n```python\n{sources}\n```"
         )
-    live: list[tuple[Any, str]] = []
-    for name, value in inputs.items():
-        _live(value, name, live)
-    if live:
-        usage = "\n\n".join(text for _, text in live)
+    found: list[tuple[Any, str]] = []
+    for name, value in live.items():
+        _live(value, name, found)
+    if found:
+        usage = "\n\n".join(text for _, text in found)
         parts.append(
             "The live inputs are objects on the host: use them as listed here, "
             f"and don't build new ones.\n```python\n{usage}\n```"
@@ -985,7 +1005,7 @@ class Task:
         }
         return await self._drive(
             lambda task: self._open(world, entries, task),
-            _brief(self.spec, inputs),
+            _brief(self.spec, inputs, live),
             keep=keep,
             again=self._again(world, keep, live),
         )
