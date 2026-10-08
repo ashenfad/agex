@@ -171,7 +171,9 @@ class Message:
 @dataclass(frozen=True, kw_only=True)
 class Run:
     """One run: the messages a turn exchanged with the model, in order,
-    and how it ended (``None`` while it runs)."""
+    and how it ended (``None`` while it runs). ``compaction`` is what
+    the run's summary calls cost, which no message records, when it
+    made any."""
 
     format: int = FORMAT
     run_id: str
@@ -179,11 +181,13 @@ class Run:
     messages: tuple[Message, ...] = ()
     started_at: float | None = None
     ended_at: float | None = None
+    compaction: Usage | None = None
 
     @property
     def usage(self) -> Usage:
-        """What the run's model calls cost, summed."""
-        total = Usage()
+        """What the run's model calls cost, summed: its replies' and its
+        summary calls'."""
+        total = self.compaction or Usage()
         for message in self.messages:
             if message.usage is not None:
                 total = total + message.usage

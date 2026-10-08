@@ -165,3 +165,29 @@ def test_a_reply_under_a_fold_is_measured_as_its_request_was(ws):
     for prompt in ("Print a lot.", "Go on.", "And on."):
         assert session.say(prompt).status == "completed"
     assert [f.runs for f in folds(ws)] == [1, 2]
+
+
+def test_summary_calls_count_against_max_steps(ws):
+    """A fold is made only with a call to spare for the request after
+    it: with no call left over, the request goes unfolded, and no run
+    makes more model calls than max_steps."""
+    for limit, folded in ((3, False), (4, True)):
+        store_ws = ws.fork(f"limit{limit}", inherit="fresh")
+        provider = ScriptedProvider([*STEPS, summarizes(SUMMARY), says("done")])
+        a = Agent(provider, compaction=Policy(budget=BUDGET), max_steps=limit)
+        a.session(store_ws).say("Do the work in two steps.")
+        assert len(provider.seen) == limit
+        assert bool(folds(store_ws)) is folded
+        store_ws.close()
+
+
+def test_summary_calls_are_in_the_usage_streamed_and_stored(ws):
+    a, _ = agent(*STEPS, replace(summarizes(SUMMARY), input_tokens=777), says("done"))
+    session = a.session(ws)
+    out = session.say("Do the work in two steps.")
+    reported = [e.input_tokens for e in out.events if e.kind == "Usage"]
+    assert 777 in reported
+    (run,) = session.runs
+    assert run.compaction is not None and run.compaction.input_tokens == 777
+    replies = sum(m.usage.input_tokens for m in run.messages if m.usage)
+    assert run.usage.input_tokens == replies + 777
