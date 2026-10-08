@@ -153,6 +153,14 @@ def test_a_scenario_starts_with_a_call():
         replace(TYPED_VALUE, acts=(restart(), call(task_success(1))))
 
 
+def test_a_resume_by_ref_after_a_restart_gives_an_outcome_to_resume():
+    replace(
+        TYPED_VALUE,
+        acts=(call(), restart(), resume("yes", by="ref"), resume("and yes")),
+        expect=(success(), success(), success()),
+    )
+
+
 def test_a_resume_by_outcome_after_a_restart_is_refused():
     with pytest.raises(ValueError, match="resume by ref"):
         replace(
