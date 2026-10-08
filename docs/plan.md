@@ -575,7 +575,7 @@ pass on in-process, process isolation and dud.
 
 ### B4. Compaction
 
-**Status: agex PR open (branch `feat/compaction`), after nontainer
+**Status: agex #84 open (branch `feat/compaction`), after nontainer
 #209.** `Agent(compaction=Policy(...))`; `agex.compaction` folds
 within a run too, and each reply records the fold its request had
 (`Message.fold`), so a request is measured exactly from the latest
