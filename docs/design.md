@@ -1105,3 +1105,20 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
     encoder; dud is unchanged.
 - 2026-10-07: Agent code gets delegation through a harness host object
   (`ask`), never the embedder's `Agent`.
+- 2026-10-08: The shape corpus (`agex.conformance`).
+  - A task is written as JSON Schemas. `x-kind` marks what JSON has no
+    type for: tables, arrays, bytes, and live classes, whose methods
+    give canned replies and record their calls.
+  - The model's script is neutral: `task_success` (with a JSON value,
+    an input, or what a live input's method returns), `task_fail` and
+    `task_needs_input`. Each harness writes them in its own language,
+    so no scenario is written twice.
+  - Values are readable JSON, read by their declared types, not
+    `nt-value/1`'s Arrow and `.npy` blobs.
+  - A scenario says where it runs: anywhere, in the process, or off
+    it. A harness runs it on each of its rungs that fits.
+  - The runner owns the script, so what the model was asked for is
+    counted the same way for every harness.
+  - The agex harness writes the task as a Python module and imports
+    it, so a worker process or a dud guest gets its classes as it
+    would an embedder's.

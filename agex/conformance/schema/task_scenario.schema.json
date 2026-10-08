@@ -1,0 +1,529 @@
+{
+  "$defs": {
+    "Input": {
+      "additionalProperties": false,
+      "description": "One of the task's inputs, as agent code sees it.",
+      "properties": {
+        "kind": {
+          "const": "input"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "type": "object"
+    },
+    "LiveCall": {
+      "additionalProperties": false,
+      "description": "A call agent code made on a live input.",
+      "properties": {
+        "args": {
+          "items": {},
+          "type": "array"
+        },
+        "input": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "input",
+        "method"
+      ],
+      "type": "object"
+    },
+    "MethodCall": {
+      "additionalProperties": false,
+      "description": "What a method of a live input returns, called with ``args``.",
+      "properties": {
+        "args": {
+          "items": {},
+          "type": "array"
+        },
+        "input": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "method_call"
+        },
+        "method": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "method"
+      ],
+      "type": "object"
+    },
+    "ModelStep": {
+      "additionalProperties": false,
+      "description": "One model reply: text, reasoning, tool calls, or a failure. ``fail`` makes the call raise instead of replying: ``\"provider\"`` with a provider error (an overloaded endpoint, say), which a harness may resume from; ``\"error\"`` with any other exception.",
+      "properties": {
+        "fail": {
+          "enum": [
+            "",
+            "provider",
+            "error"
+          ]
+        },
+        "kind": {
+          "const": "model"
+        },
+        "text": {
+          "type": "string"
+        },
+        "thinking": {
+          "type": "string"
+        },
+        "tool_calls": {
+          "items": {
+            "$ref": "#/$defs/ToolCall"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "OutcomeExp": {
+      "additionalProperties": false,
+      "description": "How one call or resume came out. - ``status``: ``refused`` is a call refused before it runs (an error, where other statuses are an outcome); - ``value``: on ``success``, the value as JSON, of the return type; - ``message``: the reason a task failed, or its question; - ``names``: words a refusal's error must name; - ``asked``: how many replies the model was asked for (0 for a refusal); - ``kept``: whether the outcome keeps a world, named by its ref; - ``plane``: what that world's plane holds; - ``calls``: the calls agent code made on live inputs, in order. ``None`` leaves a part unchecked.",
+      "properties": {
+        "asked": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "calls": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/LiveCall"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kept": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "plane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlaneExp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "success",
+            "failed",
+            "needs_input",
+            "interrupted",
+            "refused"
+          ]
+        },
+        "value": {}
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "Param": {
+      "additionalProperties": false,
+      "description": "One input of the task: its name and its type, as a JSON Schema.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {}
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "PlaneExp": {
+      "additionalProperties": false,
+      "description": "The ``__task__`` plane of the world an outcome keeps: the status of its state, the inputs stored (by name, sorted), and whether the value is.",
+      "properties": {
+        "status": {
+          "enum": [
+            "running",
+            "success",
+            "failed",
+            "needs_input"
+          ]
+        },
+        "stored": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "value": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "Restart": {
+      "additionalProperties": false,
+      "description": "A restart, as far as the task can tell: the scenario's store is opened again and the task defined again, and the outcomes held so far are gone (their refs are still known).",
+      "properties": {
+        "kind": {
+          "const": "restart"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "TaskCall": {
+      "additionalProperties": false,
+      "description": "A call of the task with ``inputs`` (JSON by parameter name), on a scratch world, or with ``world`` on a fork of the scenario's world; ``keep`` keeps that fork when the task is done.",
+      "properties": {
+        "inputs": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "keep": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "call"
+        },
+        "steps": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelStep"
+              },
+              {
+                "$ref": "#/$defs/TaskSuccess"
+              },
+              {
+                "$ref": "#/$defs/TaskFail"
+              },
+              {
+                "$ref": "#/$defs/TaskNeedsInput"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "world": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "TaskDef": {
+      "additionalProperties": false,
+      "description": "The task: its name, its instructions (a docstring in Python), its parameters in order, its return type (``{\"type\": \"null\"}`` for none), and in ``defs`` the classes those name, each by ``{\"$ref\": \"#/$defs/Name\"}`` as JSON Schema refers to its ``$defs``. A record class is an object schema; its fields are its ``required`` properties, in that order. A live class is ``{\"x-kind\": \"live\", \"description\": ..., \"methods\": {name: {\"params\": [{\"name\": ..., \"type\": ...}], \"returns\": ..., \"replies\": [{\"args\": [...], \"returns\": ...}]}}}``: a method answers the call whose arguments match a reply's, and agent code's calls are recorded.",
+      "properties": {
+        "defs": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "params": {
+          "items": {
+            "$ref": "#/$defs/Param"
+          },
+          "type": "array"
+        },
+        "returns": {}
+      },
+      "required": [
+        "name",
+        "instructions"
+      ],
+      "type": "object"
+    },
+    "TaskFail": {
+      "additionalProperties": false,
+      "description": "Agent code calls ``task.fail(reason)``.",
+      "properties": {
+        "kind": {
+          "const": "task_fail"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "TaskNeedsInput": {
+      "additionalProperties": false,
+      "description": "Agent code calls ``task.needs_input(question)``.",
+      "properties": {
+        "kind": {
+          "const": "task_needs_input"
+        },
+        "question": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "question"
+      ],
+      "type": "object"
+    },
+    "TaskResume": {
+      "additionalProperties": false,
+      "description": "The answer to the last outcome's question. ``by=\"outcome\"`` resumes through the outcome itself, in this process; ``by=\"ref\"`` resumes the task by its world's ref (through the scenario's world when the call was on a fork of it), passing again the live inputs ``live`` names, a new object of each, and ``keep`` keeps that world when the task is done. A resume by outcome keeps what its call kept.",
+      "properties": {
+        "answer": {
+          "type": "string"
+        },
+        "by": {
+          "enum": [
+            "outcome",
+            "ref"
+          ]
+        },
+        "keep": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "resume"
+        },
+        "live": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelStep"
+              },
+              {
+                "$ref": "#/$defs/TaskSuccess"
+              },
+              {
+                "$ref": "#/$defs/TaskFail"
+              },
+              {
+                "$ref": "#/$defs/TaskNeedsInput"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "answer",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "TaskScenario": {
+      "additionalProperties": false,
+      "description": "One scenario: a task, the acts that call it, and one expectation per call or resume. ``where`` limits the rungs it runs on; ``needs`` are the :data:`CAPABILITIES` a harness must have for it to apply.",
+      "properties": {
+        "acts": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TaskCall"
+              },
+              {
+                "$ref": "#/$defs/TaskResume"
+              },
+              {
+                "$ref": "#/$defs/Restart"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "expect": {
+          "items": {
+            "$ref": "#/$defs/OutcomeExp"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "task": {
+          "$ref": "#/$defs/TaskDef"
+        },
+        "where": {
+          "enum": [
+            "anywhere",
+            "in-process",
+            "off-in-process"
+          ]
+        },
+        "world": {
+          "$ref": "#/$defs/World"
+        }
+      },
+      "required": [
+        "name",
+        "summary",
+        "task",
+        "acts",
+        "expect"
+      ],
+      "type": "object"
+    },
+    "TaskSuccess": {
+      "additionalProperties": false,
+      "description": "Agent code calls ``task.success`` with ``value`` (``None``: with no value).",
+      "properties": {
+        "kind": {
+          "const": "task_success"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Value"
+            },
+            {
+              "$ref": "#/$defs/Input"
+            },
+            {
+              "$ref": "#/$defs/MethodCall"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ToolCall": {
+      "additionalProperties": false,
+      "description": "One tool call in a model reply.",
+      "properties": {
+        "args": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "Value": {
+      "additionalProperties": false,
+      "description": "A value written out, as JSON, read by the type it is given as.",
+      "properties": {
+        "kind": {
+          "const": "value"
+        },
+        "value": {}
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    "World": {
+      "additionalProperties": false,
+      "description": "The workspace a scenario starts in: files by path.",
+      "properties": {
+        "files": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [],
+      "type": "object"
+    }
+  },
+  "$ref": "#/$defs/TaskScenario",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TaskScenario"
+}

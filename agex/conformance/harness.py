@@ -23,9 +23,9 @@ from nontainer import Workspace
 from nontainer.conformance.runner import Clock, RunView
 from nontainer.turns import TurnEvent
 
-from .agent import CLOSING_NOTE, Agent, Session
-from .providers.scripted import ScriptedProvider
-from .record import Run, ToolResult
+from ..agent import CLOSING_NOTE, Agent, Session
+from ..providers.scripted import ScriptedProvider
+from ..record import Run, ToolResult
 
 __all__ = ["AgexHarness", "AgexSession"]
 

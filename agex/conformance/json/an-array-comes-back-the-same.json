@@ -1,0 +1,76 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "values": [
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            4
+          ]
+        ]
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "input",
+            "name": "values"
+          }
+        }
+      ],
+      "world": false
+    }
+  ],
+  "expect": [
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": null,
+      "message": null,
+      "names": [],
+      "plane": null,
+      "status": "success",
+      "value": [
+        [
+          1,
+          2
+        ],
+        [
+          3,
+          4
+        ]
+      ]
+    }
+  ],
+  "name": "an-array-comes-back-the-same",
+  "needs": [
+    "arrays"
+  ],
+  "summary": "An array handed to a task comes back from it the same, on every rung.",
+  "task": {
+    "defs": {},
+    "instructions": "Hand back the input 'values' as it is.",
+    "name": "echo",
+    "params": [
+      {
+        "name": "values",
+        "type": {
+          "x-kind": "array"
+        }
+      }
+    ],
+    "returns": {
+      "x-kind": "array"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}

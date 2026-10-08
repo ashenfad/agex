@@ -1,0 +1,98 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "directories": {
+          "main": {}
+        }
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "fail": "",
+          "kind": "model",
+          "text": "never reached",
+          "thinking": "",
+          "tool_calls": []
+        }
+      ],
+      "world": false
+    }
+  ],
+  "expect": [
+    {
+      "asked": 0,
+      "calls": null,
+      "kept": null,
+      "message": null,
+      "names": [
+        "directories"
+      ],
+      "plane": null,
+      "status": "refused",
+      "value": null
+    }
+  ],
+  "name": "an-input-mixing-data-and-a-live-part-is-refused-off-in-process",
+  "needs": [],
+  "summary": "Off the process, an input that holds live objects inside data is refused before the model is asked anything, naming the input.",
+  "task": {
+    "defs": {
+      "Directory": {
+        "description": "The school's directory, kept on the host.",
+        "methods": {
+          "lookup": {
+            "description": "A student's name as the directory files it.",
+            "params": [
+              {
+                "name": "key",
+                "type": {
+                  "type": "string"
+                }
+              }
+            ],
+            "replies": [
+              {
+                "args": [
+                  "ada"
+                ],
+                "returns": "ADA"
+              },
+              {
+                "args": [
+                  "bo"
+                ],
+                "returns": "BO"
+              }
+            ],
+            "returns": {
+              "type": "string"
+            }
+          }
+        },
+        "x-kind": "live"
+      }
+    },
+    "instructions": "Look up ada in each directory.",
+    "name": "look_all",
+    "params": [
+      {
+        "name": "directories",
+        "type": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Directory"
+          },
+          "type": "object"
+        }
+      }
+    ],
+    "returns": {
+      "type": "string"
+    }
+  },
+  "where": "off-in-process",
+  "world": {
+    "files": {}
+  }
+}

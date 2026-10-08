@@ -1,0 +1,176 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "kind": "task_needs_input",
+          "question": "Rank by total, or by the best single score?"
+        }
+      ],
+      "world": false
+    },
+    {
+      "answer": "By total.",
+      "by": "outcome",
+      "keep": false,
+      "kind": "resume",
+      "live": [],
+      "steps": [
+        {
+          "kind": "task_needs_input",
+          "question": "Ties first or last?"
+        }
+      ]
+    },
+    {
+      "answer": "Last.",
+      "by": "outcome",
+      "keep": false,
+      "kind": "resume",
+      "live": [],
+      "steps": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "value",
+            "value": {
+              "best": "ada",
+              "scores": [
+                {
+                  "student": "ada",
+                  "total": 7
+                },
+                {
+                  "student": "bo",
+                  "total": 2
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": true,
+      "message": "Rank by total, or by the best single score?",
+      "names": [],
+      "plane": null,
+      "status": "needs_input",
+      "value": null
+    },
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": true,
+      "message": "Ties first or last?",
+      "names": [],
+      "plane": null,
+      "status": "needs_input",
+      "value": null
+    },
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": false,
+      "message": null,
+      "names": [],
+      "plane": null,
+      "status": "success",
+      "value": {
+        "best": "ada",
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      }
+    }
+  ],
+  "name": "a-task-can-ask-again",
+  "needs": [],
+  "summary": "A resumed task can ask again, and a second answer carries it on.",
+  "task": {
+    "defs": {
+      "Ranking": {
+        "additionalProperties": false,
+        "description": "The best student, and the scores ranked.",
+        "properties": {
+          "best": {
+            "type": "string"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/$defs/Score"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "best",
+          "scores"
+        ],
+        "type": "object"
+      },
+      "Score": {
+        "additionalProperties": false,
+        "description": "One student's total.",
+        "properties": {
+          "student": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "student",
+          "total"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Rank the scores, best first.",
+    "name": "rank",
+    "params": [
+      {
+        "name": "scores",
+        "type": {
+          "items": {
+            "$ref": "#/$defs/Score"
+          },
+          "type": "array"
+        }
+      }
+    ],
+    "returns": {
+      "$ref": "#/$defs/Ranking"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}

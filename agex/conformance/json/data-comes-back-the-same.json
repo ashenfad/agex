@@ -1,0 +1,126 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "scores": {
+          "art": [],
+          "math": [
+            {
+              "student": "ada",
+              "total": 7
+            },
+            {
+              "student": "bo",
+              "total": 2
+            }
+          ],
+          "music": null
+        }
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "input",
+            "name": "scores"
+          }
+        }
+      ],
+      "world": false
+    }
+  ],
+  "expect": [
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": null,
+      "message": null,
+      "names": [],
+      "plane": null,
+      "status": "success",
+      "value": {
+        "art": [],
+        "math": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ],
+        "music": null
+      }
+    }
+  ],
+  "name": "data-comes-back-the-same",
+  "needs": [],
+  "summary": "Records, lists, dicts and optional values handed to a task come back from it the same, on every rung.",
+  "task": {
+    "defs": {
+      "Score": {
+        "additionalProperties": false,
+        "description": "One student's total.",
+        "properties": {
+          "student": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "student",
+          "total"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Hand back the input 'scores' as it is.",
+    "name": "echo",
+    "params": [
+      {
+        "name": "scores",
+        "type": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/$defs/Score"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "object"
+        }
+      }
+    ],
+    "returns": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/Score"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "type": "object"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}

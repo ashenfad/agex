@@ -1,0 +1,159 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "kind": "task_needs_input",
+          "question": "Rank by total, or by the best single score?"
+        }
+      ],
+      "world": false
+    },
+    {
+      "answer": "By total.",
+      "by": "outcome",
+      "keep": false,
+      "kind": "resume",
+      "live": [],
+      "steps": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "value",
+            "value": {
+              "best": "ada",
+              "scores": [
+                {
+                  "student": "ada",
+                  "total": 7
+                },
+                {
+                  "student": "bo",
+                  "total": 2
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "expect": [
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": true,
+      "message": "Rank by total, or by the best single score?",
+      "names": [],
+      "plane": {
+        "status": "needs_input",
+        "stored": [
+          "scores"
+        ],
+        "value": false
+      },
+      "status": "needs_input",
+      "value": null
+    },
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": false,
+      "message": null,
+      "names": [],
+      "plane": null,
+      "status": "success",
+      "value": {
+        "best": "ada",
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      }
+    }
+  ],
+  "name": "a-task-asks-and-carries-on-from-the-answer",
+  "needs": [],
+  "summary": "task.needs_input ends the task needs_input with its question, keeping its world with the inputs stored; a resume through the outcome carries on there, and a resume run to its end keeps nothing.",
+  "task": {
+    "defs": {
+      "Ranking": {
+        "additionalProperties": false,
+        "description": "The best student, and the scores ranked.",
+        "properties": {
+          "best": {
+            "type": "string"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/$defs/Score"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "best",
+          "scores"
+        ],
+        "type": "object"
+      },
+      "Score": {
+        "additionalProperties": false,
+        "description": "One student's total.",
+        "properties": {
+          "student": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "student",
+          "total"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Rank the scores, best first.",
+    "name": "rank",
+    "params": [
+      {
+        "name": "scores",
+        "type": {
+          "items": {
+            "$ref": "#/$defs/Score"
+          },
+          "type": "array"
+        }
+      }
+    ],
+    "returns": {
+      "$ref": "#/$defs/Ranking"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}

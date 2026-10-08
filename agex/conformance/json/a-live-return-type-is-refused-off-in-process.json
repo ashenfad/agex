@@ -1,0 +1,84 @@
+{
+  "acts": [
+    {
+      "inputs": {},
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "fail": "",
+          "kind": "model",
+          "text": "never reached",
+          "thinking": "",
+          "tool_calls": []
+        }
+      ],
+      "world": false
+    }
+  ],
+  "expect": [
+    {
+      "asked": 0,
+      "calls": null,
+      "kept": null,
+      "message": null,
+      "names": [
+        "Directory"
+      ],
+      "plane": null,
+      "status": "refused",
+      "value": null
+    }
+  ],
+  "name": "a-live-return-type-is-refused-off-in-process",
+  "needs": [],
+  "summary": "Off the process, a task whose return type is live is refused before the model is asked anything: its value couldn't come back.",
+  "task": {
+    "defs": {
+      "Directory": {
+        "description": "The school's directory, kept on the host.",
+        "methods": {
+          "lookup": {
+            "description": "A student's name as the directory files it.",
+            "params": [
+              {
+                "name": "key",
+                "type": {
+                  "type": "string"
+                }
+              }
+            ],
+            "replies": [
+              {
+                "args": [
+                  "ada"
+                ],
+                "returns": "ADA"
+              },
+              {
+                "args": [
+                  "bo"
+                ],
+                "returns": "BO"
+              }
+            ],
+            "returns": {
+              "type": "string"
+            }
+          }
+        },
+        "x-kind": "live"
+      }
+    },
+    "instructions": "Make a directory.",
+    "name": "directory",
+    "params": [],
+    "returns": {
+      "$ref": "#/$defs/Directory"
+    }
+  },
+  "where": "off-in-process",
+  "world": {
+    "files": {}
+  }
+}
