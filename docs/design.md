@@ -235,7 +235,7 @@ There are two real losses:
   continues it with `resume`, so a request can be approved next week.
 - Chaptering, built on `nontainer.compaction` (released in 0.8.8),
   after curation's trace projection lands (plan step B4).
-  That core is harness-neutral, and `docs/compaction.md` reserves
+  Its records are harness-neutral, and `docs/compaction.md` reserves
   chaptering for later:
   - a chapter is a fold record with `first` set, plus a name;
   - the agent's own model writes the summary, using the agex chapter
@@ -243,8 +243,9 @@ There are two real losses:
   - the originals stay readable as files, via curation's trace
     projection.
 
-  agex's compaction adapter is one more adapter, "of the same size as
-  agno's".
+  agex folds its own conversations, writing nontainer's fold records:
+  nontainer owns the record and its rules, and each loop its folding
+  (decided 2026-10-08).
 - `agex/bench`, as `agex.bench`, off the core surface.
 
 ### What goes
@@ -739,10 +740,8 @@ what it can't run.
      All of this lives implicitly in `adapters/agno.py` today. It
      moves into core as harness hooks. The spec is
      `~/git/nontainer/scratch/harness.md`: the tiers, the rules, the
-     `turn` API, the conversation index, compaction in core, and the
-     studio's `TurnDriver`. `nontainer.compaction` (0.8.8)
-     is the template: a harness-neutral core plus a thin per-harness
-     adapter.
+     `turn` API, the conversation index, compaction's records, and the
+     studio's `TurnDriver`.
    - **studio turn driver.** It covers:
      - building an agent for a session;
      - turning a run into SSE events;
@@ -1122,3 +1121,18 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
   - The agex harness writes the task as a Python module and imports
     it, so a worker process or a dud guest gets its classes as it
     would an embedder's.
+- 2026-10-08: nontainer keeps the record of a fold; each loop keeps
+  its own folding. This replaces moving the algorithm into core
+  (`turn.context` over a neutral `Msg`).
+  - nontainer: the `__compaction__/` plane and `Fold`, when a fold is
+    in force, rewind and fork behaviour, summaries never stored in
+    runs, the `Compacted` event and the person's view. The studio
+    reads these whichever loop wrote them.
+  - Each loop: when to fold, what to splice, how to summarise,
+    folding within a run, and chaptering. agno's adapter keeps its
+    logic; agex writes its own, folding within a task's run too.
+  - A neutral algorithm would be designed around agno's limits just as
+    agex goes further (folding within a run, named ranges), and would
+    serve one loop if agno leaves the studio.
+  - The helpers (summary texts, `reduce`, `chunks`, token estimates)
+    stay in `nontainer.compaction` as a library.

@@ -1,6 +1,6 @@
 # agex rebuild: implementation plan
 
-Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3b-2 are merged, and B3b-3 is under way.
+Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3 are merged, and B4 (compaction) is next.
 
 This plan covers *when* and *in what order*. The *what* and *why* live
 in:
@@ -43,7 +43,7 @@ in:
 A0 small bits ─┐
 A1 tool layer ─┼─► A3 turn API + TurnEvent + corpus ─► B0 skeleton ─► B1 sessions ─► B2 providers ─► B3 tasks
 A2 conv. index ┘          │                                                                         │
-                          ├─► A4 compaction core ─────────────────────────────► B4 compaction ◄─────┤
+                          ├─► A4 compaction contract ─────────────────────────► B4 compaction ◄─────┤
                           ├─► A5 delegation ──────────────────────────────────► B5 delegation ◄─────┤
                           └─► A7 kit ships (with A4/A5's scenarios)                                 │
 A6 early studio fixes (agno only; any time)                                                         │
@@ -235,16 +235,37 @@ rendered descriptions before and after.
 
   The profile fingerprint waits with it.
 
-### A4. The compaction algorithm moves into core
+### A4. The compaction contract
 
-`turn.context(messages, input_tokens=, summarize=, policy=)` runs over
-a neutral `Msg`. The agno compaction adapter shrinks to the message
-mapping, the token-report quirks and `summarize`. Fix
-`docs/compaction.md`.
+**nontainer keeps the record of a fold; each loop keeps its own
+folding.** The algorithm does not move into core (decided 2026-10-08,
+replacing the earlier `turn.context` plan).
+
+What nontainer owns, because every harness and the studio read it:
+- the `__compaction__/` plane and the `Fold` record, and the rule that
+  a fold is in force only while its anchor is in the history;
+- how folds behave in a world: a rewind takes them back, a fork
+  carries them, a fresh fork drops them, and a summary never enters a
+  stored run;
+- the `Compacted` event, and the person's view of a fold (the
+  studio's marker that opens to the summary).
+
+What each loop owns: when to fold, what to splice into the next
+request, how the summary is written, folding within a run, and
+chaptering. agno's adapter keeps its logic as it is. The helpers
+(the summary texts, `reduce`, `chunks`, `estimate_tokens`) stay in
+`nontainer.compaction` as a library a loop may use.
+
+The work:
+- `docs/compaction.md` describes the record and its rules as the
+  contract, and the folding as the agno adapter's;
+- the harness corpus gets compaction scenarios, which check only what
+  can be observed. Scripted model steps report token usage, so a
+  scenario can cross a budget on demand.
 
 **Exit.** Compaction scenarios pass on agno:
 - a fold over budget;
-- the fold in force spliced in;
+- the fold in force in later requests;
 - no summary in stored runs;
 - a rewind takes back its folds;
 - a fresh fork drops them.
@@ -550,7 +571,19 @@ isolation and dud.
 
 ### B4. Compaction
 
-agex's compaction adapter runs over A4's core.
+agex folds its own conversations, writing nontainer's records (A4):
+its own decision, splice and summary, using the core's helpers where
+they fit. It owns its loop, so it can send the model a folded history
+while storing every message.
+
+**Folding within a run.** Folds in agno's adapter cut only between
+runs, which leaves one long run unbounded. For agex that is the main
+case: a task is one run, and a long one is what outgrows the window.
+agex folds the run in progress too:
+- at a step boundary, never between a tool call and its result;
+- keeping the latest steps as they are;
+- with the fold's anchor in the run, so the record and its rules are
+  unchanged.
 
 **Chaptering waits for curation's trace projection.** That projection
 is what makes `/chapters` browsable. A chapter is a named fold with
@@ -558,7 +591,10 @@ is what makes `/chapters` browsable. A chapter is a named fold with
 mechanism. It joins after the projection lands, which may be after the
 shape freeze.
 
-**Exit.** The compaction scenarios pass on agex.
+**Exit.**
+- The harness corpus's compaction scenarios pass on agex.
+- A task whose run outgrows its budget folds within the run and
+  finishes, in-process, under process isolation and on dud.
 
 ### B5. Delegation from code
 
