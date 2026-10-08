@@ -631,8 +631,26 @@ def _keys(kv: Any, prefix: str) -> list[str]:
     return [k for k in list(kv.keys()) if isinstance(k, str) and k.startswith(prefix)]
 
 
-def _begin(kv: Any, spec: TaskSpec, entries: Mapping[str, Any]) -> None:
-    """Start the plane for a task about to run: what it is, and each
+def _signature(name: str, params: Mapping[str, str], returns: str) -> str:
+    listed = ", ".join(f"{p}: {t}" for p, t in params.items())
+    return f"{name}({listed}) -> {returns}"
+
+
+def _contract(spec: TaskSpec) -> str:
+    """What a task takes and returns, written as its signature: what a
+    resume checks a world's task against."""
+    return _signature(
+        spec.name,
+        {n: values.fmt(p.annotation) for n, p in spec.params.items()},
+        values.fmt(spec.returns.annotation),
+    )
+
+
+def _begin(
+    kv: Any, spec: TaskSpec, entries: Mapping[str, Any], origin: str | None
+) -> None:
+    """Start the plane for a task about to run: what it is, the world it
+    was forked from (``origin``, ``None`` for a scratch world), and each
     input sent by value, encoded. What the world held there before (a
     task's world forked for another task) goes."""
     for key in _keys(kv, PLANE):
@@ -654,6 +672,7 @@ def _begin(kv: Any, spec: TaskSpec, entries: Mapping[str, Any]) -> None:
     kv[_SPEC_KEY] = {
         "format": 1,
         "name": spec.name,
+        "world": origin,
         "instructions": spec.instructions,
         "params": params,
         "returns": described(spec.returns),
@@ -876,6 +895,11 @@ class Task:
         process. The inputs come back from the task's world, and a live
         one, which can't be stored, is passed again by name. ``keep``
         is as for ``run``: a task that asks again is kept regardless.
+
+        The world's task must be this one, by name, inputs and return,
+        and ``world=`` the world it ran on, by session. That world's
+        settings are not stored with the task, so it should be opened as
+        it was: host objects, isolation and executor are taken from it.
         """
         if keep and world is None:
             raise ValueError(
@@ -895,7 +919,7 @@ class Task:
         else:
             store, base = _store_of(self.spec.name, world), Profile.of(world)
         plane = await asyncio.wrap_future(_WORLDS.submit(_read, store, ref))
-        self._waiting(ref, plane)
+        self._waiting(ref, plane, world)
         inputs = self._restore(plane["inputs"], live_inputs)
         entries = {
             name: _entry(self.spec.params[name], v) for name, v in inputs.items()
@@ -951,6 +975,7 @@ class Task:
             # a world already opening finishes on its thread: close it then
             opening.add_done_callback(_close_abandoned)
             raise
+        finished = False
         try:
             session = _TaskSession(self.agent, opened.ws, task)
             stream = session.stream(prompt)
@@ -960,12 +985,17 @@ class Task:
                 session.cancel()
                 await asyncio.wait({stream._start()})
                 raise
+            finished = True
         finally:
             result = task._result
-            # still waiting: it asked, or a resume of it was cut short
-            waiting = (result is not None and result[0] == "needs_input") or (
-                result is None and opened.keep_unsettled
-            )
+            asked = result is not None and result[0] == "needs_input"
+            if finished:
+                # still waiting: it asked, or a resume of it was cut short
+                waiting = asked or (result is None and opened.keep_unsettled)
+            else:
+                # the caller is gone, and learns no ref: only a world whose
+                # ref it already holds (a resume's) is kept, unsettled
+                waiting = opened.keep_unsettled and (result is None or asked)
             kept = keep or waiting
             await asyncio.wrap_future(_WORLDS.submit(opened.put_away, kept))
         outcome = self._outcome(ran, task, opened.name if kept else None)
@@ -1008,7 +1038,7 @@ class Task:
                 store.close()
                 raise
             try:
-                _begin(ws.provider.kv, self.spec, entries)
+                _begin(ws.provider.kv, self.spec, entries, None)
             except BaseException:
                 ws.close()
                 store.close()
@@ -1038,7 +1068,7 @@ class Task:
             store.delete(name)
             raise
         try:
-            _begin(fork.provider.kv, self.spec, entries)
+            _begin(fork.provider.kv, self.spec, entries, world.session)
         except BaseException:
             fork.close()
             store.delete(name)
@@ -1079,13 +1109,33 @@ class Task:
 
         return _World(ws, ref, put_away, keep_unsettled=True)
 
-    def _waiting(self, ref: str, plane: Mapping[str, Any]) -> None:
-        """Refuse a world that isn't this task's, waiting for an answer."""
+    def _waiting(
+        self, ref: str, plane: Mapping[str, Any], world: Workspace | None
+    ) -> None:
+        """Refuse a world that isn't this task's (the same name, inputs
+        and return), reached through the world it ran on, and waiting
+        for an answer."""
         spec, state = plane["spec"], plane["state"]
-        found = spec.get("name") if isinstance(spec, Mapping) else None
-        if found != self.spec.name:
-            whose = f": it is task {found!r}'s" if found else ""
-            raise ValueError(f"{ref!r} isn't a world of task {self.spec.name!r}{whose}")
+        if not isinstance(spec, Mapping):
+            raise ValueError(f"{ref!r} isn't the world of a task")
+        params = spec.get("params") or {}
+        held = _signature(
+            str(spec.get("name")),
+            {n: str(p.get("type")) for n, p in params.items()},
+            str((spec.get("returns") or {}).get("type")),
+        )
+        own = _contract(self.spec)
+        if held != own:
+            raise ValueError(
+                f"{ref!r} isn't a world of this task: it holds {held}, and this "
+                f"task is {own}"
+            )
+        origin = spec.get("world")
+        if world is not None and origin != world.session:
+            raise ValueError(
+                f"task {self.spec.name!r} at {ref!r} ran on world {origin!r}, "
+                f"not {world.session!r}: resume it through the world it ran on"
+            )
         status = state.get("status") if isinstance(state, Mapping) else None
         if status != "needs_input":
             raise ValueError(

@@ -2,6 +2,9 @@
 answer carries on there, from this process or after a restart, its
 inputs coming back from the task's own plane."""
 
+import asyncio
+import time
+
 import pytest
 from nontainer import Store, values
 from nontainer.conformance.corpus import ModelStep, calls, fails
@@ -11,7 +14,7 @@ from task_types import Directory, Ranking, Score
 
 from agex import Agent, NeedsInput
 from agex.providers.scripted import ScriptedProvider
-from agex.task import ANSWER, ASKED, PLANE
+from agex.task import _KEPT, ANSWER, ASKED, PLANE, TaskHost
 
 SCORES = [Score("ada", 7), Score("bo", 2)]
 QUESTION = "Rank by total, or by the best single score?"
@@ -208,6 +211,7 @@ def test_the_plane_holds_the_spec_inputs_state_and_value(store, ws):
     asked = plane()
     spec = asked["spec"]
     assert (spec["name"], spec["returns"]["type"]) == ("rank", "Ranking")
+    assert spec["world"] == "main"
     assert spec["params"]["scores"]["type"] == "list[Score]"
     assert spec["params"]["scores"]["stored"] is True
     assert spec["params"]["scores"]["schema"]["type"] == "array"
@@ -271,8 +275,88 @@ def test_what_a_resume_refuses(store, ws):
     def summarize(scores: list[Score]) -> str:
         """Summarize the scores."""
 
-    with pytest.raises(ValueError, match="isn't a world of task 'summarize'"):
+    with pytest.raises(
+        ValueError,
+        match=r"isn't a world of this task: it holds rank\(scores: list\[Score\]\) "
+        r"-> Ranking, and this task is summarize\(scores: list\[Score\]\) -> str",
+    ):
         summarize.resume(out.ref, "by total", world=ws)
     with pytest.raises(LookupError, match="no task world 'main.nowhere'"):
         rank.resume("main.nowhere", "by total", world=ws)
     assert len(provider.seen) == 1  # only the run that asked
+
+
+def test_a_same_named_task_with_another_contract_is_refused(store, ws):
+    a, _ = agent(ASK)
+    out = rank_of(a).run(SCORES, world=ws)
+    other, provider = agent()
+
+    @other.task
+    def rank(scores: list[Score]) -> str:
+        """Rank the scores, as text."""
+
+    with pytest.raises(ValueError, match=r"it holds rank\(.*\) -> Ranking"):
+        rank.resume(out.ref, "by total", world=ws)
+    assert provider.seen == []
+
+    @other.task
+    def rank(scores: list[Score]) -> Ranking:  # noqa: F811
+        """Rank them, in other words: the same contract."""
+
+    other_ws = store.open("other")
+    try:
+        with pytest.raises(ValueError, match="ran on world 'main', not 'other'"):
+            rank.resume(out.ref, "by total", world=other_ws)
+    finally:
+        other_ws.close()
+    assert provider.seen == []
+
+
+def _slow_asking(monkeypatch, seconds: float) -> None:
+    """``task.needs_input`` that records the question, then holds its run
+    open, so a caller can be cancelled after the task asked."""
+    asked = TaskHost.needs_input
+
+    def slow(self, question: str) -> None:
+        asked(self, question)
+        time.sleep(seconds)
+
+    monkeypatch.setattr(TaskHost, "needs_input", slow)
+
+
+def _cancel_during(start, after: float = 0.2) -> None:
+    async def go():
+        running = asyncio.ensure_future(start())
+        await asyncio.sleep(after)
+        running.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await running
+
+    asyncio.run(go())
+
+
+def test_a_caller_cancelled_after_its_task_asked_keeps_nothing(store, ws, monkeypatch):
+    """No ref reaches a caller that is gone, so nothing is kept for it."""
+    _slow_asking(monkeypatch, 0.4)
+    a, _ = agent(ASK, ASK)
+    rank = rank_of(a)
+    before = set(_KEPT)
+    _cancel_during(lambda: rank.arun(SCORES))
+    _cancel_during(lambda: rank.arun(SCORES, world=ws))
+    time.sleep(0.4)  # the runs' threads finish their sleep
+    assert set(_KEPT) == before
+    assert store.sessions() == ["main"]
+
+
+def test_a_resume_cancelled_keeps_the_world_waiting(store, ws, monkeypatch):
+    """Its caller holds the ref already, so the world stays resumable."""
+    a, _ = agent(ASK, ASK, RANK)
+    rank = rank_of(a)
+    out = rank.run(SCORES, world=ws)
+    _slow_asking(monkeypatch, 0.4)
+    _cancel_during(lambda: rank.aresume(out.ref, "by total", world=ws))
+    time.sleep(0.4)
+    assert out.ref in store.sessions()
+    monkeypatch.undo()
+    done = rank.resume(out.ref, "by total", world=ws)
+    assert (done.status, done.value) == ("success", Ranking("ada", SCORES))
