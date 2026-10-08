@@ -3,13 +3,14 @@
 - **Typed values:** a task hands back a value of its return type, built
   with the record classes bound in its world; the same value comes back
   on every rung, for data, tables, arrays and bytes; a value that
-  doesn't fit is refused at ``task.success``, and the model tries again.
+  doesn't fit is refused at ``task.success``, and the model tries again;
+  an input that doesn't fit is refused before the model is asked.
 - **Endings:** a task fails with its reason, and a provider error
   interrupts it.
 - **Asking:** a task asks with ``task.needs_input``, keeps its world,
   and carries on from the answer, through its outcome or by its ref
-  after a restart; it can ask again; a resume missing a live input is
-  refused by name.
+  after a restart; it can ask again, also after a resume by ref; a
+  resume missing a live input is refused by name.
 - **Live inputs:** a live input is a capability whose methods agent
   code calls on the host; what can't leave the process (a live return
   type, an input mixing data with a live part) is refused off it before
@@ -217,6 +218,21 @@ NOT_FITTING = TaskScenario(
     expect=(success(RANKED, asked=2),),
 )
 
+INPUT_NOT_FITTING = TaskScenario(
+    name="an-input-that-is-not-of-its-type-is-refused",
+    summary=(
+        "A call whose input isn't of its declared type is refused before the "
+        "model is asked anything, naming what doesn't fit: a field of another "
+        "type, or a field missing."
+    ),
+    task=RANK,
+    acts=(
+        call(scores=[{"student": "ada", "total": "7"}]),
+        call(scores=[{"student": "ada"}]),
+    ),
+    expect=(refusal("scores", "total"), refusal("total")),
+)
+
 # -- endings ----------------------------------------------------------------------------
 
 FAILS = TaskScenario(
@@ -325,6 +341,35 @@ RESUME_MISSING_LIVE = TaskScenario(
     ),
 )
 
+ASKS_AGAIN_AFTER_RESTART = TaskScenario(
+    name="a-task-resumed-by-ref-asks-again-and-carries-on-from-its-outcome",
+    summary=(
+        "A resume by ref after a restart is an outcome like any other: when "
+        "the task asks again, a resume through that outcome carries it on, "
+        "with the live input passed to the resume by ref."
+    ),
+    task=LOOK,
+    acts=(
+        call(task_needs_input(QUESTION), world=True, scores=SCORES, directory={}),
+        restart(),
+        resume(
+            "By total.",
+            task_needs_input("Ties first or last?"),
+            by="ref",
+            live=("directory",),
+        ),
+        resume(
+            "Last.",
+            task_success(MethodCall(input="directory", method="lookup", args=("ada",))),
+        ),
+    ),
+    expect=(
+        question(QUESTION, asked=1),
+        question("Ties first or last?", asked=1),
+        success("ADA", asked=1, kept=False, calls=LOOKED_UP),
+    ),
+)
+
 # -- live inputs ------------------------------------------------------------------------
 
 CAPABILITY = TaskScenario(
@@ -406,12 +451,14 @@ SCENARIOS: tuple[TaskScenario, ...] = (
     ARRAY_ROUND_TRIP,
     BYTES_ROUND_TRIP,
     NOT_FITTING,
+    INPUT_NOT_FITTING,
     FAILS,
     INTERRUPTED,
     ASKS,
     ASKS_AGAIN,
     RESUME_AFTER_RESTART,
     RESUME_MISSING_LIVE,
+    ASKS_AGAIN_AFTER_RESTART,
     CAPABILITY,
     LIVE_RETURN,
     MIXED_INPUT,

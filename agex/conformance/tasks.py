@@ -557,9 +557,12 @@ class _Opened:
         return getattr(self.module, "_CALLS", [])
 
     def call(self, act: TaskCall) -> OutcomeView:
+        """Call the task. A call that can't be made is refused: an input
+        that can't even be built (a record missing a field), or one the
+        task refuses."""
         self._calls().clear()
-        inputs = {name: self._input(name, v) for name, v in act.inputs.items()}
         try:
+            inputs = {name: self._input(name, v) for name, v in act.inputs.items()}
             out = self.task.run(
                 world=self.ws if act.world else None, keep=act.keep, **inputs
             )
@@ -572,8 +575,8 @@ class _Opened:
 
     def resume(self, act: TaskResume) -> OutcomeView:
         self._calls().clear()
-        live = {name: self._input(name, {}) for name in act.live}
         try:
+            live = {name: self._input(name, {}) for name in act.live}
             if act.by == "outcome":
                 if self.outcome is None:
                     raise LookupError("no outcome to resume")

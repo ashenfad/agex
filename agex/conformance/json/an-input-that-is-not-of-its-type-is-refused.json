@@ -1,0 +1,122 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "scores": [
+          {
+            "student": "ada",
+            "total": "7"
+          }
+        ]
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [],
+      "world": false
+    },
+    {
+      "inputs": {
+        "scores": [
+          {
+            "student": "ada"
+          }
+        ]
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [],
+      "world": false
+    }
+  ],
+  "expect": [
+    {
+      "asked": 0,
+      "calls": null,
+      "kept": null,
+      "message": null,
+      "names": [
+        "scores",
+        "total"
+      ],
+      "plane": null,
+      "status": "refused",
+      "value": null
+    },
+    {
+      "asked": 0,
+      "calls": null,
+      "kept": null,
+      "message": null,
+      "names": [
+        "total"
+      ],
+      "plane": null,
+      "status": "refused",
+      "value": null
+    }
+  ],
+  "name": "an-input-that-is-not-of-its-type-is-refused",
+  "needs": [],
+  "summary": "A call whose input isn't of its declared type is refused before the model is asked anything, naming what doesn't fit: a field of another type, or a field missing.",
+  "task": {
+    "defs": {
+      "Ranking": {
+        "additionalProperties": false,
+        "description": "The best student, and the scores ranked.",
+        "properties": {
+          "best": {
+            "type": "string"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/$defs/Score"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "best",
+          "scores"
+        ],
+        "type": "object"
+      },
+      "Score": {
+        "additionalProperties": false,
+        "description": "One student's total.",
+        "properties": {
+          "student": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "student",
+          "total"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Rank the scores, best first.",
+    "name": "rank",
+    "params": [
+      {
+        "name": "scores",
+        "type": {
+          "items": {
+            "$ref": "#/$defs/Score"
+          },
+          "type": "array"
+        }
+      }
+    ],
+    "returns": {
+      "$ref": "#/$defs/Ranking"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}

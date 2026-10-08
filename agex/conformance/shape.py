@@ -300,16 +300,16 @@ class TaskScenario:
             )
         if not self.acts or not isinstance(self.acts[0], TaskCall):
             raise ValueError(f"{self.name}: the first act must be a call")
-        restarted = False
+        restarted = False  # with no outcome since: a restart drops them
         for act in self.acts:
             if isinstance(act, Restart):
                 restarted = True
-            elif isinstance(act, TaskCall):
+            elif isinstance(act, TaskCall) or act.by == "ref":
                 restarted = False
-            elif act.by == "outcome" and restarted:
+            elif restarted:
                 raise ValueError(
-                    f"{self.name}: a resume by outcome after a restart, which "
-                    "drops the outcome; resume by ref"
+                    f"{self.name}: a resume by outcome after a restart, with no "
+                    "outcome since (a restart drops them); resume by ref"
                 )
 
 
