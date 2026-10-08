@@ -155,13 +155,13 @@ def test_the_brief_previews_a_table_and_an_array_on_one_line_each():
     def total(frame: pd.DataFrame, values: np.ndarray) -> int:
         """Sum the values."""
 
-    frame = pd.DataFrame({"name": ["ada", "bo"], "score": [3, 1]})
+    frame = pd.DataFrame({"score": [3, 1], "bonus": [1, 0]})
     assert total(frame, np.array([1, 2, 3], dtype=np.int64)) == 6
     (request,) = provider.seen[0]
     lines = request.parts[1].content.splitlines()
     assert (
-        "- `frame: DataFrame` = DataFrame(2x2, {'name': str, 'score': int64}, "
-        "[('ada', 3), ('bo', 1)])" in lines
+        "- `frame: DataFrame` = DataFrame(2x2, {'score': int64, 'bonus': int64}, "
+        "[(3, 1), (1, 0)])" in lines
     )
     assert "- `values: ndarray` = ndarray(3, int64, [1, 2, 3])" in lines
 
