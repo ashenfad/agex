@@ -278,6 +278,29 @@ def test_a_task_hands_back_a_typed_value(live, isolation):
     assert totals == {"ada": 7, "bo": 2, "cy": 5}
 
 
+def test_a_task_asks_then_carries_on_with_the_answer(live):
+    """A model that is told it must ask does, with task.needs_input, and
+    finishes from the answer in the same world."""
+    agent = Agent(live.model, settings=live.settings())
+
+    @agent.task
+    def rank(answers: dict[str, list[int]]) -> Ranking:
+        """Rank the students. You don't know whether to rank them by each
+        student's total or by their best single answer, so ask with
+        task.needs_input before you rank, then rank as the answer says."""
+
+    answers = {"ada": [3, 4], "bo": [1, 1], "cy": [5, 0]}
+    out = rank.run(answers)
+    if out.status == "interrupted":
+        out = rank.run(answers)
+    assert out.status == "needs_input", out.message
+    done = out.resume("By total.")
+    if done.status == "interrupted":
+        pytest.skip(f"the provider was interrupted on resume: {done.message}")
+    assert done.status == "success", done.message
+    assert done.value.best == "ada"
+
+
 def test_a_refused_request_fails_the_turn(live, ws):
     outcome = Agent(live.bad_model).session(ws).say("hi")
     assert outcome.status == "failed", outcome.message

@@ -185,10 +185,11 @@ opens.
   - `keep=True` keeps the fork, and `out.ref` names it.
 - **Resuming.** A `needs_input` outcome always keeps its fork,
   whatever `keep=` says, and `out.ref` names it.
-  - `grade.resume(ref, answer, **live_inputs)` continues it by ref.
-    Encodable inputs come back from the `__task__` plane. Live inputs
-    are supplied again and bound as host objects; a missing one is
-    refused by name.
+  - `grade.resume(ref, answer, world=ws, **live_inputs)` continues it
+    by ref, through the world the task ran on (for a scratch world,
+    without `world=`, in the same process). Encodable inputs come back
+    from the `__task__` plane. Live inputs are supplied again and bound
+    as host objects; a missing one is refused by name.
   - `out.resume(answer)` is the in-process shortcut, reusing the
     outcome's own inputs.
   - **Surviving a restart needs a persistent world.** A scratch world
@@ -415,6 +416,18 @@ A reserved plane, like `__conversation__`, holding the task's spec,
 its encoded inputs and its encoded value. A resume, a parent reading a
 delegate's ref, or an app reads it there. A live value is not stored;
 the `Outcome` holds it.
+
+```
+__task__/spec            name, instructions, each type (and its schema), which inputs are stored
+__task__/inputs/<name>   an input sent by value, encoded (nt-value/1)
+__task__/state           running, success, failed (with the reason) or needs_input (with the question)
+__task__/value           the value, encoded, when it can be stored
+```
+
+The task's own loop writes it, so each write lands in the commit of the
+run it belongs to: a world at any commit says how its task stood there.
+A task starts its plane afresh, so a world forked from another task's
+world doesn't carry that task's plane into its own.
 
 ### What the model sees
 

@@ -11,6 +11,7 @@ def test_agex_imports():
         "Agent",
         "Outcome",
         "Session",
+        "NeedsInput",
         "Task",
         "TaskError",
         "TaskFailed",

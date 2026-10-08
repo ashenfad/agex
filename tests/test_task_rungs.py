@@ -146,6 +146,23 @@ def test_a_live_input_is_a_capability(rung):
     assert directory.looked_up == ["ada"]
 
 
+def test_needs_input_then_resume(rung):
+    a = agent(
+        rung,
+        python("task.needs_input('By total?')"),
+        python("task.success(Ranking(best=scores[0].student, scores=scores))"),
+    )
+
+    @a.task
+    def rank(scores: list[Score]) -> Ranking:
+        """Rank the scores."""
+
+    out = rank.run(SCORES)
+    assert (out.status, out.message) == ("needs_input", "By total?")
+    done = out.resume("yes")
+    assert done.value == Ranking(best="ada", scores=SCORES)
+
+
 def test_task_fail_and_the_world_untouched(rung):
     with Store(memory=True) as store:
         ws = store.open("main", profile=profile(rung))

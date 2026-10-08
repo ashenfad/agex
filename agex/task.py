@@ -16,11 +16,22 @@ caller's world is never touched.
 
 Inside the world, agent code sees each argument bound by its own name,
 the record and enum types the signature names, and ``task``:
-``task.success(value)`` ends the task with its value, and
-``task.fail(reason)`` ends it without one. A value that doesn't fit is a
-``TypeError`` at the call, so the agent fixes it in the same script. A
-model that stops without either call is nudged to finish, twice; then
-the task fails.
+``task.success(value)`` ends the task with its value,
+``task.fail(reason)`` ends it without one, and
+``task.needs_input(question)`` stops it to ask something only its
+caller can settle. A value that doesn't fit is a ``TypeError`` at the
+call, so the agent fixes it in the same script. A model that stops
+without any of them is nudged to finish, twice; then the task fails.
+
+A task that asks keeps its world, and carries on there with the answer:
+
+    out = grade.run(rs, world=ws)                # out.status == "needs_input"
+    out = out.resume("yes")                      # in this process
+    out = grade.resume(ref, "yes", world=ws)     # by ref, after a restart too
+
+The world's ``__task__`` plane (:data:`PLANE`) holds what the task is,
+its inputs and how it stands, so a resume finds its inputs there; a
+live input can't be stored, and is passed again.
 
 A task runs on any world: in this process, under process isolation or
 on a dud machine, the same way. Types are nontainer's
@@ -54,8 +65,9 @@ import dataclasses
 import functools
 import inspect
 import textwrap
+import threading
 import typing
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal
@@ -83,6 +95,8 @@ __all__ = [
     "TaskHost",
     "TaskInterrupted",
     "TaskSpec",
+    "NeedsInput",
+    "PLANE",
     "ValueSpec",
     "kinds_of",
 ]
@@ -100,11 +114,17 @@ PREVIEW = 600
 
 NUDGE = (
     "The task isn't finished. In run_python, call `task.success(value)` "
-    "with the result, or `task.fail(reason)` if it can't be done."
+    "with the result, `task.fail(reason)` if it can't be done, or "
+    "`task.needs_input(question)` to ask something only the person who "
+    "gave it can settle."
 )
 
 FINISHED = "task.success: the task is done."
 GAVE_UP = "task.fail: the task is over."
+ASKED = "task.needs_input: the question is sent; the task waits for its answer."
+
+ANSWER = "The answer to your question:\n{answer}"
+"""The message a resumed task's run starts from."""
 
 INSTRUCTIONS = """\
 You are doing a task. Its inputs are bound by name in every run_python \
@@ -114,7 +134,25 @@ must have the task's return type; one that doesn't raises TypeError right \
 there, so fix it and call again.
 - `task.fail(reason)` ends the task without a result, saying why it can't \
 be done.
-Either call ends the script it is in: nothing after it runs."""
+- `task.needs_input(question)` asks the person who gave you the task \
+something only they can settle (a choice, a permission, a missing fact). \
+Their answer comes back as the next message, and you carry on from there.
+Each call ends the script it is in: nothing after it runs."""
+
+PLANE = "__task__/"
+"""The task's own plane in its world, beside the conversation: what a
+resume, or anyone reading the world later, finds there. ``spec`` says
+what the task is and which inputs are stored, ``inputs/<name>`` holds
+each input sent by value, encoded (:mod:`nontainer.values`), ``state``
+how the task stands, and ``value`` the value it handed back, encoded,
+when it can be. A live input or value is not stored. Written in the
+commits of the task's own runs, so a world at any commit says how its
+task stood there."""
+
+_SPEC_KEY = PLANE + "spec"
+_STATE_KEY = PLANE + "state"
+_VALUE_KEY = PLANE + "value"
+_INPUTS = PLANE + "inputs/"
 
 _EMPTY = inspect.Parameter.empty
 
@@ -403,7 +441,10 @@ class TaskHost:
     task."""
 
     def __init__(self, returns: values.Spec) -> None:
-        self._result: tuple[Literal["success", "failed"], Any] | None = None
+        self._returns = returns
+        self._result: tuple[Literal["success", "failed", "needs_input"], Any] | None = (
+            None
+        )
 
         def success(value: Any) -> None:
             self._result = ("success", value)
@@ -418,6 +459,9 @@ class TaskHost:
 
     def fail(self, reason: str) -> None:
         self._result = ("failed", reason)
+
+    def needs_input(self, question: str) -> None:
+        self._result = ("needs_input", question)
 
 
 class _TaskSession(Session):
@@ -441,7 +485,11 @@ class _TaskSession(Session):
         result = self._task._result
         if result is None:
             return output, is_error
-        return (FINISHED if result[0] == "success" else GAVE_UP), False
+        # the turn commits at its end: the plane says how the task stands
+        # in the commit of the run that settled it (the task's own world,
+        # which its loop alone writes)
+        _settle(self.ws.provider.kv, result, self._task._returns)
+        return _SAID[result[0]], False
 
     def _done(self) -> bool:
         return self._task._result is not None
@@ -452,8 +500,12 @@ class _TaskSession(Session):
             return Message(id=new_id(), role="user", parts=(Text(text=NUDGE),))
         return (
             f"the model stopped {self._nudged + 1} times without calling "
-            "task.success or task.fail"
+            "task.success, task.fail or task.needs_input"
         )
+
+
+_SAID = {"success": FINISHED, "failed": GAVE_UP, "needs_input": ASKED}
+"""What the model reads as the result of the call that settled its task."""
 
 
 class TaskError(Exception):
@@ -475,12 +527,28 @@ class TaskInterrupted(TaskError):
     """A provider error worth retrying cut the task short."""
 
 
+class NeedsInput(TaskError):
+    """The task asked a question (``task.needs_input``) and waits for its
+    answer: ``outcome.resume(answer)``, or the task's ``resume`` with
+    ``ref``."""
+
+    @property
+    def question(self) -> str:
+        return self.outcome.message or ""
+
+    @property
+    def ref(self) -> str | None:
+        return self.outcome.ref
+
+
 def _unwrap(name: str, outcome: Outcome) -> Any:
     if outcome.status == "success":
         return outcome.value
-    error = {"failed": TaskFailed, "interrupted": TaskInterrupted}.get(
-        outcome.status, TaskError
-    )
+    error = {
+        "failed": TaskFailed,
+        "interrupted": TaskInterrupted,
+        "needs_input": NeedsInput,
+    }.get(outcome.status, TaskError)
     raise error(name, outcome)
 
 
@@ -556,11 +624,95 @@ def _with_objects(
     return replace(profile, python=python)
 
 
+# -- the plane -------------------------------------------------------------------------
+
+
+def _keys(kv: Any, prefix: str) -> list[str]:
+    return [k for k in list(kv.keys()) if isinstance(k, str) and k.startswith(prefix)]
+
+
+def _begin(kv: Any, spec: TaskSpec, entries: Mapping[str, Any]) -> None:
+    """Start the plane for a task about to run: what it is, and each
+    input sent by value, encoded. What the world held there before (a
+    task's world forked for another task) goes."""
+    for key in _keys(kv, PLANE):
+        del kv[key]
+
+    def described(value: ValueSpec) -> dict[str, Any]:
+        said: dict[str, Any] = {"type": values.fmt(value.annotation)}
+        if value.schema is not None:
+            said["schema"] = dict(value.schema)
+        return said
+
+    params: dict[str, Any] = {}
+    for name, param in spec.params.items():
+        entry = entries[name]
+        stored = isinstance(entry, HostObject)
+        if stored:
+            kv[_INPUTS + name] = values.encode(entry.obj).to_bytes()
+        params[name] = {**described(param), "stored": stored}
+    kv[_SPEC_KEY] = {
+        "format": 1,
+        "name": spec.name,
+        "instructions": spec.instructions,
+        "params": params,
+        "returns": described(spec.returns),
+    }
+    kv[_STATE_KEY] = {"status": "running"}
+
+
+def _settle(kv: Any, result: tuple[str, Any], returns: values.Spec) -> None:
+    """Record how the task stands once its code has called ``task``."""
+    status, detail = result
+    state: dict[str, Any] = {"status": status}
+    if status == "needs_input":
+        state["question"] = detail
+    elif status == "failed":
+        state["reason"] = detail
+    kv[_STATE_KEY] = state
+    blob = None
+    if status == "success" and returns.travels:
+        try:
+            blob = values.encode(detail).to_bytes()
+        except values.Unencodable:
+            pass  # a live object where the type allows anything: not stored
+    if blob is not None:
+        kv[_VALUE_KEY] = blob
+    elif kv.get(_VALUE_KEY) is not None:
+        del kv[_VALUE_KEY]
+
+
+def _read(store: Store, ref: str) -> dict[str, Any]:
+    """What the plane of the task world ``ref`` holds."""
+    if not store.exists(ref):
+        raise LookupError(f"no task world {ref!r} in this store")
+    ws = store.open(ref)
+    try:
+        kv = ws.provider.kv
+        return {
+            "spec": kv.get(_SPEC_KEY),
+            "state": kv.get(_STATE_KEY),
+            "inputs": {k[len(_INPUTS) :]: kv[k] for k in _keys(kv, _INPUTS)},
+        }
+    finally:
+        ws.close()
+
+
+# -- worlds -------------------------------------------------------------------------
+
+
 @dataclass
 class _World:
+    """A task's world, open: its workspace, its name in its store, and
+    how to put it away, kept or not. ``keep_unsettled`` is whether to
+    keep it when its task doesn't settle (its caller gone before it
+    ran, or its run cut short): a world kept for a resume stays kept
+    until its task settles, so a resume cut short can be made again."""
+
     ws: Workspace
-    close: Callable[[], None]
-    ref: str | None
+    name: str
+    put_away: Callable[[bool], None]
+    keep_unsettled: bool = False
 
 
 _WORLDS = ThreadPoolExecutor(thread_name_prefix="agex-task-world")
@@ -570,23 +722,54 @@ future, which settles in its thread whatever becomes of the event loop
 (a loop shut down after a cancel would cancel an asyncio-side callback
 before it ran)."""
 
+_KEPT: dict[str, tuple[Store, Profile]] = {}
+"""Scratch worlds kept for a resume, by ref: the memory store each lives
+in, and the profile it was built from. In this process only, which is
+why a scratch world resumes only here. One resumed to an end is closed
+and dropped; one never resumed lasts as long as the process."""
+
+_KEPT_LOCK = threading.Lock()
+
 
 def _close_abandoned(opening: Future[_World]) -> None:
     if not opening.cancelled() and opening.exception() is None:
-        opening.result().close()
+        opened = opening.result()
+        opened.put_away(opened.keep_unsettled)
+
+
+def _store_of(name: str, world: Workspace) -> Store:
+    store = world.store
+    if store is None:
+        raise NotSupportedError(
+            f"task {name!r} can't fork this world: a workspace opened from a "
+            "Store can be forked for a task, and this one wasn't"
+        )
+    return store
+
+
+Resumer = Callable[..., Awaitable[Outcome]]
 
 
 class Task:
     """A task: ``fn``'s signature and docstring, run by ``agent``.
 
     Call it for the value (``await`` it, for an ``async def`` task):
-    ``TaskFailed`` or ``TaskInterrupted`` when there is none. ``run`` and
-    ``arun`` return the :class:`~agex.agent.Outcome` instead.
+    ``TaskFailed``, ``NeedsInput`` or ``TaskInterrupted`` when there is
+    none. ``run`` and ``arun`` return the :class:`~agex.agent.Outcome`
+    instead.
 
     ``world=`` runs the task on a fork of that workspace's last commit,
     with a fresh conversation; without it, on a scratch world in memory
-    built from ``agent.profile``. ``keep=True`` keeps the fork, and the outcome's
-    ``ref`` names it; otherwise it is deleted once the task ends.
+    built from ``agent.profile``. ``keep=True`` keeps the fork, and the
+    outcome's ``ref`` names it; otherwise it is deleted once the task
+    ends.
+
+    A task that asks for input (``needs_input``) keeps its world
+    whatever ``keep`` says, and ``resume`` continues it there with the
+    answer: by ``ref``, through the same ``world=`` for one kept in a
+    store (after a restart, too, on a store that persists), or in this
+    process for a scratch world. Its inputs come back from the world,
+    except a live one, which can't be stored and is passed again.
     """
 
     def __init__(
@@ -648,8 +831,120 @@ class Task:
         entries = {
             name: _entry(self.spec.params[name], v) for name, v in inputs.items()
         }
+        live = {
+            n: v for n, v in inputs.items() if not isinstance(entries[n], HostObject)
+        }
+        return await self._drive(
+            lambda task: self._open(world, entries, task),
+            _brief(self.spec, inputs),
+            keep=keep,
+            again=self._again(world, keep, live),
+        )
+
+    def resume(
+        self,
+        ref: str,
+        answer: Any,
+        /,
+        *,
+        world: Workspace | None = None,
+        keep: bool = False,
+        **live_inputs: Any,
+    ) -> Outcome:
+        """Continue the task at ``ref``, which asked for input, with
+        ``answer``; its outcome. From a coroutine, ``await aresume``."""
+        return _block(
+            self.aresume(ref, answer, world=world, keep=keep, **live_inputs),
+            f"{self.spec.name}.aresume",
+        )
+
+    async def aresume(
+        self,
+        ref: str,
+        answer: Any,
+        /,
+        *,
+        world: Workspace | None = None,
+        keep: bool = False,
+        **live_inputs: Any,
+    ) -> Outcome:
+        """Continue the task at ``ref``, which asked for input, with
+        ``answer`` as the next message its model reads; its outcome.
+
+        ``world=`` is the world the task ran on, whose store keeps
+        ``ref``; without it, ``ref`` is a scratch world kept in this
+        process. The inputs come back from the task's world, and a live
+        one, which can't be stored, is passed again by name. ``keep``
+        is as for ``run``: a task that asks again is kept regardless.
+        """
+        if keep and world is None:
+            raise ValueError(
+                "keep= needs world=: a scratch world lives in memory, and is "
+                "gone once the task ends"
+            )
+        if world is None:
+            with _KEPT_LOCK:
+                kept = _KEPT.get(ref)
+            if kept is None:
+                raise LookupError(
+                    f"no scratch world {ref!r} is kept in this process: a scratch "
+                    "world resumes only in the process that ran it, and one kept "
+                    "in a store resumes through the world it ran on (world=)"
+                )
+            store, base = kept
+        else:
+            store, base = _store_of(self.spec.name, world), Profile.of(world)
+        plane = await asyncio.wrap_future(_WORLDS.submit(_read, store, ref))
+        self._waiting(ref, plane)
+        inputs = self._restore(plane["inputs"], live_inputs)
+        entries = {
+            name: _entry(self.spec.params[name], v) for name, v in inputs.items()
+        }
+        live = {
+            n: v for n, v in inputs.items() if not isinstance(entries[n], HostObject)
+        }
+        text = (
+            answer
+            if isinstance(answer, str)
+            else reprobate.render(answer, budget=PREVIEW)
+        )
+        return await self._drive(
+            lambda task: self._reopen(ref, store, world, base, entries, task),
+            ANSWER.format(answer=text),
+            keep=keep,
+            again=self._again(world, keep, live),
+        )
+
+    def _again(
+        self, world: Workspace | None, keep: bool, live: Mapping[str, Any]
+    ) -> Callable[[str], Resumer]:
+        """How an outcome that asks for input resumes in this process:
+        the same world and ``keep``, the same live inputs unless others
+        are passed."""
+
+        def at(ref: str) -> Resumer:
+            async def again(answer: Any, /, **more: Any) -> Outcome:
+                return await self.aresume(
+                    ref, answer, world=world, keep=keep, **{**live, **more}
+                )
+
+            return again
+
+        return at
+
+    async def _drive(
+        self,
+        open_world: Callable[[TaskHost], _World],
+        prompt: str,
+        *,
+        keep: bool,
+        again: Callable[[str], Resumer],
+    ) -> Outcome:
+        """Open the task's world, run the model there from ``prompt`` to
+        an end, and put the world away: kept if ``keep``, or if the task
+        asked for input."""
         task = TaskHost(self.spec.returns.spec)
-        opening = _WORLDS.submit(self._open, world, keep, entries, task)
+        opening = _WORLDS.submit(open_world, task)
         try:
             opened = await asyncio.wrap_future(opening)
         except BaseException:
@@ -658,7 +953,7 @@ class Task:
             raise
         try:
             session = _TaskSession(self.agent, opened.ws, task)
-            stream = session.stream(_brief(self.spec, inputs))
+            stream = session.stream(prompt)
             try:
                 ran = await stream.wait()
             except asyncio.CancelledError:
@@ -666,55 +961,73 @@ class Task:
                 await asyncio.wait({stream._start()})
                 raise
         finally:
-            await asyncio.wrap_future(_WORLDS.submit(opened.close))
-        return self._outcome(ran, task, opened.ref)
+            result = task._result
+            # still waiting: it asked, or a resume of it was cut short
+            waiting = (result is not None and result[0] == "needs_input") or (
+                result is None and opened.keep_unsettled
+            )
+            kept = keep or waiting
+            await asyncio.wrap_future(_WORLDS.submit(opened.put_away, kept))
+        outcome = self._outcome(ran, task, opened.name if kept else None)
+        if waiting:
+            outcome = replace(outcome, _resume=again(opened.name))
+        return outcome
+
+    def _profile(
+        self, base: Profile, executor: Any, entries: Mapping[str, Any], task: TaskHost
+    ) -> Profile:
+        """The task world's profile: ``base`` with the task's objects and
+        types, refused first when the task can't run where its code
+        would."""
+        _refuse_unsendable(self.spec, entries, _where(executor, base.python.isolation))
+        objects = {**entries, "task": HostObject(task, stub=TaskStub)}
+        return _with_objects(base, objects, tuple(self.spec.types.values()))
+
+    def _scratch_profile(
+        self, base: Profile, entries: Mapping[str, Any], task: TaskHost
+    ) -> Profile:
+        # the executor is made here, to see where its code runs before
+        # the world opens (opening refuses what can't cross, less clearly)
+        made = base.executor_factory() if base.executor_factory else None
+        profile = self._profile(base, made, entries, task)
+        if made is not None:
+            profile = replace(profile, executor_factory=lambda: made)
+        return profile
 
     def _open(
-        self,
-        world: Workspace | None,
-        keep: bool,
-        entries: Mapping[str, Any],
-        task: TaskHost,
+        self, world: Workspace | None, entries: Mapping[str, Any], task: TaskHost
     ) -> _World:
-        objects = {**entries, "task": HostObject(task, stub=TaskStub)}
-        classes = tuple(self.spec.types.values())
         if world is None:
-            profile = self.agent.profile or Profile()
-            # made here, to see where its code runs before the world opens
-            # (opening refuses what can't cross, less clearly than this)
-            made = profile.executor_factory() if profile.executor_factory else None
-            _refuse_unsendable(
-                self.spec, entries, _where(made, profile.python.isolation)
-            )
-            if made is not None:
-                profile = replace(profile, executor_factory=lambda: made)
-            profile = _with_objects(profile, objects, classes)
+            base = self.agent.profile or Profile()
+            profile = self._scratch_profile(base, entries, task)
+            name = f"{self.spec.name}-{new_id()[:8]}"
             store = Store(memory=True)
             try:
-                ws = store.open(self.spec.name, profile=profile)
+                ws = store.open(name, profile=profile)
             except BaseException:
                 store.close()
                 raise
-
-            def discard() -> None:
+            try:
+                _begin(ws.provider.kv, self.spec, entries)
+            except BaseException:
                 ws.close()
                 store.close()
+                raise
 
-            return _World(ws, discard, None)
+            def put_away(kept: bool) -> None:
+                ws.close()
+                if kept:
+                    with _KEPT_LOCK:
+                        _KEPT[name] = (store, base)
+                else:
+                    store.close()
 
-        _refuse_unsendable(
-            self.spec,
-            entries,
-            _where(world.runtime.executor, Profile.of(world).python.isolation),
+            return _World(ws, name, put_away)
+
+        profile = self._profile(
+            Profile.of(world), world.runtime.executor, entries, task
         )
-        store = world.store
-        if store is None:
-            raise NotSupportedError(
-                f"task {self.spec.name!r} can't fork this world: a workspace "
-                "opened from a Store can be forked for a task, and this one "
-                "wasn't"
-            )
-        profile = _with_objects(Profile.of(world), objects, classes)
+        store = _store_of(self.spec.name, world)
         name = f"{world.session}.{self.spec.name}-{new_id()[:8]}"
         # from the last commit, so the caller's branch gains nothing,
         # not even a commit of the writes it has pending
@@ -724,13 +1037,100 @@ class Task:
         except BaseException:
             store.delete(name)
             raise
-
-        def close() -> None:
+        try:
+            _begin(fork.provider.kv, self.spec, entries)
+        except BaseException:
             fork.close()
-            if not keep:
+            store.delete(name)
+            raise
+
+        def close(kept: bool) -> None:
+            fork.close()
+            if not kept:
                 store.delete(name)
 
-        return _World(fork, close, name if keep else None)
+        return _World(fork, name, close)
+
+    def _reopen(
+        self,
+        ref: str,
+        store: Store,
+        world: Workspace | None,
+        base: Profile,
+        entries: Mapping[str, Any],
+        task: TaskHost,
+    ) -> _World:
+        if world is None:
+            profile = self._scratch_profile(base, entries, task)
+        else:
+            profile = self._profile(base, world.runtime.executor, entries, task)
+        ws = store.open(ref, profile=profile)
+
+        def put_away(kept: bool) -> None:
+            ws.close()
+            if kept:
+                return
+            if world is None:
+                with _KEPT_LOCK:
+                    _KEPT.pop(ref, None)
+                store.close()
+            else:
+                store.delete(ref)
+
+        return _World(ws, ref, put_away, keep_unsettled=True)
+
+    def _waiting(self, ref: str, plane: Mapping[str, Any]) -> None:
+        """Refuse a world that isn't this task's, waiting for an answer."""
+        spec, state = plane["spec"], plane["state"]
+        found = spec.get("name") if isinstance(spec, Mapping) else None
+        if found != self.spec.name:
+            whose = f": it is task {found!r}'s" if found else ""
+            raise ValueError(f"{ref!r} isn't a world of task {self.spec.name!r}{whose}")
+        status = state.get("status") if isinstance(state, Mapping) else None
+        if status != "needs_input":
+            raise ValueError(
+                f"task {self.spec.name!r} at {ref!r} isn't waiting for an answer: "
+                f"it is {status or 'in no known state'}"
+            )
+
+    def _restore(
+        self, stored: Mapping[str, Any], supplied: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """The inputs to resume with: each stored one decoded, and each
+        other passed again, checked."""
+        name = self.spec.name
+        unknown = sorted(set(supplied) - set(self.spec.params))
+        if unknown:
+            raise TypeError(
+                f"{name}.resume() got inputs the task doesn't take: {', '.join(unknown)}"
+            )
+        inputs: dict[str, Any] = {}
+        for param_name, param in self.spec.params.items():
+            blob = stored.get(param_name)
+            if blob is not None:
+                if param_name in supplied:
+                    raise TypeError(
+                        f"{name}.resume(): {param_name!r} is stored with the task; "
+                        "only an input that can't be stored is passed again"
+                    )
+                try:
+                    inputs[param_name] = param.spec.decode(blob)
+                except values.Mismatch as mismatch:
+                    raise TypeError(
+                        f"{name}()'s stored input {param_name!r} no longer fits "
+                        f"{values.fmt(param.annotation)}: {mismatch}"
+                    ) from None
+            elif param_name in supplied:
+                value = supplied[param_name]
+                param.check(value, f"{name}()'s argument {param_name!r}")
+                inputs[param_name] = value
+            else:
+                raise TypeError(
+                    f"resuming task {name!r} needs its input {param_name!r} again: "
+                    f"it isn't stored (a live object isn't), so pass it as "
+                    f"{param_name}=..."
+                )
+        return inputs
 
     def _outcome(self, ran: Outcome, task: TaskHost, ref: str | None) -> Outcome:
         result = task._result
@@ -739,6 +1139,8 @@ class Task:
         message = ran.message
         if result is not None and result[0] == "success":
             status, value, message = "success", result[1], None
+        elif result is not None and result[0] == "needs_input":
+            status, message = "needs_input", result[1]
         elif result is not None:
             status, message = "failed", result[1]
         elif status == "completed":

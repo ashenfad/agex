@@ -1,6 +1,6 @@
 # agex rebuild: implementation plan
 
-Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3a are merged, and B3b is under way.
+Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3b-1 are merged, and B3b-2 is under way.
 
 This plan covers *when* and *in what order*. The *what* and *why* live
 in:
@@ -392,7 +392,7 @@ passes.
 
 ### B3. Tasks and the outcome host object
 
-The shape is the redesign doc's "Task calls" and "Task values". Three
+The shape is the redesign doc's "Task calls" and "Task values". Four
 PRs, with A8 between the first two.
 
 **B3a. Tasks on in-process worlds.** Status: merged (agex #78).
@@ -429,8 +429,8 @@ Checked live on the four providers' small models.
 - a live value comes back in-process;
 - a world off in-process is refused before any model call.
 
-**B3b-1. Tasks on every rung.** Status: agex PR open (branch
-`feat/task-rungs`), on nontainer #208. Checked live on the four
+**B3b-1. Tasks on every rung.** Status: merged (agex #79, on
+nontainer #208). Checked live on the four
 providers' small models, in-process and under process isolation.
 - **`task` is a stubbed host object:** `HostObject(TaskHost, stub=TaskStub)`.
   The stub lives in `agex.stubs`, standard library only, so a dud
@@ -468,27 +468,62 @@ providers' small models, in-process and under process isolation.
 - a live return type, and an input mixing data with a live part, are
   refused off in-process before any model call.
 
-**B3b-2. Needs input, the `__task__` plane, and resuming.**
-- `task.needs_input`; a plain call raises `NeedsInput` or
-  `TaskFailed`.
-- **Resuming:** a `needs_input` outcome always keeps its fork.
-  `grade.resume(ref, answer, **live_inputs)` continues it by ref, and
-  `out.resume(answer)` is the in-process shortcut.
-- **The `__task__` plane:** the spec, the encoded inputs and the
-  encoded value, in the same commit as the call.
+**B3b-2. Needs input, the `__task__` plane, and resuming.** Status:
+agex PR open (branch `feat/task-resume`). Checked live on the four
+providers' small models: told to ask, each asks, then finishes from the
+answer.
+- `task.needs_input(question)`: the outcome ends `needs_input`, with
+  the question as its message. A plain call raises `NeedsInput`, whose
+  `outcome.resume(answer)` carries on.
+- **Resuming:**
+  - a `needs_input` outcome always keeps its world, and `out.ref` names
+    it;
+  - `grade.resume(ref, answer, world=ws, **live_inputs)` continues it
+    by ref, through the world the task ran on, after a restart too on
+    a store that persists;
+  - a scratch world is kept in the process, and resumes only there;
+  - `out.resume(answer)` is the in-process shortcut, reusing the call's
+    world and live inputs;
+  - the answer is the next message the model reads, after the
+    conversation the world holds;
+  - a task can ask again, and a resume run to its end drops the world
+    unless `keep=True`; one cut short (cancelled, interrupted) keeps it
+    waiting, to be resumed again.
+- **The `__task__` plane:** `spec` (the name, the instructions, each
+  type with its schema, and which inputs are stored), `inputs/<name>`
+  encoded, `state`, and `value` encoded when it can be. They are
+  written in the commits of the task's own runs.
 - **Resume with stored inputs.** Encodable inputs come back from the
-  `__task__` plane; a live input is supplied again, and a missing one is
-  refused by name. A scratch world resumes only within the process.
-- **The shape corpus begins**, as agex's extension of the corpus
-  format.
+  plane, decoded by the task's types. A live input isn't stored, so it
+  is passed again, and a missing one is refused by name before any
+  model call.
+- **What a resume refuses:**
+  - a world that isn't this task's;
+  - a world that isn't waiting for an answer;
+  - a stored input passed again;
+  - an input the task doesn't take.
+
+**Exit.** Tests pass:
+- needs input, then resume: in this process, by ref through a kept
+  fork, and by ref after a restart on a disk store with a live input
+  passed again;
+- a resume missing a live input is refused by name;
+- asking and resuming work on in-process, process isolation and dud;
+- the plane holds the spec, inputs, state and value.
+
+**B3b-3. The shape corpus.**
+- **Task scenarios as data,** as agex's extension of nontainer's
+  corpus format:
+  - a task's signature, its types as JSON schemas, inputs, the model's
+    script, the rung, and the outcome expected;
+  - generated as JSON for harnesses in other languages.
 
 **Exit:**
 - Shape scenarios pass:
-  - needs input, then resume, including by ref after a restart on a
-    persistent world, with a live input supplied again;
+  - needs input, then resume, including by ref after a restart;
   - a resume missing a live input is refused by name;
-  - the same value comes back on in-process, process isolation and
-    dud, for data, tables, arrays and bytes;
+  - the same value comes back on each rung, for data, tables, arrays
+    and bytes;
   - a live type is refused off in-process.
 - The shape corpus JSON is generated, with its drift test.
 
