@@ -67,7 +67,7 @@ import inspect
 import textwrap
 import threading
 import typing
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal
@@ -111,6 +111,9 @@ finish, before the task fails."""
 
 PREVIEW = 600
 """How many characters of each input the task's brief shows."""
+
+METHODS = 20
+"""How many public methods of a live input's class the brief lists."""
 
 NUDGE = (
     "The task isn't finished. In run_python, call `task.success(value)` "
@@ -403,9 +406,127 @@ def _source(tp: type) -> str:
         return f"class {tp.__name__}:\n{body or '    ...'}"
 
 
+def _live(value: Any, name: str | None, found: list[tuple[Any, str]]) -> None:
+    """Add to ``found`` how agent code uses each live object ``value``
+    holds, once each: a function (or a bound method) as itself, under
+    ``name`` when it is the input itself; a class as itself; anything
+    else as its class. Built-in containers and records are looked
+    inside; any other object holding live ones is described as itself,
+    so a class acting as a mapping (a client to a remote store, say)
+    isn't walked."""
+    if values.find_live(value, full=True) is None:
+        return
+    model_fields = getattr(type(value), "model_fields", None)  # pydantic's
+    if isinstance(value, dict):
+        parts: Iterable[Any] = [*value.keys(), *value.values()]
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        parts = value
+    elif dataclasses.is_dataclass(value) and not isinstance(value, type):
+        parts = [getattr(value, f.name) for f in dataclasses.fields(value)]
+    elif isinstance(model_fields, Mapping):
+        parts = [getattr(value, name) for name in model_fields]
+    else:
+        if inspect.isroutine(value) or isinstance(value, functools.partial):
+            key = value
+        else:
+            key = value if isinstance(value, type) else type(value)
+        if not any(k is key for k, _ in found):
+            found.append((key, _usage(key, name)))
+        return
+    for part in parts:
+        _live(part, None, found)
+
+
+def _usage(live: Any, name: str | None) -> str:
+    if isinstance(live, type):
+        return _interface(live)
+    fn = live.func if isinstance(live, functools.partial) else live
+    return _def(name or fn.__name__, live)
+
+
+class _Text:
+    """An annotation already written out, which ``inspect`` prints as
+    it is."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def __repr__(self) -> str:
+        return self.text
+
+
+def _written(annotation: Any) -> Any:
+    if annotation is inspect.Parameter.empty:
+        return annotation
+    return _Text(annotation if isinstance(annotation, str) else values.fmt(annotation))
+
+
+def _parameters(fn: Any) -> str:
+    """``fn``'s parameters and return, its annotations written the way
+    code writes them, or ``(...)`` when it has no signature to read."""
+    try:
+        try:
+            sig = inspect.signature(fn, eval_str=True)
+        except Exception:
+            sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return "(...)"
+    params = [
+        p.replace(annotation=_written(p.annotation)) for p in sig.parameters.values()
+    ]
+    return str(
+        sig.replace(
+            parameters=params, return_annotation=_written(sig.return_annotation)
+        )
+    )
+
+
+def _summary(doc: str | None) -> str:
+    """The first paragraph of a docstring."""
+    return inspect.cleandoc(doc or "").split("\n\n")[0].strip()
+
+
+def _def(name: str, fn: Any) -> str:
+    """``fn`` written as a stub: its signature, and the first paragraph
+    of its docstring."""
+    summary = _summary(getattr(fn, "__doc__", None))
+    body = "\n" + textwrap.indent(f'"""{summary}"""', "    ") if summary else " ..."
+    return f"def {name}{_parameters(fn)}:{body}"
+
+
+def _interface(tp: type) -> str:
+    """``tp`` as agent code uses a live object of it: its name, the
+    first paragraph of its docstring, and its public methods (the
+    class's own first, in the order it defines them, then those it
+    inherits), up to :data:`METHODS` of them."""
+    methods: dict[str, str] = {}
+    for klass in tp.__mro__:
+        if klass is object:
+            continue
+        for name, raw in vars(klass).items():
+            if name.startswith("_") or name in methods:
+                continue
+            if isinstance(raw, (property, type)) or not (
+                callable(raw) or isinstance(raw, (staticmethod, classmethod))
+            ):
+                continue  # a data attribute, or a class, which isn't a call
+            fn, decorator = raw, ""
+            if isinstance(raw, (staticmethod, classmethod)):
+                fn, decorator = raw.__func__, f"@{type(raw).__name__}\n"
+            methods[name] = decorator + _def(name, fn)
+    blocks = list(methods.values())[:METHODS]
+    if len(methods) > len(blocks):
+        blocks.append(f"# and {len(methods) - len(blocks)} more public methods")
+    doc = _summary(tp.__doc__)
+    if doc:
+        blocks.insert(0, f'"""{doc}"""')
+    body = "\n\n".join(blocks) or "..."
+    return f"class {tp.__name__}:\n" + textwrap.indent(body, "    ")
+
+
 def _brief(spec: TaskSpec, inputs: Mapping[str, Any]) -> str:
     """The task's opening message: the job, the inputs, how to finish,
-    and the types it names."""
+    the types it names, and how to use its live inputs."""
     parts = [spec.instructions or f"Do the task {spec.name!r}."]
     if inputs:
         lines = [
@@ -426,6 +547,15 @@ def _brief(spec: TaskSpec, inputs: Mapping[str, Any]) -> str:
         parts.append(
             "The types, already bound by name; build values from these:"
             f"\n```python\n{sources}\n```"
+        )
+    live: list[tuple[Any, str]] = []
+    for name, value in inputs.items():
+        _live(value, name, live)
+    if live:
+        usage = "\n\n".join(text for _, text in live)
+        parts.append(
+            "The live inputs are objects on the host: use them as listed here, "
+            f"and don't build new ones.\n```python\n{usage}\n```"
         )
     return "\n\n".join(parts)
 
