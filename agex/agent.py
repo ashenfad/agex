@@ -248,7 +248,7 @@ class Agent:
     opens every request, ahead of the workspace's own tool instructions.
     ``profile`` is the environment for worlds the agent creates itself; a
     session uses its workspace's own. ``max_steps`` bounds the model
-    calls in one run. ``compaction`` folds a conversation that reaches
+    calls in one run, compaction's summary calls among them. ``compaction`` folds a conversation that reaches
     its budget into a summary, within a run as well (see
     :mod:`agex.compaction`); without one, nothing is folded, though a
     world's folds are still sent as recorded.
@@ -489,6 +489,7 @@ class Session:
             run_id = prior.run_id
             started = prior.started_at or time.time()
             messages = list(prior.messages)
+            summaries = prior.compaction
             earlier = [run.messages for run in self.runs[:-1]]
         else:
             run_id = new_id()
@@ -496,6 +497,7 @@ class Session:
             messages = [
                 Message(id=new_id(), role="user", parts=(Text(text=prompt or ""),))
             ]
+            summaries = None
             earlier = [run.messages for run in self.runs]
         system = self._system()
         status: RunStatus = "completed"
@@ -512,11 +514,13 @@ class Session:
         self._live = True
         try:
             push(RunStarted(run_id=run_id))
-            for _ in range(self.agent.max_steps):
+            # every model call counts against max_steps, summaries too
+            made = 0
+            while made < self.agent.max_steps:
                 self._check_cancel()
                 reply: Message | None = None
                 in_request = True
-                request, fold = await compaction.request(
+                prepared = await compaction.request(
                     self.ws,
                     self.agent.compaction,
                     self.agent.provider,
@@ -526,9 +530,18 @@ class Session:
                     earlier,
                     messages,
                     push,
+                    spare=self.agent.max_steps - made - 1,
                 )
+                made += prepared.calls + 1
+                if prepared.usage is not None:
+                    summaries = (
+                        prepared.usage
+                        if summaries is None
+                        else summaries + prepared.usage
+                    )
+                fold = prepared.fold
                 async for event in self.agent.provider.stream(
-                    request, self._specs, self.agent.settings
+                    prepared.messages, self._specs, self.agent.settings
                 ):
                     self._check_cancel()
                     if isinstance(event, Reply):
@@ -662,6 +675,7 @@ class Session:
                     messages=tuple(messages),
                     started_at=started,
                     ended_at=time.time(),
+                    compaction=summaries,
                 )
                 turn.end(status, body=dump_run(run), message=message)
         push(RunEnded(status=status, message=message))

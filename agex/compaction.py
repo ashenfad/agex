@@ -28,7 +28,10 @@ its own, and this is agex's:
   instruction to summarise: almost all of that is in the provider's
   cache. A reply with no text, or a request that fails, falls back to a
   transcript with tool output cut down, in chunks when even that is too
-  large, sent without tools.
+  large, sent without tools. Summary calls count against the agent's
+  ``max_steps`` (a fold is made only with a call to spare for the
+  request after it), and their usage is streamed and stored with the
+  run (``Run.compaction``).
 
 The budget should sit well above what no fold can take out (the system
 prompt, the tools, the opening message): a request still over it after
@@ -59,11 +62,12 @@ from nontainer.compaction import (
     transcript,
 )
 from nontainer.turns import Compacted, TurnEvent
+from nontainer.turns import Usage as UsageEvent
 
 from .providers import Provider, Reply, Settings, ToolSpec
-from .record import Message, Text, Thinking, ToolCall, ToolResult, new_id
+from .record import Message, Text, Thinking, ToolCall, ToolResult, Usage, new_id
 
-__all__ = ["request"]
+__all__ = ["Prepared", "request"]
 
 _SUMMARY_ID = MARK + "summary:"
 _ACK_ID = MARK + "ack:"
@@ -218,17 +222,49 @@ def _items(messages: Sequence[Message]) -> list[Item]:
     return items
 
 
-async def _reply(
-    provider: Provider,
-    messages: Sequence[Message],
-    specs: Sequence[ToolSpec],
-    settings: Settings,
-) -> str:
-    """The text of the model's reply to ``messages``."""
-    async for event in provider.stream(messages, specs, settings):
-        if isinstance(event, Reply):
-            return event.message.text.strip()
-    return ""
+class _Calls:
+    """The summary calls a fold may make: at most ``spare``, each one's
+    usage emitted as it ends and added up."""
+
+    def __init__(
+        self,
+        provider: Provider,
+        settings: Settings,
+        spare: int,
+        emit: Callable[[TurnEvent], None],
+    ) -> None:
+        self.provider = provider
+        self.settings = settings
+        self.spare = spare
+        self.emit = emit
+        self.made = 0
+        self.usage: Usage | None = None
+
+    async def reply(
+        self, messages: Sequence[Message], specs: Sequence[ToolSpec]
+    ) -> str:
+        """The text of the model's reply to ``messages``; ``_Spent``
+        when no call is left."""
+        if self.made >= self.spare:
+            raise _Spent
+        self.made += 1
+        async for event in self.provider.stream(messages, specs, self.settings):
+            if isinstance(event, Reply):
+                usage = event.message.usage
+                if usage is not None:
+                    self.usage = usage if self.usage is None else self.usage + usage
+                    self.emit(
+                        UsageEvent(
+                            input_tokens=usage.input_tokens,
+                            cached_tokens=usage.cache_read_tokens,
+                        )
+                    )
+                return event.message.text.strip()
+        return ""
+
+
+class _Spent(Exception):
+    """No model call is left for a summary."""
 
 
 def _user(text: str) -> Message:
@@ -236,19 +272,21 @@ def _user(text: str) -> Message:
 
 
 async def _summarize(
-    provider: Provider,
+    calls: _Calls,
     policy: Policy,
-    settings: Settings,
     specs: Sequence[ToolSpec],
     system: Message,
     prefix: list[Message],
     size: int,
 ) -> str:
-    """The summary of ``prefix``, or ``""`` when none could be written."""
+    """The summary of ``prefix``, or ``""`` when none could be written
+    within the calls left."""
     ask = _user(summary_request())
     if policy.fits(size + estimate_tokens(summary_request())):
         try:
-            text = await _reply(provider, [system, *prefix, ask], specs, settings)
+            text = await calls.reply([system, *prefix, ask], specs)
+        except _Spent:
+            return ""
         except Exception:  # noqa: BLE001 - the reduced path is the answer
             text = ""
         if text:
@@ -260,10 +298,23 @@ async def _summarize(
         label = None if len(parts) == 1 else f"part {n} of {len(parts)}"
         text = summary_request(transcript(part), prior=summary, part=label)
         try:
-            summary = await _reply(provider, [_user(text)], (), settings) or summary
+            summary = await calls.reply([_user(text)], ()) or summary
         except Exception:  # noqa: BLE001 - no fold this time
             return ""
     return summary or ""
+
+
+@dataclass(frozen=True)
+class Prepared:
+    """The request for the next model call, and what preparing it took:
+    the anchor of the fold in force in it (``None``: none is), which the
+    reply carries as its ``fold``, and the summary calls made, with
+    their usage summed (``None``: none was reported)."""
+
+    messages: list[Message]
+    fold: str | None
+    calls: int = 0
+    usage: Usage | None = None
 
 
 async def request(
@@ -276,12 +327,14 @@ async def request(
     earlier: Sequence[Sequence[Message]],
     current: Sequence[Message],
     emit: Callable[[TurnEvent], None],
-) -> tuple[list[Message], str | None]:
-    """The request for the next model call, and the anchor of the fold
-    in force in it (``None``: none is), which the reply carries as its
-    ``fold``. Over the budget, it folds first: the fold is recorded in
-    ``ws`` (landing with the turn's commit) and emitted as
-    ``Compacted``."""
+    *,
+    spare: int,
+) -> Prepared:
+    """The request for the next model call. Over the budget, it folds
+    first, the summary written in at most ``spare`` model calls (none
+    folds when they don't suffice): the fold is recorded in ``ws``
+    (landing with the turn's commit) and emitted as ``Compacted``."""
+    calls = _Calls(provider, settings, spare, emit)
     seq = _Seq.of(earlier, current)
     recorded = folds(ws)
     fold = in_force(recorded, [m.id for m in seq.messages])
@@ -291,9 +344,7 @@ async def request(
         start = seq.index(fold.through) if fold else None
         if policy.due(size) and end is not None and (start is None or end > start):
             prefix = _view(seq, fold, upto=end)
-            summary = await _summarize(
-                provider, policy, settings, specs, system, prefix, size
-            )
+            summary = await _summarize(calls, policy, specs, system, prefix, size)
             if summary:
                 gone = seq.removed(seq.messages[end].id)
                 new = Fold(
@@ -314,5 +365,9 @@ async def request(
                 record(ws, new)
                 emit(Compacted(through=new.through, runs=new.runs))
                 fold = new
-    view = _view(seq, fold)
-    return [system, *view], fold.through if fold else None
+    return Prepared(
+        messages=[system, *_view(seq, fold)],
+        fold=fold.through if fold else None,
+        calls=calls.made,
+        usage=calls.usage,
+    )
