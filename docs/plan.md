@@ -1,6 +1,6 @@
 # agex rebuild: implementation plan
 
-Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3 are merged, and B4 (compaction) is next.
+Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3 are merged, and B4 (compaction) is under way.
 
 This plan covers *when* and *in what order*. The *what* and *why* live
 in:
@@ -236,6 +236,11 @@ rendered descriptions before and after.
   The profile fingerprint waits with it.
 
 ### A4. The compaction contract
+
+**Status: nontainer #209 open (branch `feat/compaction-contract`).**
+Six tier 4 scenarios pass on agno (2.5.0, 2.8.5, 3.0.1) and on the
+reference harness, which folds in about fifty lines on the core's
+records and helpers.
 
 **nontainer keeps the record of a fold; each loop keeps its own
 folding.** The algorithm does not move into core (decided 2026-10-08,
@@ -569,6 +574,14 @@ pass on in-process, process isolation and dud.
 - The shape corpus JSON is generated, with its drift test.
 
 ### B4. Compaction
+
+**Status: agex PR open (branch `feat/compaction`), after nontainer
+#209.** `Agent(compaction=Policy(...))`; `agex.compaction` folds
+within a run too, and each reply records the fold its request had
+(`Message.fold`), so a request is measured exactly from the latest
+report. The six tier 4 scenarios pass; a task folds within its run and
+finishes on every rung; checked live on the four providers' small
+models with a budget a little above a task's opening request.
 
 agex folds its own conversations, writing nontainer's records (A4):
 its own decision, splice and summary, using the core's helpers where

@@ -4,10 +4,12 @@ bytes, and what can't cross is refused before any model call."""
 
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 
 import pytest
 from nontainer import NotSupportedError, Profile, PythonConfig, Store
-from nontainer.conformance.corpus import ModelStep, calls
+from nontainer.compaction import Policy
+from nontainer.conformance.corpus import ModelStep, calls, summarizes
 from nontainer.turns import ToolEnded
 from task_types import Directory, Ranking, Score
 
@@ -191,6 +193,37 @@ def test_task_fail_and_the_world_untouched(rung):
             assert ws.files.read("/workspace/notes.txt") == b"keep me"
         finally:
             ws.close()
+
+
+def test_a_task_over_budget_folds_within_its_run(rung):
+    """A task is one run: past the budget, its earlier steps fold into a
+    summary, and it finishes from the brief, the summary and its latest
+    step."""
+    provider = ScriptedProvider(
+        [
+            replace(python("print('FIRST-OUTPUT')"), input_tokens=100),
+            replace(python("print('SECOND-OUTPUT')"), input_tokens=5000),
+            summarizes("SUMMARY: the first step printed its output."),
+            python("task.success(Ranking(best=scores[0].student, scores=scores))"),
+        ]
+    )
+    a = Agent(provider, profile=profile(rung), compaction=Policy(budget=1000))
+
+    @a.task
+    def rank(scores: list[Score]) -> Ranking:
+        """Rank the scores."""
+
+    out = rank.run(SCORES)
+    assert out.status == "success" and out.value == Ranking("ada", SCORES)
+    assert [e.kind for e in out.events].count("Compacted") == 1
+    last = "\n".join(
+        str(part.content)
+        for message in provider.seen[-1]
+        for part in message.parts
+        if getattr(part, "content", None) is not None
+    )
+    assert "Rank the scores." in last and "SUMMARY:" in last
+    assert "SECOND-OUTPUT" in last and "FIRST-OUTPUT" not in last
 
 
 # -- what can't cross ------------------------------------------------------------------

@@ -7,6 +7,7 @@
       "steps": [
         {
           "fail": "",
+          "input_tokens": 0,
           "kind": "model",
           "text": "never reached",
           "thinking": "",

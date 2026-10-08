@@ -18,6 +18,7 @@
       "steps": [
         {
           "fail": "provider",
+          "input_tokens": 0,
           "kind": "model",
           "text": "",
           "thinking": "",
