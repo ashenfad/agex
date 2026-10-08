@@ -1,0 +1,145 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "value",
+            "value": {
+              "best": "ada",
+              "scores": [
+                {
+                  "student": "ada",
+                  "total": "7"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "value",
+            "value": {
+              "best": "ada",
+              "scores": [
+                {
+                  "student": "ada",
+                  "total": 7
+                },
+                {
+                  "student": "bo",
+                  "total": 2
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "world": false
+    }
+  ],
+  "expect": [
+    {
+      "asked": 2,
+      "calls": null,
+      "kept": null,
+      "message": null,
+      "names": [],
+      "plane": null,
+      "status": "success",
+      "value": {
+        "best": "ada",
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      }
+    }
+  ],
+  "name": "a-value-that-does-not-fit-is-refused-at-task-success",
+  "needs": [],
+  "summary": "task.success refuses a value that isn't of the return type, as an error in agent code; the model tries again, and the call returns the value that fits.",
+  "task": {
+    "defs": {
+      "Ranking": {
+        "additionalProperties": false,
+        "description": "The best student, and the scores ranked.",
+        "properties": {
+          "best": {
+            "type": "string"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/$defs/Score"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "best",
+          "scores"
+        ],
+        "type": "object"
+      },
+      "Score": {
+        "additionalProperties": false,
+        "description": "One student's total.",
+        "properties": {
+          "student": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "student",
+          "total"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Rank the scores, best first.",
+    "name": "rank",
+    "params": [
+      {
+        "name": "scores",
+        "type": {
+          "items": {
+            "$ref": "#/$defs/Score"
+          },
+          "type": "array"
+        }
+      }
+    ],
+    "returns": {
+      "$ref": "#/$defs/Ranking"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}

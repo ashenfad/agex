@@ -1,0 +1,94 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "scores": []
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "kind": "task_fail",
+          "reason": "there are no scores to rank"
+        }
+      ],
+      "world": false
+    }
+  ],
+  "expect": [
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": false,
+      "message": "there are no scores to rank",
+      "names": [],
+      "plane": null,
+      "status": "failed",
+      "value": null
+    }
+  ],
+  "name": "a-task-fails-with-its-reason",
+  "needs": [],
+  "summary": "task.fail ends the task failed, with the reason agent code gave.",
+  "task": {
+    "defs": {
+      "Ranking": {
+        "additionalProperties": false,
+        "description": "The best student, and the scores ranked.",
+        "properties": {
+          "best": {
+            "type": "string"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/$defs/Score"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "best",
+          "scores"
+        ],
+        "type": "object"
+      },
+      "Score": {
+        "additionalProperties": false,
+        "description": "One student's total.",
+        "properties": {
+          "student": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "student",
+          "total"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Rank the scores, best first.",
+    "name": "rank",
+    "params": [
+      {
+        "name": "scores",
+        "type": {
+          "items": {
+            "$ref": "#/$defs/Score"
+          },
+          "type": "array"
+        }
+      }
+    ],
+    "returns": {
+      "$ref": "#/$defs/Ranking"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}

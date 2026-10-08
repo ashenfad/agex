@@ -1,6 +1,6 @@
 # agex rebuild: implementation plan
 
-Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3b-2 are merged, and B3b-3 is next.
+Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3b-2 are merged, and B3b-3 is under way.
 
 This plan covers *when* and *in what order*. The *what* and *why* live
 in:
@@ -515,21 +515,29 @@ answer.
 - asking and resuming work on in-process, process isolation and dud;
 - the plane holds the spec, inputs, state and value.
 
-**The brief's live inputs.** Status: agex #81 open (branch
-`feat/task-live-brief`). The brief describes each live input as agent
-code uses it: a function by its signature and docstring summary, any
-other object by its class's docstring summary and public methods, up
-to 20, each with its signature and summary. Checked
-live on the four providers' small models: given a class whose methods
-they can't guess, each finishes in one call, where without the
-description they took four to thirteen calls exploring the object.
+**The brief's live inputs.** Status: merged (agex #81). The brief
+describes each live input as agent code uses it: a function by its
+signature and docstring summary, any other object by its class's
+docstring summary and public methods, up to 20, each with its
+signature and summary. Checked live on the four providers' small
+models: given a class whose methods they can't guess, each finishes in
+one call, where without the description they took four to thirteen
+calls exploring the object.
 
-**B3b-3. The shape corpus.**
+**B3b-3. The shape corpus.** Status: agex PR open (branch
+`feat/shape-corpus`). 16 scenarios pass on in-process, process
+isolation and dud.
 - **Task scenarios as data,** as agex's extension of nontainer's
-  corpus format:
-  - a task's signature, its types as JSON schemas, inputs, the model's
-    script, the rung, and the outcome expected;
-  - generated as JSON for harnesses in other languages.
+  corpus format, in `agex.conformance`:
+  - `shape`: the format. A task's signature with its types as JSON
+    schemas (`x-kind` for tables, arrays, bytes and live classes), the
+    acts (call, resume by outcome or by ref, restart), the model's
+    script in neutral task steps, where the scenario runs, and the
+    outcome expected;
+  - `scenarios`: the corpus; `runner`: `run` and `check`, owning the
+    script; `tasks`: `AgexTasks`, agex as a harness;
+  - generated as JSON for harnesses in other languages
+    (`python -m agex.conformance.export`), with its JSON Schema.
 
 **Exit:**
 - Shape scenarios pass:

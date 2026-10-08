@@ -1,0 +1,56 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "data": "AAH/"
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "input",
+            "name": "data"
+          }
+        }
+      ],
+      "world": false
+    }
+  ],
+  "expect": [
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": null,
+      "message": null,
+      "names": [],
+      "plane": null,
+      "status": "success",
+      "value": "AAH/"
+    }
+  ],
+  "name": "bytes-come-back-the-same",
+  "needs": [],
+  "summary": "Bytes handed to a task come back from it the same, on every rung.",
+  "task": {
+    "defs": {},
+    "instructions": "Hand back the input 'data' as it is.",
+    "name": "echo",
+    "params": [
+      {
+        "name": "data",
+        "type": {
+          "x-kind": "bytes"
+        }
+      }
+    ],
+    "returns": {
+      "x-kind": "bytes"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}

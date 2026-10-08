@@ -1,0 +1,139 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "directory": {},
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "kind": "task_success",
+          "value": {
+            "args": [
+              "ada"
+            ],
+            "input": "directory",
+            "kind": "method_call",
+            "method": "lookup"
+          }
+        }
+      ],
+      "world": false
+    }
+  ],
+  "expect": [
+    {
+      "asked": 1,
+      "calls": [
+        {
+          "args": [
+            "ada"
+          ],
+          "input": "directory",
+          "method": "lookup"
+        }
+      ],
+      "kept": null,
+      "message": null,
+      "names": [],
+      "plane": null,
+      "status": "success",
+      "value": "ADA"
+    }
+  ],
+  "name": "a-live-input-is-a-capability",
+  "needs": [],
+  "summary": "A live input is handed over as it is: agent code calls its methods, which run on the host, on every rung.",
+  "task": {
+    "defs": {
+      "Directory": {
+        "description": "The school's directory, kept on the host.",
+        "methods": {
+          "lookup": {
+            "description": "A student's name as the directory files it.",
+            "params": [
+              {
+                "name": "key",
+                "type": {
+                  "type": "string"
+                }
+              }
+            ],
+            "replies": [
+              {
+                "args": [
+                  "ada"
+                ],
+                "returns": "ADA"
+              },
+              {
+                "args": [
+                  "bo"
+                ],
+                "returns": "BO"
+              }
+            ],
+            "returns": {
+              "type": "string"
+            }
+          }
+        },
+        "x-kind": "live"
+      },
+      "Score": {
+        "additionalProperties": false,
+        "description": "One student's total.",
+        "properties": {
+          "student": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "student",
+          "total"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Look up the best student in the directory.",
+    "name": "look",
+    "params": [
+      {
+        "name": "scores",
+        "type": {
+          "items": {
+            "$ref": "#/$defs/Score"
+          },
+          "type": "array"
+        }
+      },
+      {
+        "name": "directory",
+        "type": {
+          "$ref": "#/$defs/Directory"
+        }
+      }
+    ],
+    "returns": {
+      "type": "string"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}

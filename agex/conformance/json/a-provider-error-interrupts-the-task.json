@@ -1,0 +1,106 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "fail": "provider",
+          "kind": "model",
+          "text": "",
+          "thinking": "",
+          "tool_calls": []
+        }
+      ],
+      "world": false
+    }
+  ],
+  "expect": [
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": null,
+      "message": null,
+      "names": [],
+      "plane": null,
+      "status": "interrupted",
+      "value": null
+    }
+  ],
+  "name": "a-provider-error-interrupts-the-task",
+  "needs": [],
+  "summary": "A provider error the loop can't get past ends the task interrupted.",
+  "task": {
+    "defs": {
+      "Ranking": {
+        "additionalProperties": false,
+        "description": "The best student, and the scores ranked.",
+        "properties": {
+          "best": {
+            "type": "string"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/$defs/Score"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "best",
+          "scores"
+        ],
+        "type": "object"
+      },
+      "Score": {
+        "additionalProperties": false,
+        "description": "One student's total.",
+        "properties": {
+          "student": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "student",
+          "total"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Rank the scores, best first.",
+    "name": "rank",
+    "params": [
+      {
+        "name": "scores",
+        "type": {
+          "items": {
+            "$ref": "#/$defs/Score"
+          },
+          "type": "array"
+        }
+      }
+    ],
+    "returns": {
+      "$ref": "#/$defs/Ranking"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}

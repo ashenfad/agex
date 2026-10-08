@@ -1,0 +1,76 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "frame": {
+          "name": [
+            "ada",
+            "bo"
+          ],
+          "score": [
+            7,
+            2
+          ]
+        }
+      },
+      "keep": false,
+      "kind": "call",
+      "steps": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "input",
+            "name": "frame"
+          }
+        }
+      ],
+      "world": false
+    }
+  ],
+  "expect": [
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": null,
+      "message": null,
+      "names": [],
+      "plane": null,
+      "status": "success",
+      "value": {
+        "name": [
+          "ada",
+          "bo"
+        ],
+        "score": [
+          7,
+          2
+        ]
+      }
+    }
+  ],
+  "name": "a-table-comes-back-the-same",
+  "needs": [
+    "tables"
+  ],
+  "summary": "A table handed to a task comes back from it the same, on every rung.",
+  "task": {
+    "defs": {},
+    "instructions": "Hand back the input 'frame' as it is.",
+    "name": "echo",
+    "params": [
+      {
+        "name": "frame",
+        "type": {
+          "x-kind": "table"
+        }
+      }
+    ],
+    "returns": {
+      "x-kind": "table"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}

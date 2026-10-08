@@ -1,0 +1,136 @@
+{
+  "acts": [
+    {
+      "inputs": {
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      },
+      "keep": true,
+      "kind": "call",
+      "steps": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "value",
+            "value": {
+              "best": "ada",
+              "scores": [
+                {
+                  "student": "ada",
+                  "total": 7
+                },
+                {
+                  "student": "bo",
+                  "total": 2
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "world": true
+    }
+  ],
+  "expect": [
+    {
+      "asked": 1,
+      "calls": null,
+      "kept": true,
+      "message": null,
+      "names": [],
+      "plane": {
+        "status": "success",
+        "stored": [
+          "scores"
+        ],
+        "value": true
+      },
+      "status": "success",
+      "value": {
+        "best": "ada",
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      }
+    }
+  ],
+  "name": "keep-keeps-the-fork-with-its-value",
+  "needs": [],
+  "summary": "keep keeps a task's fork when it is done; its plane holds the inputs and the value, and says the task succeeded.",
+  "task": {
+    "defs": {
+      "Ranking": {
+        "additionalProperties": false,
+        "description": "The best student, and the scores ranked.",
+        "properties": {
+          "best": {
+            "type": "string"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/$defs/Score"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "best",
+          "scores"
+        ],
+        "type": "object"
+      },
+      "Score": {
+        "additionalProperties": false,
+        "description": "One student's total.",
+        "properties": {
+          "student": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "student",
+          "total"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Rank the scores, best first.",
+    "name": "rank",
+    "params": [
+      {
+        "name": "scores",
+        "type": {
+          "items": {
+            "$ref": "#/$defs/Score"
+          },
+          "type": "array"
+        }
+      }
+    ],
+    "returns": {
+      "$ref": "#/$defs/Ranking"
+    }
+  },
+  "where": "anywhere",
+  "world": {
+    "files": {}
+  }
+}
