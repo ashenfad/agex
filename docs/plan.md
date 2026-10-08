@@ -1,6 +1,9 @@
 # agex rebuild: implementation plan
 
-Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3 are merged, and B4 (compaction) is under way.
+Status: in progress (2026-10-08).
+- **Phase A** is merged through delegation: A0-A3 shipped in nontainer 0.9.0/0.9.1, and A4, A5 and A8a-b are on nontainer `main`. The next release, 0.10.0, closes A5 and ships the kit (A7); it is agex's floor. The studio's A5 PR (nontainer-studio #90) is a draft against unreleased `main` until then.
+- **Phase B** is under way on `rebuild`: B0-B4 are merged, and B5 (delegation from code) is next.
+- **Still open in Phase A:** A6 (studio fixes), A8c (large values spill to the plane) and A3c (deferred). The async agent code track must land before the shape freeze (see Parallel tracks).
 
 This plan covers *when* and *in what order*. The *what* and *why* live
 in:
@@ -62,12 +65,10 @@ Each step follows `harness.md`'s build order.
 
 ### A0. Small prerequisites (before B0)
 
-**Status: nontainer #196 merged 2026-10-07; studio #88 still open.**
-- nontainer #196 (branch `feat/a0-ephemeral-store-env`): the memory
-  store, `Profile` (first built as `Env`) and the agno instruction
-  fix. Unreleased on main.
-- nontainer-studio #88 (branch `fix/resume-comment`): the stale
-  comment.
+**Status: done.**
+- nontainer #196: the memory store, `Profile` (first built as `Env`)
+  and the agno instruction fix. Shipped in 0.9.1.
+- nontainer-studio #88: the stale comment. Merged 2026-10-07.
 - Built differently from what follows below:
   - the bundle is `Profile`, not `Env`, because in nontainer `env`
     already means a session's shell environment variables
@@ -140,7 +141,7 @@ rendered descriptions before and after.
   than this one can't read its conversation. That needs a CHANGELOG
   warning and a minor version bump.
 
-**Status (2026-10-06): nontainer #199 open.**
+**Status: done.** nontainer #199, shipped in 0.9.0.
 - **How it shipped:**
   - **The plane.** Three keys: `__conversation__/index`, `/record` (the
     harness's own session record, opaque to core) and `/runs/<id>`. Read
@@ -157,9 +158,9 @@ rendered descriptions before and after.
     both ways and deleted cleanly.
   - **Production-store copy:** the user runs it, with the read-only
     `verify_conversations.py` in #199's description.
-- **The studio's four call sites** go in a follow-up studio PR after
-  the nontainer release. Until then, the studio stays on the released
-  nontainer (it imports `CONVERSATION_SESSION_KEY`).
+- **The studio's four call sites** moved to core calls after the
+  release ("reach the conversation through nontainer's core", which
+  requires 0.9.0).
 
 ### A3. The turn API, harness host objects, and the corpus machinery
 
@@ -201,8 +202,9 @@ rendered descriptions before and after.
 - **Milestone: a nontainer release** (A1-A3; a minor bump because of
   A2's storage change).
 
-**Status (2026-10-06): split in two.**
-- **A3a: nontainer #200 open.**
+**Status: done.** A3a (#200) and A3b (#201) shipped in 0.9.1; A3c is
+deferred (below).
+- **A3a: nontainer #200.**
   - **What it adds:**
     - `nontainer.turns`: `TurnEvent` (`kind` = class name) and `RunStatus`.
     - `nontainer.conformance`: corpus format, runner, dependency-free codec and JSON Schema, export plus drift test.
@@ -218,7 +220,7 @@ rendered descriptions before and after.
 
   The turn API's ending (one commit, contract statuses, settle by construction) should close all four.
 - **Deferred:** the agno-specific inbox requeue and restore scenarios (they need run-level retries).
-- **A3b: nontainer #201 open.**
+- **A3b: nontainer #201.**
   - **What it adds:**
     - `ws.turn` / `ws.turns.begin` / `turn.end` (`nontainer.turns.Turn`), with one commit per turn stamped `{"tool": "turn", "runs": {id: status}}`.
     - `TurnInProgress`.
@@ -227,7 +229,7 @@ rendered descriptions before and after.
   - **Gaps:** `AgnoHarness` has no known gaps left.
   - **The studio:** its suite passes unchanged (it opens no turns yet).
 - **Split out as A3c:** harness host objects (host objects are fixed at open via PythonConfig today) and the profile fingerprint in the turn stamp (manifest contents undecided). Neither blocks a loop that owns its turns; agex needs host objects by B3.
-- **Milestone release:** due once A3b merges, as A1-A3b. A3c can follow in a later release.
+- **Milestone release:** 0.9.1, A1-A3b. A3c can follow in a later release.
 - **A3c deferred (2026-10-07).** B3 doesn't need it: a task fork gets its `task` object through `Store.fork(..., profile=...)`, which already works. Why it waits, and what keeps it open, is in the redesign doc's decisions log (2026-10-07):
   - attaching after open is additive per executor (the in-process policy and namespace, sandtrap RPC handlers, dud's hostcall allowlist);
   - human-in-the-loop requests can use scopes checked at call time (nontainer #143) instead;
@@ -237,7 +239,7 @@ rendered descriptions before and after.
 
 ### A4. The compaction contract
 
-**Status: nontainer #209 open (branch `feat/compaction-contract`).**
+**Status: done.** nontainer #209, merged 2026-10-08; ships in 0.10.0.
 Six tier 4 scenarios pass on agno (2.5.0, 2.8.5, 3.0.1) and on the
 reference harness, which folds in about fifty lines on the core's
 records and helpers.
@@ -279,7 +281,38 @@ The studio's compaction tests pass.
 
 ### A5. Delegation
 
-- `sessions.until_settled(run_turn, max_turns=)`;
+**Status: nontainer side merged 2026-10-08; ships in 0.10.0. The
+studio's half is nontainer-studio #90, a draft until that release.**
+- **A5a, lock-free landing (#210).** Landing an answer reads committed
+  history through the child's handle, never the parent's workspace
+  lock, which a `run_python` waiting on the delegate holds. The
+  deadlock regression test runs on every rung, each case in a
+  subprocess.
+- **A5b, async runners (#211).** A runner whose `run` is `async def`
+  is scheduled on the embedder's loop (`Sessions(loop=)`), with
+  `max_workers` as a semaphore, and `cancel` stops it; `aask`,
+  `await_ready`, `answers()` and `aclose`.
+- **A5c, waiting (#212) and the tier 5 corpus (#213).**
+  `until_settled` / `auntil_settled` run a delegate's turns until
+  neither its own delegates nor a note in its inbox is outstanding,
+  within `max_wakes`; `Turn.opening()` / `aopening()` is a woken
+  turn's first message. The corpus scripts delegates
+  (`Scenario.delegates`, held until a `delegate_answers` event
+  releases each), and a harness supplies them through
+  `Harness.delegation()` (`adapters.corpus_delegates`), since the core
+  runner may not import `sessions`.
+- **Found by the studio PR (#214):** `until_settled` spun on a helper
+  that had closed (`Sessions.closed` now ends the wait), and its unread
+  note pointed the asker at a verb that cannot reach its delegate's
+  jobs.
+- **The studio (#90):** `StudioRunner` is an async runner on the
+  server's loop, waiting through `auntil_settled`; shutdown cancels
+  jobs through their helpers. The waker stays on `on_answer`:
+  `answers()` collects, and would take answers from the toolkit's
+  mid-turn delivery and the transcript's.
+
+The plan as written:
+- `sessions.until_settled(run_turn, max_wakes=)`;
 - async `SessionRunner`s scheduled on the embedder's loop, with
   `max_workers` as a semaphore;
 - an awaitable answer stream;
@@ -303,8 +336,10 @@ per-delegate event loops are replaced.
 These don't need the seam:
 - **Make the event sink safe across loops and threads.** Delegate
   turns emit from a fresh event loop on a worker thread into one
-  `asyncio.Condition`. A5's async runners remove those loops later,
-  but the sink should be safe regardless.
+  `asyncio.Condition`. A5's async runners remove those loops
+  (nontainer-studio #90 runs every delegate on the server's loop), but
+  the sink should be safe regardless: a registry outside a server
+  still runs delegates on a loop of its own.
 - **`tool_start` and `tool_end` gain `call_id` and `is_error`.** The
   frontend pairs tool ends by id instead of by name, and agno's
   `ToolCallError` stops being dropped.
@@ -322,6 +357,9 @@ package, the way `check_filesystem` is. It runs alongside B1-B3, once
 A4's and A5's scenarios exist.
 
 **Exit:** a nontainer release. That release is agex's floor.
+
+**Status:** tiers 0-5 are in `nontainer.conformance` on `main`;
+0.10.0 is the release.
 
 ### A8. The value encoding (between B3a and B3b)
 
@@ -575,8 +613,8 @@ pass on in-process, process isolation and dud.
 
 ### B4. Compaction
 
-**Status: agex #84 open (branch `feat/compaction`), after nontainer
-#209.** `Agent(compaction=Policy(...))`; `agex.compaction` folds
+**Status: done.** agex #84, merged 2026-10-08.
+`Agent(compaction=Policy(...))`; `agex.compaction` folds
 within a run too, and each reply records the fold its request had
 (`Message.fold`), so a request is measured exactly from the latest
 report. The six tier 4 scenarios pass; a task folds within its run and
@@ -618,6 +656,11 @@ shape freeze.
 
 **Exit.** Tier 5 scenarios pass on agex. The shape corpus covers the
 replacement for spawn: fan-out, a fresh view, and typed results.
+
+**Likely nontainer follow-ups** (0.10.x, as B5 finds them):
+- the typed value on `Answer`, which nontainer defines;
+- the open question carried from A5: a fork taken mid-`run_python`
+  splits that call's commit.
 
 ### B6. The studio seam, designed against both loops
 
@@ -675,6 +718,13 @@ None of these blocks Phase B except where noted.
   - the dud runner.
 
   It must land before Phase C.
+
+  **Status (2026-10-08): not started.** sandtrap #55 is open; only its
+  first half shipped (top-level `await` comes back as an error result
+  instead of raising). Proposed: after 0.10.0, as its own round,
+  released in dependency order (sandtrap, then dud, then nontainer).
+  B5 and B6 don't need it: fan-out is a non-blocking `ask` and a sync
+  `wait(jobs)`.
 - **Capabilities** (the redesign's "Capabilities belong to the
   world"):
   - `HostObjectGrant`;
