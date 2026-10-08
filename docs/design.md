@@ -436,7 +436,9 @@ Python, never a schema:
 - the source of the types involved;
 - a preview of each input (a table's columns and first rows, an
   array's shape and dtype);
-- for a live object, its type name, docstring and public methods.
+- for a live input, how agent code uses it: a function by its
+  signature and docstring summary, any other object by its class's
+  docstring summary and public methods, the class's own first.
 
 Old agex did the same. The model writes Python anyway.
 

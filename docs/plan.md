@@ -1,6 +1,6 @@
 # agex rebuild: implementation plan
 
-Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3b-1 are merged, and B3b-2 is under way.
+Status: in progress. Phase A is done through the turn API (nontainer 0.9.1, 2026-10-06). Phase B is under way on `rebuild`: B0-B3b-2 are merged, and B3b-3 is next.
 
 This plan covers *when* and *in what order*. The *what* and *why* live
 in:
@@ -302,8 +302,8 @@ A4's and A5's scenarios exist.
 **Status:**
 - **A8a, the module (`nontainer.values`):** merged (nontainer #205).
 - **A8b, the transport on each rung:** typed host data and classes
-  (#206) and stubbed host objects (#207) are merged; a spec standing
-  for its type (#208) is open.
+  (#206), stubbed host objects (#207) and a spec standing for its
+  type (#208) are merged.
 - **A8c, still to do:** large values spilling to the plane, which
   needs dud#39's binary frames (until then, one call off in-process
   carries 6 MiB encoded), and converging the apps encoder
@@ -469,7 +469,7 @@ providers' small models, in-process and under process isolation.
   refused off in-process before any model call.
 
 **B3b-2. Needs input, the `__task__` plane, and resuming.** Status:
-agex PR open (branch `feat/task-resume`). Checked live on the four
+merged (agex #80). Checked live on the four
 providers' small models: told to ask, each asks, then finishes from the
 answer.
 - `task.needs_input(question)`: the outcome ends `needs_input`, with
@@ -514,6 +514,15 @@ answer.
 - a resume missing a live input is refused by name;
 - asking and resuming work on in-process, process isolation and dud;
 - the plane holds the spec, inputs, state and value.
+
+**The brief's live inputs.** Status: agex PR open (branch
+`feat/task-live-brief`). The brief describes each live input as agent
+code uses it: a function by its signature and docstring summary, any
+other object by its class's docstring summary and public methods, up
+to 20, each with its signature and summary. Checked
+live on the four providers' small models: given a class whose methods
+they can't guess, each finishes in one call, where without the
+description they took four to thirteen calls exploring the object.
 
 **B3b-3. The shape corpus.**
 - **Task scenarios as data,** as agex's extension of nontainer's

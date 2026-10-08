@@ -4,6 +4,7 @@ hands back the value its code passed to ``task.success``."""
 import asyncio
 import collections
 import enum
+import functools
 import time
 from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass
@@ -13,7 +14,7 @@ import pytest
 from nontainer import Profile, PythonConfig, Store
 from nontainer.conformance.corpus import ModelStep, ToolCall, calls, fails, says
 from nontainer.turns import ToolEnded
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from pydantic_ai import messages as pai
 
 from agex import Agent, Outcome, TaskFailed, TaskInterrupted
@@ -22,10 +23,12 @@ from agex.providers.scripted import ScriptedProvider
 from agex.task import (
     FINISHED,
     INSTRUCTIONS,
+    METHODS,
     NUDGE,
     NUDGES,
     Task,
     TaskSpec,
+    _brief,
     kinds_of,
 )
 
@@ -74,6 +77,58 @@ class Client:
     def lookup(self, key: str) -> str:
         self.calls.append(key)
         return key.upper()
+
+
+class Ledger:
+    def audited(self) -> bool:
+        """Whether the ledger has been checked.
+
+        A second paragraph the brief leaves out."""
+        return False
+
+
+class Gradebook(Ledger):
+    """The class's grades, kept on the host.
+
+    A second paragraph the brief leaves out."""
+
+    term = "fall"
+
+    def __init__(self) -> None:
+        self.marks: dict[str, int] = {}
+
+    def mark(self, student: str, grade: int) -> None:
+        """Record a grade."""
+        self.marks[student] = grade
+
+    def grade(self, student: str, *, default: int | None = None) -> int | None:
+        return self.marks.get(student, default)
+
+    @staticmethod
+    def scale() -> list[str]:
+        return ["A", "B", "C"]
+
+    @property
+    def size(self) -> int:
+        return len(self.marks)
+
+    def _audit(self) -> None: ...
+
+
+GRADEBOOK = '''\
+class Gradebook:
+    """The class's grades, kept on the host."""
+
+    def mark(self, student: str, grade: int) -> None:
+        """Record a grade."""
+
+    def grade(self, student: str, *, default: int | None = None) -> int | None: ...
+
+    @staticmethod
+    def scale() -> list[str]: ...
+
+    def audited(self) -> bool:
+        """Whether the ledger has been checked."""'''
 
 
 RESPONSES = [Response("ada", [3, 4]), Response("bo", [1, 1])]
@@ -164,6 +219,112 @@ def test_the_brief_previews_a_table_and_an_array_on_one_line_each():
         "[(3, 1), (1, 0)])" in lines
     )
     assert "- `values: ndarray` = ndarray(3, int64, [1, 2, 3])" in lines
+    assert "live inputs" not in request.parts[1].content
+
+
+def test_the_brief_describes_a_live_input_by_its_class():
+    """Its docstring's first paragraph and its public methods, the
+    class's own before those it inherits: what agent code can call."""
+    a, provider = agent(python("book.mark('ada', 3)\ntask.success(book.grade('ada'))"))
+
+    @a.task
+    def record(book: Gradebook) -> int:
+        """Give ada a 3."""
+
+    book = Gradebook()
+    assert record(book) == 3 and book.marks == {"ada": 3}
+    (request,) = provider.seen[0]
+    brief = request.parts[1].content
+    assert (
+        "The live inputs are objects on the host: use them as listed here, "
+        f"and don't build new ones.\n```python\n{GRADEBOOK}\n```"
+    ) in brief
+    assert "_audit" not in brief and "size" not in brief and "term" not in brief
+
+
+def test_the_brief_describes_each_live_class_once_wherever_it_is():
+    @dataclass
+    class Job:
+        name: str
+        book: Gradebook
+
+    class Shelf(BaseModel):
+        model_config = ConfigDict(arbitrary_types_allowed=True)
+        book: Gradebook
+
+    def grade_all(
+        books: list[Gradebook], jobs: dict[str, Job], shelf: Shelf, client: Client
+    ) -> None:
+        """Grade them all."""
+
+    spec = TaskSpec.of(grade_all, names={"Job": Job, "Shelf": Shelf})
+    one = Gradebook()
+    brief = _brief(
+        spec,
+        {
+            "books": [one, Gradebook()],
+            "jobs": {"a": Job("a", one)},
+            "shelf": Shelf(book=one),
+            "client": Client(),
+        },
+    )
+    assert brief.count("class Gradebook:") == 1 and "class Shelf:" not in brief
+    assert brief.index("class Gradebook:") < brief.index("class Client:")
+    assert '    """Stands in for a live resource."""' in brief
+
+
+def test_the_brief_describes_a_live_function_by_its_input_name_and_a_class_as_itself():
+    def find(student: str, *, term: str = "fall") -> int:
+        """A student's mark.
+
+        A second paragraph the brief leaves out."""
+        return 3
+
+    def use(
+        lookup: Callable[[str], int],
+        kind: type[Gradebook],
+        more: list[Callable[[str], int]],
+    ) -> None:
+        """Use them."""
+
+    inputs = {
+        "lookup": find,
+        "kind": Gradebook,
+        "more": [functools.partial(find, term="spring")],
+    }
+    brief = _brief(TaskSpec.of(use), inputs)
+    usage = brief.split("```python\n")[-1]
+    assert "def find(student: str, *, term: str = 'spring') -> int:" in usage
+    assert usage.startswith(
+        'def lookup(student: str, *, term: str = \'fall\') -> int:\n    """A student\'s mark."""'
+    )
+    assert "class Gradebook:" in usage and "class type:" not in usage
+
+
+def test_the_brief_lists_so_many_methods_of_a_live_class():
+    Big = type(
+        "Big",
+        (),
+        {f"op{i}": (lambda self: None) for i in range(METHODS + 3)},
+    )
+
+    def use(big: Any) -> None:
+        """Use it."""
+
+    brief = _brief(TaskSpec.of(use), {"big": Big()})
+    assert f"def op{METHODS - 1}(self): ..." in brief
+    assert f"def op{METHODS}(" not in brief
+    assert "    # and 3 more public methods" in brief
+
+
+def test_the_brief_describes_a_live_class_written_in_c():
+    import threading
+
+    def use(lock: Any) -> None:
+        """Use it."""
+
+    brief = _brief(TaskSpec.of(use), {"lock": threading.Lock()})
+    assert "class lock:" in brief and "def acquire(" in brief
 
 
 def test_run_returns_the_outcome():

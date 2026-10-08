@@ -278,6 +278,40 @@ def test_a_task_hands_back_a_typed_value(live, isolation):
     assert totals == {"ada": 7, "bo": 2, "cy": 5}
 
 
+class Registry:
+    """The school's records, kept on the host."""
+
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+
+    def enrolled_in(self, course: str) -> list[str]:
+        """The students enrolled in a course."""
+        self.asked.append(course)
+        return ["ada", "bo", "cy"] if course == "math" else []
+
+    def final_mark(self, student: str, course: str) -> int:
+        """A student's final mark in a course, out of 100."""
+        return {"ada": 78, "bo": 91, "cy": 64}[student] if course == "math" else 0
+
+
+def test_a_task_uses_a_live_input_by_the_methods_its_brief_lists(live):
+    """The task's docstring says what to do, not how: the methods to
+    call come from the brief's description of the live input's class."""
+    agent = Agent(live.model, settings=live.settings())
+
+    @agent.task
+    def top_student(registry: Registry, course: str) -> str:
+        """Name the student with the highest final mark in the course."""
+
+    registry = Registry()
+    out = top_student.run(registry, "math")
+    if out.status == "interrupted":
+        out = top_student.run(registry, "math")
+    assert out.status == "success", out.message
+    assert out.value == "bo"
+    assert "math" in registry.asked
+
+
 def test_a_task_asks_then_carries_on_with_the_answer(live):
     """A model that is told it must ask does, with task.needs_input, and
     finishes from the answer in the same world."""
