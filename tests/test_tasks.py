@@ -141,6 +141,31 @@ def test_a_task_hands_back_the_value_its_code_made():
     assert "class Report:" in user.content and "class Response:" in user.content
 
 
+def test_the_brief_previews_a_table_and_an_array_on_one_line_each():
+    pd = pytest.importorskip("pandas")
+    np = pytest.importorskip("numpy")
+    from nontainer.presets import dataframes
+
+    a, provider = agent(
+        python("task.success(int(values.sum()))"),
+        profile=Profile(python=PythonConfig(modules=[dataframes()])),
+    )
+
+    @a.task
+    def total(frame: pd.DataFrame, values: np.ndarray) -> int:
+        """Sum the values."""
+
+    frame = pd.DataFrame({"name": ["ada", "bo"], "score": [3, 1]})
+    assert total(frame, np.array([1, 2, 3], dtype=np.int64)) == 6
+    (request,) = provider.seen[0]
+    lines = request.parts[1].content.splitlines()
+    assert (
+        "- `frame: DataFrame` = DataFrame(2x2, {'name': str, 'score': int64}, "
+        "[('ada', 3), ('bo', 1)])" in lines
+    )
+    assert "- `values: ndarray` = ndarray(3, int64, [1, 2, 3])" in lines
+
+
 def test_run_returns_the_outcome():
     a, _ = agent(FIND_BEST)
     out = best_of(a).run(RESPONSES)

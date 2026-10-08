@@ -28,8 +28,9 @@ dependencies = [
     "nontainer>=0.9.1",
     # The provider transport (pydantic_ai.direct); stable within 2.x.
     "pydantic-ai-slim>=2.54,<3",
-    # Budgeted previews of a task's inputs, in the brief its model reads.
-    "reprobate>=0.1.3",
+    # Budgeted previews of a task's inputs, in the brief its model reads,
+    # with tables and arrays as one-line typed summaries.
+    "reprobate>=0.1.4",
 ]
 
 [project.optional-dependencies]
