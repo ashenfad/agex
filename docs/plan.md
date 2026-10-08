@@ -515,7 +515,7 @@ answer.
 - asking and resuming work on in-process, process isolation and dud;
 - the plane holds the spec, inputs, state and value.
 
-**The brief's live inputs.** Status: agex PR open (branch
+**The brief's live inputs.** Status: agex #81 open (branch
 `feat/task-live-brief`). The brief describes each live input as agent
 code uses it: a function by its signature and docstring summary, any
 other object by its class's docstring summary and public methods, up
