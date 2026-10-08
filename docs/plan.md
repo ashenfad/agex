@@ -488,7 +488,8 @@ answer.
     conversation the world holds;
   - a task can ask again, and a resume run to its end drops the world
     unless `keep=True`; one cut short (cancelled, interrupted) keeps it
-    waiting, to be resumed again.
+    waiting, to be resumed again. A first run whose caller is cancelled
+    keeps nothing, even after the task asked: no ref reached it.
 - **The `__task__` plane:** `spec` (the name, the instructions, each
   type with its schema, and which inputs are stored), `inputs/<name>`
   encoded, `state`, and `value` encoded when it can be. They are
@@ -498,7 +499,10 @@ answer.
   is passed again, and a missing one is refused by name before any
   model call.
 - **What a resume refuses:**
-  - a world that isn't this task's;
+  - a world that isn't this task's: by name, inputs and return, the
+    signature recorded in its plane;
+  - a world reached through another world than the one the task ran
+    on (the plane records its session);
   - a world that isn't waiting for an answer;
   - a stored input passed again;
   - an input the task doesn't take.
