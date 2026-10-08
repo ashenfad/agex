@@ -545,9 +545,8 @@ models: given a class whose methods they can't guess, each finishes in
 one call, where without the description they took four to thirteen
 calls exploring the object.
 
-**B3b-3. The shape corpus.** Status: agex #82 open (branch
-`feat/shape-corpus`). 18 scenarios pass on in-process, process
-isolation and dud.
+**B3b-3. The shape corpus.** Status: merged (agex #82). 18 scenarios
+pass on in-process, process isolation and dud.
 - **Task scenarios as data,** as agex's extension of nontainer's
   corpus format, in `agex.conformance`:
   - `shape`: the format. A task's signature with its types as JSON
