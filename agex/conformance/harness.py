@@ -20,6 +20,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from nontainer import Workspace
+from nontainer.compaction import Policy
 from nontainer.conformance.runner import Clock, RunView
 from nontainer.turns import TurnEvent
 
@@ -42,8 +43,10 @@ def _closes_early(run: Run) -> bool:
 class AgexSession:
     """One workspace, driven by an agex session over the clock's script."""
 
-    def __init__(self, ws: Workspace, clock: Clock) -> None:
-        self.session: Session = Agent(ScriptedProvider(clock.next)).session(ws)
+    def __init__(self, ws: Workspace, clock: Clock, budget: int | None = None) -> None:
+        policy = None if budget is None else Policy(budget=budget)
+        agent = Agent(ScriptedProvider(clock.next), compaction=policy)
+        self.session: Session = agent.session(ws)
         self.inbox = self.session.inbox
 
     def turn(self, prompt: str) -> list[TurnEvent]:
@@ -90,8 +93,12 @@ class AgexHarness:
     name = "agex"
 
     def __init__(self) -> None:
-        self.capabilities: frozenset[str] = frozenset({"resume", "keeps-aborted-runs"})
+        self.capabilities: frozenset[str] = frozenset(
+            {"resume", "keeps-aborted-runs", "compaction"}
+        )
         self.known_gaps: dict[str, dict[str, str]] = {}
 
-    def open(self, ws: Workspace, clock: Clock) -> AgexSession:
-        return AgexSession(ws, clock)
+    def open(
+        self, ws: Workspace, clock: Clock, *, budget: int | None = None
+    ) -> AgexSession:
+        return AgexSession(ws, clock, budget)

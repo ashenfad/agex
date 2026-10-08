@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from nontainer import NotSupportedError, Profile, Workspace, conversation
 from nontainer.adapters.render import toolkit_instructions
 from nontainer.adapters.tools import Tool, Toolset
+from nontainer.compaction import Policy
 from nontainer.inbox import Inbox, Note
 from nontainer.turns import (
     Delivered,
@@ -43,6 +44,7 @@ from nontainer.turns import (
 )
 from pydantic_ai.models import Model
 
+from . import compaction
 from .providers import Provider, Reply, Settings, ToolSpec
 from .providers.pydanticai import PydanticAIProvider
 from .record import (
@@ -246,7 +248,10 @@ class Agent:
     opens every request, ahead of the workspace's own tool instructions.
     ``profile`` is the environment for worlds the agent creates itself; a
     session uses its workspace's own. ``max_steps`` bounds the model
-    calls in one run.
+    calls in one run. ``compaction`` folds a conversation that reaches
+    its budget into a summary, within a run as well (see
+    :mod:`agex.compaction`); without one, nothing is folded, though a
+    world's folds are still sent as recorded.
     """
 
     def __init__(
@@ -257,6 +262,7 @@ class Agent:
         profile: Profile | None = None,
         settings: Settings = Settings(),
         max_steps: int = MAX_STEPS,
+        compaction: Policy | None = None,
     ) -> None:
         self.provider: Provider = (
             PydanticAIProvider(model) if isinstance(model, (str, Model)) else model
@@ -265,6 +271,7 @@ class Agent:
         self.profile = profile
         self.settings = settings
         self.max_steps = max_steps
+        self.compaction = compaction
 
     def __repr__(self) -> str:
         return f"<Agent {self.provider.name}>"
@@ -362,9 +369,6 @@ class Session:
             return []
         bodies = conversation.read_runs(kv, index.runs, index)
         return [load_run(bodies[rid]) for rid in index.runs if rid in bodies]
-
-    def _history(self) -> list[Message]:
-        return [message for run in self.runs for message in run.messages]
 
     def _system(self) -> Message:
         instructions = toolkit_instructions(
@@ -485,14 +489,14 @@ class Session:
             run_id = prior.run_id
             started = prior.started_at or time.time()
             messages = list(prior.messages)
-            history = [m for run in self.runs[:-1] for m in run.messages]
+            earlier = [run.messages for run in self.runs[:-1]]
         else:
             run_id = new_id()
             started = time.time()
             messages = [
                 Message(id=new_id(), role="user", parts=(Text(text=prompt or ""),))
             ]
-            history = self._history()
+            earlier = [run.messages for run in self.runs]
         system = self._system()
         status: RunStatus = "completed"
         message: str | None = None
@@ -512,10 +516,19 @@ class Session:
                 self._check_cancel()
                 reply: Message | None = None
                 in_request = True
-                async for event in self.agent.provider.stream(
-                    [system, *history, *messages],
+                request, fold = await compaction.request(
+                    self.ws,
+                    self.agent.compaction,
+                    self.agent.provider,
                     self._specs,
                     self.agent.settings,
+                    system,
+                    earlier,
+                    messages,
+                    push,
+                )
+                async for event in self.agent.provider.stream(
+                    request, self._specs, self.agent.settings
                 ):
                     self._check_cancel()
                     if isinstance(event, Reply):
@@ -525,6 +538,8 @@ class Session:
                 in_request = False
                 if reply is None:
                     raise RuntimeError("the provider's stream ended without a reply")
+                if fold is not None:
+                    reply = replace(reply, fold=fold)
                 messages.append(reply)
                 if reply.usage is not None:
                     push(

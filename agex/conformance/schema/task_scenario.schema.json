@@ -65,7 +65,7 @@
     },
     "ModelStep": {
       "additionalProperties": false,
-      "description": "One model reply: text, reasoning, tool calls, or a failure. ``fail`` makes the call raise instead of replying: ``\"provider\"`` with a provider error (an overloaded endpoint, say), which a harness may resume from; ``\"error\"`` with any other exception.",
+      "description": "One model reply: text, reasoning, tool calls, or a failure. ``fail`` makes the call raise instead of replying: ``\"provider\"`` with a provider error (an overloaded endpoint, say), which a harness may resume from; ``\"error\"`` with any other exception. ``input_tokens`` is the size of the request this reply answers, as a provider reports it (0 reports nothing): how a scenario puts a conversation over a compaction budget.",
       "properties": {
         "fail": {
           "enum": [
@@ -73,6 +73,9 @@
             "provider",
             "error"
           ]
+        },
+        "input_tokens": {
+          "type": "integer"
         },
         "kind": {
           "const": "model"

@@ -18,7 +18,8 @@ from typing import Any
 
 import pytest
 from nontainer import Profile, PythonConfig, Store
-from nontainer.turns import ThinkingDelta, ToolEnded, Usage
+from nontainer.compaction import Policy
+from nontainer.turns import Compacted, ThinkingDelta, ToolEnded, Usage
 
 from agex import Agent
 from agex.providers import Reply, Settings
@@ -333,6 +334,27 @@ def test_a_task_asks_then_carries_on_with_the_answer(live):
         pytest.skip(f"the provider was interrupted on resume: {done.message}")
     assert done.status == "success", done.message
     assert done.value.best == "ada"
+
+
+def test_a_task_over_budget_folds_within_its_run_and_finishes(live):
+    """A budget a little above the task's opening request: partway
+    through, the run's earlier steps fold into a summary its own model
+    writes, and the task still finishes with the right value."""
+    agent = Agent(live.model, settings=live.settings(), compaction=Policy(budget=1800))
+
+    @agent.task
+    def total() -> int:
+        """In four separate run_python calls, print the integers 1-100,
+        then 101-200, then 201-300, then 301-400, one per line (one call
+        per hundred, nothing else in each call). Then call task.success
+        with the sum of all four hundred integers."""
+
+    out = total.run()
+    if out.status == "interrupted":
+        pytest.skip(f"the provider was interrupted: {out.message}")
+    assert out.status == "success", out.message
+    assert out.value == 80200
+    assert any(isinstance(e, Compacted) for e in out.events)
 
 
 def test_a_refused_request_fails_the_turn(live, ws):

@@ -11,12 +11,17 @@ It is a :class:`~agex.providers.pydanticai.PydanticAIProvider` over
 pydantic-ai's ``FunctionModel``, so the request and the reply go
 through the same mapping and streaming a real model's do. Tool calls
 get ids of their own (``call_1``, ``call_2``, …), as a provider's would.
+A step's ``input_tokens`` is reported as the reply's usage, and a
+callable that takes an argument is passed the text of each message the
+request carried (as ``Clock.next`` takes it).
 """
 
 from __future__ import annotations
 
+import inspect
 import json
-from collections.abc import AsyncIterator, Callable, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable, Sequence
+from dataclasses import replace
 from typing import Any
 
 from nontainer.conformance.corpus import ModelStep
@@ -30,6 +35,8 @@ from pydantic_ai.models.function import (
     FunctionModel,
 )
 
+from ..record import Message, Usage
+from . import ProviderEvent, Reply, Settings, ToolSpec
 from .pydanticai import PydanticAIProvider
 
 __all__ = ["ScriptedProvider"]
@@ -48,14 +55,18 @@ class ScriptedProvider(PydanticAIProvider):
     asks once too often ends rather than hangs.
     """
 
-    def __init__(self, steps: Iterable[ModelStep] | Callable[[], ModelStep]) -> None:
+    def __init__(self, steps: Iterable[ModelStep] | Callable[..., ModelStep]) -> None:
         if callable(steps):
-            self._next: Callable[[], ModelStep] = steps
+            takes = bool(inspect.signature(steps).parameters)
+            self._next: Callable[[list[str]], ModelStep] = (
+                steps if takes else lambda sent: steps()
+            )
         else:
             queue = list(steps)
-            self._next = lambda: queue.pop(0) if queue else EXHAUSTED
+            self._next = lambda sent: queue.pop(0) if queue else EXHAUSTED
         self.seen: list[list[pai.ModelMessage]] = []
         self._calls = 0
+        self._reported = 0
         super().__init__(
             FunctionModel(stream_function=self._reply, model_name=MODEL_NAME)
         )
@@ -64,7 +75,8 @@ class ScriptedProvider(PydanticAIProvider):
         self, messages: list[pai.ModelMessage], info: AgentInfo
     ) -> AsyncIterator[Any]:
         self.seen.append(list(messages))
-        step = self._next()
+        step = self._next(_texts(messages))
+        self._reported = step.input_tokens
         if step.fail == "provider":
             raise ModelHTTPError(
                 status_code=529, model_name=MODEL_NAME, body="the script is overloaded"
@@ -84,3 +96,31 @@ class ScriptedProvider(PydanticAIProvider):
                     tool_call_id=f"call_{self._calls}",
                 )
             }
+
+    async def stream(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec] = (),
+        settings: Settings = Settings(),
+    ) -> AsyncIterator[ProviderEvent]:
+        self._reported = 0
+        async for event in super().stream(messages, tools, settings):
+            if isinstance(event, Reply) and self._reported:
+                usage = replace(
+                    event.message.usage or Usage(), input_tokens=self._reported
+                )
+                event = Reply(message=replace(event.message, usage=usage))
+            yield event
+
+
+def _texts(messages: Sequence[pai.ModelMessage]) -> list[str]:
+    """The text of each part a request carried, in order."""
+    out = []
+    for message in messages:
+        for part in message.parts:
+            content = getattr(part, "content", None)
+            if isinstance(content, str) and content:
+                out.append(content)
+            elif content is not None and not isinstance(content, str):
+                out.append(str(content))
+    return out

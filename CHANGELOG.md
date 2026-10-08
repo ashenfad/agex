@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **Compaction: `Agent(compaction=Policy(...))`.** Past its budget a conversation folds into a summary the agent's own model writes, within a run too, recorded as nontainer's fold records; replies record the fold their request had (`Message.fold`).
 - **Tasks: `@agent.task`.** A typed call that runs the agent on a scratch world or a fork of `world=` and returns the value its code passes to `task.success`, built as the return type; `run` / `arun` return an `Outcome` with `value`, and `keep=True` keeps the fork as `ref`.
 - **Tasks that ask: `task.needs_input(question)`, `resume`.** The task's world is kept, and `out.resume(answer)` or `task.resume(ref, answer, world=ws)` carries on there, after a restart too, its inputs restored from the world's `__task__` plane (a live one passed again); a plain call raises `NeedsInput`.
 - **A task's brief describes its live inputs.** A function by its signature, an object by its class's docstring and public methods, so agent code calls them without exploring first.

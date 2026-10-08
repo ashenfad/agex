@@ -148,8 +148,10 @@ class Message:
     """One message of a run.
 
     An ``assistant`` message is one model reply, and says which
-    ``model`` (and ``provider``) wrote it and what it cost (``usage``);
-    those are ``None`` on the other roles.
+    ``model`` (and ``provider``) wrote it, what it cost (``usage``) and
+    the anchor of the compaction fold in force in the request it
+    answers (``fold``), which is how a later request is measured from
+    its usage; those are ``None`` on the other roles.
     """
 
     id: str
@@ -158,6 +160,7 @@ class Message:
     model: str | None = None
     provider: str | None = None
     usage: Usage | None = None
+    fold: str | None = None
 
     @property
     def text(self) -> str:
