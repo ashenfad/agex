@@ -22,8 +22,8 @@ import logging
 import sys
 import threading
 import time
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal
 
 from nontainer import NotSupportedError, Profile, Workspace, conversation
@@ -202,8 +202,9 @@ class Outcome:
     A task's outcome also carries its ``value`` (on ``success``) and,
     when its world was kept, ``ref``: the session its fork lives on.
     A session's turn ends with a run status; a task's ends ``success``,
-    ``failed`` (``task.fail``, an error, or no answer), ``cancelled`` or
-    ``interrupted``.
+    ``failed`` (``task.fail``, an error, or no answer), ``needs_input``
+    (``task.needs_input``: ``message`` is the question, and the world is
+    always kept), ``cancelled`` or ``interrupted``.
     """
 
     status: Status
@@ -214,6 +215,25 @@ class Outcome:
     message: str | None = None
     value: Any = None
     ref: str | None = None
+    _resume: Callable[..., Awaitable[Outcome]] | None = field(
+        default=None, repr=False, compare=False
+    )
+
+    def resume(self, answer: Any, /, **live_inputs: Any) -> Outcome:
+        """Answer the question a ``needs_input`` task asked, and run it
+        on to its next end; the new outcome. The in-process shortcut for
+        its task's ``resume``: the call's own inputs and world are used
+        again, so only a live input to replace is passed. From a
+        coroutine, ``await aresume``."""
+        return _block(self.aresume(answer, **live_inputs), "outcome.aresume")
+
+    async def aresume(self, answer: Any, /, **live_inputs: Any) -> Outcome:
+        """:meth:`resume`, from a coroutine."""
+        if self._resume is None:
+            raise ValueError(
+                f"only a task's needs_input outcome resumes; this one is {self.status}"
+            )
+        return await self._resume(answer, **live_inputs)
 
 
 class Agent:

@@ -38,3 +38,9 @@ class TaskStub:
         """End the task without a value, saying why it can't be done."""
         self._remote.fail(str(reason))
         raise Finished("task.fail")
+
+    def needs_input(self, question) -> None:
+        """Stop the task to ask whoever gave it something only they can
+        settle; their answer starts the next run."""
+        self._remote.needs_input(str(question))
+        raise Finished("task.needs_input")

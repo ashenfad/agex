@@ -22,12 +22,20 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .agent import Agent, Outcome, Session
-    from .task import Task, TaskError, TaskFailed, TaskInterrupted, TaskSpec
+    from .task import (
+        NeedsInput,
+        Task,
+        TaskError,
+        TaskFailed,
+        TaskInterrupted,
+        TaskSpec,
+    )
 
 _HOMES = {
     "Agent": ".agent",
     "Outcome": ".agent",
     "Session": ".agent",
+    "NeedsInput": ".task",
     "Task": ".task",
     "TaskError": ".task",
     "TaskFailed": ".task",
@@ -52,6 +60,7 @@ __all__ = [
     "Agent",
     "Outcome",
     "Session",
+    "NeedsInput",
     "Task",
     "TaskError",
     "TaskFailed",
