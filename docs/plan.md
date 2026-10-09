@@ -2,7 +2,7 @@
 
 Status: in progress (2026-10-08).
 - **Phase A** is merged through delegation: A0-A3 shipped in nontainer 0.9.0/0.9.1, and A4, A5 and A8a-b are on nontainer `main`. The next release, 0.10.0, closes A5 and ships the kit (A7); it is agex's floor. The studio's A5 PR (nontainer-studio #90) is a draft against unreleased `main` until then.
-- **Phase B** is under way on `rebuild`: B0-B4 and B5a (the `sessions` tool) are merged, and B5b (agent-defined tasks) is next.
+- **Phase B** is under way on `rebuild`: B0-B4 and B5a (the `sessions` tool) are merged. B5b-1 (agent-defined tasks, every rung) is in review, after two nontainer PRs it needs (#228 `Sessions.of`, #229 shapes on every rung); B5b-2 (shape scenarios, apps, live round trips) is next.
 - **Still open in Phase A:** A6 (studio fixes), A8c (large values spill to the plane) and A3c (deferred). The async agent code track must land before the shape freeze (see Parallel tracks).
 
 This plan covers *when* and *in what order*. The *what* and *why* live
@@ -670,6 +670,21 @@ round trip passes.
 
 #### B5b. Agent-defined tasks
 
+Status: the prerequisites below are merged and released (dud 0.4.2,
+sandtrap 0.4.2, nontainer #222-#225, unreleased). Two more nontainer
+PRs turned up while building it: **#228**, `Sessions.of(ws)`, the
+helper a world's `agex` delegates through (the design's open
+question), and **#229**, the classes `load_specs` builds crossing every
+rung as their data (they have no module to import or ship). B5b is in
+two PRs:
+- **B5b-1** (in review): the `agex` host object (`agent_tasks`), the
+  decorator and its refusals, the call and `.map`, `TaskFailed` and
+  `TaskNeedsInput`, shapes, and the helper's world (a delegate branch,
+  or a scratch world), with the exit's behaviours tested on every rung.
+- **B5b-2**: shape-corpus scenarios for agent-defined tasks, apps (a
+  task in a module, the preview, a scripted stand-in through
+  `bind=`), and the live round trips under agex and agno.
+
 **Prerequisites,** each its own small PR, in dependency order:
 - **Clean context for host-side async work** (nontainer). In-process,
   a coroutine scheduled from a host call inherits the sandbox's
@@ -678,8 +693,9 @@ round trip passes.
 - **Waiting host calls don't count against the timeout.** sandtrap
   moves its checkpoint's start time forward by the call's duration,
   in-process and in the process worker; dud's supervisor pushes its
-  deadline back by the relay time; nontainer marks a `HostObject` as
-  one that waits. Releases go sandtrap, then dud, then nontainer.
+  deadline back by the relay time; nontainer counts every host
+  object's calls as host time. Releases go sandtrap, then dud, then
+  nontainer.
 - **dud #40:** a dataclass defined in guest code fails, since
   `__dud__` isn't in `sys.modules`.
 - **Spec export** (nontainer): a `values.Spec` written out as data and
@@ -726,7 +742,8 @@ round trip passes.
   nontainer, from the same host object.
 
 **Likely nontainer follow-ups** (0.10.x, as B5 finds them):
-- `SessionRunner` typed for an `async def run` (agex casts today);
+- `SessionRunner` typed for an `async def run`: done in #225
+  (`AsyncSessionRunner`);
 - the open question carried from A5: a fork taken mid-`run_python`
   splits that call's commit. B5b's empty-view forks avoid it; a
   delegate that sees the caller's files still meets it.

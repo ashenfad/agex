@@ -62,6 +62,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import dataclasses
+import enum
 import functools
 import inspect
 import sys
@@ -395,16 +396,52 @@ def _detach(value: Any) -> Any:
 # -- the brief the model starts from -------------------------------------------------------
 
 
+def _code(value: Any) -> str:
+    """``value`` as code writes it: an enum member by name."""
+    if isinstance(value, enum.Enum):
+        kind = type(value).__name__
+        if value.name is not None and value.name in type(value).__members__:
+            return f"{kind}.{value.name}"
+        return f"{kind}({value.value!r})"
+    return repr(value)
+
+
 def _source(tp: type) -> str:
+    """``tp`` as code would define it: its source, or, for a class with
+    none (one built from a spec, say), written out from what it holds."""
     try:
         return textwrap.dedent(inspect.getsource(tp)).strip()
     except (OSError, TypeError):
-        hints = getattr(tp, "__annotations__", {})
-        body = "\n".join(
-            f"    {n}: {t if isinstance(t, str) else values.fmt(t)}"
-            for n, t in hints.items()
-        )
-        return f"class {tp.__name__}:\n{body or '    ...'}"
+        pass
+    doc = inspect.getdoc(tp) if tp.__doc__ else None
+    lines = [f'    """{doc}"""'] if doc else []
+    if isinstance(tp, enum.EnumMeta):
+        kinds = (enum.IntFlag, enum.Flag, enum.IntEnum, enum.Enum)
+        base = next(k for k in kinds if issubclass(tp, k)).__name__
+        if base == "Enum" and issubclass(tp, str):
+            base = "str, Enum"
+        members: Mapping[str, Any] = typing.cast(Any, tp).__members__
+        lines += [f"    {n} = {m.value!r}" for n, m in members.items()]
+        return f"class {tp.__name__}({base}):\n" + "\n".join(lines or ["    ..."])
+    hints = getattr(tp, "__annotations__", {})
+    fields = (
+        {f.name: f for f in dataclasses.fields(tp)}
+        if dataclasses.is_dataclass(tp)
+        else {}
+    )
+    for n, t in hints.items():
+        line = f"    {n}: {t if isinstance(t, str) else values.fmt(t)}"
+        f = fields.get(n)
+        if f is not None and f.default is not dataclasses.MISSING:
+            line += f" = {_code(f.default)}"
+        elif f is not None and f.default_factory is not dataclasses.MISSING:
+            try:
+                line += f" = {_code(f.default_factory())}"
+            except Exception:  # noqa: BLE001 - shown without its default
+                pass
+        lines.append(line)
+    head = "@dataclass\n" if fields else ""
+    return f"{head}class {tp.__name__}:\n" + "\n".join(lines or ["    ..."])
 
 
 def _live(value: Any, name: str | None, found: list[tuple[Any, str]]) -> None:

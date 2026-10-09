@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **Agent-defined tasks: `agent_tasks(agent)`.** A host object that lets agent code define a task with `@agex.task` on a def and call it, or `.map` it; a helper agent runs each call as a delegate of the calling world (a scratch world when it has no helper), and the value comes back as the caller's own classes on every rung.
 - **Delegation: `agent.session(ws, sessions=True)`.** The agent delegates through the `sessions` tool, each delegate a session of the same agent on a fork with its parent's profile (`agex.delegation.Runner`, an async `SessionRunner`) that can delegate in turn; answers ride the next tool result, `wake()` runs a turn that opens with what is waiting, and `close()` waits for the delegates.
 - **Compaction: `Agent(compaction=Policy(...))`.** Past its budget a conversation folds into a summary the agent's own model writes, within a run too, recorded as nontainer's fold records; replies record the fold their request had (`Message.fold`), and summary calls count against `max_steps` and in the run's usage (`Run.compaction`).
 - **Tasks: `@agent.task`.** A typed call that runs the agent on a scratch world or a fork of `world=` and returns the value its code passes to `task.success`, built as the return type; `run` / `arun` return an `Outcome` with `value`, and `keep=True` keeps the fork as `ref`.
