@@ -684,10 +684,16 @@ round trip passes.
   `__dud__` isn't in `sys.modules`.
 - **Spec export** (nontainer): a `values.Spec` written out as data and
   read back, records and enums included, without evaluating anything.
+- **Host objects per world** (nontainer): `HostObject(factory=)`,
+  called with each world as it opens, forks included.
+- **Helpers as delegates** (nontainer):
+  - `Sessions.ask(..., runner=)`, a runner for one job;
+  - with `paths=[]`, the child forks from the last commit and lands
+    none of the caller's uncommitted writes.
 
 **agex:**
-- **The `agex` host object:** a stub in the kernel, a host half holding
-  the embedder's `Agent`, bound to the world it serves.
+- **The `agex` host object:** a stub in the kernel, and a host half
+  per world, built by the factory, holding the embedder's `Agent`.
   - `@agex.task` and `@agex.task(primer=)`; the call; `.map`, bounded.
   - Refusals at the decorator: a lambda, a missing docstring or
     annotation, code in the body, a live type off in-process.
@@ -695,8 +701,13 @@ round trip passes.
 - **Shapes:** the stub sends the spec as data; the helper's world gets
   generated classes; the stub decodes the result by the caller's own
   annotations.
-- **The helper's world:** scratch, from the caller's profile without
-  `agex`.
+- **The helper's world:** a delegate branch through the calling
+  world's `Sessions` (`paths=[]`, `runner=TaskRun(...)`), from the
+  caller's profile without `agex`; a scratch world where there is no
+  `Sessions` (a published app) or the embedder opts out.
+- **Apps:** module-level tasks register idempotently; the preview's
+  helpers are the session's delegates; a scripted stand-in for
+  `bind=`.
 
 **Exit:**
 - Shape scenarios pass on every rung:
@@ -705,14 +716,19 @@ round trip passes.
   - nested records, enums, tables and arrays come back as declared;
   - each refusal at the decorator;
   - `.map` returns in order, and runs at once;
-  - helper time doesn't end the caller's script under a short timeout.
+  - helper time doesn't end the caller's script under a short timeout;
+  - a helper is a delegate branch of its caller, its answer collected
+    by the calling code and never handed to the caller's model;
+  - the caller's `run_python` lands in one commit.
+- An app handler calls a task, in the preview and through `bind=`.
 - A live round trip under agex's loop, and one under agno with
   nontainer, from the same host object.
 
 **Likely nontainer follow-ups** (0.10.x, as B5 finds them):
 - `SessionRunner` typed for an `async def run` (agex casts today);
 - the open question carried from A5: a fork taken mid-`run_python`
-  splits that call's commit. B5b avoids it with scratch worlds.
+  splits that call's commit. B5b's empty-view forks avoid it; a
+  delegate that sees the caller's files still meets it.
 
 ### B6. The studio seam, designed against both loops
 
