@@ -208,7 +208,7 @@ opens.
 | typed result | the task's return type |
 | fan-out (`submit` / `map`) | `.map`, bounded on the host |
 | `max_spawns` | the `agex` host object's concurrency limit |
-| clone events streamed but never stored | open: see "Open questions" |
+| clone events streamed but never stored | helpers are delegate branches: stored, shown and swept like any delegate |
 | depth-1 limit | the same by default: a helper's world has no `agex` |
 | work in a world, reported back | the `sessions` tool: delegates are real sessions, stored, open-able, resumable |
 
@@ -221,9 +221,8 @@ There are two real losses:
   back a closure or a live object. A task's value crosses through the
   value encoding ("Task values"), and in-process still carries
   anything.
-- **Cheapness.** A spawn was just a thread. A task call opens a
-  scratch world and runs a turn. Memory-store worlds are cheap; the
-  model call dominates.
+- **Cheapness.** A spawn was just a thread. A task call forks a
+  branch and runs a turn. Forks are O(1); the model call dominates.
 
 ### What stays
 
@@ -535,24 +534,82 @@ The built-in tools stay `run_python`, `terminal` and the file tools.
   `Agent` (see "Who defines tasks"): no model client, no embedder
   profile, nothing to configure past a primer.
 - **Any harness on nontainer can grant it,** agno included, since host
-  objects are nontainer's. The worker is always an agex agent, because
-  "a spec in, a typed value out, by running code" is how agex runs
-  tasks. A second worker would make this a nontainer protocol with
-  agex as one implementation, the way `Sessions` and `SessionRunner`
-  split. Not before a second one exists.
-- **It serves one world.** The host half is bound to the world whose
-  code calls it, so it knows that world's profile and, under agex's
-  own loop, the run that called it.
+  objects are nontainer's. The worker is an agex agent, because "a
+  spec in, a typed value out, by running code" is how agex runs tasks.
+  It reaches nontainer as a `SessionRunner` the call brings with it
+  (see "Helpers are delegates"), so a second worker would be one more
+  runner, not a new protocol.
 
-### Worlds and limits
+### One host object per world
 
-- **A helper runs on a scratch world**, built from the calling world's
-  profile without `agex`. It holds what its caller holds and no more,
-  and it can't define helpers of its own unless the embedder allows a
-  deeper level.
-- **A fork of the caller's world is left for later.** A fork taken
-  mid-`run_python` commits that call's partial writes and splits its
-  commit (the open question carried from A5).
+A profile is fixed when a world opens, forks inherit it, and a
+host-object call doesn't say who is calling. One `agex` object in a
+profile would serve the lead, every delegate and every helper, without
+knowing which one called. The host half needs to know: to name the
+helper's branch under its caller, to ask through that world's
+`Sessions`, to build the helper from that world's profile, and to stop
+with that world's turn.
+
+**So nontainer builds host objects per world.** A `HostObject` can be
+given a factory, called with each world as it opens (forks included):
+
+```python
+profile = Profile(python=PythonConfig(host_objects={
+    "agex": HostObject(factory=lambda ws: Tasks(agent, ws), stub=TasksStub),
+}))
+```
+
+The factory decides by the world it is handed, which is what lets one
+host object fit a session, its app's preview and a published app (see
+"In apps"). Other host objects that need their world can use it too.
+
+### Helpers are delegates
+
+**By default a helper is a delegate branch of its caller**, asked
+through the calling world's `Sessions`:
+
+```python
+# in the host half, per call
+job = sessions.ask(
+    "corners(shape='unit square')",      # what the rail shows
+    paths=[],                             # an empty view, forked from the last commit
+    runner=TaskRun(agent, spec, inputs),  # this job's runner
+)
+```
+
+- **It lives where delegates live.** The branch is named under its
+  caller (`lead.corners-1`), and the studio's rail shows it, keeps it
+  and sweeps it like any delegate.
+- **It holds what its caller holds and no more:** the caller's
+  profile, without `agex` unless the embedder allows a deeper level.
+  It sees none of the caller's files, and it starts with no
+  conversation.
+- **An empty view forks from the last commit.** A fork lands the
+  caller's uncommitted writes first, which mid-`run_python` splits
+  that call's commit. A child that sees no files doesn't need them, so
+  with `paths=[]` nontainer forks from the last commit and lands
+  nothing.
+- **Each ask can bring its own runner.** A world's `Sessions` runs its
+  jobs on one runner, which under agno is agno's. A task's job runs on
+  the `TaskRun` the host half made for that call, holding the agex
+  agent, the spec and the inputs. Without `runner=`, the helper's own
+  runner is used, as today.
+- **The typed value never passes through nontainer.** `TaskRun` keeps
+  the encoded value, and writes it to the child's `__task__` plane as
+  tasks already do. `Answer.text` is a summary for the rail and for a
+  model reading the job list.
+- **The calling code collects its own answer.** The host half reads it
+  with `result()`, which marks it collected, inside the same
+  `run_python` call, so the caller's model is never handed it as a
+  note. A script that dies before collecting leaves the answer to be
+  delivered as any other.
+- **Nothing rolls up, as for delegates.** A helper's events and usage
+  are its own runs' on its own branch. The calling run gets the value.
+- **The opt-out is a scratch world** in a memory store, built from the
+  caller's profile, for an embedder that doesn't want helpers kept.
+
+### Limits
+
 - **The model is the embedder's agent's.** Code picks a primer, not a
   model. An allowlist of agents can come later.
 - **Fan-out is bounded.** `.map` runs calls at once on the host, up to
@@ -630,6 +687,44 @@ use up the caller's script.
   script looping on any slow host function would never time out. The
   tick limit and the calling turn's cancel still bound a waiting
   script.
+
+### In apps
+
+Handlers dispatch through `run_python`'s path, with the same policy and
+host objects, so `from host import agex` works there, and a task can be
+defined at a module's top level:
+
+```python
+# app/tasks.py
+from host import agex
+
+@agex.task
+def summarize(notes: list[Note]) -> Summary:
+    """Summarize the notes for the dashboard."""
+```
+
+The decorator runs when a handler's kernel imports the module, and a
+kernel can be made again, so registering a spec is idempotent (keyed
+by the spec).
+
+- **The session's preview** (the live preview, `test_app`, `ws-curl`)
+  runs against the session's own world, so its helpers are delegate
+  branches of the session, as from `run_python`. No turn is running,
+  so there is no turn to stop with, and a person clicking spends the
+  model calls. `bind=` gives a stand-in: `bind={"agex":
+  "agex_scripted"}` runs the page against a scripted worker, and
+  ws-pytest's `call(..., agex=...)` does the same for a test.
+- **GET handlers are pure** (a read-only filesystem and cache). A task
+  call spends and makes a branch, so tasks belong in POST handlers.
+- **A published app** is a frozen snapshot with no session, no
+  `Sessions` and nothing to write to. The factory sees that, and puts
+  helpers on scratch worlds, or in a namespace the embedder picks for
+  the deployment, with its own sweep. Whether a deployment gets
+  `agex` at all, and with what budget, is the embedder's, at the open
+  (see "How do app handlers call tasks?" under "Open questions").
+- **A request waits on its task.** The clock rule covers handlers too,
+  but a long task wants a job shape (start, then poll), which is part
+  of the same open question.
 
 ### Found by the spike
 
@@ -1030,7 +1125,8 @@ stays the `sessions` tool, and code gets tasks rather than `ask`.
   now reads committed history through the child's handle (A5a).
 - **Still open.** `ws.fork` in the middle of a call commits the call's
   partial writes under `{"tool": "fork"}`, splitting the `run_python`
-  commit in two. Tasks avoid it by running on scratch worlds.
+  commit in two. A task's helper avoids it: an empty view forks from
+  the last commit.
 
 ## Async agent code
 
@@ -1090,17 +1186,11 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
   skips skills it can't run?
 - Should tasks declare `requires=[...]`, so they refuse to run in a
   world that lacks a capability?
-- Agent-defined tasks:
-  - Are helper runs kept anywhere? A scratch world in a memory store
-    leaves nothing to open later. A branch in the caller's store
-    (`<session>.task.<n>`, kept by a policy) would make them visible in
-    the studio.
-  - Under agex's own loop, does a helper's usage count in the calling
-    run's, and do its events reach the calling run's stream? Under
-    another harness, the host half doesn't know the run.
-  - How is the host half bound to its world? The opener can bind it
-    after open, or nontainer can give host objects a hook that names
-    the world they serve.
+- How does a world's `agex` factory reach that world's `Sessions`?
+  The harness builds the helper after the world opens, and the factory
+  runs at the open. Either the harness hands the helper to the world
+  (`ws.delegates`, say) for host objects to find, or the factory builds
+  a `Sessions` of its own, and the studio lists two helpers' jobs.
 - How do app handlers call tasks? Handlers run on a frozen snapshot
   with host objects from whoever serves, so there is no session,
   parent or budget. It needs:
@@ -1304,8 +1394,18 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
   - `agex` is a stubbed host object an embedder grants, not a
     primitive. Agent code holds the stub; the host half holds the
     embedder's `Agent`. Any harness on nontainer can grant it.
-  - A helper runs on a scratch world from the caller's profile without
-    `agex`, one level deep by default.
+  - nontainer builds host objects per world (`HostObject(factory=)`),
+    so the host half knows which world calls it, and decides by it.
+  - A helper is a delegate branch of its caller, asked through the
+    calling world's `Sessions` with `paths=[]` (forked from the last
+    commit, landing nothing) and a runner of its own (`ask(runner=)`).
+    The typed value stays in agex: the runner holds it, and nontainer's
+    `Answer` carries text. Nothing rolls up into the calling run, as
+    for delegates. A scratch world is the embedder's opt-out.
+  - One level deep by default: a helper's profile has no `agex`.
+  - Apps use the same object: the preview's helpers are the session's
+    delegates, `bind=` gives stand-ins, tasks belong in POST handlers,
+    and a published app's helpers go where its factory puts them.
   - Types cross as shapes. The stub compiles the signature in the
     kernel and sends it as data; the host runs nothing the guest sent;
     the helper's world gets generated classes; the caller's stub
