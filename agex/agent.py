@@ -31,6 +31,7 @@ from nontainer.adapters.render import toolkit_instructions
 from nontainer.adapters.tools import Tool, Toolset
 from nontainer.compaction import Policy
 from nontainer.inbox import Inbox, Note
+from nontainer.sessions import Sessions, answer_notes
 from nontainer.turns import (
     Delivered,
     DeliveredNote,
@@ -88,6 +89,10 @@ the work it did, and the model reads that it was cut short."""
 
 STOPPED = "stopped"
 """Why a turn :meth:`Session.cancel` stopped ended."""
+
+WOKEN = "(You were woken, and nothing new is waiting.)"
+"""The message a woken turn opens with when nothing is waiting after all:
+what woke it was taken before the turn began."""
 
 UNANSWERED = "not run: the turn ended before this call started"
 """The result a tool call gets when its turn ended before running it."""
@@ -276,10 +281,17 @@ class Agent:
     def __repr__(self) -> str:
         return f"<Agent {self.provider.name}>"
 
-    def session(self, ws: Workspace, *, inbox: Inbox | None = None) -> Session:
+    def session(
+        self,
+        ws: Workspace,
+        *,
+        inbox: Inbox | None = None,
+        sessions: Sessions | bool | None = None,
+    ) -> Session:
         """A session driving ``ws``, which may already hold an agex
-        conversation (it continues) or none (it starts one)."""
-        return Session(self, ws, inbox=inbox)
+        conversation (it continues) or none (it starts one).
+        ``sessions`` lets it delegate; see :class:`Session`."""
+        return Session(self, ws, inbox=inbox, sessions=sessions)
 
     def task(self, fn: Callable[..., Any]) -> Task:
         """A task: ``fn``'s signature and docstring, run by this agent on
@@ -305,6 +317,16 @@ class Session:
     turn goes on to its end; ``cancel`` stops it. One turn runs at a
     time; ``running`` says whether one is.
 
+    ``sessions`` lets the agent delegate, through the ``sessions`` tool:
+    ``True`` builds a helper whose delegates are sessions of this same
+    agent (:class:`~agex.delegation.Runner`), or pass a
+    :class:`nontainer.sessions.Sessions` of your own. Answers that land
+    mid-turn ride the next tool result, as a note in ``inbox`` does; one
+    that lands between turns is waiting for the next, or for ``wake``,
+    a turn that opens with what is waiting. A helper the session built
+    runs its delegates on the loop the session was made in (agex's own,
+    made outside one), and ``close`` closes it.
+
     A turn ends ``completed``, ``cancelled``, ``failed`` (an error, or
     ``max_steps`` model calls) or ``interrupted`` (a provider error worth
     retrying, see :meth:`~agex.providers.Provider.transient`), which
@@ -316,7 +338,14 @@ class Session:
     runs it holds are in that harness's format.
     """
 
-    def __init__(self, agent: Agent, ws: Workspace, *, inbox: Inbox | None = None):
+    def __init__(
+        self,
+        agent: Agent,
+        ws: Workspace,
+        *,
+        inbox: Inbox | None = None,
+        sessions: Sessions | bool | None = None,
+    ):
         index = conversation.index_of(ws)
         if index is not None and index.harness != HARNESS:
             raise NotSupportedError(
@@ -326,7 +355,21 @@ class Session:
         self.agent = agent
         self.ws = ws
         self.inbox = inbox if inbox is not None else Inbox()
-        self.toolset = Toolset(ws, vision=False)
+        # the loop a helper the session built runs its delegates on, and
+        # the sign that closing it is the session's to do
+        self._sessions_loop: asyncio.AbstractEventLoop | None = None
+        if sessions is True:
+            from .delegation import Runner, _as_runner
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = _SYNC.loop()
+            sessions = Sessions(ws, _as_runner(Runner(agent, ws)), loop=loop)
+            self._sessions_loop = loop
+        self.sessions: Sessions | None = sessions or None
+        """The helper the agent delegates through, if it can."""
+        self.toolset = Toolset(ws, vision=False, sessions=self.sessions)
         self._tools: dict[str, Tool] = {t.name: t for t in self.toolset.tools()}
         self._specs = [ToolSpec.of(t) for t in self._tools.values()]
         self.last: Outcome | None = None
@@ -357,6 +400,34 @@ class Session:
             # "exception was never retrieved"; the stored run says how
             # it ended
             _logger.debug("turn ended with %r", task.exception())
+
+    def close(self) -> None:
+        """Close the ``sessions`` helper the session built, which waits
+        for its delegates' runs; one passed in is its owner's to close.
+        From a coroutine, ``await aclose``."""
+        loop = self._sessions_loop
+        if loop is None or self.sessions is None:
+            return
+        try:
+            here: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            here = None
+        if loop is here:
+            self.sessions.close()  # refused while runs are pending: aclose
+        else:
+            asyncio.run_coroutine_threadsafe(self.sessions.aclose(), loop).result()
+
+    async def aclose(self) -> None:
+        """:meth:`close`, from a coroutine."""
+        loop = self._sessions_loop
+        if loop is None or self.sessions is None:
+            return
+        if loop is asyncio.get_running_loop():
+            await self.sessions.aclose()
+        else:
+            await asyncio.wrap_future(
+                asyncio.run_coroutine_threadsafe(self.sessions.aclose(), loop)
+            )
 
     # -- the stored conversation ---------------------------------------------------
 
@@ -415,14 +486,27 @@ class Session:
         """Continue the last turn in place; its outcome."""
         return await self.stream(resume=True).wait()
 
-    def stream(self, prompt: str | None = None, *, resume: bool = False) -> RunStream:
+    def wake(self) -> Outcome:
+        """Run a woken turn: one with no prompt, which opens with what is
+        waiting to be delivered (answers the ``sessions`` helper has
+        landed, notes queued in ``inbox``); its outcome. From a
+        coroutine, ``await awake``."""
+        return _block(self.awake(), "session.awake")
+
+    async def awake(self) -> Outcome:
+        """:meth:`wake`, from a coroutine."""
+        return await self.stream(wake=True).wait()
+
+    def stream(
+        self, prompt: str | None = None, *, resume: bool = False, wake: bool = False
+    ) -> RunStream:
         """Start a turn when first iterated (or waited on), and hand back
-        its events as they happen: a new turn on ``prompt``, or with
-        ``resume`` the last turn continued in place. When it ends,
-        ``last`` holds the outcome."""
-        if resume == (prompt is not None):
-            raise ValueError("a turn takes a prompt, or resumes the last one")
-        return RunStream(self, prompt, resume=resume)
+        its events as they happen: a new turn on ``prompt``, with
+        ``resume`` the last turn continued in place, or with ``wake`` a
+        woken turn. When it ends, ``last`` holds the outcome."""
+        if (prompt is not None) + resume + wake != 1:
+            raise ValueError("a turn takes a prompt, resumes the last one, or is woken")
+        return RunStream(self, prompt, resume=resume, wake=wake)
 
     def cancel(self) -> bool:
         """Stop the turn that is running; whether one was.
@@ -475,6 +559,7 @@ class Session:
         emit: Callable[[TurnEvent], None],
         *,
         resume: bool = False,
+        wake: bool = False,
     ) -> Outcome:
         """One turn, start to end: every event goes to ``emit`` as it
         happens, and the outcome comes back."""
@@ -494,9 +579,15 @@ class Session:
         else:
             run_id = new_id()
             started = time.time()
-            messages = [
-                Message(id=new_id(), role="user", parts=(Text(text=prompt or ""),))
-            ]
+            # a woken turn's message is what is waiting, read once the
+            # turn is open
+            messages = (
+                []
+                if wake
+                else [
+                    Message(id=new_id(), role="user", parts=(Text(text=prompt or ""),))
+                ]
+            )
             summaries = None
             earlier = [run.messages for run in self.runs]
         system = self._system()
@@ -510,10 +601,28 @@ class Session:
         # tool returns, its own output once it has
         unended: ToolEnded | None = None
         in_request = False
-        turn = self.ws.turn(run_id, resume=resume, inbox=self.inbox, harness=HARNESS)
+        helper = self.sessions
+        turn = self.ws.turn(
+            run_id,
+            resume=resume,
+            inbox=self.inbox,
+            harness=HARNESS,
+            sources=(
+                [lambda inbox: answer_notes(helper, inbox)]
+                if helper is not None
+                else []
+            ),
+        )
         self._live = True
         try:
             push(RunStarted(run_id=run_id))
+            if wake:
+                opening = await turn.aopening()
+                messages.append(
+                    Message(
+                        id=new_id(), role="user", parts=(Text(text=opening or WOKEN),)
+                    )
+                )
             # every model call counts against max_steps, summaries too
             made = 0
             while made < self.agent.max_steps:
@@ -721,11 +830,17 @@ class RunStream:
     """
 
     def __init__(
-        self, session: Session, prompt: str | None, *, resume: bool = False
+        self,
+        session: Session,
+        prompt: str | None,
+        *,
+        resume: bool = False,
+        wake: bool = False,
     ) -> None:
         self._session = session
         self._prompt = prompt
         self._resume = resume
+        self._wake = wake
         self._queue: asyncio.Queue[Any] = asyncio.Queue()
         self._task: asyncio.Task[Outcome] | None = None
 
@@ -734,7 +849,12 @@ class RunStream:
             session = self._session
             session._cancel_requested = False
             task = asyncio.get_running_loop().create_task(
-                session._run(self._prompt, self._queue.put_nowait, resume=self._resume)
+                session._run(
+                    self._prompt,
+                    self._queue.put_nowait,
+                    resume=self._resume,
+                    wake=self._wake,
+                )
             )
             # the end of the stream, however the task ends: even cancelled
             # before it ran a line

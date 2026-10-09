@@ -25,7 +25,9 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     # The world: workspaces, turns, the conversation plane, the tools.
-    "nontainer>=0.9.1",
+    # 0.10.0: async delegate runners and auntil_settled, which
+    # delegation runs on.
+    "nontainer>=0.10.0",
     # The provider transport (pydantic_ai.direct); stable within 2.x.
     "pydantic-ai-slim>=2.54,<3",
     # Budgeted previews of a task's inputs, in the brief its model reads,

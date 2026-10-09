@@ -357,6 +357,34 @@ def test_a_task_over_budget_folds_within_its_run_and_finishes(live):
     assert any(isinstance(e, Compacted) for e in out.events)
 
 
+def test_a_session_delegates_through_its_sessions_tool(live):
+    """The model asks a delegate, which is the same agent on a fork, and
+    reads its answer; the work is on the delegate's branch."""
+    store = Store(memory=True)
+    ws = store.open("lead")
+    chat = Agent(live.model, primer="You are terse.").session(ws, sessions=True)
+    try:
+        outcome = say(
+            chat,
+            "Use the sessions tool to ask a delegate named scout to create "
+            "/workspace/note.txt containing the word ok. Wait for its answer "
+            "(wait=true), then reply done.",
+        )
+        assert outcome.status == "completed", outcome.message
+        jobs = {job.name: job.status for job in chat.sessions.list()}
+        assert jobs.get("lead.scout") == "answered", jobs
+        scout = store.open("lead.scout")
+        try:
+            assert scout.files.read("/workspace/note.txt").strip() == b"ok"
+        finally:
+            scout.close()
+        assert not ws.files.exists("/workspace/note.txt")
+    finally:
+        chat.close()
+        ws.close()
+        store.close()
+
+
 def test_a_refused_request_fails_the_turn(live, ws):
     outcome = Agent(live.bad_model).session(ws).say("hi")
     assert outcome.status == "failed", outcome.message

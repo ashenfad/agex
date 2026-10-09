@@ -100,7 +100,9 @@ def test_only_an_interrupted_last_turn_resumes(ws):
     session.say("again")  # fails, which is not resumable
     with pytest.raises(ValueError, match="ended failed"):
         session.resume()
-    with pytest.raises(ValueError, match="one or the other|prompt, or resumes"):
+    with pytest.raises(
+        ValueError, match="one or the other|prompt, resumes the last one, or is woken"
+    ):
         session.stream("both", resume=True)
 
 

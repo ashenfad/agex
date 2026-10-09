@@ -19,8 +19,10 @@ import asyncio
 from collections.abc import Mapping
 from typing import Any
 
-from nontainer import Workspace
+from nontainer import Store, Workspace
+from nontainer.adapters.corpus_delegates import CorpusDelegates
 from nontainer.compaction import Policy
+from nontainer.conformance.corpus import Scenario
 from nontainer.conformance.runner import Clock, RunView
 from nontainer.turns import TurnEvent
 
@@ -43,10 +45,16 @@ def _closes_early(run: Run) -> bool:
 class AgexSession:
     """One workspace, driven by an agex session over the clock's script."""
 
-    def __init__(self, ws: Workspace, clock: Clock, budget: int | None = None) -> None:
+    def __init__(
+        self,
+        ws: Workspace,
+        clock: Clock,
+        budget: int | None = None,
+        sessions: Any = None,
+    ) -> None:
         policy = None if budget is None else Policy(budget=budget)
         agent = Agent(ScriptedProvider(clock.next), compaction=policy)
-        self.session: Session = agent.session(ws)
+        self.session: Session = agent.session(ws, sessions=sessions)
         self.inbox = self.session.inbox
 
     def turn(self, prompt: str) -> list[TurnEvent]:
@@ -58,6 +66,12 @@ class AgexSession:
     def resume(self) -> list[TurnEvent]:
         async def collect() -> list[TurnEvent]:
             return [event async for event in self.session.stream(resume=True)]
+
+        return asyncio.run(collect())
+
+    def wake(self) -> list[TurnEvent]:
+        async def collect() -> list[TurnEvent]:
+            return [event async for event in self.session.stream(wake=True)]
 
         return asyncio.run(collect())
 
@@ -94,11 +108,20 @@ class AgexHarness:
 
     def __init__(self) -> None:
         self.capabilities: frozenset[str] = frozenset(
-            {"resume", "keeps-aborted-runs", "compaction"}
+            {"resume", "keeps-aborted-runs", "compaction", "delegation"}
         )
         self.known_gaps: dict[str, dict[str, str]] = {}
 
     def open(
-        self, ws: Workspace, clock: Clock, *, budget: int | None = None
+        self,
+        ws: Workspace,
+        clock: Clock,
+        *,
+        budget: int | None = None,
+        sessions: Any = None,
     ) -> AgexSession:
-        return AgexSession(ws, clock, budget)
+        return AgexSession(ws, clock, budget, sessions)
+
+    def delegation(self, store: Store, scenario: Scenario) -> CorpusDelegates:
+        """What runs a scenario's delegates: agex sessions too."""
+        return CorpusDelegates(self, store, scenario)
