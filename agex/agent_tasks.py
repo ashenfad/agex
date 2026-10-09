@@ -42,6 +42,7 @@ refused where the task is defined.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import itertools
 import threading
 import time
@@ -63,7 +64,7 @@ from nontainer import (
 )
 from nontainer.sessions import Sessions
 
-from .agent import Agent, Outcome, _block
+from .agent import Agent, Outcome, _on_turn_loop
 from .delegation import _on_thread
 from .record import new_id
 from .stubs import AgexStub, TaskStub
@@ -168,6 +169,17 @@ def _value_spec(spec: values.Spec) -> ValueSpec:
     )
 
 
+def _without_classes(profile: Profile, names: set[str]) -> Profile:
+    """``profile`` without its classes named ``names``: in a helper's
+    world the task's own classes take those names, since its values are
+    built of them (the caller decodes them into its own classes)."""
+    python = profile.python
+    kept = tuple(c for c in python.classes if c.__name__ not in names)
+    if len(kept) == len(python.classes):
+        return profile
+    return replace(profile, python=replace(python, classes=kept))
+
+
 def _reply(status: str, message: str | None = None, value: bytes | None = None) -> dict:
     reply: dict[str, Any] = {"status": status}
     if message is not None:
@@ -241,7 +253,7 @@ class TaskRun:
             for key, value in self.called.inputs.items()
         }
         profile = _with_objects(
-            self.base,
+            _without_classes(self.base, set(spec.types)),
             {**entries, "task": HostObject(host, stub=TaskStub)},
             tuple(spec.types.values()),
         )
@@ -463,15 +475,18 @@ class AgentTasks:
                     lambda name, profile: store.open(name, profile=profile),
                 )
                 name = f"{c.spec.name}-{new_id()[:8]}"
-                _block(run.run(name, c.label()), "agex task")
+                _on_turn_loop(run.run(name, c.label()), "agex task")
                 return run.reply
             finally:
                 store.close()
 
         if len(called) == 1:
             return [one(called[0])]
+        # the pool's threads run in the caller's context, which says
+        # which loop the turn is on
+        context = contextvars.copy_context()
         with ThreadPoolExecutor(
             max_workers=min(self._max_parallel, len(called)),
             thread_name_prefix="agex-scratch",
         ) as pool:
-            return list(pool.map(one, called))
+            return list(pool.map(lambda c: context.copy().run(one, c), called))

@@ -252,11 +252,11 @@ class AgentTask:
         returns = self._specs["return"]
         try:
             return returns.decode(reply.get("value") or b"")
-        except (values.Mismatch, ValueError) as error:
+        except Exception as error:  # noqa: BLE001 - a class's own check, say
             raise TaskFailed(
                 f"task {name!r} handed back a value that isn't "
-                f"{values.fmt(returns.annotation)}: {error}"
-            ) from None
+                f"{values.fmt(returns.annotation)}: {str(error) or type(error).__name__}"
+            ) from error
 
     def __call__(self, *args, **kwargs):
         reply = self._remote.call(self._data, self._inputs(args, kwargs), self._primer)
