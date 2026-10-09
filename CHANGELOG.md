@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **Delegation: `agent.session(ws, sessions=True)`.** The agent delegates through the `sessions` tool, each delegate a session of the same agent on a fork with its parent's profile (`agex.delegation.Runner`, an async `SessionRunner`) that can delegate in turn; answers ride the next tool result, `wake()` runs a turn that opens with what is waiting, and `close()` waits for the delegates.
 - **Compaction: `Agent(compaction=Policy(...))`.** Past its budget a conversation folds into a summary the agent's own model writes, within a run too, recorded as nontainer's fold records; replies record the fold their request had (`Message.fold`), and summary calls count against `max_steps` and in the run's usage (`Run.compaction`).
 - **Tasks: `@agent.task`.** A typed call that runs the agent on a scratch world or a fork of `world=` and returns the value its code passes to `task.success`, built as the return type; `run` / `arun` return an `Outcome` with `value`, and `keep=True` keeps the fork as `ref`.
 - **Tasks that ask: `task.needs_input(question)`, `resume`.** The task's world is kept, and `out.resume(answer)` or `task.resume(ref, answer, world=ws)` carries on there, after a restart too, its inputs restored from the world's `__task__` plane (a live one passed again); a plain call raises `NeedsInput`.
