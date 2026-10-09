@@ -110,9 +110,12 @@ def grade(responses: list[Response]) -> Report:
 report = grade(rs)                           # scratch world built from agent.profile
 out = grade.run(rs, world=ws, keep=True)     # fork of ws; Outcome: .value .ref .status .events
 
-# inside agent code, either shape
-job = ask("write tests for app/", returns=TestReport, paths=["app/"])
-reports = wait([job, job2])
+# inside agent code: side effects through the sessions tool, functions as tasks
+@agex.task
+def review(path: str) -> TestReport:
+    """Review the tests under path."""
+
+reports = review.map(["app/", "lib/"])
 ```
 
 Each front door has a sync and an async form (`say` / `asay`, plus
@@ -201,27 +204,26 @@ opens.
 
 | what spawn gave you | replacement |
 |---|---|
-| memoryless clone | `ask(task, inherit="fresh", paths=[])`, an empty view of a fork |
-| typed result | `ask(..., returns=T)` |
-| fan-out (`submit` / `map`) | non-blocking `ask` plus `wait(jobs)`; sync, no `async` needed |
-| `max_spawns` | `Sessions(max_workers=)` |
-| clone events streamed but never stored | delegates are real sessions: stored, open-able, resumable |
-| depth-1 limit | delegation chain and budget |
+| memoryless clone | `@agex.task` from agent code, run on a scratch world (see "Agent-defined tasks") |
+| typed result | the task's return type |
+| fan-out (`submit` / `map`) | `.map`, bounded on the host |
+| `max_spawns` | the `agex` host object's concurrency limit |
+| clone events streamed but never stored | open: see "Open questions" |
+| depth-1 limit | the same by default: a helper's world has no `agex` |
+| work in a world, reported back | the `sessions` tool: delegates are real sessions, stored, open-able, resumable |
 
-The old dual-decorator "agents as functions" folds in the same way.
-`ask(..., agent=grader)` runs a different agent on a fork of the
-caller's world. It inherits that world's environment, so a delegate
-can never hold more than its parent. It also gets resume,
-observability and merge-back for free.
+The old dual-decorator "agents as functions" folds in the same way: a
+task's worker is the agent the embedder put behind `agex`, and its
+world holds what its caller's holds and no more.
 
 There are two real losses:
-- **Live in-process return values.** A spawn could hand back a closure
-  or a live object. A delegate is its own session, so its value
-  crosses through the value encoding ("Task values"), and large
-  artifacts travel as files it writes in its fork.
-- **Cheapness.** A spawn was just a thread. An `ask` is a fork plus a
-  runner turn plus commits. Forks are O(1); the real cost is the
-  ephemeral-branch GC already planned for step 2.
+- **Live in-process return values** off in-process. A spawn could hand
+  back a closure or a live object. A task's value crosses through the
+  value encoding ("Task values"), and in-process still carries
+  anything.
+- **Cheapness.** A spawn was just a thread. A task call opens a
+  scratch world and runs a turn. Memory-store worlds are cheap; the
+  model call dominates.
 
 ### What stays
 
@@ -460,23 +462,18 @@ clean.run(df, rules, world=isolated_ws)   # Arrow for df, JSON for rules
 `Outcome.value` is always the declared type, never a dict or bytes
 stand-in. If it can't be, the check fails before the run.
 
-**Agent code** gets delegation through a harness host object (`ask`,
-see "Delegation from code"), never the embedder's `Agent`:
+**Agent code** defines tasks through the `agex` host object (see
+"Agent-defined tasks"), never the embedder's `Agent`:
 - an `Agent`'s public attributes reach the model client and the
   embedder's full profile, so a scratch world built from it could hold
   grants the caller's world lacks;
 - a bare `Agent` doesn't know which run called it: no shared budget or
   depth, no cancel from the parent, no events in the parent's stream;
-- a script has no `ws` to pass. The right default is a fork of the
-  caller's world, or an empty view of it, which is what `ask`'s
-  `inherit` and `paths` give.
+- a script has no `ws` to pass. The host half knows the world it
+  serves, and builds the helper's world from that world's profile.
 
-Types shared between tasks in agent code live in a module in the
-world. A class defined in a script exists nowhere else, and the host
-can't import it. A fork inherits the files, so parent and child import
-the same class, the value crosses as encoded data, and the kernel side
-rebuilds it. A script-local class is refused with that advice. This is
-the one place a JSON schema is part of a task's contract.
+An agent-defined task's types cross as shapes, so a class defined in a
+script works as one from a module does.
 
 **Apps** carry the data, table and bytes kinds. A data type's schema
 feeds the contracts generated from an app's handlers
@@ -492,6 +489,171 @@ listed under "Open questions".
 | a kernel stub plus a host half | The kernel side encodes before the host call; in-process it passes the value through. `task`, the handler encoder and a kernel-side task decorator all need this. Today it is done ad hoc; it could become a grant option. |
 | dud | Unchanged. Its JSON, bytes and file values map one-to-one onto the wire above. |
 | the `__task__` plane | A reserved plane next to `__conversation__`. |
+
+## Agent-defined tasks (2026-10-08)
+
+Delegation comes in two shapes, and each has its own door:
+- **Side effects** (do work in a world, share files, report back in
+  text) go through the `sessions` tool. B5a shipped it in agex, the
+  same tool agno's sessions already have.
+- **Functions** (a typed value from inputs) go through code. Agent
+  code defines a task the way an embedder does, and calls it from a
+  script, a helper module or an app.
+
+Putting `sessions` into Python would give code a second door to the
+side-effect shape, and no workflow was found that needs it. So
+code-level `ask(returns=, agent=)` is dropped in favour of tasks.
+
+### What agent code writes
+
+```python
+@dataclass
+class Point2D:
+    x: float
+    y: float
+
+@agex.task                        # or @agex.task(primer="You do geometry.")
+def corners(shape: str) -> list[Point2D]:
+    """The corner points of the named shape, counterclockwise from the origin."""
+
+pts = corners("unit square")      # its own Point2D objects, or TaskFailed
+many = corners.map(["square", "hexagon"])   # run at once, results in order
+```
+
+This is old agex's dogfood example (an architect building `Agent()`
+plus `.task` from code) in the new shape.
+
+### A host object, not a primitive
+
+`agex` is a stubbed host object (`HostObject(..., stub=...)`, like
+`task`). An embedder grants it, and the name is the embedder's choice.
+The built-in tools stay `run_python`, `terminal` and the file tools.
+
+- **Agent code holds only the stub.** The host half holds an `Agent`
+  the embedder supplies (model, primer, limits), and agent code never
+  reaches it. That answers the reasons for not handing agent code an
+  `Agent` (see "Who defines tasks"): no model client, no embedder
+  profile, nothing to configure past a primer.
+- **Any harness on nontainer can grant it,** agno included, since host
+  objects are nontainer's. The worker is always an agex agent, because
+  "a spec in, a typed value out, by running code" is how agex runs
+  tasks. A second worker would make this a nontainer protocol with
+  agex as one implementation, the way `Sessions` and `SessionRunner`
+  split. Not before a second one exists.
+- **It serves one world.** The host half is bound to the world whose
+  code calls it, so it knows that world's profile and, under agex's
+  own loop, the run that called it.
+
+### Worlds and limits
+
+- **A helper runs on a scratch world**, built from the calling world's
+  profile without `agex`. It holds what its caller holds and no more,
+  and it can't define helpers of its own unless the embedder allows a
+  deeper level.
+- **A fork of the caller's world is left for later.** A fork taken
+  mid-`run_python` commits that call's partial writes and splits its
+  commit (the open question carried from A5).
+- **The model is the embedder's agent's.** Code picks a primer, not a
+  model. An allowlist of agents can come later.
+- **Fan-out is bounded.** `.map` runs calls at once on the host, up to
+  a limit the embedder sets.
+
+### Types cross as shapes
+
+The host half never needs the caller's classes. It carries encoded
+values between two sandboxes, and each has the real types:
+
+- **The stub compiles the signature in the kernel.** It reads the
+  name, the docstring and the annotations, resolved with the defining
+  code's names, and sends a spec: the signature as a tree of kinds
+  (`values.Spec`, exported as data), with each record and enum given
+  by name, fields, docstring and members.
+- **The host runs nothing the guest sent.** It reads the spec as data,
+  writes the brief from it, and passes encoded values through
+  undecoded.
+- **The helper's world gets generated classes,** a dataclass per
+  record and an `Enum` per enum, with the same names, fields and
+  docstrings. Its code builds them, and `task.success` checks against
+  them, so a bad value is fixed within the helper's script.
+- **The stub decodes the result by the caller's own annotation,**
+  strictly. The caller gets its own classes back, with their methods
+  and validators.
+- **What a shape gives up:** the helper doesn't get the class's
+  methods or custom validators. Constraints written as types
+  (`Literal`, enums) carry; a check in a method runs only when the
+  caller decodes, and a value it rejects ends the call `TaskFailed`.
+  That is the usual trade for an RPC boundary. The helper makes data,
+  and the caller owns behaviour.
+
+This replaces the rule that an agent-defined task's types must come
+from a module in the world: a class defined in a script works the same
+way. Classes as shapes also make source recovery unnecessary, with no
+module files to copy and no imports to follow.
+
+**Values follow "Task values".** The full encodable set (data,
+records, enums, bytes, tables and arrays) crosses on every rung. Live
+objects cross only in-process, as for an embedder's task; the refusal
+is the same one.
+
+### What the agent can meet
+
+- **Refused at the decorator, saying what to write instead:**
+  - a lambda;
+  - a missing docstring or annotation;
+  - code in the body, when the source is readable;
+  - off in-process, a live type in the signature.
+- **`TaskFailed`** when the helper fails, or its value fails the
+  caller's decode.
+- **`TaskNeedsInput`**, carrying the question, when the helper asks.
+  No caller model is there to answer it, so it is an error the calling
+  agent reads. Resuming waits until something needs it.
+
+### The clock
+
+A host call counts against `run_python`'s timeout on every rung today.
+Probed with a 2-second host call under a 1-second timeout: sandtrap
+times out in-process (2.0s) and under process isolation (2.1s), and
+dud's guest supervisor kills the run (2.3s). A few helper calls would
+use up the caller's script.
+
+- **Old agex never paused the clock.** Its main guard was sandtrap's
+  tick limit, which counts executed code, so it can't advance while a
+  host call waits. It raised the wall clock to 300 seconds whenever a
+  tick limit was set, "so sub-agent LLM calls don't trigger a timeout".
+- **Here, a host object can be marked as one that waits.** Time spent
+  in its calls doesn't count:
+  - sandtrap moves its checkpoint's start time forward by the call's
+    duration, in-process and in the process worker;
+  - dud's supervisor pushes its deadline back by the time it spends
+    relaying the call.
+- **Opt-in per host object, not for every host call.** Otherwise a
+  script looping on any slow host function would never time out. The
+  tick limit and the calling turn's cancel still bound a waiting
+  script.
+
+### Found by the spike
+
+The spike gave a live model (Claude Haiku 4.5) an `agents.task(fn,
+primer=)` host object, in-process. It built a linear-equation solver
+and called it three times; each call returned the right float, and the
+helpers took about half of the 22-second turn.
+
+- **Host-side async work inherited the sandbox's context.** sandtrap's
+  in-process sandbox denies the network and redirects the filesystem
+  through context variables, and a coroutine scheduled from inside a
+  host call copied them. Every helper failed its model call with
+  "Connection error" until the work ran in a clean
+  `contextvars.Context()`. Any host object that calls a model or the
+  network asynchronously meets this, so the fix belongs on nontainer's
+  in-process host-call path.
+- **The model reached for a lambda first,** which has no signature or
+  docstring to make a spec from. It failed late with an invalid world
+  name. A refusal at the decorator fixes the first try.
+- **Calls in a loop ran one after another.** `.map` is the fan-out.
+- **On dud, a dataclass defined in `run_python` fails** (dud #40). The
+  guest runs code in a dict named `__dud__`, no module of that name is
+  in `sys.modules`, and `dataclasses` looks it up there. Agent-defined
+  records need it fixed.
 
 ## Capabilities belong to the world (proposal, 2026-10-06)
 
@@ -778,12 +940,13 @@ what it can't run.
    agno stays the default. Studio conformance tests run the same turn
    scenarios against both loops. nontainer gains three things in
    this step:
-   - a typed value on `Answer`, via `ask(returns=…)`. This needs the
-     value encoding from "Task values", not pickle. nontainer #110 as
-     filed is narrower (the return path of app handlers only), and it
-     becomes a special case;
+   - the value encoding from "Task values", not pickle. nontainer #110
+     as filed is narrower (the return path of app handlers only), and
+     it becomes a special case;
    - a lifecycle for ephemeral branches, for functional-style calls;
-   - delegation from code (see below).
+   - what agent-defined tasks need: waiting host calls off the clock,
+     clean context for host-side async work, and the spec export (see
+     "Agent-defined tasks").
 3. **Shape freeze.** Write a versioned shape doc and pin two corpora,
    each with its generated JSON Schemas: the shape corpus (agex's API,
    in agex) and the harness corpus (nontainer's contract and
@@ -859,23 +1022,15 @@ edges, which shows where nontainer should provide it instead:
 
 ### Delegation from code (step 2)
 
-No host object exposes sessions to agent code today. Code-level `ask`
-arrives as a harness host object.
+Replaced by "Agent-defined tasks" (2026-10-08). Side-effect delegation
+stays the `sessions` tool, and code gets tasks rather than `ask`.
 
-- **Shape.** A non-blocking `ask` returns a job, and a sync
-  `wait(jobs)` gives `gather`-style fan-out with or without `await`.
-  An awaitable wrapper (`wrap_future` on the helper's futures, behind
-  a public accessor) is sugar on top. `ask(..., agent=other)` runs a
-  different agent on the fork, which inherits the caller's
-  environment.
-- **Deadlock to fix first.** Landing an answer runs on the delegate
-  pool thread and takes the *parent's* `ws.lock`. Agent code that waits
-  for an answer inside `run_python` already holds that lock, so it
-  hangs until the Python timeout. The lock-free landing reads above
-  fix this.
-- **Open.** `ws.fork` in the middle of a call commits the call's
-  partial writes under `{"tool": "fork"}`. That splits the
-  `run_python` commit into two.
+- **The deadlock is fixed.** Landing an answer took the parent's
+  `ws.lock`, which a `run_python` waiting on a delegate holds; landing
+  now reads committed history through the child's handle (A5a).
+- **Still open.** `ws.fork` in the middle of a call commits the call's
+  partial writes under `{"tool": "fork"}`, splitting the `run_python`
+  commit in two. Tasks avoid it by running on scratch worlds.
 
 ## Async agent code
 
@@ -927,20 +1082,25 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
   call's commit in two?
 - Where do host-object scope grants live: a reserved plane in the
   world (so a rewind would revoke them), or the embedder?
-- Is agent-side narrowing on `ask` (`hosts=[...]`, subset only)
-  needed in v1? Curation's trial-safe forks don't need it: they use
-  substitution by the opener (`profile.replace(...)`), which the
-  environment rule already allows.
+- Is agent-side narrowing on an agent-defined task (`hosts=[...]`,
+  subset only) needed in v1? Curation's trial-safe forks don't need
+  it: they use substitution by the opener (`profile.replace(...)`),
+  which the environment rule already allows.
 - Should skill metadata carry `kernel:` (python, ts) so each side
   skips skills it can't run?
 - Should tasks declare `requires=[...]`, so they refuse to run in a
   world that lacks a capability?
-- Should agent code get inline typed stubs, as spawn had with
-  `@spawn.task def gen_svg(...) -> Resource`? If so, add them later as
-  sugar over `ask` (say `@ask.task`), not in v1. The decorator runs in
-  the kernel and sends a spec, and its types follow "Task values":
-  data, or classes from a module in the world. The name `task` stays
-  reserved for the current run's outcome.
+- Agent-defined tasks:
+  - Are helper runs kept anywhere? A scratch world in a memory store
+    leaves nothing to open later. A branch in the caller's store
+    (`<session>.task.<n>`, kept by a policy) would make them visible in
+    the studio.
+  - Under agex's own loop, does a helper's usage count in the calling
+    run's, and do its events reach the calling run's stream? Under
+    another harness, the host half doesn't know the run.
+  - How is the host half bound to its world? The opener can bind it
+    after open, or nontainer can give host objects a hook that names
+    the world they serve.
 - How do app handlers call tasks? Handlers run on a frozen snapshot
   with host objects from whoever serves, so there is no session,
   parent or budget. It needs:
@@ -1136,3 +1296,23 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
     serve one loop if agno leaves the studio.
   - The helpers (summary texts, `reduce`, `chunks`, token estimates)
     stay in `nontainer.compaction` as a library.
+- 2026-10-08: Agent code defines tasks, through the `agex` host
+  object; code-level `ask(returns=, agent=)` is dropped. This replaces
+  the 2026-10-07 entry on `ask`. See "Agent-defined tasks".
+  - Side-effect delegation stays the `sessions` tool (B5a); code gets
+    the functional shape, which also works inside apps and helpers.
+  - `agex` is a stubbed host object an embedder grants, not a
+    primitive. Agent code holds the stub; the host half holds the
+    embedder's `Agent`. Any harness on nontainer can grant it.
+  - A helper runs on a scratch world from the caller's profile without
+    `agex`, one level deep by default.
+  - Types cross as shapes. The stub compiles the signature in the
+    kernel and sends it as data; the host runs nothing the guest sent;
+    the helper's world gets generated classes; the caller's stub
+    decodes into its own. Script-defined classes work, and the
+    module-only rule goes.
+  - The full encodable value set crosses on every rung, and live
+    objects only in-process.
+  - Host objects marked as waiting don't count against `run_python`'s
+    timeout, in sandtrap and in dud's supervisor; opt-in per host
+    object.

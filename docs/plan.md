@@ -2,7 +2,7 @@
 
 Status: in progress (2026-10-08).
 - **Phase A** is merged through delegation: A0-A3 shipped in nontainer 0.9.0/0.9.1, and A4, A5 and A8a-b are on nontainer `main`. The next release, 0.10.0, closes A5 and ships the kit (A7); it is agex's floor. The studio's A5 PR (nontainer-studio #90) is a draft against unreleased `main` until then.
-- **Phase B** is under way on `rebuild`: B0-B4 are merged, and B5 (delegation from code) is next.
+- **Phase B** is under way on `rebuild`: B0-B4 and B5a (the `sessions` tool) are merged, and B5b (agent-defined tasks) is next.
 - **Still open in Phase A:** A6 (studio fixes), A8c (large values spill to the plane) and A3c (deferred). The async agent code track must land before the shape freeze (see Parallel tracks).
 
 This plan covers *when* and *in what order*. The *what* and *why* live
@@ -646,21 +646,73 @@ shape freeze.
 - A task whose run outgrows its budget folds within the run and
   finishes, in-process, under process isolation and on dud.
 
-### B5. Delegation from code
+### B5. Delegation
 
-- agex as an async `SessionRunner`;
-- a code-level `ask` / `wait` harness host object;
-- `ask(returns=)`;
-- `ask(agent=other)`, inheriting the caller's environment;
-- the delegate's typed value on `Answer`, through A8's value encoding.
+Re-scoped 2026-10-08: side effects through the `sessions` tool (B5a),
+functions as agent-defined tasks (B5b). Code-level `ask(returns=,
+agent=)` is dropped; the redesign doc's "Agent-defined tasks" has the
+why.
 
-**Exit.** Tier 5 scenarios pass on agex. The shape corpus covers the
-replacement for spawn: fan-out, a fresh view, and typed results.
+#### B5a. The `sessions` tool
+
+**Status: merged (agex #86).**
+- `agent.session(ws, sessions=True)`: the session delegates through
+  its `sessions` tool, and each delegate is an agex session of the
+  same agent on a fork (`agex.delegation.Runner`, an async
+  `SessionRunner`), with the parent's profile.
+- A delegate answers once nothing it waits on is outstanding
+  (`auntil_settled`), within `max_wakes`; `wake()` runs a turn that
+  opens with answers that landed between turns.
+- The helper is built by the first turn, on that turn's loop.
+
+**Exit (met).** Tier 5 scenarios pass on agex, and a live delegate
+round trip passes.
+
+#### B5b. Agent-defined tasks
+
+**Prerequisites,** each its own small PR, in dependency order:
+- **Clean context for host-side async work** (nontainer). In-process,
+  a coroutine scheduled from a host call inherits the sandbox's
+  context variables, so its network is denied. Run host-side work in a
+  fresh `contextvars.Context()`.
+- **Waiting host calls don't count against the timeout.** sandtrap
+  moves its checkpoint's start time forward by the call's duration,
+  in-process and in the process worker; dud's supervisor pushes its
+  deadline back by the relay time; nontainer marks a `HostObject` as
+  one that waits. Releases go sandtrap, then dud, then nontainer.
+- **dud #40:** a dataclass defined in guest code fails, since
+  `__dud__` isn't in `sys.modules`.
+- **Spec export** (nontainer): a `values.Spec` written out as data and
+  read back, records and enums included, without evaluating anything.
+
+**agex:**
+- **The `agex` host object:** a stub in the kernel, a host half holding
+  the embedder's `Agent`, bound to the world it serves.
+  - `@agex.task` and `@agex.task(primer=)`; the call; `.map`, bounded.
+  - Refusals at the decorator: a lambda, a missing docstring or
+    annotation, code in the body, a live type off in-process.
+  - `TaskFailed`, and `TaskNeedsInput` carrying the question.
+- **Shapes:** the stub sends the spec as data; the helper's world gets
+  generated classes; the stub decodes the result by the caller's own
+  annotations.
+- **The helper's world:** scratch, from the caller's profile without
+  `agex`.
+
+**Exit:**
+- Shape scenarios pass on every rung:
+  - an agent-defined task returns the caller's own record type, with a
+    class defined in the script;
+  - nested records, enums, tables and arrays come back as declared;
+  - each refusal at the decorator;
+  - `.map` returns in order, and runs at once;
+  - helper time doesn't end the caller's script under a short timeout.
+- A live round trip under agex's loop, and one under agno with
+  nontainer, from the same host object.
 
 **Likely nontainer follow-ups** (0.10.x, as B5 finds them):
-- the typed value on `Answer`, which nontainer defines;
+- `SessionRunner` typed for an `async def run` (agex casts today);
 - the open question carried from A5: a fork taken mid-`run_python`
-  splits that call's commit.
+  splits that call's commit. B5b avoids it with scratch worlds.
 
 ### B6. The studio seam, designed against both loops
 
@@ -723,8 +775,8 @@ None of these blocks Phase B except where noted.
   first half shipped (top-level `await` comes back as an error result
   instead of raising). Proposed: after 0.10.0, as its own round,
   released in dependency order (sandtrap, then dud, then nontainer).
-  B5 and B6 don't need it: fan-out is a non-blocking `ask` and a sync
-  `wait(jobs)`.
+  B5 and B6 don't need it: fan-out from code is a task's `.map`, run
+  on the host.
 - **Capabilities** (the redesign's "Capabilities belong to the
   world"):
   - `HostObjectGrant`;
