@@ -696,7 +696,8 @@ round trip passes.
   per world, built by the factory, holding the embedder's `Agent`.
   - `@agex.task` and `@agex.task(primer=)`; the call; `.map`, bounded.
   - Refusals at the decorator: a lambda, a missing docstring or
-    annotation, code in the body, a live type off in-process.
+    annotation, code in the body, a live type (on every rung), a
+    parameter named like one of the world's host objects.
   - `TaskFailed`, and `TaskNeedsInput` carrying the question.
 - **Shapes:** the stub sends the spec as data; the helper's world gets
   generated classes; the stub decodes the result by the caller's own

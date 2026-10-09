@@ -401,8 +401,9 @@ which the caller opens, so it goes through the same policy as any host
 object. Wrapping the argument narrows it:
 `clean(df, db=HostObjectGrant(db, include=["query"]))`. That is the
 opener setting the environment, which "Capabilities belong to the
-world" allows. Agent code can't pass live values through `ask`, so a
-delegate gains nothing this way.
+world" allows. Agent code can't pass live values to the tasks it
+defines (values only, on every rung; see "Agent-defined tasks"), so a
+helper gains nothing this way.
 - **Large values spill to blobs in the reserved `__task__` plane,
   never to files in the agent's tree.** curation's rule ("no agent's
   tree has a second author") keeps loop-written data out of the file
@@ -647,10 +648,28 @@ from a module in the world: a class defined in a script works the same
 way. Classes as shapes also make source recovery unnecessary, with no
 module files to copy and no imports to follow.
 
-**Values follow "Task values".** The full encodable set (data,
-records, enums, bytes, tables and arrays) crosses on every rung. Live
-objects cross only in-process, as for an embedder's task; the refusal
-is the same one.
+**Values only, on every rung.** The full encodable set (data, records,
+enums, bytes, tables and arrays) crosses, and no live object does, in
+process included. An embedder's task keeps live inputs in-process,
+where the embedder hands over a real client and narrows it; agent code
+has nothing to hand over that way:
+- **a host object it holds** is one its helper inherits already, but
+  `agex`, which the helper lacks on purpose;
+- **a function or object of its own script** would run, called from
+  the helper, as code compiled in the caller's sandbox, with the
+  caller's globals, in the helper's context;
+- **a live return**, a closure say, would be code the helper's model
+  wrote, run later in the caller's world.
+
+So agent-defined tasks take and return values, and behave the same on
+every rung. A workflow that needs more can bring a narrow rule later
+(forwarding a host object the caller holds, never `agex`, say).
+
+**Inputs share a namespace with the world's host objects.** Each input
+is bound by its own name, as a host object of the helper's world, and
+the helper inherits its caller's host objects, so a parameter can't be
+named like one of them. The decorator checks this against the caller's
+host objects, so the clash is refused where the task is defined.
 
 ### What the agent can meet
 
@@ -658,7 +677,8 @@ is the same one.
   - a lambda;
   - a missing docstring or annotation;
   - code in the body, when the source is readable;
-  - off in-process, a live type in the signature.
+  - a live type in the signature, on every rung;
+  - a parameter named like one of the world's host objects.
 - **`TaskFailed`** when the helper fails, or its value fails the
   caller's decode.
 - **`TaskNeedsInput`**, carrying the question, when the helper asks.
@@ -978,10 +998,12 @@ what it can't run.
        delegates, and its async edges (see "Async at the Sessions
        edges" below);
      - **harness host objects**: the loop attaches its own objects
-       (the `task` outcome object, code-level `ask`) to each session it
-       runs. nontainer already does this internally for the `ws-*`
-       verbs on dud. Deferred (see the decisions log, 2026-10-07):
-       task forks get theirs when they open;
+       (the `task` outcome object) to each session it runs. nontainer
+       already does this internally for the `ws-*` verbs on dud.
+       Deferred (see the decisions log, 2026-10-07): task forks get
+       theirs when they open. The `agex` task object is not one of
+       them: the embedder grants it through the profile ("Agent-defined
+       tasks");
      - **run records**: each run's status, tool calls, tool errors,
        tokens and duration, persisted in the neutral run record. This
        is what curation's `RunInfo` reads, from agno's `RunMetrics`
@@ -1411,8 +1433,9 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
     the helper's world gets generated classes; the caller's stub
     decodes into its own. Script-defined classes work, and the
     module-only rule goes.
-  - The full encodable value set crosses on every rung, and live
-    objects only in-process.
+  - Values only, on every rung: the full encodable set, and no live
+    object, in-process included. Live inputs stay an embedder's
+    task's.
   - Host objects marked as waiting don't count against `run_python`'s
     timeout, in sandtrap and in dud's supervisor; opt-in per host
     object.
