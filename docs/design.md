@@ -697,16 +697,18 @@ use up the caller's script.
   tick limit, which counts executed code, so it can't advance while a
   host call waits. It raised the wall clock to 300 seconds whenever a
   tick limit was set, "so sub-agent LLM calls don't trigger a timeout".
-- **Here, a host object can be marked as one that waits.** Time spent
-  in its calls doesn't count:
+- **Here, the timeout bounds the code, not the host it calls.** Time
+  spent in any host object's calls doesn't count (decided 2026-10-09,
+  replacing an opt-in per host object):
   - sandtrap moves its checkpoint's start time forward by the call's
     duration, in-process and in the process worker;
   - dud's supervisor pushes its deadline back by the time it spends
     relaying the call.
-- **Opt-in per host object, not for every host call.** Otherwise a
-  script looping on any slow host function would never time out. The
-  tick limit and the calling turn's cancel still bound a waiting
-  script.
+- **The tick limit and the calling turn's cancel still bound a script
+  that waits,** so a script looping on a slow host function ends by
+  ticks or by cancel rather than by the clock. A stub's own methods
+  are the script's code and stay on the clock; only its calls through
+  `remote` are the host's.
 
 ### In apps
 
@@ -745,6 +747,26 @@ by the spec).
 - **A request waits on its task.** The clock rule covers handlers too,
   but a long task wants a job shape (start, then poll), which is part
   of the same open question.
+
+### Found by building it (B5b-1)
+
+- **A world's helper registers itself.** The harness builds its
+  `Sessions` after the world opens, so the host half finds it at the
+  call: `Sessions.of(ws)` is the helper open over a world (nontainer
+  #228). No harness changes, and the studio's helper is found the
+  same way as agex's.
+- **Generated classes needed a way across.** The classes
+  `load_specs` builds have no module, so a worker process couldn't
+  import them and a dud guest couldn't rebuild them from source.
+  nontainer #229 makes them pickle as the data they were built from,
+  and each rung builds them again from it.
+- **Forks are made on the calling thread.** A host call runs on the
+  thread running the caller's script, which holds the world's lock,
+  and a fork takes it again. `.map` forks each helper there, then
+  waits for them together; forking from other threads deadlocked.
+- **A class with no source is written out for the brief** from what it
+  holds: `@dataclass`, docstring, fields with defaults, and enum
+  members, so the helper's model sees what the caller wrote.
 
 ### Found by the spike
 
@@ -1208,11 +1230,6 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
   skips skills it can't run?
 - Should tasks declare `requires=[...]`, so they refuse to run in a
   world that lacks a capability?
-- How does a world's `agex` factory reach that world's `Sessions`?
-  The harness builds the helper after the world opens, and the factory
-  runs at the open. Either the harness hands the helper to the world
-  (`ws.delegates`, say) for host objects to find, or the factory builds
-  a `Sessions` of its own, and the studio lists two helpers' jobs.
 - How do app handlers call tasks? Handlers run on a frozen snapshot
   with host objects from whoever serves, so there is no session,
   parent or budget. It needs:
@@ -1438,4 +1455,10 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
     task's.
   - Host objects marked as waiting don't count against `run_python`'s
     timeout, in sandtrap and in dud's supervisor; opt-in per host
-    object.
+    object. (Superseded 2026-10-09: every host call is host time.)
+- 2026-10-09: The timeout bounds the code, not the host it calls: every
+  host object's calls are host time, with no opt-in (sandtrap 0.4.2,
+  dud 0.4.2, nontainer #222). A stub's own methods stay on the clock.
+- 2026-10-09: A world's `agex` reaches the world's helper through
+  `Sessions.of(ws)`: a `Sessions` registers itself over its workspace
+  while open (nontainer #228), so no harness hands it over.
