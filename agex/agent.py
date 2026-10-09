@@ -26,7 +26,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal
 
-from nontainer import NotSupportedError, Profile, Workspace, conversation
+from nontainer import NotSupportedError, Profile, SessionRunner, Workspace, conversation
 from nontainer.adapters.render import toolkit_instructions
 from nontainer.adapters.tools import Tool, Toolset
 from nontainer.compaction import Policy
@@ -323,9 +323,10 @@ class Session:
     :class:`nontainer.sessions.Sessions` of your own. Answers that land
     mid-turn ride the next tool result, as a note in ``inbox`` does; one
     that lands between turns is waiting for the next, or for ``wake``,
-    a turn that opens with what is waiting. A helper the session built
-    runs its delegates on the loop the session was made in (agex's own,
-    made outside one), and ``close`` closes it.
+    a turn that opens with what is waiting. A helper the session builds
+    is built by its first turn and runs the delegates on that turn's
+    loop (agex's own, for ``say``), so they share the parent's; a later
+    turn on another loop is refused. ``close`` closes it.
 
     A turn ends ``completed``, ``cancelled``, ``failed`` (an error, or
     ``max_steps`` model calls) or ``interrupted`` (a provider error worth
@@ -355,23 +356,20 @@ class Session:
         self.agent = agent
         self.ws = ws
         self.inbox = inbox if inbox is not None else Inbox()
-        # the loop a helper the session built runs its delegates on, and
-        # the sign that closing it is the session's to do
-        self._sessions_loop: asyncio.AbstractEventLoop | None = None
+        # a helper the session builds is built by its first turn, on that
+        # turn's loop; its loop is also the sign that closing it is the
+        # session's to do
+        self._runner: SessionRunner | None = None
         if sessions is True:
             from .delegation import Runner, _as_runner
 
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = _SYNC.loop()
-            sessions = Sessions(ws, _as_runner(Runner(agent, ws)), loop=loop)
-            self._sessions_loop = loop
-        self.sessions: Sessions | None = sessions or None
-        """The helper the agent delegates through, if it can."""
-        self.toolset = Toolset(ws, vision=False, sessions=self.sessions)
-        self._tools: dict[str, Tool] = {t.name: t for t in self.toolset.tools()}
-        self._specs = [ToolSpec.of(t) for t in self._tools.values()]
+            # made now, so a world that can't delegate is refused now
+            self._runner = _as_runner(Runner(agent, ws))
+        self._sessions_loop: asyncio.AbstractEventLoop | None = None
+        self.sessions: Sessions | None = None
+        """The helper the agent delegates through, if it can: one built
+        for ``sessions=True`` exists from the first turn on."""
+        self._use(sessions if isinstance(sessions, Sessions) else None)
         self.last: Outcome | None = None
         """The outcome of the last turn that ended."""
         self._in_flight: set[asyncio.Task[Outcome]] = set()
@@ -400,6 +398,29 @@ class Session:
             # "exception was never retrieved"; the stored run says how
             # it ended
             _logger.debug("turn ended with %r", task.exception())
+
+    def _use(self, sessions: Sessions | None) -> None:
+        self.sessions = sessions
+        self.toolset = Toolset(self.ws, vision=False, sessions=sessions)
+        self._tools: dict[str, Tool] = {t.name: t for t in self.toolset.tools()}
+        self._specs = [ToolSpec.of(t) for t in self._tools.values()]
+
+    def _bind(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Ready a turn about to start on ``loop``: a helper the session
+        builds is built here, on the loop its first turn runs on, so the
+        delegates share the parent's loop and with it the provider's
+        connections, which belong to the loop that opened them."""
+        if self._runner is None:
+            return
+        if self._sessions_loop is None:
+            self._use(Sessions(self.ws, self._runner, loop=loop))
+            self._sessions_loop = loop
+        elif loop is not self._sessions_loop:
+            raise RuntimeError(
+                "this session's delegates run on the event loop of its first "
+                "turn, and this turn is on another; drive the session from one "
+                "loop (say() runs on agex's own)"
+            )
 
     def close(self) -> None:
         """Close the ``sessions`` helper the session built, which waits
@@ -847,8 +868,10 @@ class RunStream:
     def _start(self) -> asyncio.Task[Outcome]:
         if self._task is None:
             session = self._session
+            loop = asyncio.get_running_loop()
+            session._bind(loop)
             session._cancel_requested = False
-            task = asyncio.get_running_loop().create_task(
+            task = loop.create_task(
                 session._run(
                     self._prompt,
                     self._queue.put_nowait,

@@ -214,3 +214,57 @@ def test_cancelling_a_delegate_stops_its_turn(store):
         assert run.status == "cancelled"
     finally:
         scout.close()
+
+
+def test_a_session_made_outside_a_loop_delegates_on_its_turns_loop(store):
+    """Made in blocking code and driven from a coroutine: the helper is
+    built by the first turn, so the delegates run on that turn's loop,
+    the one the parent's model calls are made on."""
+    loops = {}
+    agent = routed(
+        LEAD=[ask("scout", "SCOUT say hi", wait=True), says("it said hi")],
+        SCOUT=[says("hi")],
+    )
+    real = agent.provider.stream
+
+    def stream(messages, tools, settings):
+        first = next(
+            (p.text for m in messages for p in m.parts if m.role == "user"), ""
+        )
+        loops[first.split()[0]] = asyncio.get_running_loop()
+        return real(messages, tools, settings)
+
+    agent.provider.stream = stream  # type: ignore[method-assign]
+    ws = store.open("lead")
+    chat = agent.session(ws, sessions=True)
+    assert chat.sessions is None  # built by the first turn
+
+    async def main():
+        try:
+            outcome = await chat.asay("LEAD greet")
+            assert outcome.text == "it said hi"
+            assert loops["LEAD"] is loops["SCOUT"] is asyncio.get_running_loop()
+        finally:
+            await chat.aclose()
+
+    try:
+        asyncio.run(main())
+    finally:
+        ws.close()
+
+
+def test_a_turn_on_another_loop_is_refused_once_delegates_are_bound(store):
+    agent = routed(LEAD=[says("one"), says("two")])
+    ws = store.open("lead")
+    chat = agent.session(ws, sessions=True)
+    try:
+        assert chat.say("LEAD one").text == "one"
+
+        async def elsewhere():
+            return await chat.asay("LEAD two")
+
+        with pytest.raises(RuntimeError, match="event loop of its first turn"):
+            asyncio.run(elsewhere())
+    finally:
+        chat.close()
+        ws.close()
