@@ -18,6 +18,7 @@ inbox and lands one commit stamped with how the run ended.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import sys
 import threading
@@ -186,6 +187,35 @@ def _block(coro: Any, instead: str) -> Any:
         )
     # outside the handler, so what the run raises isn't chained to it
     return _SYNC.run(coro)
+
+
+_TURN_LOOP: contextvars.ContextVar[asyncio.AbstractEventLoop | None] = (
+    contextvars.ContextVar("agex_turn_loop", default=None)
+)
+"""The loop the running turn is on, as seen from the work it does: a
+tool call and a host call carry the turn's context with them."""
+
+
+def _on_turn_loop(coro: Any, instead: str) -> Any:
+    """Run ``coro`` to its end on the running turn's loop, from host
+    code a tool call is running (an agent-defined task's helper, say):
+    a model's client keeps its connections on the loop it opened them
+    on, and the turn's model opened them on this one. Outside a turn,
+    on agex's own loop (:func:`_block`)."""
+    loop = _TURN_LOOP.get()
+    if loop is None or loop.is_closed():
+        return _block(coro, instead)
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if running is loop:
+        coro.close()
+        raise RuntimeError(
+            "this blocks, and this thread is running the turn's event loop; "
+            f"use `await {instead}(...)` there"
+        )
+    return asyncio.run_coroutine_threadsafe(coro, loop).result()
 
 
 Status = Literal[
@@ -635,6 +665,8 @@ class Session:
             ),
         )
         self._live = True
+        # the turn runs as a task of its own, so this is the turn's alone
+        _TURN_LOOP.set(asyncio.get_running_loop())
         try:
             push(RunStarted(run_id=run_id))
             if wake:

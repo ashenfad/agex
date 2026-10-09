@@ -337,6 +337,14 @@ STRICT = """\
         def __post_init__(self):
             if self.n <= 0:
                 raise ValueError("n must be positive")
+            assert self.n < 100
+
+    @dataclass
+    class Small:
+        n: int
+
+        def __post_init__(self):
+            assert self.n < 100
 
     @agex.task
     def count(word: str) -> Positive:
@@ -346,16 +354,58 @@ STRICT = """\
         count("xyz")
     except agex.TaskFailed as failed:
         print("FAILED", failed)
+
+    @agex.task
+    def big(word: str) -> Small:
+        \"""HELPER Make it big.\"""
+
+    try:
+        big("xyz")
+    except agex.TaskFailed as failed:
+        print("ALSO FAILED", failed)
 """
 
 
 def test_a_value_the_callers_class_rejects_fails_the_call(store):
     agent = routed(
-        LEAD=[runs(STRICT), says("done")], HELPER=[runs("task.success(Positive(0))")]
+        LEAD=[runs(STRICT), says("done")],
+        HELPER=[runs("task.success(Positive(0))"), runs("task.success(Small(500))")],
     )
     with Lead(store, agent) as lead:
         assert "FAILED task 'count' handed back a value that isn't" in lead.printed
         assert "n must be positive" in lead.printed, lead.printed
+        assert "ALSO FAILED task 'big' handed back a value that isn't Small" in (
+            lead.printed
+        ), lead.printed
+        assert "AssertionError" in lead.printed, lead.printed
+
+
+def test_any_error_the_callers_class_raises_is_task_failed():
+    """A record's own check is a mismatch already; a pydantic model's
+    ``model_post_init`` can raise anything, and that fails the call too."""
+    from pydantic import BaseModel
+
+    from agex.stubs import AgentTask, TaskFailed
+
+    class Capped(BaseModel):
+        n: int
+
+        def model_post_init(self, context):
+            if self.n > 100:
+                raise RuntimeError("too big")
+
+    def cap(word: str) -> Capped:
+        """Cap it."""
+
+    made = AgentTask(None, cap, None, {"Capped": Capped}, set())
+    from nontainer import values
+
+    blob = values.encode(Capped(n=1)).to_bytes()
+    assert made._value({"status": "success", "value": blob}) == Capped(n=1)
+    big = values.encode({"n": 500}).to_bytes()
+    with pytest.raises(TaskFailed, match="RuntimeError|too big") as failed:
+        made._value({"status": "success", "value": big})
+    assert isinstance(failed.value.__cause__, RuntimeError)
 
 
 # -- .map ---------------------------------------------------------------------------
@@ -473,3 +523,70 @@ def test_an_embedder_can_put_every_helper_on_a_scratch_world(store):
         assert "True [0.0, 1.0, 1.4142135623730951, 1.0]" in lead.printed
         assert lead.chat.sessions.list() == []
         assert sorted(store.sessions()) == ["lead"]
+
+
+class Looping(ScriptedProvider):
+    """A scripted model that notes which loop each reply is made on."""
+
+    def __init__(self, steps):
+        super().__init__(steps)
+        self.loops = []
+
+    async def stream(self, *args, **kwargs):
+        self.loops.append(asyncio.get_running_loop())
+        async for event in super().stream(*args, **kwargs):
+            yield event
+
+
+MAP_CORNERS = CORNERS.replace(
+    'pts = corners("unit square")', 'pts = corners.map(["unit square"] * 2)[0]'
+)
+
+
+@pytest.mark.parametrize("code", [CORNERS, MAP_CORNERS], ids=["call", "map"])
+def test_a_scratch_helper_runs_on_the_turns_own_loop(store, code):
+    """A turn driven from a loop of the caller's own: its scratch helpers'
+    model calls are made there too, where the model's client opened its
+    connections, and not on agex's own loop."""
+    routes = routed(LEAD=[runs(code), says("done")], HELPER=[runs(SQUARE)] * 2)
+    agent = Agent(Looping(routes.provider._next))
+    ws = world(store, agent)
+    chat = agent.session(ws)
+
+    async def turn():
+        outcome = await chat.asay("LEAD go")
+        assert outcome.status == "completed", outcome.message
+        return asyncio.get_running_loop()
+
+    try:
+        loop = asyncio.run(turn())
+        [run] = chat.runs
+        assert "True [0.0, 1.0" in run.messages[2].parts[0].content
+        helpers = len(agent.provider.loops) - 2  # the lead made two calls
+        assert helpers >= 1
+        assert all(seen is loop for seen in agent.provider.loops)
+    finally:
+        chat.close()
+        ws.close()
+
+
+PROFILED = """\
+    @agex.task
+    def rank(names: list[str]) -> Ranking:
+        \"""HELPER Rank the students.\"""
+
+    r = rank(["ann", "bob"])
+    print(type(r) is Ranking, [type(s) is Score for s in r.scores], r.best)
+"""
+
+RANKED = """\
+    task.success(Ranking(best=names[0], scores=[Score(n, 1) for n in names]))
+"""
+
+
+def test_a_task_can_name_the_classes_its_world_provides(store):
+    from task_types import Ranking, Score
+
+    agent = routed(LEAD=[runs(PROFILED), says("done")], HELPER=[runs(RANKED)])
+    with Lead(store, agent, classes=(Ranking, Score)) as lead:
+        assert "True [True, True] ann" in lead.printed, lead.printed
