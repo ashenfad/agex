@@ -270,6 +270,8 @@ def _tool_result(part: pai.ToolReturnPart) -> ToolResult:
     """A tool return as agex's: its text, and the images among its
     content."""
     content, images = part.content, ()
+    if isinstance(content, pai.BinaryContent):
+        content = [content]  # a tool may return one image, as itself
     if isinstance(content, list) and any(
         isinstance(c, pai.BinaryContent) and c.is_image for c in content
     ):

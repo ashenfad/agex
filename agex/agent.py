@@ -24,7 +24,7 @@ import logging
 import sys
 import threading
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -48,7 +48,7 @@ from nontainer.turns import (
 from pydantic_ai.models import Model
 
 from . import compaction
-from .providers import Provider, Reply, Settings, ToolSpec
+from .providers import Provider, ProviderEvent, Reply, Settings, ToolSpec
 from .providers.pydanticai import PydanticAIProvider
 from .record import (
     Image,
@@ -131,6 +131,44 @@ def _images(output: ToolOutput) -> tuple[Image, ...]:
         )
         for image in output.images
     )
+
+
+def _without_images(message: Message) -> Message:
+    if not any(isinstance(p, ToolResult) and p.images for p in message.parts):
+        return message
+    return replace(
+        message,
+        parts=tuple(
+            replace(p, images=()) if isinstance(p, ToolResult) else p
+            for p in message.parts
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class _NoImages:
+    """A provider whose model takes no images. A conversation recorded
+    with one that did keeps its images; each request here leaves them
+    out, as the provider would refuse it otherwise."""
+
+    provider: Provider
+
+    @property
+    def name(self) -> str:
+        return self.provider.name
+
+    def stream(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec] = (),
+        settings: Settings = Settings(),
+    ) -> AsyncIterator[ProviderEvent]:
+        return self.provider.stream(
+            [_without_images(m) for m in messages], tools, settings
+        )
+
+    def transient(self, error: BaseException) -> bool:
+        return self.provider.transient(error)
 
 
 def _delivered(notes: Sequence[Note]) -> Delivered:
@@ -473,6 +511,13 @@ class Session:
         for tool in self._extra_tools:
             self._tools[tool.name] = tool  # one named like a built-in replaces it
         self._specs = [ToolSpec.of(t) for t in self._tools.values()]
+        # a model that takes no images is never sent one, the summaries
+        # compaction asks it for included
+        self._provider: Provider = (
+            self.agent.provider
+            if self.toolset.vision
+            else _NoImages(self.agent.provider)
+        )
 
     def _bind(self, loop: asyncio.AbstractEventLoop) -> None:
         """Ready a turn about to start on ``loop``: a helper the session
@@ -724,7 +769,7 @@ class Session:
                 prepared = await compaction.request(
                     self.ws,
                     self.agent.compaction,
-                    self.agent.provider,
+                    self._provider,
                     self._specs,
                     self.agent.settings,
                     system,
@@ -741,7 +786,7 @@ class Session:
                         else summaries + prepared.usage
                     )
                 fold = prepared.fold
-                async for event in self.agent.provider.stream(
+                async for event in self._provider.stream(
                     prepared.messages, self._specs, self.agent.settings
                 ):
                     self._check_cancel()
@@ -803,8 +848,8 @@ class Session:
                             name=call.name,
                             content=output,
                             is_error=is_error,
-                            # a model that takes no images is never sent one:
-                            # the next request would fail on it
+                            # what the model was sent: a model that takes
+                            # no images saw none
                             images=_images(called) if self.toolset.vision else (),
                         )
                     )
@@ -842,7 +887,7 @@ class Session:
                 message = "cancelled"
                 external = exc
         except Exception as exc:  # noqa: BLE001 - the outcome says how it ended
-            transient = in_request and self.agent.provider.transient(exc)
+            transient = in_request and self._provider.transient(exc)
             status = "interrupted" if transient else "failed"
             message = _describe(exc)
             if not in_request:

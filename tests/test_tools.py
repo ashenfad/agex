@@ -191,3 +191,21 @@ def test_a_model_that_takes_no_images_is_never_sent_one(ws):
     assert sent_images(provider) == []
     (result,) = session.runs[-1].messages[2].parts
     assert result.images == () and result.content == "saved /workspace/shot.png"
+
+
+def test_images_in_a_conversation_are_left_out_for_a_model_that_takes_none(ws):
+    """A conversation recorded with a model that takes images, carried
+    on with one that takes none: the image stays in the record, and no
+    request to the new model carries it."""
+    ws.files.write("/workspace/dot.png", png())
+    seeing = ScriptedProvider(
+        [calls("view_image", path="/workspace/dot.png"), says("a green dot")]
+    )
+    session = Agent(seeing).session(ws, toolset=Toolset(ws, vision=True))
+    session.say("look at it")
+    blind = ScriptedProvider([says("still green")])
+    later = Agent(blind).session(ws)  # vision off
+    assert later.say("and now?").status == "completed"
+    assert sent_images(blind) == []
+    (result,) = later.runs[0].messages[2].parts
+    assert result.images and result.images[0].media_type == "image/png"

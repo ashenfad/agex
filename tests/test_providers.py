@@ -2,6 +2,8 @@
 between agex's messages and pydantic-ai's, driven by the scripted
 provider through pydantic-ai's real request and streaming path."""
 
+import base64
+
 import pytest
 from nontainer import Store
 from nontainer.adapters.tools import Toolset
@@ -294,6 +296,22 @@ def test_a_tool_results_images_map_to_pydantic_ai_and_back():
     assert text == "p (png, 9 bytes)"
     assert isinstance(image, pai.BinaryContent) and image.data == b"\x89PNG fake"
     assert _without_ids(from_messages(mapped)) == _without_ids(conversation)
+
+
+def test_a_tool_returning_one_image_as_itself_keeps_it():
+    """pydantic-ai lets a tool return one image as its whole content,
+    not in a list; importing it keeps the image."""
+    returned = pai.ToolReturnPart(
+        tool_name="view_image",
+        tool_call_id="c1",
+        content=pai.BinaryContent(data=b"\x89PNG fake", media_type="image/png"),
+    )
+    (message,) = [m for m in from_messages([pai.ModelRequest(parts=[returned])])]
+    (result,) = message.parts
+    assert isinstance(result, ToolResult)
+    (image,) = result.images
+    assert image.media_type == "image/png"
+    assert base64.b64decode(image.data) == b"\x89PNG fake"
 
 
 def test_a_reply_keeps_cache_usage_and_names_its_model():
