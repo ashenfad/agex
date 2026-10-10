@@ -1,0 +1,43 @@
+{
+  "acts": [
+    {
+      "helper": [],
+      "inputs": {
+        "word": "hi"
+      },
+      "items": null,
+      "kind": "code_call"
+    }
+  ],
+  "expect": [
+    {
+      "message": null,
+      "names": [
+        "task"
+      ],
+      "status": "refused",
+      "value": null,
+      "values": null
+    }
+  ],
+  "name": "code-is-refused-a-parameter-the-helper-binds",
+  "needs": [],
+  "summary": "A parameter named like what the helper's world binds (task) is refused.",
+  "task": {
+    "defs": {},
+    "instructions": "Shout the word back.",
+    "name": "shout",
+    "params": [
+      {
+        "name": "task",
+        "type": {
+          "type": "string"
+        }
+      }
+    ],
+    "returns": {
+      "type": "string"
+    }
+  },
+  "where": "anywhere"
+}

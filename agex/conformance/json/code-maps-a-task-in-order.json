@@ -1,0 +1,61 @@
+{
+  "acts": [
+    {
+      "helper": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "input",
+            "name": "word"
+          }
+        }
+      ],
+      "inputs": {},
+      "items": [
+        {
+          "word": "a"
+        },
+        {
+          "word": "b"
+        },
+        {
+          "word": "c"
+        }
+      ],
+      "kind": "code_call"
+    }
+  ],
+  "expect": [
+    {
+      "message": null,
+      "names": [],
+      "status": "value",
+      "value": null,
+      "values": [
+        "a",
+        "b",
+        "c"
+      ]
+    }
+  ],
+  "name": "code-maps-a-task-in-order",
+  "needs": [],
+  "summary": "A task mapped over items returns each item's value, in order.",
+  "task": {
+    "defs": {},
+    "instructions": "Shout the word back.",
+    "name": "shout",
+    "params": [
+      {
+        "name": "word",
+        "type": {
+          "type": "string"
+        }
+      }
+    ],
+    "returns": {
+      "type": "string"
+    }
+  },
+  "where": "anywhere"
+}

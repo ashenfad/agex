@@ -1,0 +1,79 @@
+{
+  "acts": [
+    {
+      "helper": [],
+      "inputs": {
+        "word": "hi"
+      },
+      "items": null,
+      "kind": "code_call"
+    }
+  ],
+  "expect": [
+    {
+      "message": null,
+      "names": [
+        "look",
+        "live"
+      ],
+      "status": "refused",
+      "value": null,
+      "values": null
+    }
+  ],
+  "name": "code-is-refused-a-live-type",
+  "needs": [],
+  "summary": "A task takes and returns values: a live type is refused, on every rung.",
+  "task": {
+    "defs": {
+      "Directory": {
+        "description": "The school's directory, kept on the host.",
+        "methods": {
+          "lookup": {
+            "description": "A student's name as the directory files it.",
+            "params": [
+              {
+                "name": "key",
+                "type": {
+                  "type": "string"
+                }
+              }
+            ],
+            "replies": [
+              {
+                "args": [
+                  "ada"
+                ],
+                "returns": "ADA"
+              },
+              {
+                "args": [
+                  "bo"
+                ],
+                "returns": "BO"
+              }
+            ],
+            "returns": {
+              "type": "string"
+            }
+          }
+        },
+        "x-kind": "live"
+      }
+    },
+    "instructions": "Look the word up.",
+    "name": "look",
+    "params": [
+      {
+        "name": "word",
+        "type": {
+          "type": "string"
+        }
+      }
+    ],
+    "returns": {
+      "$ref": "#/$defs/Directory"
+    }
+  },
+  "where": "anywhere"
+}

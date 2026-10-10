@@ -301,6 +301,11 @@ class AgexStub:
     tables, arrays), checked against the annotations. A helper that
     can't do it raises ``agex.TaskFailed``; one that asks a question
     raises ``agex.TaskNeedsInput`` with it.
+
+    In an app, define a task at a module's top level and call it from a
+    POST handler: a call spends model time and makes a branch, which a
+    GET shouldn't. A handler test hands the handler a stand-in with
+    ``call(..., agex=...)`` when the handler defines its tasks itself.
     """
 
     TaskFailed = TaskFailed

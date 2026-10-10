@@ -2,7 +2,7 @@
 
 Status: in progress (2026-10-08).
 - **Phase A** is merged through delegation: A0-A3 shipped in nontainer 0.9.0/0.9.1, and A4, A5 and A8a-b are on nontainer `main`. The next release, 0.10.0, closes A5 and ships the kit (A7); it is agex's floor. The studio's A5 PR (nontainer-studio #90) is a draft against unreleased `main` until then.
-- **Phase B** is under way on `rebuild`: B0-B4 and B5a (the `sessions` tool) are merged. B5b-1 (agent-defined tasks, every rung) is in review, after two nontainer PRs it needs (#228 `Sessions.of`, #229 shapes on every rung); B5b-2 (shape scenarios, apps, live round trips) is next.
+- **Phase B** is under way on `rebuild`: B0-B4 and B5a (the `sessions` tool) are merged. B5b-1 (agex #88) is merged, after the two nontainer PRs it needed (#228 `Sessions.of`, #229 shapes on every rung); B5b-2 (shape scenarios, apps, live round trips) is in review.
 - **Still open in Phase A:** A6 (studio fixes), A8c (large values spill to the plane) and A3c (deferred). The async agent code track must land before the shape freeze (see Parallel tracks).
 
 This plan covers *when* and *in what order*. The *what* and *why* live
@@ -677,13 +677,15 @@ helper a world's `agex` delegates through (the design's open
 question), and **#229**, the classes `load_specs` builds crossing every
 rung as their data (they have no module to import or ship). B5b is in
 two PRs:
-- **B5b-1** (in review): the `agex` host object (`agent_tasks`), the
+- **B5b-1** (agex #88, merged): the `agex` host object (`agent_tasks`), the
   decorator and its refusals, the call and `.map`, `TaskFailed` and
   `TaskNeedsInput`, shapes, and the helper's world (a delegate branch,
   or a scratch world), with the exit's behaviours tested on every rung.
-- **B5b-2**: shape-corpus scenarios for agent-defined tasks, apps (a
-  task in a module, the preview, a scripted stand-in through
-  `bind=`), and the live round trips under agex and agno.
+- **B5b-2** (in review): the shape corpus's code scenarios
+  (`CodeScenario`, nine of them, on every rung), apps (a task in a
+  module, the preview's helpers as the session's delegates, and
+  `agex.stand_in_tasks` to bind in its place), and the live round
+  trips under agex and agno.
 
 **Prerequisites,** each its own small PR, in dependency order:
 - **Clean context for host-side async work** (nontainer). In-process,

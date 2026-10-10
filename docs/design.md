@@ -725,19 +725,29 @@ def summarize(notes: list[Note]) -> Summary:
     """Summarize the notes for the dashboard."""
 ```
 
-The decorator runs when a handler's kernel imports the module, and a
-kernel can be made again, so registering a spec is idempotent (keyed
-by the spec).
+The decorator runs when a handler's kernel imports the module, which a
+request does each time. Nothing is registered on the host: each call
+carries its spec, so defining a task again costs nothing.
 
 - **The session's preview** (the live preview, `test_app`, `ws-curl`)
   runs against the session's own world, so its helpers are delegate
-  branches of the session, as from `run_python`. No turn is running,
-  so there is no turn to stop with, and a person clicking spends the
-  model calls. `bind=` gives a stand-in: `bind={"agex":
-  "agex_scripted"}` runs the page against a scripted worker, and
-  ws-pytest's `call(..., agex=...)` does the same for a test.
+  branches of the session, as from `run_python`, once the session has
+  a helper open (before its first turn, a scratch world). No turn is
+  running, so there is no turn to stop with, and a person clicking
+  spends the model calls.
+- **A stand-in answers without a model** (`agex.stand_in_tasks`): each
+  call is answered at once, by the embedder's `answer(name, inputs)`
+  or with the simplest value of the return type, and the value crosses
+  as a real one does. An embedder grants it beside `agex`, and a run
+  binds it: `bind={"agex": "agex_stand_in"}` for `test_app` and
+  `ws-curl`, which reaches a task defined in any module the handler
+  imports (a request re-imports them). ws-pytest's `call(...,
+  agex=agex_stand_in)` substitutes in the handler's own module only,
+  so it reaches a task the handler defines itself.
 - **GET handlers are pure** (a read-only filesystem and cache). A task
   call spends and makes a branch, so tasks belong in POST handlers.
+  Nothing refuses one in a GET (the host half doesn't know the verb);
+  `agex`'s own help says so.
 - **A published app** is a frozen snapshot with no session, no
   `Sessions` and nothing to write to. The factory sees that, and puts
   helpers on scratch worlds, or in a namespace the embedder picks for
