@@ -802,6 +802,54 @@ helpers took about half of the 22-second turn.
   in `sys.modules`, and `dataclasses` looks it up there. Agent-defined
   records need it fixed.
 
+## Tools (2026-10-10)
+
+What the model acts through is a tool; what agent code calls is a host
+object. The line is what the result is for:
+- **A tool** when the model must see the result as such, or the
+  embedder must see the call: pixels the model reads (`view_image`,
+  `test_app`'s screenshots), a delegate's answer the person follows on
+  a card, a fork the embedder permits and budgets. `run_python`,
+  `terminal`, the file tools, `test_app`, `view_image` and `sessions`
+  are tools.
+- **A host object** when code composes the result: `agex` tasks, an
+  app's `db`, the studio's `web` and `media`. Capabilities belong to
+  the world (below), not to the tool list.
+
+This holds the earlier calls. Delegation was made a tool in nontainer
+(2026-09-09: no executor transport, the embedder's permissions and UI
+live at the tool seam, answers are prose that code can only print), and
+code-level `ask` was dropped here (2026-10-08). `view_image` can't be a
+host object at all: code can open an image, but only a tool result puts
+it in front of the model. App testing from code exists where it
+composes: `ws-pytest`'s `from host import call`, `ws-curl`, `ws-vitest`.
+
+**The tool protocol is MCP's.** A tool is nontainer's `Tool`, a call's
+result its `ToolOutput`, and both are MCP-shaped, so an MCP tool can
+become one and one can be served over MCP (as nontainer's MCP server
+does):
+
+| MCP | nontainer |
+|---|---|
+| tool `name`, `description` | `Tool.name`, `Tool.description` |
+| tool `inputSchema` | `Tool.parameters` |
+| result `content`: text | `ToolOutput.text` |
+| result `content`: image (`data`, `mimeType`) | `ToolOutput.images` (`data`, `format`) |
+| result `isError` | `ToolOutput.is_error` |
+
+MCP's optional parts (a tool's `title` and `annotations`, an
+`outputSchema` with `structuredContent`, audio and resource content)
+come when a consumer needs them; the first is an MCP client. agex reads
+tools only through this shape.
+
+**An embedder shapes the tools an agex session offers.** The world's
+toolset is nontainer's `Toolset`, and the embedder can hand one over
+(its app runtime for `test_app`, its primers, `vision`), plus tools of
+its own in the protocol's shape; one named like a built-in replaces it
+(the studio's `sessions`, which adds actions only it can answer). A
+tool result's images reach the model where the model takes images
+(`vision`), through agex's record and provider like any other part.
+
 ## Capabilities belong to the world (proposal, 2026-10-06)
 
 **The rule:** a world's environment is set by whoever opens it, and an
@@ -1252,6 +1300,10 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
     own key, because there is no server.
 - On dud, should a terminal host-side error be marked so the guest
   can't swallow the stop signal? (The recorded value already wins.)
+- Should agex connect to MCP servers (an MCP client), turning their
+  tools into the protocol's shape? The protocol is MCP's (see "Tools"),
+  so nothing blocks it; whether it fits "capabilities belong to the
+  world" is the question. Decide before the freeze.
 
 ## Decisions log
 
@@ -1472,3 +1524,14 @@ edges of `Sessions` (step 1) and delegation from code (step 2).
 - 2026-10-09: A world's `agex` reaches the world's helper through
   `Sessions.of(ws)`: a `Sessions` registers itself over its workspace
   while open (nontainer #228), so no harness hands it over.
+- 2026-10-10: Tools are what the model acts through, host objects what
+  code calls (see "Tools"). `sessions`, `test_app` and `view_image`
+  stay tools.
+  - The tool protocol is MCP's: nontainer's `Tool` and `ToolOutput`,
+    with MCP's optional parts added as a consumer needs them.
+  - An embedder shapes an agex session's tools: a `Toolset` of its
+    own (app runtime, primers, `vision`) and tools of its own, one
+    named like a built-in replacing it.
+  - Tool results carry images through agex's record and provider,
+    gated on `vision`.
+  - Connecting to MCP servers waits; it is an open question.

@@ -3,7 +3,7 @@
 Status: in progress (2026-10-10).
 - **Phase A** is merged through delegation and released in nontainer 0.10.0/0.10.1 (A0-A5, A7, A8a-b); 0.10.0 is agex's floor. nontainer `main` also holds what B5b needed (#222-#230), unreleased.
 - **Phase B** is under way on `rebuild`: B0-B5 are merged, B5b as agex #88, #89 and #90.
-- **Next: the studio round, before the next nontainer release.** A6, then B6a and B6b, with the studio tracking nontainer `main` throughout, so the studio's use shakes out nontainer's unreleased work; then nontainer 0.11.0 (see B6).
+- **The studio round, before the next nontainer release:** A6 (studio #91) and B6a (studio #92) are merged, and nontainer #231 with them. B6b needs agex's tools first: the studio's agent has `test_app`, `view_image` and its own `sessions` tool, which an agex session can't offer yet (see B6). Then nontainer 0.11.0.
 - **Still open in Phase A:** A8c (large values spill to the plane) and A3c (deferred). The async agent code track must land before the shape freeze (see Parallel tracks).
 
 This plan covers *when* and *in what order*. The *what* and *why* live
@@ -762,16 +762,29 @@ two PRs:
 **The studio round.** A6 and B6 come before the next nontainer
 release, so the studio's use shakes out nontainer's unreleased work
 first:
-1. **A6** (studio), whose PR also points the studio at nontainer
+1. **A6** (studio #91, merged), whose PR also points the studio at nontainer
    `main`: a `[tool.uv.sources]` git source, the lock pinning the
    commit, as agex does.
-2. **B6a** (studio): the `TurnDriver` protocol, `DriverSpec` and the
-   agno driver, with no behavior change.
-3. **B6b** (studio): the agex driver. The studio adds agex as a git
-   source on `rebuild`; its own nontainer source is what agex resolves
-   against, since a dependency's sources don't carry over.
-4. **Dogfood** on both loops, fixing what turns up in nontainer.
-5. **Release nontainer 0.11.0.** The studio drops its nontainer source
+2. **B6a** (studio #92, merged): the `TurnDriver` protocol and the
+   agno driver, with no behavior change. `DriverSpec` waits for B6b,
+   where a second loop needs it.
+3. **B6b's agex prerequisites** (agex), so an agex session can offer
+   the tools the studio's agent has (design, "Tools"):
+   - **The tool seam:** `agent.session(ws, toolset=..., tools=[...])`,
+     a nontainer `Toolset` of the embedder's (app runtime for
+     `test_app`, primers, `vision`) and tools of its own in the
+     MCP-shaped protocol, one named like a built-in replacing it.
+     `PYTHON_UI_NOTE`, promised in B1, rides along.
+   - **Images in tool results:** `ToolOutput.images` through agex's
+     record, provider mapping and loop, gated on `vision`, for
+     `view_image` and `test_app`'s screenshots.
+4. **B6b** (studio): `DriverSpec` and the agex driver. The studio adds
+   agex as a git source on `rebuild`; its own nontainer source is what
+   agex resolves against, since a dependency's sources don't carry
+   over. A session runs on the loop that wrote its conversation; a new
+   one on the loop the knob picks.
+5. **Dogfood** on both loops, fixing what turns up in nontainer.
+6. **Release nontainer 0.11.0.** The studio drops its nontainer source
    and floors at `>=0.11.0`; the agex source stays until the freeze.
 
 The pieces:
@@ -789,6 +802,11 @@ The pieces:
 **Exit:**
 - The studio's pinned behaviors (test_server, test_delegates,
   test_e2e) are parametrized over drivers and pass on **both**.
+- **Tool parity:** an agex session in the studio offers what an agno
+  one does: `test_app`, `view_image` where the model takes images
+  (screenshots seen, not only named), and the studio's own `sessions`
+  (`published`, `others`, the depth cap). A delegate's tool calls are
+  bounded on both loops.
 - Then dogfood: real sessions on agex, including delegation and a
   long session that folds.
 
@@ -871,5 +889,8 @@ None of these blocks Phase B except where noted.
 
 ## Open questions
 
-None at the moment. New ones go here. Decisions go to the redesign
-doc's log.
+- **MCP servers.** The tool protocol is MCP's, so an MCP client could
+  hand agex a server's tools; whether and when is open (design, "Open
+  questions"). Not needed for B6.
+
+New ones go here. Decisions go to the redesign doc's log.
