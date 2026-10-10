@@ -75,6 +75,7 @@ __all__ = [
     "Session",
     "Status",
     "closing_note",
+    "limit_reached",
 ]
 
 _logger = logging.getLogger(__name__)
@@ -106,6 +107,16 @@ CUT_OFF = (
 )
 """The result a tool call gets when its turn ended while it ran: a tool
 on its worker thread runs on to its end."""
+
+
+def limit_reached(limit: int) -> str:
+    """What the model reads once its run has made ``limit`` tool calls:
+    in a message of its own after the results of the reply that reached
+    it, and as the result of each call after, which is not run."""
+    return (
+        f"this turn has made its {limit} tool calls: reply now with what "
+        "you have, without calling a tool"
+    )
 
 
 def closing_note(reason: str) -> Message:
@@ -329,10 +340,14 @@ class Agent:
     opens every request, ahead of the workspace's own tool instructions.
     ``profile`` is the environment for worlds the agent creates itself; a
     session uses its workspace's own. ``max_steps`` bounds the model
-    calls in one run, compaction's summary calls among them. ``compaction`` folds a conversation that reaches
-    its budget into a summary, within a run as well (see
-    :mod:`agex.compaction`); without one, nothing is folded, though a
-    world's folds are still sent as recorded.
+    calls in one run, compaction's summary calls among them.
+    ``max_tool_calls`` bounds the tool calls in one run, however many a
+    reply makes: once it is reached the model is told to reply, each
+    call past it is answered without running, and a reply that calls a
+    tool after the model was told fails the run. ``compaction`` folds a
+    conversation that reaches its budget into a summary, within a run as
+    well (see :mod:`agex.compaction`); without one, nothing is folded,
+    though a world's folds are still sent as recorded.
     """
 
     def __init__(
@@ -343,6 +358,7 @@ class Agent:
         profile: Profile | None = None,
         settings: Settings = Settings(),
         max_steps: int = MAX_STEPS,
+        max_tool_calls: int | None = None,
         compaction: Policy | None = None,
     ) -> None:
         self.provider: Provider = (
@@ -352,6 +368,7 @@ class Agent:
         self.profile = profile
         self.settings = settings
         self.max_steps = max_steps
+        self.max_tool_calls = max_tool_calls
         self.compaction = compaction
 
     def __repr__(self) -> str:
@@ -762,6 +779,10 @@ class Session:
                 )
             # every model call counts against max_steps, summaries too
             made = 0
+            # the tool calls this run has made, a resumed run's before
+            # it stopped among them
+            limit = self.agent.max_tool_calls
+            spent = sum(isinstance(p, ToolCall) for m in messages for p in m.parts)
             while made < self.agent.max_steps:
                 self._check_cancel()
                 reply: Message | None = None
@@ -786,6 +807,8 @@ class Session:
                         else summaries + prepared.usage
                     )
                 fold = prepared.fold
+                # whether the model has read that its tool calls are spent
+                told = limit is not None and spent >= limit
                 async for event in self._provider.stream(
                     prepared.messages, self._specs, self.agent.settings
                 ):
@@ -832,7 +855,13 @@ class Session:
                         result=CUT_OFF,
                         is_error=True,
                     )
-                    called = await self._call(call)
+                    if limit is not None and spent >= limit:
+                        called = ToolOutput(
+                            text=f"not run: {limit_reached(limit)}", is_error=True
+                        )
+                    else:
+                        spent += 1
+                        called = await self._call(call)
                     output, is_error = self._after_call(called.text, called.is_error)
                     # the tool ran, and may have changed the workspace: its
                     # result stands from here, however the turn ends
@@ -866,8 +895,25 @@ class Session:
                     # the calls left in ``calls`` get their results as the
                     # run ends, as a cut-short run's do
                     break
+                if told:
+                    # none of them ran; the run ends with their results
+                    status = "failed"
+                    message = (
+                        f"the model kept calling tools past its {limit} tool calls"
+                    )
+                    break
                 messages.append(Message(id=new_id(), role="tool", parts=tuple(results)))
                 calls = []
+                if limit is not None and spent >= limit:
+                    # a message of the user's, not a tool's result: models
+                    # read a tool's output as data, and carry on
+                    messages.append(
+                        Message(
+                            id=new_id(),
+                            role="user",
+                            parts=(Text(text=f"[{limit_reached(limit)}]"),),
+                        )
+                    )
             else:
                 status = "failed"
                 message = (

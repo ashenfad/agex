@@ -5,7 +5,8 @@ import asyncio
 
 import pytest
 from nontainer import NotSupportedError, Store, TurnInProgress, conversation
-from nontainer.conformance.corpus import calls, fails, says, writes
+from nontainer.conformance.corpus import ModelStep, calls, fails, says, writes
+from nontainer.conformance.corpus import ToolCall as Step
 from nontainer.conversation import Index
 from nontainer.turns import (
     Delivered,
@@ -19,7 +20,7 @@ from nontainer.turns import (
 from pydantic_ai import messages as pai
 
 from agex import Agent, Outcome
-from agex.agent import CLOSING_NOTE, HARNESS
+from agex.agent import CLOSING_NOTE, HARNESS, limit_reached
 from agex.providers.scripted import ScriptedProvider
 from agex.record import Text, ToolCall, ToolResult
 
@@ -192,6 +193,72 @@ def test_a_run_that_never_stops_calling_tools_is_stopped(ws):
     outcome = session.say("go")
     assert outcome.status == "failed" and "3 calls" in outcome.message
     assert ws.log(limit=1)[0].info["runs"] == {outcome.run_id: "failed"}
+
+
+def run_command(n):
+    return Step(name="terminal", args={"command": f"echo {n}"})
+
+
+def results(outcome):
+    return [e.result for e in outcome.events if isinstance(e, ToolEnded)]
+
+
+REFUSED = f"not run: {limit_reached(3)}"
+
+
+def told(session) -> list[int]:
+    """Where in the run the model was told its tool calls are spent."""
+    return [
+        i
+        for i, m in enumerate(session.runs[-1].messages)
+        if m.role == "user" and m.parts[0].text.startswith("[this turn has made")
+    ]
+
+
+def test_tool_calls_past_the_cap_are_not_run_however_many_a_reply_makes(ws):
+    """Two replies of two calls under a cap of three: the fourth is not
+    run, and a message after the results tells the model to reply."""
+    session = agent(
+        ModelStep(tool_calls=(run_command(1), run_command(2))),
+        ModelStep(tool_calls=(run_command(3), run_command(4))),
+        says("ran three"),
+        max_tool_calls=3,
+    ).session(ws)
+    outcome = session.say("go")
+    assert (outcome.status, outcome.text) == ("completed", "ran three")
+    assert [r == REFUSED for r in results(outcome)] == [False, False, False, True]
+    # user, reply, results, reply, results, told, reply
+    assert told(session) == [5]
+    assert session.runs[-1].messages[5].parts[0].text == f"[{limit_reached(3)}]"
+
+
+def test_a_model_that_calls_tools_after_it_was_told_to_stop_fails_the_run(ws):
+    session = agent(
+        calls("terminal", command="echo 1"),
+        calls("terminal", command="echo 2"),
+        calls("terminal", command="echo 3"),
+        max_tool_calls=1,
+    ).session(ws)
+    outcome = session.say("go")
+    assert outcome.status == "failed"
+    assert outcome.message == "the model kept calling tools past its 1 tool calls"
+    assert results(outcome)[1] == f"not run: {limit_reached(1)}"
+    (tool,) = [m for m in session.runs[-1].messages if m.role == "tool"][1:]
+    assert tool.parts[0].content == f"not run: {limit_reached(1)}"
+
+
+def test_a_resumed_run_counts_the_calls_it_made_before_it_stopped(ws):
+    session = agent(
+        ModelStep(tool_calls=(run_command(1), run_command(2))),
+        ModelStep(fail="provider"),
+        ModelStep(tool_calls=(run_command(3), run_command(4))),
+        says("ran three"),
+        max_tool_calls=3,
+    ).session(ws)
+    assert session.say("go").status == "interrupted"
+    outcome = session.resume()
+    assert outcome.status == "completed"
+    assert [r == REFUSED for r in results(outcome)] == [False, True]
 
 
 def test_leaving_the_stream_early_stops_watching_and_the_turn_goes_on(ws):

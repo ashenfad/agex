@@ -128,6 +128,27 @@ def test_a_turn_that_calls_a_tool(live, ws):
     assert all(e.input_tokens > 0 for e in outcome.events if isinstance(e, Usage))
 
 
+def test_a_turn_past_its_tool_calls_runs_no_more_and_ends(live, ws):
+    """A cap of one call, against a prompt that asks for three: one
+    runs, and the turn ends, with a reply or, where the model calls a
+    tool after it was told its calls are spent, failed. Small models
+    do both."""
+    outcome = say(
+        Agent(
+            live.model, primer="You are terse.", max_tool_calls=1, max_steps=6
+        ).session(ws),
+        "Create /workspace/a.txt containing a, then /workspace/b.txt "
+        "containing b, then /workspace/c.txt containing c, each its own "
+        "tool call, then reply done.",
+    )
+    ran = [e for e in outcome.events if isinstance(e, ToolEnded) and not e.is_error]
+    assert len(ran) == 1
+    assert (outcome.status, outcome.message) in {
+        ("completed", None),
+        ("failed", "the model kept calling tools past its 1 tool calls"),
+    }, outcome.message
+
+
 def test_a_model_sees_an_image_a_tool_returns(live, ws):
     """view_image's image reaches the model in its tool result: it names
     the colour of a picture only the image shows."""

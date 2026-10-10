@@ -226,6 +226,7 @@ class TaskRun:
             primer=primer,
             settings=self.agent.settings,
             max_steps=self.agent.max_steps,
+            max_tool_calls=self.agent.max_tool_calls,
             compaction=self.agent.compaction,
         )
 
