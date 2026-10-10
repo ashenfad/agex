@@ -363,7 +363,7 @@ async def request(
                     }
                 )
                 record(ws, new)
-                emit(Compacted(through=new.through, runs=new.runs))
+                emit(Compacted.of(new))
                 fold = new
     return Prepared(
         messages=[system, *_view(seq, fold)],
