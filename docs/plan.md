@@ -1,9 +1,10 @@
 # agex rebuild: implementation plan
 
-Status: in progress (2026-10-08).
-- **Phase A** is merged through delegation: A0-A3 shipped in nontainer 0.9.0/0.9.1, and A4, A5 and A8a-b are on nontainer `main`. The next release, 0.10.0, closes A5 and ships the kit (A7); it is agex's floor. The studio's A5 PR (nontainer-studio #90) is a draft against unreleased `main` until then.
-- **Phase B** is under way on `rebuild`: B0-B4 and B5a (the `sessions` tool) are merged. B5b-1 (agex #88) is merged, after the two nontainer PRs it needed (#228 `Sessions.of`, #229 shapes on every rung); B5b-2 (shape scenarios, apps, live round trips) is in review.
-- **Still open in Phase A:** A6 (studio fixes), A8c (large values spill to the plane) and A3c (deferred). The async agent code track must land before the shape freeze (see Parallel tracks).
+Status: in progress (2026-10-10).
+- **Phase A** is merged through delegation and released in nontainer 0.10.0/0.10.1 (A0-A5, A7, A8a-b); 0.10.0 is agex's floor. nontainer `main` also holds what B5b needed (#222-#230), unreleased.
+- **Phase B** is under way on `rebuild`: B0-B5 are merged, B5b as agex #88, #89 and #90.
+- **Next: the studio round, before the next nontainer release.** A6, then B6a and B6b, with the studio tracking nontainer `main` throughout, so the studio's use shakes out nontainer's unreleased work; then nontainer 0.11.0 (see B6).
+- **Still open in Phase A:** A8c (large values spill to the plane) and A3c (deferred). The async agent code track must land before the shape freeze (see Parallel tracks).
 
 This plan covers *when* and *in what order*. The *what* and *why* live
 in:
@@ -331,9 +332,9 @@ per-delegate event loops are replaced.
   delegate inside `run_python`.
 - The studio's delegation tests pass.
 
-### A6. Early studio fixes (agno only; any time)
+### A6. Early studio fixes (agno only)
 
-These don't need the seam:
+The first PR of the studio round (see B6). These don't need the seam:
 - **Make the event sink safe across loops and threads.** Delegate
   turns emit from a fresh event loop on a worker thread into one
   `asyncio.Condition`. A5's async runners remove those loops
@@ -670,7 +671,7 @@ round trip passes.
 
 #### B5b. Agent-defined tasks
 
-Status: the prerequisites below are merged and released (dud 0.4.2,
+Status: done. The prerequisites below are merged and released (dud 0.4.2,
 sandtrap 0.4.2, nontainer #222-#225, unreleased). Two more nontainer
 PRs turned up while building it: **#228**, `Sessions.of(ws)`, the
 helper a world's `agex` delegates through (the design's open
@@ -686,11 +687,12 @@ two PRs:
   preview's helpers as the session's delegates, and
   `agex.stand_in_tasks` to bind in its place), and the live round
   trips under agex and agno.
-- **A record holding itself** (in review): a code scenario whose task
-  returns a record that holds itself. It needed agent code to run in a
-  module of its own, with its `from __future__` imports taking effect,
-  on every rung (sandtrap #59 and #60, released in 0.4.3; nontainer
-  #230, unreleased).
+- **A record holding itself** (agex #90, merged): a code scenario whose
+  task returns a record that holds itself. It needed agent code to run
+  in a module of its own, with its `from __future__` imports taking
+  effect, on every rung (sandtrap #59 and #60, released in 0.4.3;
+  nontainer #230, unreleased). It also turned up dud's runner passing
+  its own future flags to guest code (dud #43, released in 0.4.3).
 
 **Prerequisites,** each its own small PR, in dependency order:
 - **Clean context for host-side async work** (nontainer). In-process,
@@ -757,6 +759,22 @@ two PRs:
 
 ### B6. The studio seam, designed against both loops
 
+**The studio round.** A6 and B6 come before the next nontainer
+release, so the studio's use shakes out nontainer's unreleased work
+first:
+1. **A6** (studio), whose PR also points the studio at nontainer
+   `main`: a `[tool.uv.sources]` git source, the lock pinning the
+   commit, as agex does.
+2. **B6a** (studio): the `TurnDriver` protocol, `DriverSpec` and the
+   agno driver, with no behavior change.
+3. **B6b** (studio): the agex driver. The studio adds agex as a git
+   source on `rebuild`; its own nontainer source is what agex resolves
+   against, since a dependency's sources don't carry over.
+4. **Dogfood** on both loops, fixing what turns up in nontainer.
+5. **Release nontainer 0.11.0.** The studio drops its nontainer source
+   and floors at `>=0.11.0`; the agex source stays until the freeze.
+
+The pieces:
 - **A `TurnDriver` protocol plus `DriverSpec`**, yielding `TurnEvent`
   (`harness.md`, "The studio's `TurnDriver`"). `turns.py` is
   rewritten over it.
@@ -814,8 +832,9 @@ None of these blocks Phase B except where noted.
 
   **Status (2026-10-08): not started.** sandtrap #55 is open; only its
   first half shipped (top-level `await` comes back as an error result
-  instead of raising). Proposed: after 0.10.0, as its own round,
-  released in dependency order (sandtrap, then dud, then nontainer).
+  instead of raising). Proposed: after the studio round, as its own
+  round, released in dependency order (sandtrap, then dud, then
+  nontainer).
   B5 and B6 don't need it: fan-out from code is a task's `.map`, run
   on the host.
 - **Capabilities** (the redesign's "Capabilities belong to the
