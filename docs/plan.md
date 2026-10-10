@@ -681,11 +681,16 @@ two PRs:
   decorator and its refusals, the call and `.map`, `TaskFailed` and
   `TaskNeedsInput`, shapes, and the helper's world (a delegate branch,
   or a scratch world), with the exit's behaviours tested on every rung.
-- **B5b-2** (in review): the shape corpus's code scenarios
-  (`CodeScenario`, nine of them, on every rung), apps (a task in a
-  module, the preview's helpers as the session's delegates, and
+- **B5b-2** (agex #89, merged): the shape corpus's code scenarios
+  (`CodeScenario`, on every rung), apps (a task in a module, the
+  preview's helpers as the session's delegates, and
   `agex.stand_in_tasks` to bind in its place), and the live round
   trips under agex and agno.
+- **A record holding itself** (in review): a code scenario whose task
+  returns a record that holds itself. It needed agent code to run in a
+  module of its own, with its `from __future__` imports taking effect,
+  on every rung (sandtrap #59 and #60, released in 0.4.3; nontainer
+  #230, unreleased).
 
 **Prerequisites,** each its own small PR, in dependency order:
 - **Clean context for host-side async work** (nontainer). In-process,

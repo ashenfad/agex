@@ -52,7 +52,16 @@ from .shape import (
     TaskNeedsInput,
     TaskSuccess,
 )
-from .tasks import _IMPORTS, _annotation, _has, _live, _python, _record, _ref
+from .tasks import (
+    _IMPORTS,
+    _annotation,
+    _has,
+    _live,
+    _named,
+    _python,
+    _record,
+    _ref,
+)
 
 __all__ = ["AgexCodeTasks", "CodeView", "check_code", "run_code"]
 
@@ -157,19 +166,10 @@ def _ordered(defs: Mapping[str, Any]) -> list[tuple[str, Any]]:
     each is defined before a class that uses it."""
     done: dict[str, Any] = {}
 
-    def named(schema: Any) -> list[str]:
-        if isinstance(schema, Mapping):
-            ref = _ref(schema)
-            found = [ref] if ref is not None else []
-            return found + [n for v in schema.values() for n in named(v)]
-        if isinstance(schema, list):
-            return [n for v in schema for n in named(v)]
-        return []
-
     def visit(name: str, path: tuple[str, ...]) -> None:
         if name in done or name in path or name not in defs:
             return
-        for used in named(defs[name]):
+        for used in _named(defs[name]):
             visit(used, (*path, name))
         done[name] = defs[name]
 
@@ -184,11 +184,13 @@ def _lead_code(scenario: CodeScenario, act: CodeCall) -> str:
     task = scenario.task
     uses: set[str] = set()
     blocks = []
+    later = set(task.defs)
     for name, schema in _ordered(task.defs):
         if schema.get("x-kind") == "live":
             blocks.append(_live(name, schema, uses))
         else:
-            blocks.append(_record(name, schema, uses))
+            blocks.append(_record(name, schema, uses, later))
+        later.discard(name)
     params = ", ".join(
         p.name if p.type is None else f"{p.name}: {_annotation(p.type, uses)}"
         for p in task.params
