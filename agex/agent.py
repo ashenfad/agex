@@ -317,11 +317,16 @@ class Agent:
         *,
         inbox: Inbox | None = None,
         sessions: Sessions | bool | None = None,
+        toolset: Toolset | None = None,
+        tools: Sequence[Tool] = (),
     ) -> Session:
         """A session driving ``ws``, which may already hold an agex
         conversation (it continues) or none (it starts one).
-        ``sessions`` lets it delegate; see :class:`Session`."""
-        return Session(self, ws, inbox=inbox, sessions=sessions)
+        ``sessions`` lets it delegate; ``toolset`` and ``tools`` shape
+        the tools it offers. See :class:`Session`."""
+        return Session(
+            self, ws, inbox=inbox, sessions=sessions, toolset=toolset, tools=tools
+        )
 
     def task(self, fn: Callable[..., Any]) -> Task:
         """A task: ``fn``'s signature and docstring, run by this agent on
@@ -365,6 +370,17 @@ class Session:
     work with a closing note, so the model remembers what it did; none
     of the endings raise.
 
+    **Tools.** By default the session offers the workspace's own tools
+    (nontainer's :class:`~nontainer.adapters.tools.Toolset`). An
+    embedder shapes them with ``toolset``, a ``Toolset`` of its own (an
+    app runtime for ``test_app``, primers, ``vision``), and ``tools``,
+    tools of its own in the same shape, which is MCP's: a name, a
+    description, a JSON Schema for the arguments, and a call returning
+    a :class:`~nontainer.adapters.tools.ToolOutput`. One named like a
+    tool the toolset offers replaces it. An embedder's toolset carries
+    its own ``sessions`` tool, so it takes a built ``Sessions`` (for
+    delivering answers), not ``sessions=True``.
+
     A workspace whose conversation another harness wrote is refused: the
     runs it holds are in that harness's format.
     """
@@ -376,7 +392,14 @@ class Session:
         *,
         inbox: Inbox | None = None,
         sessions: Sessions | bool | None = None,
+        toolset: Toolset | None = None,
+        tools: Sequence[Tool] = (),
     ):
+        if toolset is not None and sessions is True:
+            raise ValueError(
+                "a toolset of your own offers its own sessions tool, so pass "
+                "the Sessions it delegates through, not sessions=True"
+            )
         index = conversation.index_of(ws)
         if index is not None and index.harness != HARNESS:
             raise NotSupportedError(
@@ -386,6 +409,8 @@ class Session:
         self.agent = agent
         self.ws = ws
         self.inbox = inbox if inbox is not None else Inbox()
+        self._own_toolset = toolset
+        self._extra_tools = tuple(tools)
         # a helper the session builds is built by its first turn, on that
         # turn's loop; its loop is also the sign that closing it is the
         # session's to do
@@ -431,8 +456,14 @@ class Session:
 
     def _use(self, sessions: Sessions | None) -> None:
         self.sessions = sessions
-        self.toolset = Toolset(self.ws, vision=False, sessions=sessions)
+        self.toolset = (
+            self._own_toolset
+            if self._own_toolset is not None
+            else Toolset(self.ws, vision=False, sessions=sessions)
+        )
         self._tools: dict[str, Tool] = {t.name: t for t in self.toolset.tools()}
+        for tool in self._extra_tools:
+            self._tools[tool.name] = tool  # one named like a built-in replaces it
         self._specs = [ToolSpec.of(t) for t in self._tools.values()]
 
     def _bind(self, loop: asyncio.AbstractEventLoop) -> None:
