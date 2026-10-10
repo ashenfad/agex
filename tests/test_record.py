@@ -7,6 +7,7 @@ from nontainer.conformance.codec import json_schema
 
 from agex.record import (
     FORMAT,
+    Image,
     Message,
     Run,
     Text,
@@ -49,7 +50,14 @@ def a_run() -> Run:
             Message(
                 id="m4",
                 role="tool",
-                parts=(ToolResult(call_id="toolu_1", name="file_write", content="ok"),),
+                parts=(
+                    ToolResult(
+                        call_id="toolu_1",
+                        name="file_write",
+                        content="ok",
+                        images=(Image(data="aGk=", media_type="image/png"),),
+                    ),
+                ),
             ),
             Message(
                 id="m5",

@@ -20,7 +20,15 @@ from agex.providers.pydanticai import (
     to_messages,
 )
 from agex.providers.scripted import ScriptedProvider
-from agex.record import Message, Text, Thinking, ToolCall, ToolResult, Usage
+from agex.record import (
+    Image,
+    Message,
+    Text,
+    Thinking,
+    ToolCall,
+    ToolResult,
+    Usage,
+)
 
 WRITE = ToolSpec(
     name="file_write",
@@ -250,6 +258,42 @@ def test_messages_map_to_pydantic_ai_and_back():
     back = from_messages(mapped)
     assert _without_ids(back) == _without_ids(conversation)
     assert all(m.id for m in back)
+
+
+def test_a_tool_results_images_map_to_pydantic_ai_and_back():
+    """Images ride the tool return's content beside its text, as
+    pydantic-ai's multimodal tool returns do, and read back as the
+    record's images."""
+    import base64
+
+    png = base64.b64encode(b"\x89PNG fake").decode("ascii")
+    conversation = [
+        Message(id="u", role="user", parts=(Text(text="look"),)),
+        Message(
+            id="a",
+            role="assistant",
+            parts=(ToolCall(call_id="c1", name="view_image", args={"path": "p"}),),
+            usage=Usage(),
+        ),
+        Message(
+            id="t",
+            role="tool",
+            parts=(
+                ToolResult(
+                    call_id="c1",
+                    name="view_image",
+                    content="p (png, 9 bytes)",
+                    images=(Image(data=png, media_type="image/png"),),
+                ),
+            ),
+        ),
+    ]
+    mapped = to_messages(conversation)
+    (returned,) = [p for p in mapped[-1].parts if isinstance(p, pai.ToolReturnPart)]
+    text, image = returned.content
+    assert text == "p (png, 9 bytes)"
+    assert isinstance(image, pai.BinaryContent) and image.data == b"\x89PNG fake"
+    assert _without_ids(from_messages(mapped)) == _without_ids(conversation)
 
 
 def test_a_reply_keeps_cache_usage_and_names_its_model():

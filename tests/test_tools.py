@@ -4,7 +4,7 @@ description, a JSON Schema, a call returning a ``ToolOutput``)."""
 
 import pytest
 from nontainer import Store
-from nontainer.adapters.tools import Tool, ToolOutput, Toolset
+from nontainer.adapters.tools import Tool, ToolImage, ToolOutput, Toolset
 from nontainer.conformance.corpus import calls, says
 
 from agex import Agent
@@ -119,3 +119,75 @@ def test_an_embedders_toolset_delivers_through_the_sessions_it_is_given(ws):
     finally:
         helper.close()
         loop.close()
+
+
+def png() -> bytes:
+    """A 1x1 PNG."""
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    pixels = zlib.compress(b"\x00\xff\x00\x00")
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", pixels)
+        + chunk(b"IEND", b"")
+    )
+
+
+def sent_images(provider) -> list:
+    """The images the last request carried in tool results."""
+    from pydantic_ai import messages as pai
+
+    return [
+        c
+        for m in provider.seen[-1]
+        for p in getattr(m, "parts", ())
+        if isinstance(p, pai.ToolReturnPart) and isinstance(p.content, list)
+        for c in p.content
+        if isinstance(c, pai.BinaryContent)
+    ]
+
+
+def test_an_image_a_tool_returns_reaches_a_model_that_takes_images(ws):
+    """view_image's image goes in its tool result, in the next request,
+    and the run keeps it: a resumed or later turn sends it again."""
+    from agex.record import dump_run, load_run
+
+    ws.files.write("/workspace/dot.png", png())
+    provider = ScriptedProvider(
+        [calls("view_image", path="/workspace/dot.png"), says("a green dot")]
+    )
+    session = Agent(provider).session(ws, toolset=Toolset(ws, vision=True))
+    assert session.say("look at it").status == "completed"
+    (image,) = sent_images(provider)
+    assert (image.data, image.media_type) == (png(), "image/png")
+    (result,) = session.runs[-1].messages[2].parts
+    assert result.images and result.images[0].media_type == "image/png"
+    run = session.runs[-1]
+    assert load_run(dump_run(run)) == run
+
+
+SNAP = Tool(
+    name="snap",
+    description="A screenshot.",
+    parameters={"type": "object", "properties": {}},
+    call=lambda: ToolOutput(
+        text="saved /workspace/shot.png",
+        images=(ToolImage(data=png(), format="png"),),
+    ),
+)
+
+
+def test_a_model_that_takes_no_images_is_never_sent_one(ws):
+    provider = ScriptedProvider([calls("snap"), says("ok")])
+    session = Agent(provider).session(ws, tools=[SNAP])  # vision off
+    session.say("take one")
+    assert sent_images(provider) == []
+    (result,) = session.runs[-1].messages[2].parts
+    assert result.images == () and result.content == "saved /workspace/shot.png"

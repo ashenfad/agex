@@ -128,6 +128,42 @@ def test_a_turn_that_calls_a_tool(live, ws):
     assert all(e.input_tokens > 0 for e in outcome.events if isinstance(e, Usage))
 
 
+def test_a_model_sees_an_image_a_tool_returns(live, ws):
+    """view_image's image reaches the model in its tool result: it names
+    the colour of a picture only the image shows."""
+    import struct
+    import zlib
+
+    from nontainer.adapters.tools import Toolset
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    side = 64
+    row = b"\x00" + b"\xff\x00\x00" * side  # a solid red 64x64 image
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", side, side, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(row * side))
+        + chunk(b"IEND", b"")
+    )
+    ws.files.write("/workspace/swatch.png", png)
+    chat = Agent(live.model, primer="You are terse.").session(
+        ws, toolset=Toolset(ws, vision=True)
+    )
+    outcome = say(
+        chat,
+        "Look at /workspace/swatch.png with view_image and reply with only the "
+        "colour it shows, in one lowercase word.",
+    )
+    assert outcome.status == "completed", outcome.message
+    assert any(
+        e.name == "view_image" for e in outcome.events if isinstance(e, ToolEnded)
+    )
+    assert "red" in (outcome.text or "").lower()
+
+
 def test_turn_after_turn_with_reasoning_and_tools(live, ws):
     """Two turns from blocking code, each reasoning through a tool call:
     what a reply carried (reasoning, signatures, item ids) goes back with

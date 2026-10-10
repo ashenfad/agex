@@ -13,6 +13,7 @@ details (so it can be sent back), and usage with its cache tokens.
 
 from __future__ import annotations
 
+import base64
 import logging
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
@@ -27,6 +28,7 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import RequestUsage
 
 from ..record import (
+    Image,
     Message,
     Part,
     Text,
@@ -122,7 +124,19 @@ def _request_parts(message: Message) -> list[pai.ModelRequestPart]:
     return [
         pai.ToolReturnPart(
             tool_name=p.name,
-            content=p.content,
+            # the images go with the text, and each provider sends them
+            # where it takes them: in the tool result, or after it
+            content=[
+                p.content,
+                *(
+                    pai.BinaryContent(
+                        data=base64.b64decode(i.data), media_type=i.media_type
+                    )
+                    for i in p.images
+                ),
+            ]
+            if p.images
+            else p.content,
             tool_call_id=p.call_id,
             outcome="failed" if p.is_error else "success",
         )
@@ -252,6 +266,30 @@ def from_response(response: pai.ModelResponse, *, id: str | None = None) -> Mess
     )
 
 
+def _tool_result(part: pai.ToolReturnPart) -> ToolResult:
+    """A tool return as agex's: its text, and the images among its
+    content."""
+    content, images = part.content, ()
+    if isinstance(content, list) and any(
+        isinstance(c, pai.BinaryContent) and c.is_image for c in content
+    ):
+        images = tuple(
+            Image(
+                data=base64.b64encode(c.data).decode("ascii"), media_type=c.media_type
+            )
+            for c in content
+            if isinstance(c, pai.BinaryContent) and c.is_image
+        )
+        content = "\n".join(c for c in content if isinstance(c, str))
+    return ToolResult(
+        call_id=part.tool_call_id,
+        name=part.tool_name,
+        content=content if isinstance(content, str) else part.model_response_str(),
+        is_error=part.outcome == "failed",
+        images=images,
+    )
+
+
 def from_messages(messages: Sequence[pai.ModelMessage]) -> list[Message]:
     """pydantic-ai messages as agex's, each with a fresh id, in order: a
     system prompt and a user prompt each become one message, a run of
@@ -272,16 +310,7 @@ def from_messages(messages: Sequence[pai.ModelMessage]) -> list[Message]:
             continue
         for part in message.parts:
             if isinstance(part, pai.ToolReturnPart):
-                results.append(
-                    ToolResult(
-                        call_id=part.tool_call_id,
-                        name=part.tool_name,
-                        content=part.content
-                        if isinstance(part.content, str)
-                        else part.model_response_str(),
-                        is_error=part.outcome == "failed",
-                    )
-                )
+                results.append(_tool_result(part))
                 continue
             if isinstance(part, pai.RetryPromptPart) and part.tool_name:
                 results.append(
