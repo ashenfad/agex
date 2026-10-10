@@ -62,6 +62,13 @@ def test_a_run_over_budget_folds_its_earlier_steps(ws):
     assert out.status == "completed"
     assert [e.kind for e in out.events].count("Compacted") == 1
     (fold,) = folds(ws)
+    # the event carries what the fold's record holds, for a transcript
+    (event,) = [e for e in out.events if e.kind == "Compacted"]
+    assert (event.summary, event.tokens_before, event.tokens_after) == (
+        fold.summary,
+        fold.tokens_before,
+        fold.tokens_after,
+    )
     run = a.session(ws).runs[-1]
     assert fold.through == run.messages[2].id  # the first step's tool result
     assert (fold.runs, fold.first, fold.summary) == (1, None, SUMMARY)

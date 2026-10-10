@@ -121,12 +121,7 @@ def closing_note(reason: str) -> Message:
 
 
 def _delivered(notes: Sequence[Note]) -> Delivered:
-    return Delivered(
-        notes=tuple(
-            DeliveredNote(id=n.id, text=n.text, kind=n.kind, label=n.label, job=n.job)
-            for n in notes
-        )
-    )
+    return Delivered(notes=tuple(DeliveredNote.of(n) for n in notes))
 
 
 def _describe(exc: BaseException) -> str:

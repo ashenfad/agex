@@ -153,6 +153,26 @@ def test_a_note_queued_mid_turn_rides_the_next_tool_result(ws):
     assert session.inbox.pending() == [] and session.inbox.delivered() == []
 
 
+def test_a_delegates_note_carries_its_answer_on_the_event(ws):
+    """A delegate's answer delivered mid-turn rides its note, so a
+    transcript can show what it said without asking the job table."""
+    from nontainer.protocol import Answer
+
+    session = agent(writes("/workspace/a.txt", "A"), says("ok")).session(ws)
+    answer = Answer(text="found it", branch="scout")
+    session.inbox.put(
+        "scout answered",
+        kind="mechanism",
+        label="delegate scout",
+        job="scout",
+        answer=answer,
+    )
+    outcome = session.say("write a")
+    (delivered,) = [e for e in outcome.events if isinstance(e, Delivered)]
+    (note,) = delivered.notes
+    assert (note.job, note.answer) == ("scout", answer)
+
+
 def test_a_failed_tool_call_is_a_result_the_model_reads(ws):
     session = agent(
         calls("no_such_tool"),
