@@ -3,8 +3,9 @@ sources.
 
     python -m agex.conformance.export
 
-One JSON file per scenario under ``json/``, and under ``schema/`` the
-JSON Schema of the scenario format. agex-ts reads these.
+One JSON file per scenario under ``json/`` (a task scenario, or a code
+scenario, named ``code-...``), and under ``schema/`` the JSON Schema of
+each scenario format. agex-ts reads these.
 ``tests/test_shape_corpus.py`` fails when the committed files differ
 from what this would write.
 """
@@ -16,8 +17,9 @@ from pathlib import Path
 
 from nontainer.conformance.codec import dumps, json_schema
 
+from .code_scenarios import CODE_SCENARIOS
 from .scenarios import SCENARIOS
-from .shape import TaskScenario
+from .shape import CodeScenario, TaskScenario
 
 __all__ = ["JSON_DIR", "SCHEMA_DIR", "files", "write"]
 
@@ -29,10 +31,15 @@ SCHEMA_DIR = HERE / "schema"
 def files() -> dict[Path, str]:
     """Every file the export writes, by path, with its content."""
     out = {JSON_DIR / f"{s.name}.json": dumps(s) for s in SCENARIOS}
-    schema = json_schema(TaskScenario, title="TaskScenario")
-    out[SCHEMA_DIR / "task_scenario.schema.json"] = (
-        json.dumps(schema, indent=2, sort_keys=True) + "\n"
-    )
+    out.update({JSON_DIR / f"{s.name}.json": dumps(s) for s in CODE_SCENARIOS})
+    for kind, name in (
+        (TaskScenario, "task_scenario"),
+        (CodeScenario, "code_scenario"),
+    ):
+        schema = json_schema(kind, title=kind.__name__)
+        out[SCHEMA_DIR / f"{name}.schema.json"] = (
+            json.dumps(schema, indent=2, sort_keys=True) + "\n"
+        )
     return out
 
 

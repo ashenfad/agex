@@ -1,0 +1,366 @@
+{
+  "$defs": {
+    "CodeCall": {
+      "additionalProperties": false,
+      "description": "Agent code defines the task and calls it: once with ``inputs``, or, given ``items``, once per item at once (``.map``), each item the inputs of one call. ``helper`` is the script every helper of this act follows (its model's steps, as for a task's).",
+      "properties": {
+        "helper": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelStep"
+              },
+              {
+                "$ref": "#/$defs/TaskSuccess"
+              },
+              {
+                "$ref": "#/$defs/TaskFail"
+              },
+              {
+                "$ref": "#/$defs/TaskNeedsInput"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "inputs": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "items": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "const": "code_call"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "CodeExp": {
+      "additionalProperties": false,
+      "description": "What the calling code got. ``value``: the value (JSON, read by the return type, built as the code's own classes), or for a ``.map`` ``values`` in order. ``failed`` or ``needs_input``: the error the call raised, its text holding ``message``. ``refused``: the definition itself was refused, the error naming ``names``.",
+      "properties": {
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "value",
+            "failed",
+            "needs_input",
+            "refused"
+          ]
+        },
+        "value": {},
+        "values": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "CodeScenario": {
+      "additionalProperties": false,
+      "description": "One scenario of a task agent code defines: the task, the acts that define and call it, and one expectation per act.",
+      "properties": {
+        "acts": {
+          "items": {
+            "$ref": "#/$defs/CodeCall"
+          },
+          "type": "array"
+        },
+        "expect": {
+          "items": {
+            "$ref": "#/$defs/CodeExp"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "task": {
+          "$ref": "#/$defs/TaskDef"
+        },
+        "where": {
+          "enum": [
+            "anywhere",
+            "in-process",
+            "off-in-process"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "summary",
+        "task",
+        "acts",
+        "expect"
+      ],
+      "type": "object"
+    },
+    "Input": {
+      "additionalProperties": false,
+      "description": "One of the task's inputs, as agent code sees it.",
+      "properties": {
+        "kind": {
+          "const": "input"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "type": "object"
+    },
+    "MethodCall": {
+      "additionalProperties": false,
+      "description": "What a method of a live input returns, called with ``args``.",
+      "properties": {
+        "args": {
+          "items": {},
+          "type": "array"
+        },
+        "input": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "method_call"
+        },
+        "method": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "method"
+      ],
+      "type": "object"
+    },
+    "ModelStep": {
+      "additionalProperties": false,
+      "description": "One model reply: text, reasoning, tool calls, or a failure. ``fail`` makes the call raise instead of replying: ``\"provider\"`` with a provider error (an overloaded endpoint, say), which a harness may resume from; ``\"error\"`` with any other exception. ``input_tokens`` is the size of the request this reply answers, as a provider reports it (0 reports nothing): how a scenario puts a conversation over a compaction budget.",
+      "properties": {
+        "fail": {
+          "enum": [
+            "",
+            "provider",
+            "error"
+          ]
+        },
+        "input_tokens": {
+          "type": "integer"
+        },
+        "kind": {
+          "const": "model"
+        },
+        "text": {
+          "type": "string"
+        },
+        "thinking": {
+          "type": "string"
+        },
+        "tool_calls": {
+          "items": {
+            "$ref": "#/$defs/ToolCall"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "Param": {
+      "additionalProperties": false,
+      "description": "One input of the task: its name and its type, as a JSON Schema.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {}
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "TaskDef": {
+      "additionalProperties": false,
+      "description": "The task: its name, its instructions (a docstring in Python), its parameters in order, its return type (``{\"type\": \"null\"}`` for none), and in ``defs`` the classes those name, each by ``{\"$ref\": \"#/$defs/Name\"}`` as JSON Schema refers to its ``$defs``. A record class is an object schema; its fields are its ``required`` properties, in that order. A live class is ``{\"x-kind\": \"live\", \"description\": ..., \"methods\": {name: {\"params\": [{\"name\": ..., \"type\": ...}], \"returns\": ..., \"replies\": [{\"args\": [...], \"returns\": ...}]}}}``: a method answers the call whose arguments match a reply's, and agent code's calls are recorded.",
+      "properties": {
+        "defs": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "params": {
+          "items": {
+            "$ref": "#/$defs/Param"
+          },
+          "type": "array"
+        },
+        "returns": {}
+      },
+      "required": [
+        "name",
+        "instructions"
+      ],
+      "type": "object"
+    },
+    "TaskFail": {
+      "additionalProperties": false,
+      "description": "Agent code calls ``task.fail(reason)``.",
+      "properties": {
+        "kind": {
+          "const": "task_fail"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "TaskNeedsInput": {
+      "additionalProperties": false,
+      "description": "Agent code calls ``task.needs_input(question)``.",
+      "properties": {
+        "kind": {
+          "const": "task_needs_input"
+        },
+        "question": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "question"
+      ],
+      "type": "object"
+    },
+    "TaskSuccess": {
+      "additionalProperties": false,
+      "description": "Agent code calls ``task.success`` with ``value`` (``None``: with no value).",
+      "properties": {
+        "kind": {
+          "const": "task_success"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Value"
+            },
+            {
+              "$ref": "#/$defs/Input"
+            },
+            {
+              "$ref": "#/$defs/MethodCall"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ToolCall": {
+      "additionalProperties": false,
+      "description": "One tool call in a model reply.",
+      "properties": {
+        "args": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "Value": {
+      "additionalProperties": false,
+      "description": "A value written out, as JSON, read by the type it is given as.",
+      "properties": {
+        "kind": {
+          "const": "value"
+        },
+        "value": {}
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  "$ref": "#/$defs/CodeScenario",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodeScenario"
+}

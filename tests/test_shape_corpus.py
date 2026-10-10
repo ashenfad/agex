@@ -10,6 +10,7 @@ import pytest
 from nontainer.conformance.codec import dumps, load
 
 from agex.conformance import AgexTasks
+from agex.conformance.code_scenarios import CODE_SCENARIOS
 from agex.conformance.export import JSON_DIR, files
 from agex.conformance.runner import _same, applies, check, run
 from agex.conformance.scenarios import (
@@ -60,7 +61,7 @@ def test_the_committed_corpus_is_what_the_sources_write():
         assert path.exists(), f"{path.name} is missing"
         assert path.read_text() == text, f"{path.name} is stale"
     assert {p.name for p in JSON_DIR.glob("*.json")} == {
-        f"{s.name}.json" for s in SCENARIOS
+        f"{s.name}.json" for s in [*SCENARIOS, *CODE_SCENARIOS]
     }
 
 

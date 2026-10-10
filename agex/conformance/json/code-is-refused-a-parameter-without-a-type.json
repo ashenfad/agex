@@ -1,0 +1,42 @@
+{
+  "acts": [
+    {
+      "helper": [],
+      "inputs": {
+        "word": "hi"
+      },
+      "items": null,
+      "kind": "code_call"
+    }
+  ],
+  "expect": [
+    {
+      "message": null,
+      "names": [
+        "word",
+        "annotation"
+      ],
+      "status": "refused",
+      "value": null,
+      "values": null
+    }
+  ],
+  "name": "code-is-refused-a-parameter-without-a-type",
+  "needs": [],
+  "summary": "A parameter with no annotation is refused, naming the parameter.",
+  "task": {
+    "defs": {},
+    "instructions": "Shout the word back.",
+    "name": "shout",
+    "params": [
+      {
+        "name": "word",
+        "type": null
+      }
+    ],
+    "returns": {
+      "type": "string"
+    }
+  },
+  "where": "anywhere"
+}

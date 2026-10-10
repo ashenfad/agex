@@ -1,0 +1,44 @@
+{
+  "acts": [
+    {
+      "helper": [],
+      "inputs": {
+        "word": "hi"
+      },
+      "items": null,
+      "kind": "code_call"
+    }
+  ],
+  "expect": [
+    {
+      "message": null,
+      "names": [
+        "shout",
+        "docstring"
+      ],
+      "status": "refused",
+      "value": null,
+      "values": null
+    }
+  ],
+  "name": "code-is-refused-a-task-without-a-docstring",
+  "needs": [],
+  "summary": "A task with no docstring has no job to give a helper, so it is refused.",
+  "task": {
+    "defs": {},
+    "instructions": "",
+    "name": "shout",
+    "params": [
+      {
+        "name": "word",
+        "type": {
+          "type": "string"
+        }
+      }
+    ],
+    "returns": {
+      "type": "string"
+    }
+  },
+  "where": "anywhere"
+}

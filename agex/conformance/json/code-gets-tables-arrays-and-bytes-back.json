@@ -1,0 +1,110 @@
+{
+  "acts": [
+    {
+      "helper": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "value",
+            "value": {
+              "blob": "aGk=",
+              "grid": [
+                [
+                  1,
+                  2
+                ],
+                [
+                  3,
+                  4
+                ]
+              ],
+              "table": {
+                "x": [
+                  1,
+                  2
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "inputs": {
+        "label": "b"
+      },
+      "items": null,
+      "kind": "code_call"
+    }
+  ],
+  "expect": [
+    {
+      "message": null,
+      "names": [],
+      "status": "value",
+      "value": {
+        "blob": "aGk=",
+        "grid": [
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            4
+          ]
+        ],
+        "table": {
+          "x": [
+            1,
+            2
+          ]
+        }
+      },
+      "values": null
+    }
+  ],
+  "name": "code-gets-tables-arrays-and-bytes-back",
+  "needs": [
+    "tables",
+    "arrays"
+  ],
+  "summary": "Tables, arrays and bytes come back as declared.",
+  "task": {
+    "defs": {
+      "Bundle": {
+        "additionalProperties": false,
+        "description": "A table, an array and some bytes.",
+        "properties": {
+          "blob": {
+            "x-kind": "bytes"
+          },
+          "grid": {
+            "x-kind": "array"
+          },
+          "table": {
+            "x-kind": "table"
+          }
+        },
+        "required": [
+          "table",
+          "grid",
+          "blob"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Make a bundle.",
+    "name": "bundle",
+    "params": [
+      {
+        "name": "label",
+        "type": {
+          "type": "string"
+        }
+      }
+    ],
+    "returns": {
+      "$ref": "#/$defs/Bundle"
+    }
+  },
+  "where": "anywhere"
+}

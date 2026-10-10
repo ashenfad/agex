@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **A stand-in for agent-defined tasks: `stand_in_tasks(answer=None)`.** Granted beside `agex` and bound in its place (`bind={"agex": "agex_stand_in"}`, ws-pytest's `call(..., agex=...)`), it answers each call at once, without a model: by `answer(name, inputs)` or with the simplest value of the return type.
+- **The shape corpus covers agent-defined tasks.** `CodeScenario`s pin what calling code sees (its own classes back, `.map` in order, failures, questions, refusals at the decorator), exported as JSON beside the task scenarios; `AgexCodeTasks` runs them on every rung.
 - **Agent-defined tasks: `agent_tasks(agent)`.** A host object that lets agent code define a task with `@agex.task` on a def and call it, or `.map` it; a helper agent runs each call as a delegate of the calling world (a scratch world when it has no helper), and the value comes back as the caller's own classes on every rung.
 - **Delegation: `agent.session(ws, sessions=True)`.** The agent delegates through the `sessions` tool, each delegate a session of the same agent on a fork with its parent's profile (`agex.delegation.Runner`, an async `SessionRunner`) that can delegate in turn; answers ride the next tool result, `wake()` runs a turn that opens with what is waiting, and `close()` waits for the delegates.
 - **Compaction: `Agent(compaction=Policy(...))`.** Past its budget a conversation folds into a summary the agent's own model writes, within a run too, recorded as nontainer's fold records; replies record the fold their request had (`Message.fold`), and summary calls count against `max_steps` and in the run's usage (`Run.compaction`).

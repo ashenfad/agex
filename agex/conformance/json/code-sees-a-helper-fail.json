@@ -1,0 +1,46 @@
+{
+  "acts": [
+    {
+      "helper": [
+        {
+          "kind": "task_fail",
+          "reason": "no voice today"
+        }
+      ],
+      "inputs": {
+        "word": "hi"
+      },
+      "items": null,
+      "kind": "code_call"
+    }
+  ],
+  "expect": [
+    {
+      "message": "no voice today",
+      "names": [],
+      "status": "failed",
+      "value": null,
+      "values": null
+    }
+  ],
+  "name": "code-sees-a-helper-fail",
+  "needs": [],
+  "summary": "A helper that fails raises its reason in the calling code.",
+  "task": {
+    "defs": {},
+    "instructions": "Shout the word back.",
+    "name": "shout",
+    "params": [
+      {
+        "name": "word",
+        "type": {
+          "type": "string"
+        }
+      }
+    ],
+    "returns": {
+      "type": "string"
+    }
+  },
+  "where": "anywhere"
+}

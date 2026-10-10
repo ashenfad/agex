@@ -1,0 +1,123 @@
+{
+  "acts": [
+    {
+      "helper": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "value",
+            "value": {
+              "best": "ada",
+              "scores": [
+                {
+                  "student": "ada",
+                  "total": 7
+                },
+                {
+                  "student": "bo",
+                  "total": 2
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "inputs": {
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      },
+      "items": null,
+      "kind": "code_call"
+    }
+  ],
+  "expect": [
+    {
+      "message": null,
+      "names": [],
+      "status": "value",
+      "value": {
+        "best": "ada",
+        "scores": [
+          {
+            "student": "ada",
+            "total": 7
+          },
+          {
+            "student": "bo",
+            "total": 2
+          }
+        ]
+      },
+      "values": null
+    }
+  ],
+  "name": "code-gets-its-own-records-back",
+  "needs": [],
+  "summary": "Agent code defines a task over records of its own; the helper builds the value of the task's types, and the calling code gets it built as its own classes, nested records included.",
+  "task": {
+    "defs": {
+      "Ranking": {
+        "additionalProperties": false,
+        "description": "The best student, and the scores ranked.",
+        "properties": {
+          "best": {
+            "type": "string"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/$defs/Score"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "best",
+          "scores"
+        ],
+        "type": "object"
+      },
+      "Score": {
+        "additionalProperties": false,
+        "description": "One student's total.",
+        "properties": {
+          "student": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "student",
+          "total"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Rank the scores, best first.",
+    "name": "rank",
+    "params": [
+      {
+        "name": "scores",
+        "type": {
+          "items": {
+            "$ref": "#/$defs/Score"
+          },
+          "type": "array"
+        }
+      }
+    ],
+    "returns": {
+      "$ref": "#/$defs/Ranking"
+    }
+  },
+  "where": "anywhere"
+}

@@ -42,6 +42,16 @@ from nontainer.conformance.corpus import ModelStep, World
 __all__ = [
     "CAPABILITIES",
     "Act",
+    "CodeCall",
+    "CodeExp",
+    "CodeScenario",
+    "code_asked",
+    "code_call",
+    "code_failed",
+    "code_map",
+    "code_refused",
+    "got",
+    "got_each",
     "Expr",
     "Input",
     "LiveCall",
@@ -375,3 +385,101 @@ def refusal(*names: str, **kw: Any) -> OutcomeExp:
     """A call refused before the model is asked anything, its error
     naming ``names``."""
     return OutcomeExp(status="refused", names=names, asked=0, **kw)
+
+
+# -- tasks agent code defines ----------------------------------------------------------
+#
+# A second kind of scenario: the task is one the agent's own code
+# defines (``@agex.task`` in Python) and calls, and a helper agent runs
+# each call. What a scenario pins is what that code sees: the value
+# built as its own types, or the error a failed or asking helper
+# raises, or the refusal of a task it can't define. A parameter whose
+# ``type`` is ``None`` has no annotation, and ``instructions`` of ``""``
+# is a task with no docstring.
+
+
+@dataclass(frozen=True, kw_only=True)
+class CodeCall:
+    """Agent code defines the task and calls it: once with ``inputs``,
+    or, given ``items``, once per item at once (``.map``), each item the
+    inputs of one call. ``helper`` is the script every helper of this
+    act follows (its model's steps, as for a task's)."""
+
+    kind: Literal["code_call"] = "code_call"
+    inputs: dict[str, Any] = field(default_factory=dict)
+    items: tuple[dict[str, Any], ...] | None = None
+    helper: tuple[Step, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class CodeExp:
+    """What the calling code got. ``value``: the value (JSON, read by
+    the return type, built as the code's own classes), or for a
+    ``.map`` ``values`` in order. ``failed`` or ``needs_input``: the
+    error the call raised, its text holding ``message``. ``refused``:
+    the definition itself was refused, the error naming ``names``."""
+
+    status: Literal["value", "failed", "needs_input", "refused"]
+    value: Any = None
+    values: tuple[Any, ...] | None = None
+    message: str | None = None
+    names: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class CodeScenario:
+    """One scenario of a task agent code defines: the task, the acts
+    that define and call it, and one expectation per act."""
+
+    name: str
+    summary: str
+    task: TaskDef
+    where: Where = "anywhere"
+    needs: tuple[str, ...] = ()
+    acts: tuple[CodeCall, ...]
+    expect: tuple[CodeExp, ...]
+
+    def __post_init__(self) -> None:
+        unknown = set(self.needs) - set(CAPABILITIES)
+        if unknown:
+            raise ValueError(f"{self.name}: unknown capabilities {sorted(unknown)}")
+        if not self.acts or len(self.acts) != len(self.expect):
+            raise ValueError(
+                f"{self.name}: {len(self.acts)} act(s) but {len(self.expect)} "
+                "expectation(s)"
+            )
+
+
+def code_call(*helper: Step, **inputs: Any) -> CodeCall:
+    """Agent code calls its task once with ``inputs``; each helper
+    follows ``helper``."""
+    return CodeCall(inputs=inputs, helper=helper)
+
+
+def code_map(items: list[dict[str, Any]], *helper: Step) -> CodeCall:
+    """Agent code maps its task over ``items``; each helper follows
+    ``helper``."""
+    return CodeCall(items=tuple(items), helper=helper)
+
+
+def got(value: Any = None, /) -> CodeExp:
+    """The calling code got ``value`` (JSON), as its own types."""
+    return CodeExp(status="value", value=value)
+
+
+def got_each(*values: Any) -> CodeExp:
+    """A ``.map`` got ``values``, in order."""
+    return CodeExp(status="value", values=values)
+
+
+def code_failed(message: str) -> CodeExp:
+    return CodeExp(status="failed", message=message)
+
+
+def code_asked(question: str) -> CodeExp:
+    return CodeExp(status="needs_input", message=question)
+
+
+def code_refused(*names: str) -> CodeExp:
+    """The task couldn't be defined, the refusal naming ``names``."""
+    return CodeExp(status="refused", names=names)

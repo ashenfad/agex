@@ -1,0 +1,46 @@
+{
+  "acts": [
+    {
+      "helper": [
+        {
+          "kind": "task_needs_input",
+          "question": "Shout how loud?"
+        }
+      ],
+      "inputs": {
+        "word": "hi"
+      },
+      "items": null,
+      "kind": "code_call"
+    }
+  ],
+  "expect": [
+    {
+      "message": "Shout how loud?",
+      "names": [],
+      "status": "needs_input",
+      "value": null,
+      "values": null
+    }
+  ],
+  "name": "code-sees-a-helper-ask",
+  "needs": [],
+  "summary": "A helper that asks raises its question in the calling code, which has no model to answer it.",
+  "task": {
+    "defs": {},
+    "instructions": "Shout the word back.",
+    "name": "shout",
+    "params": [
+      {
+        "name": "word",
+        "type": {
+          "type": "string"
+        }
+      }
+    ],
+    "returns": {
+      "type": "string"
+    }
+  },
+  "where": "anywhere"
+}
