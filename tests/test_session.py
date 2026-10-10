@@ -247,6 +247,20 @@ def test_a_model_that_calls_tools_after_it_was_told_to_stop_fails_the_run(ws):
     assert tool.parts[0].content == f"not run: {limit_reached(1)}"
 
 
+def test_a_cap_of_zero_tells_the_model_before_it_ends_the_run(ws):
+    """The first call is not run, and the model reads why before a reply
+    that calls a tool would end the run."""
+    session = agent(
+        calls("terminal", command="echo 1"),
+        says("no tools, then"),
+        max_tool_calls=0,
+    ).session(ws)
+    outcome = session.say("go")
+    assert (outcome.status, outcome.text) == ("completed", "no tools, then")
+    assert results(outcome) == [f"not run: {limit_reached(0)}"]
+    assert told(session) == [3]
+
+
 def test_a_resumed_run_counts_the_calls_it_made_before_it_stopped(ws):
     session = agent(
         ModelStep(tool_calls=(run_command(1), run_command(2))),

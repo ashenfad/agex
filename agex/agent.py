@@ -119,6 +119,11 @@ def limit_reached(limit: int) -> str:
     )
 
 
+def _notice(limit: int) -> str:
+    """The message telling the model its run's tool calls are spent."""
+    return f"[{limit_reached(limit)}]"
+
+
 def closing_note(reason: str) -> Message:
     """The assistant message closing a cancelled or failed run."""
     return Message(
@@ -783,6 +788,10 @@ class Session:
             # it stopped among them
             limit = self.agent.max_tool_calls
             spent = sum(isinstance(p, ToolCall) for m in messages for p in m.parts)
+            # whether the model has been told its tool calls are spent
+            told = limit is not None and any(
+                m.role == "user" and m.text == _notice(limit) for m in messages
+            )
             while made < self.agent.max_steps:
                 self._check_cancel()
                 reply: Message | None = None
@@ -807,8 +816,8 @@ class Session:
                         else summaries + prepared.usage
                     )
                 fold = prepared.fold
-                # whether the model has read that its tool calls are spent
-                told = limit is not None and spent >= limit
+                # a reply to a request that carried the notice
+                after_notice = told
                 async for event in self._provider.stream(
                     prepared.messages, self._specs, self.agent.settings
                 ):
@@ -895,7 +904,7 @@ class Session:
                     # the calls left in ``calls`` get their results as the
                     # run ends, as a cut-short run's do
                     break
-                if told:
+                if after_notice:
                     # none of them ran; the run ends with their results
                     status = "failed"
                     message = (
@@ -904,16 +913,15 @@ class Session:
                     break
                 messages.append(Message(id=new_id(), role="tool", parts=tuple(results)))
                 calls = []
-                if limit is not None and spent >= limit:
+                if limit is not None and spent >= limit and not told:
                     # a message of the user's, not a tool's result: models
                     # read a tool's output as data, and carry on
                     messages.append(
                         Message(
-                            id=new_id(),
-                            role="user",
-                            parts=(Text(text=f"[{limit_reached(limit)}]"),),
+                            id=new_id(), role="user", parts=(Text(text=_notice(limit)),)
                         )
                     )
+                    told = True
             else:
                 status = "failed"
                 message = (
