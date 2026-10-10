@@ -1,0 +1,92 @@
+{
+  "acts": [
+    {
+      "helper": [
+        {
+          "kind": "task_success",
+          "value": {
+            "kind": "value",
+            "value": {
+              "label": "a",
+              "next": {
+                "label": "b",
+                "next": {
+                  "label": "c",
+                  "next": null
+                }
+              }
+            }
+          }
+        }
+      ],
+      "inputs": {
+        "label": "a"
+      },
+      "items": null,
+      "kind": "code_call"
+    }
+  ],
+  "expect": [
+    {
+      "message": null,
+      "names": [],
+      "status": "value",
+      "value": {
+        "label": "a",
+        "next": {
+          "label": "b",
+          "next": {
+            "label": "c",
+            "next": null
+          }
+        }
+      },
+      "values": null
+    }
+  ],
+  "name": "code-gets-a-record-holding-itself-back",
+  "needs": [],
+  "summary": "Agent code defines a task over a record that holds itself (a node and the node after it, or none); the calling code gets the chain built as its own class, each link of it.",
+  "task": {
+    "defs": {
+      "Node": {
+        "additionalProperties": false,
+        "description": "A link in a chain, and the link after it.",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Node"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "label",
+          "next"
+        ],
+        "type": "object"
+      }
+    },
+    "instructions": "Make a chain.",
+    "name": "chain",
+    "params": [
+      {
+        "name": "label",
+        "type": {
+          "type": "string"
+        }
+      }
+    ],
+    "returns": {
+      "$ref": "#/$defs/Node"
+    }
+  },
+  "where": "anywhere"
+}

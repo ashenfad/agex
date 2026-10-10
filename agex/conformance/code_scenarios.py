@@ -5,8 +5,8 @@ runs each call. Each harness writes the calling code in its own
 language, from the task as JSON Schemas:
 
 - **Values:** the calling code gets the value built as its own classes,
-  records nested in records included, and tables, arrays and bytes come
-  back as declared.
+  records nested in records included (a record holding itself too), and
+  tables, arrays and bytes come back as declared.
 - **Many at once:** ``.map`` returns the values in the order of its
   items.
 - **Endings:** a helper that fails raises the failure in the calling
@@ -26,6 +26,7 @@ from .scenarios import (
     ARRAY,
     BYTES,
     DIRECTORY,
+    NONE,
     RANKED,
     RANKING,
     SCORE,
@@ -33,6 +34,7 @@ from .scenarios import (
     STR,
     TABLE,
     list_of,
+    record,
     ref,
 )
 from .shape import (
@@ -91,6 +93,31 @@ OWN_RECORDS = CodeScenario(
     task=RANK,
     acts=(code_call(task_success(RANKED), scores=SCORES),),
     expect=(got(RANKED),),
+)
+
+CHAIN = {
+    "label": "a",
+    "next": {"label": "b", "next": {"label": "c", "next": None}},
+}
+
+OWN_RECURSIVE_RECORD = CodeScenario(
+    name="code-gets-a-record-holding-itself-back",
+    summary=(
+        "Agent code defines a task over a record that holds itself (a node "
+        "and the node after it, or none); the calling code gets the chain "
+        "built as its own class, each link of it."
+    ),
+    task=made(
+        "chain",
+        ref("Node"),
+        Node=record(
+            "A link in a chain, and the link after it.",
+            label=STR,
+            next={"anyOf": [ref("Node"), NONE]},
+        ),
+    ),
+    acts=(code_call(task_success(CHAIN), label="a"),),
+    expect=(got(CHAIN),),
 )
 
 TABLES_AND_ARRAYS = CodeScenario(
@@ -211,6 +238,7 @@ RESERVED = refused(
 
 CODE_SCENARIOS: list[CodeScenario] = [
     OWN_RECORDS,
+    OWN_RECURSIVE_RECORD,
     TABLES_AND_ARRAYS,
     MAPPED,
     FAILED,

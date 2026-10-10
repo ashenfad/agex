@@ -38,7 +38,7 @@ import re
 import shutil
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -145,10 +145,32 @@ def _doc(text: str | None, indent: str) -> list[str]:
     return [f"{indent}{json.dumps(text)}"] if text else []
 
 
-def _record(name: str, schema: Mapping[str, Any], uses: set[str]) -> str:
+def _named(schema: Any) -> list[str]:
+    """The classes a schema names, anywhere in it."""
+    if isinstance(schema, Mapping):
+        ref = _ref(schema)
+        found = [ref] if ref is not None else []
+        return found + [n for v in schema.values() for n in _named(v)]
+    if isinstance(schema, list):
+        return [n for v in schema for n in _named(v)]
+    return []
+
+
+def _record(
+    name: str,
+    schema: Mapping[str, Any],
+    uses: set[str],
+    later: Collection[str] = (),
+) -> str:
+    """A dataclass for a record; a field naming a class in ``later`` (not
+    yet defined, the record itself included) has its annotation quoted."""
     props = schema.get("properties", {})
     lines = ["@dataclass", f"class {name}:", *_doc(schema.get("description"), "    ")]
-    lines += [f"    {f}: {_annotation(props[f], uses)}" for f in _fields(schema)]
+    for f in _fields(schema):
+        annotation = _annotation(props[f], uses)
+        if set(_named(props[f])) & set(later):
+            annotation = json.dumps(annotation)
+        lines.append(f"    {f}: {annotation}")
     if len(lines) == 2:
         lines.append("    pass")
     return "\n".join(lines)
