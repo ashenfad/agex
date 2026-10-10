@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **A tool's images reach a model that takes them.** `view_image` and `test_app`'s screenshots ride their tool result where the session's toolset has `vision`, kept in the run as `Image` parts (`ToolResult.images`) and sent as pydantic-ai's multimodal tool returns.
 - **An embedder shapes a session's tools: `agent.session(ws, toolset=..., tools=[...])`.** A nontainer `Toolset` of its own (an app runtime for `test_app`, primers, `vision`) and tools of its own in MCP's shape (name, description, JSON Schema, a call returning a `ToolOutput`), one named like a built-in replacing it.
 - **A stand-in for agent-defined tasks: `stand_in_tasks(answer=None)`.** Granted beside `agex` and bound in its place (`bind={"agex": "agex_stand_in"}`, ws-pytest's `call(..., agex=...)`), it answers each call at once, without a model: by `answer(name, inputs)` or with the simplest value of the return type.
 - **The shape corpus covers agent-defined tasks.** `CodeScenario`s pin what calling code sees (its own classes back, a record holding itself among them, `.map` in order, failures, questions, refusals at the decorator), exported as JSON beside the task scenarios; `AgexCodeTasks` runs them on every rung.

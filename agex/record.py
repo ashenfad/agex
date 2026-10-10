@@ -25,6 +25,7 @@ from nontainer.turns import RunStatus
 
 __all__ = [
     "FORMAT",
+    "Image",
     "Message",
     "Part",
     "Role",
@@ -104,15 +105,28 @@ class ToolCall:
 
 
 @dataclass(frozen=True, kw_only=True)
+class Image:
+    """An image a tool returned for the model to see: ``data`` is the
+    image base64-encoded, ``media_type`` its type (``image/png``)."""
+
+    kind: Literal["image"] = "image"
+    data: str
+    media_type: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class ToolResult:
     """What a tool call returned, to the model. ``is_error`` says the
-    call failed and ``content`` says how."""
+    call failed and ``content`` says how. ``images`` are what it
+    returned to be seen (a ``view_image``, a ``test_app`` screenshot),
+    kept only where the model takes images."""
 
     kind: Literal["tool_result"] = "tool_result"
     call_id: str
     name: str
     content: str
     is_error: bool = False
+    images: tuple[Image, ...] = ()
 
 
 Part = Text | Thinking | ToolCall | ToolResult

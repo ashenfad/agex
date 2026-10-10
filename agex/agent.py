@@ -18,6 +18,7 @@ inbox and lands one commit stamped with how the run ended.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextvars
 import logging
 import sys
@@ -29,7 +30,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from nontainer import NotSupportedError, Profile, SessionRunner, Workspace, conversation
 from nontainer.adapters.render import toolkit_instructions
-from nontainer.adapters.tools import Tool, Toolset
+from nontainer.adapters.tools import Tool, ToolOutput, Toolset
 from nontainer.compaction import Policy
 from nontainer.inbox import Inbox, Note
 from nontainer.sessions import Sessions, answer_notes
@@ -50,6 +51,7 @@ from . import compaction
 from .providers import Provider, Reply, Settings, ToolSpec
 from .providers.pydanticai import PydanticAIProvider
 from .record import (
+    Image,
     Message,
     Run,
     Text,
@@ -117,6 +119,17 @@ def closing_note(reason: str) -> Message:
                 "real and done.]"
             ),
         ),
+    )
+
+
+def _images(output: ToolOutput) -> tuple[Image, ...]:
+    """The images a tool returned, as the record keeps them."""
+    return tuple(
+        Image(
+            data=base64.b64encode(image.data).decode("ascii"),
+            media_type=f"image/{'jpeg' if image.format == 'jpg' else image.format}",
+        )
+        for image in output.images
     )
 
 
@@ -774,7 +787,8 @@ class Session:
                         result=CUT_OFF,
                         is_error=True,
                     )
-                    output, is_error = self._after_call(*await self._call(call))
+                    called = await self._call(call)
+                    output, is_error = self._after_call(called.text, called.is_error)
                     # the tool ran, and may have changed the workspace: its
                     # result stands from here, however the turn ends
                     unended = ToolEnded(
@@ -789,6 +803,9 @@ class Session:
                             name=call.name,
                             content=output,
                             is_error=is_error,
+                            # a model that takes no images is never sent one:
+                            # the next request would fail on it
+                            images=_images(called) if self.toolset.vision else (),
                         )
                     )
                     delivered, notes = await turn.adeliver(output)
@@ -881,19 +898,21 @@ class Session:
 
     # -- the loop's parts -----------------------------------------------------------
 
-    async def _call(self, call: ToolCall) -> tuple[str, bool]:
-        """The tool's text and whether it failed. A tool the model made
-        up, arguments that do not fit, or a tool that raises is a failed
-        call the model reads, not an error out of the turn."""
+    async def _call(self, call: ToolCall) -> ToolOutput:
+        """What the tool returned. A tool the model made up, arguments
+        that do not fit, or a tool that raises is a failed call the
+        model reads, not an error out of the turn."""
         tool = self._tools.get(call.name)
         if tool is None:
             known = ", ".join(sorted(self._tools))
-            return f"there is no tool named {call.name!r}; the tools are {known}", True
+            return ToolOutput(
+                text=f"there is no tool named {call.name!r}; the tools are {known}",
+                is_error=True,
+            )
         try:
-            output = await tool.acall(**call.args)
+            return await tool.acall(**call.args)
         except Exception as exc:  # noqa: BLE001 - the model reads it
-            return f"{type(exc).__name__}: {exc}", True
-        return output.text, output.is_error
+            return ToolOutput(text=f"{type(exc).__name__}: {exc}", is_error=True)
 
 
 _END: Any = object()
