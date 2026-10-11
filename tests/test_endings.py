@@ -55,6 +55,19 @@ class Slow:
 # -- interrupted, then resumed ---------------------------------------------------
 
 
+def test_a_provider_error_is_said_in_the_providers_words(ws):
+    """The turn's message is the provider's account of the error, in a
+    session without vision too, whose provider is wrapped to leave
+    images out."""
+    session = agent(fails("provider")).session(ws)
+    assert not session.toolset.vision
+    outcome = session.say("go")
+    assert outcome.status == "interrupted"
+    assert (
+        outcome.message == "the model provider failed (529): the script is overloaded"
+    )
+
+
 def test_a_provider_error_interrupts_and_resume_continues_in_place(ws):
     session = agent(
         writes("/workspace/a.txt", "A"),

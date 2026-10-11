@@ -194,6 +194,10 @@ class _NoImages:
     def transient(self, error: BaseException) -> bool:
         return self.provider.transient(error)
 
+    def describe(self, error: BaseException) -> str | None:
+        describe = getattr(self.provider, "describe", None)
+        return describe(error) if describe is not None else None
+
 
 def _delivered(notes: Sequence[Note]) -> Delivered:
     return Delivered(notes=tuple(DeliveredNote.of(n) for n in notes))
