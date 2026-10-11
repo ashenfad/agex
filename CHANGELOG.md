@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **A cancel stops the tool call running.** `session.cancel()` interrupts the workspace's running code (`ws.runtime.interrupt()`), and the turn interrupts it again until it lets go, so a stop no longer waits out a long call.
 - **A cancel can say why: `session.cancel(reason)`.** The reason closes the run's note and the outcome's message in place of a bare "stopped", so the next turn's model knows who stopped it.
 - **An interrupted turn can be given up on: `session.abandon(reason)`.** It ends the run failed (or `status="cancelled"`) with a closing note saying why, so a harness that stops resuming leaves the model a run that says where its work stopped.
 - **A cap on a run's tool calls: `Agent(max_tool_calls=N)`.** Each call counts however many a reply makes; past the cap a call is answered without running, the model is told to reply, and a reply that calls a tool after that fails the run.
