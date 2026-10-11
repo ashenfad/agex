@@ -431,6 +431,20 @@ class PydanticAIProvider:
             return code in TRANSIENT_STATUS or code >= 500
         return _unreachable(error)
 
+    def describe(self, error: BaseException) -> str | None:
+        """An HTTP error in words a person reads, as the studio's agno
+        loop puts it: refused or failed, its status, and the provider's
+        own message (OpenRouter's, say, that a model id is unknown)
+        rather than the SDK's dump of the response. ``None`` for any
+        other error."""
+        if not isinstance(error, ModelHTTPError):
+            return None
+        body = error.body
+        detail = body.get("message") if isinstance(body, dict) else body
+        detail = str(detail or error.message)
+        verdict = "failed" if self.transient(error) else "refused the request"
+        return f"the model provider {verdict} ({error.status_code}): {detail}"
+
     async def stream(
         self,
         messages: Sequence[Message],

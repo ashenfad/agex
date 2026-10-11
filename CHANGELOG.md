@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **A call the turn ended in says why.** A cut-off or unanswered call's result names the run's note (`cut_off(note)`, `unanswered(note)`, in place of `CUT_OFF` and `UNANSWERED`), so a model doesn't take a stop for a time limit.
+- **A failed request reads in the provider's words.** A provider may `describe(error)`; pydantic-ai's says "the model provider refused the request (400): …" with the provider's own message, rather than the SDK's dump.
 - **A cancel stops the tool call running.** `session.cancel()` interrupts the workspace's running code (`ws.runtime.interrupt()`), and the turn interrupts it again until it lets go, so a stop no longer waits out a long call.
 - **A cancel can say why: `session.cancel(reason)`.** The reason closes the run's note and the outcome's message in place of a bare "stopped", so the next turn's model knows who stopped it.
 - **An interrupted turn can be given up on: `session.abandon(reason)`.** It ends the run failed (or `status="cancelled"`) with a closing note saying why, so a harness that stops resuming leaves the model a run that says where its work stopped.

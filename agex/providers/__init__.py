@@ -106,3 +106,7 @@ class Provider(Protocol):
         the same request may succeed later. A run that hits one is
         interrupted, not failed."""
         ...
+
+    # Optional: ``describe(error) -> str | None`` puts a failed request
+    # in words (the turn's message); without it, or for None, the turn
+    # says the error's type and text.
