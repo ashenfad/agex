@@ -995,7 +995,13 @@ class Session:
             self._live = False
             if turn.open:
                 if status == "cancelled" and unended is not None:
-                    _stop_running_call(self.ws)
+                    if external is None:
+                        # a stop handled here: the loop stays free while
+                        # the call lets go, for whatever else it serves
+                        await asyncio.to_thread(_stop_running_call, self.ws)
+                    else:
+                        # cancelled from outside, so there is no awaiting
+                        _stop_running_call(self.ws)
                 if unended is not None:
                     push(unended)
                 if calls:
