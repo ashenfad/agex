@@ -701,8 +701,10 @@ class Session:
         The turn stops at the next point it can (between model calls and
         tool calls, or by interrupting the one in flight), and ends
         ``cancelled``: its work so far is kept, with a closing note. A
-        tool already running on its worker thread finishes there. Safe
-        to call from any thread.
+        tool running on its worker thread is interrupted too
+        (``ws.runtime.interrupt()``): its code stops at its next loop
+        iteration or function call, or at once on dud, though a single
+        long blocking call still runs out. Safe to call from any thread.
 
         ``reason`` is why, in the closing note and the outcome's message
         (:data:`STOPPED` when none is given): the next turn's model
@@ -718,6 +720,7 @@ class Session:
             # (a caller only making sure the turn stops) says nothing new
             self._cancel_reason = reason
         self._cancel_requested = True
+        self.ws.runtime.interrupt()
         try:
             here: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
         except RuntimeError:
@@ -991,6 +994,8 @@ class Session:
         finally:
             self._live = False
             if turn.open:
+                if status == "cancelled" and unended is not None:
+                    _stop_running_call(self.ws)
                 if unended is not None:
                     push(unended)
                 if calls:
@@ -1052,6 +1057,16 @@ class Session:
             return await tool.acall(**call.args)
         except Exception as exc:  # noqa: BLE001 - the model reads it
             return ToolOutput(text=f"{type(exc).__name__}: {exc}", is_error=True)
+
+
+def _stop_running_call(ws: Workspace) -> None:
+    """Wait for the tool call a stop cut off to let go of the workspace,
+    interrupting it until it does. Ending the turn needs the workspace,
+    and a call that had not reached its sandbox when the stop came would
+    otherwise run to its end."""
+    while not ws.lock.acquire(timeout=0.25):
+        ws.runtime.interrupt()
+    ws.lock.release()
 
 
 _END: Any = object()

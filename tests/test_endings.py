@@ -4,11 +4,12 @@ run keeps its work with a closing note."""
 
 import asyncio
 import threading
+import time
 
 import pytest
 from nontainer import Store
 from nontainer.conformance.corpus import fails, says, writes
-from nontainer.turns import RunEnded, RunStarted, ToolEnded
+from nontainer.turns import RunEnded, RunStarted, ToolEnded, ToolStarted
 from pydantic_ai.models.function import FunctionModel
 
 from agex import Agent
@@ -286,6 +287,75 @@ def test_cancel_from_another_thread(ws):
         return await waiting
 
     assert asyncio.run(go()).status == "cancelled"
+
+
+@pytest.fixture
+def unbounded():
+    """A workspace whose code no tick limit or near timeout ends, so
+    only a stop does."""
+    from nontainer import PythonConfig
+
+    store = Store(memory=True)
+    ws = store.open("s", python=PythonConfig(timeout=60, tick_limit=None))
+    yield ws
+    ws.close()
+    store.close()
+
+
+def test_a_cancel_interrupts_the_tool_call_running(unbounded):
+    """The call is stopped where it runs rather than waited out: code
+    that would loop forever ends, and so does the turn, cancelled."""
+    from nontainer.conformance.corpus import calls
+
+    ws = unbounded
+    forever = "open('started.txt', 'w').write('x')\nwhile True:\n    pass\n"
+    session = agent(calls("run_python", code=forever), says("never said")).session(ws)
+
+    async def go():
+        stream = session.stream("loop")
+        async for event in stream:
+            if isinstance(event, ToolStarted):
+                threading.Timer(0.3, session.cancel).start()
+        return session.last
+
+    started = time.monotonic()
+    outcome = asyncio.run(go())
+    assert outcome.status == "cancelled"
+    assert time.monotonic() - started < 20  # not the 60s the code had
+    assert ws.files.read("started.txt") == b"x"  # what it did is kept
+    (run,) = session.runs
+    (tool,) = [m for m in run.messages if m.role == "tool"]
+    assert tool.parts[0].content == CUT_OFF
+
+
+def test_a_call_not_yet_running_when_the_stop_came_is_stopped_too(unbounded):
+    """A stop that lands before the call reaches its sandbox finds
+    nothing to interrupt; ending the turn interrupts it once it does,
+    rather than wait out the call."""
+    from nontainer.conformance.corpus import calls
+
+    ws = unbounded
+    exec_python = ws.runtime.exec_python
+
+    def late(*args, **kw):  # holds the workspace, not yet in the sandbox
+        time.sleep(0.5)
+        return exec_python(*args, **kw)
+
+    ws.runtime.exec_python = late
+    session = agent(
+        calls("run_python", code="while True:\n    pass\n"), says("never said")
+    ).session(ws)
+
+    async def go():
+        stream = session.stream("loop")
+        async for event in stream:
+            if isinstance(event, ToolStarted):
+                threading.Timer(0.1, session.cancel).start()
+        return session.last
+
+    started = time.monotonic()
+    assert asyncio.run(go()).status == "cancelled"
+    assert time.monotonic() - started < 20  # not the 60s the code had
 
 
 def test_a_turn_left_running_at_loop_shutdown_still_lands(ws):
