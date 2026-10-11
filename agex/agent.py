@@ -707,12 +707,16 @@ class Session:
         ``reason`` is why, in the closing note and the outcome's message
         (:data:`STOPPED` when none is given): the next turn's model
         reads it, and a model told only that its turn stopped guesses
-        at why.
+        at why. When the turn is cancelled more than once before it
+        stops, the first reason given is the one it keeps.
         """
         running = [task for task in self._in_flight if not task.done()]
         if not running:
             return False
-        self._cancel_reason = reason
+        if reason is not None and self._cancel_reason is None:
+            # the first reason given stands: a later cancel without one
+            # (a caller only making sure the turn stops) says nothing new
+            self._cancel_reason = reason
         self._cancel_requested = True
         try:
             here: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
