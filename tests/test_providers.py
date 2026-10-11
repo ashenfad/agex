@@ -403,6 +403,20 @@ def test_which_errors_are_worth_resuming():
     assert not provider.transient(ValueError("a bug"))
 
 
+def test_a_failed_request_is_described_in_the_providers_words():
+    """A refused request reads as the agno loop's do, with the
+    provider's own message rather than the SDK's dump of the response."""
+    provider = ScriptedProvider([])
+    unknown = {"message": "meta/x is not a valid model ID", "code": 400}
+    assert provider.describe(ModelHTTPError(400, "meta/x", body=unknown)) == (
+        "the model provider refused the request (400): meta/x is not a valid model ID"
+    )
+    assert provider.describe(ModelHTTPError(529, "m", body="overloaded")) == (
+        "the model provider failed (529): overloaded"
+    )
+    assert provider.describe(ValueError("not http")) is None
+
+
 def test_a_providers_ids_and_details_go_back_with_its_parts():
     """Gemini signs a tool call (``thought_signature`` in its details),
     OpenAI's Responses API names each reply item (``fc_...``,

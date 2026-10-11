@@ -67,7 +67,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CLOSING_NOTE",
-    "CUT_OFF",
     "HARNESS",
     "Agent",
     "Outcome",
@@ -75,7 +74,9 @@ __all__ = [
     "Session",
     "Status",
     "closing_note",
+    "cut_off",
     "limit_reached",
+    "unanswered",
 ]
 
 _logger = logging.getLogger(__name__)
@@ -99,15 +100,21 @@ WOKEN = "(You were woken, and nothing new is waiting.)"
 """The message a woken turn opens with when nothing is waiting after all:
 what woke it was taken before the turn began."""
 
-UNANSWERED = "not run: the turn ended before this call started"
-"""The result a tool call gets when its turn ended before running it."""
 
-CUT_OFF = (
-    "no result: the turn ended while this call was running, and it may "
-    "have finished anyway; check the workspace before repeating it"
-)
-"""The result a tool call gets when its turn ended while it ran: a tool
-on its worker thread runs on to its end."""
+def unanswered(note: str) -> str:
+    """The result a tool call gets when its turn ended before running
+    it, saying why (``note``, the run's closing note)."""
+    return f"not run: the turn ended before this call started ({note})"
+
+
+def cut_off(note: str) -> str:
+    """The result a tool call gets when its turn ended while it ran. It
+    says why (``note``): told only that the turn ended, a model guesses
+    at why, and takes a stop for a time limit."""
+    return (
+        f"no result: the turn ended while this call was running ({note}); it "
+        "may have finished anyway, so check the workspace before repeating it"
+    )
 
 
 def limit_reached(limit: int) -> str:
@@ -797,9 +804,11 @@ class Session:
         external: BaseException | None = None
         calls: list[ToolCall] = []
         results: list[ToolResult] = []
-        # the ToolEnded a call still owes the stream: UNANSWERED until the
+        # the ToolEnded a call still owes the stream: cut_off until the
         # tool returns, its own output once it has
         unended: ToolEnded | None = None
+        # the call running now, whose result is cut_off if the turn ends
+        cutting: ToolCall | None = None
         in_request = False
         helper = self.sessions
         turn = self.ws.turn(
@@ -904,9 +913,10 @@ class Session:
                     unended = ToolEnded(
                         call_id=call.call_id,
                         name=call.name,
-                        result=CUT_OFF,
+                        result="",  # cut_off, if the turn ends in the call
                         is_error=True,
                     )
+                    cutting = call
                     if limit is not None and spent >= limit:
                         called = ToolOutput(
                             text=f"not run: {limit_reached(limit)}", is_error=True
@@ -915,6 +925,7 @@ class Session:
                         spent += 1
                         called = await self._call(call)
                     output, is_error = self._after_call(called.text, called.is_error)
+                    cutting = None
                     # the tool ran, and may have changed the workspace: its
                     # result stands from here, however the turn ends
                     unended = ToolEnded(
@@ -986,7 +997,10 @@ class Session:
         except Exception as exc:  # noqa: BLE001 - the outcome says how it ended
             transient = in_request and self._provider.transient(exc)
             status = "interrupted" if transient else "failed"
-            message = _describe(exc)
+            describe = getattr(self._provider, "describe", None)
+            message = (
+                in_request and describe is not None and describe(exc)
+            ) or _describe(exc)
             if not in_request:
                 _logger.warning("turn %s failed", run_id, exc_info=True)
         except BaseException as exc:
@@ -1004,28 +1018,33 @@ class Session:
                         await asyncio.to_thread(_stop_running_call, self.ws)
                     except asyncio.CancelledError:
                         pass  # ending the turn waits for the call itself
+                note = message or status
+                if unended is not None and cutting is not None:
+                    unended = replace(unended, result=cut_off(note))
                 if unended is not None:
                     push(unended)
                 if calls:
                     # every tool call needs its result, or the next request
                     # is refused: the ones the turn never answered say so
                     answered = {r.call_id for r in results}
-                    cut_off = unended.call_id if unended is not None else None
-                    unanswered = [
+                    cut = cutting.call_id if cutting is not None else None
+                    left = [
                         ToolResult(
                             call_id=c.call_id,
                             name=c.name,
-                            content=CUT_OFF if c.call_id == cut_off else UNANSWERED,
+                            content=cut_off(note)
+                            if c.call_id == cut
+                            else unanswered(note),
                             is_error=True,
                         )
                         for c in calls
                         if c.call_id not in answered
                     ]
                     messages.append(
-                        Message(id=new_id(), role="tool", parts=(*results, *unanswered))
+                        Message(id=new_id(), role="tool", parts=(*results, *left))
                     )
                 if status in ("cancelled", "failed"):
-                    messages.append(closing_note(message or status))
+                    messages.append(closing_note(note))
                 run = Run(
                     run_id=run_id,
                     status=status,

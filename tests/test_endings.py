@@ -13,7 +13,7 @@ from nontainer.turns import RunEnded, RunStarted, ToolEnded, ToolStarted
 from pydantic_ai.models.function import FunctionModel
 
 from agex import Agent
-from agex.agent import CLOSING_NOTE, CUT_OFF, STOPPED, UNANSWERED
+from agex.agent import CLOSING_NOTE, STOPPED, cut_off, unanswered
 from agex.providers.pydanticai import PydanticAIProvider
 from agex.providers.scripted import ScriptedProvider
 from agex.record import ToolCall, ToolResult
@@ -218,6 +218,30 @@ def test_a_cancel_says_why_in_the_closing_note(ws):
     assert run.messages[-1].text.startswith(f"{CLOSING_NOTE} stopped by the user.")
 
 
+def test_a_cut_off_call_says_why_the_turn_ended(unbounded):
+    """The result of a call the turn ended in carries the reason, as the
+    closing note does: told only that the turn ended, a model takes a
+    stop for a time limit."""
+    from nontainer.conformance.corpus import calls
+
+    session = agent(
+        calls("run_python", code="while True:\n    pass\n"), says("never said")
+    ).session(unbounded)
+
+    async def go():
+        async for event in session.stream("loop"):
+            if isinstance(event, ToolStarted):
+                threading.Timer(0.2, session.cancel, ("stopped by the user",)).start()
+        return session.last
+
+    outcome = asyncio.run(go())
+    (ended,) = [e for e in outcome.events if isinstance(e, ToolEnded)]
+    assert ended.result == cut_off("stopped by the user")
+    assert "(stopped by the user)" in ended.result
+    (tool,) = [m for m in session.runs[0].messages if m.role == "tool"]
+    assert tool.parts[0].content == ended.result
+
+
 def test_a_later_cancel_keeps_the_reason_an_earlier_one_gave(ws):
     slow = Slow()
     session = Agent(slow.provider()).session(ws)
@@ -264,7 +288,7 @@ def test_cancel_between_tool_calls_answers_the_rest(ws):
     assert not ws.files.fs.exists("/workspace/b.txt")
     (run,) = session.runs
     (tool,) = [m for m in run.messages if m.role == "tool"]
-    assert [(r.content == UNANSWERED, r.is_error) for r in tool.parts] == [
+    assert [(r.content == unanswered(STOPPED), r.is_error) for r in tool.parts] == [
         (False, False),
         (True, True),
     ]
@@ -325,7 +349,7 @@ def test_a_cancel_interrupts_the_tool_call_running(unbounded):
     assert ws.files.read("started.txt") == b"x"  # what it did is kept
     (run,) = session.runs
     (tool,) = [m for m in run.messages if m.role == "tool"]
-    assert tool.parts[0].content == CUT_OFF
+    assert tool.parts[0].content == cut_off(STOPPED)
 
 
 def test_a_call_not_yet_running_when_the_stop_came_is_stopped_too(unbounded):
@@ -498,11 +522,11 @@ def test_a_tool_call_cut_off_mid_flight_is_ended_in_the_stream(ws):
     outcome = asyncio.run(go())
     assert outcome.status == "cancelled"
     ended = [e for e in outcome.events if isinstance(e, ToolEnded)]
-    assert len(ended) == 1 and ended[0].is_error and ended[0].result == CUT_OFF
+    assert len(ended) == 1 and ended[0].is_error and ended[0].result == cut_off(STOPPED)
     assert isinstance(outcome.events[-1], RunEnded)
     (run,) = session.runs
     (tool,) = [m for m in run.messages if m.role == "tool"]
-    assert [r.content for r in tool.parts] == [CUT_OFF]
+    assert [r.content for r in tool.parts] == [cut_off(STOPPED)]
 
 
 def test_a_cancel_before_the_turn_has_started_stops_it_at_its_first_check(ws):
@@ -569,7 +593,10 @@ def test_a_cancel_during_delivery_keeps_what_the_tool_did(ws):
     assert outcome.status == "cancelled"
     assert ws.files.read("/workspace/a.txt") == b"A"
     (ended,) = [e for e in outcome.events if isinstance(e, ToolEnded)]
-    assert not ended.is_error and ended.result not in (CUT_OFF, UNANSWERED)
+    assert not ended.is_error and ended.result not in (
+        cut_off(STOPPED),
+        unanswered(STOPPED),
+    )
     (run,) = session.runs
     (tool,) = [m for m in run.messages if m.role == "tool"]
     (result,) = tool.parts
