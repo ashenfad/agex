@@ -394,6 +394,52 @@ def test_the_loop_stays_free_while_a_stopped_call_runs_out(unbounded):
     assert ticks - at_cancel[0] >= 10  # it ticked through the wait
 
 
+class _WaitsOnTheLoop:
+    """A host object whose call waits on the turn's loop, as a task
+    helper's does, holding the workspace meanwhile. It gives up after a
+    while, so a turn that deadlocks on it shows as a slow one."""
+
+    loop: asyncio.AbstractEventLoop | None = None
+
+    def ping(self):
+        async def later():
+            await asyncio.sleep(0.5)
+            return "pong"
+
+        assert self.loop is not None
+        future = asyncio.run_coroutine_threadsafe(later(), self.loop)
+        return future.result(timeout=10)
+
+
+def test_a_stopped_call_waiting_on_the_loop_still_lets_go():
+    """Waiting for the call on the loop it waits on would deadlock: the
+    turn waits off it, so the call finishes and the turn ends."""
+    from nontainer import PythonConfig
+    from nontainer.conformance.corpus import calls
+
+    waits = _WaitsOnTheLoop()
+    store = Store(memory=True)
+    ws = store.open("s", python=PythonConfig(host_objects={"waits": waits}))
+    session = agent(
+        calls("run_python", code="waits.ping()"), says("never said")
+    ).session(ws)
+
+    async def go():
+        waits.loop = asyncio.get_running_loop()
+        async for event in session.stream("ping"):
+            if isinstance(event, ToolStarted):
+                threading.Timer(0.1, session.cancel).start()
+        return session.last
+
+    started = time.monotonic()
+    try:
+        assert asyncio.run(go()).status == "cancelled"
+        assert time.monotonic() - started < 5, "the stop waited out the call's timeout"
+    finally:
+        ws.close()
+        store.close()
+
+
 def test_a_turn_left_running_at_loop_shutdown_still_lands(ws):
     """Cancelled from outside (the loop closing), the turn still ends:
     stored as cancelled, its workspace free for the next turn."""
