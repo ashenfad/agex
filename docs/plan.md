@@ -1,9 +1,9 @@
 # agex rebuild: implementation plan
 
-Status: in progress (2026-10-10).
-- **Phase A** is merged through delegation and released in nontainer 0.10.0/0.10.1 (A0-A5, A7, A8a-b); 0.10.0 is agex's floor. nontainer `main` also holds what B5b needed (#222-#230), unreleased.
-- **Phase B** is under way on `rebuild`: B0-B5 are merged, B5b as agex #88, #89 and #90.
-- **The studio round, before the next nontainer release:** A6 (studio #91) and B6a (studio #92) are merged, and nontainer #231 with them. B6b needs agex's tools first: the studio's agent has `test_app`, `view_image` and its own `sessions` tool, which an agex session can't offer yet (see B6). Then nontainer 0.11.0.
+Status: in progress (2026-10-11).
+- **Phase A** is merged through delegation and released in nontainer 0.10.0/0.10.1 (A0-A5, A7, A8a-b); 0.10.0 is agex's floor. nontainer `main` also holds what B5b and the studio round needed (#222-#231), unreleased.
+- **Phase B** is under way on `rebuild`: B0-B5 are merged, and B6 is built: the studio runs on both loops, its tests pass on both, and an agex session offers the tools an agno one does.
+- **The studio round, before the next nontainer release:** everything is merged but the dogfooding (B6, steps 5 and 6). Then nontainer 0.11.0.
 - **Still open in Phase A:** A8c (large values spill to the plane) and A3c (deferred). The async agent code track must land before the shape freeze (see Parallel tracks).
 
 This plan covers *when* and *in what order*. The *what* and *why* live
@@ -32,8 +32,8 @@ in:
 - **agex is a clean break, released as 0.13.0.** That is a breaking
   minor, which 0.x allows, and the user is its only real user. Nothing
   is published during Phase B: it stays `0.13.0.dev0`, and the studio
-  uses it from a local editable install. B6's tests, which run the
-  studio over both loops in CI, take agex as a git dependency.
+  takes it as a git dependency pinned to a commit of `rebuild`, which
+  is also how its tests run over both loops in CI.
   `0.13.0` goes out at the shape freeze. The CHANGELOG says plainly
   that it is a new API.
 - **Phase B lands on `rebuild`, not `main`.** Each step is a PR into
@@ -333,6 +333,8 @@ per-delegate event loops are replaced.
 - The studio's delegation tests pass.
 
 ### A6. Early studio fixes (agno only)
+
+**Status: done** (studio #91).
 
 The first PR of the studio round (see B6). These don't need the seam:
 - **Make the event sink safe across loops and threads.** Delegate
@@ -759,6 +761,10 @@ two PRs:
 
 ### B6. The studio seam, designed against both loops
 
+**Status: built; dogfooding is next** (2026-10-11). Steps 1-4 are
+merged, with the tests over both loops (B6c) and the fixes they and
+review turned up; steps 5 and 6 remain.
+
 **The studio round.** A6 and B6 come before the next nontainer
 release, so the studio's use shakes out nontainer's unreleased work
 first:
@@ -768,8 +774,9 @@ first:
 2. **B6a** (studio #92, merged): the `TurnDriver` protocol and the
    agno driver, with no behavior change. `DriverSpec` waits for B6b,
    where a second loop needs it.
-3. **B6b's agex prerequisites** (agex), so an agex session can offer
-   the tools the studio's agent has (design, "Tools"):
+3. **B6b's agex prerequisites** (agex, merged: the seam #94, images
+   #95, with #92's richer events and #93's design), so an agex session
+   can offer the tools the studio's agent has (design, "Tools"):
    - **The tool seam:** `agent.session(ws, toolset=..., tools=[...])`,
      a nontainer `Toolset` of the embedder's (app runtime for
      `test_app`, primers, `vision`) and tools of its own in the
@@ -778,11 +785,27 @@ first:
    - **Images in tool results:** `ToolOutput.images` through agex's
      record, provider mapping and loop, gated on `vision`, for
      `view_image` and `test_app`'s screenshots.
-4. **B6b** (studio): `DriverSpec` and the agex driver. The studio adds
-   agex as a git source on `rebuild`; its own nontainer source is what
-   agex resolves against, since a dependency's sources don't carry
-   over. A session runs on the loop that wrote its conversation; a new
-   one on the loop the knob picks.
+4. **B6b** (studio #93, merged): `DriverSpec` and the agex driver. The
+   studio adds agex as a git source on `rebuild`; its own nontainer
+   source is what agex resolves against, since a dependency's sources
+   don't carry over. A session runs on the loop that wrote its
+   conversation; a new one on the loop the knob picks. Parity needed
+   more in agex:
+   - **a cap on a run's tool calls** (agex #96), counted per call as
+     agno's `tool_call_limit` is, so a delegate's calls are bounded;
+   - **`session.abandon(reason)`** (agex #97; studio #96): a run the
+     studio stops resuming (its resumes spent, or a stop pressed while
+     it waits) ends with the studio's note, as on agno, instead of
+     staying `interrupted` with none.
+
+   **B6c** (studio #95, merged): the scripted test model runs on agex
+   too (`agex_dummy.DummyProvider`, the same script), and test_server,
+   test_delegates and test_e2e run on both loops. Tests of agno's own
+   machinery are marked `agno_only`.
+
+   Building it turned up a bug on both loops: an answer that `sessions
+   ask` with `wait` returned as the tool's result wasn't recorded as
+   delivered, so a woken turn delivered it again (studio #94).
 5. **Dogfood** on both loops, fixing what turns up in nontainer.
 6. **Release nontainer 0.11.0.** The studio drops its nontainer source
    and floors at `>=0.11.0`; the agex source stays until the freeze.
@@ -800,15 +823,17 @@ The pieces:
   `NONTAINER_STUDIO_LOOP=agex`), and agno stays the default.
 
 **Exit:**
-- The studio's pinned behaviors (test_server, test_delegates,
+- (met) The studio's pinned behaviors (test_server, test_delegates,
   test_e2e) are parametrized over drivers and pass on **both**.
-- **Tool parity:** an agex session in the studio offers what an agno
-  one does: `test_app`, `view_image` where the model takes images
+- (met) **Tool parity:** an agex session in the studio offers what an
+  agno one does: `test_app`, `view_image` where the model takes images
   (screenshots seen, not only named), and the studio's own `sessions`
   (`published`, `others`, the depth cap). A delegate's tool calls are
   bounded on both loops.
 - Then dogfood: real sessions on agex, including delegation and a
-  long session that folds.
+  long session that folds. One gap is known: agex doesn't ask OpenAI's
+  reasoning models for reasoning summaries, so gpt-5.6's thinking
+  (through OpenRouter, say) shows on agno and not on agex.
 
 ### B7. Debug and bench
 
