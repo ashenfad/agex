@@ -217,6 +217,24 @@ def test_a_cancel_says_why_in_the_closing_note(ws):
     assert run.messages[-1].text.startswith(f"{CLOSING_NOTE} stopped by the user.")
 
 
+def test_a_later_cancel_keeps_the_reason_an_earlier_one_gave(ws):
+    slow = Slow()
+    session = Agent(slow.provider()).session(ws)
+
+    async def go():
+        stream = session.stream("take your time")
+        waiting = asyncio.ensure_future(stream.wait())
+        await slow.started.wait()
+        # both before the turn handles either
+        assert session.cancel("stopped by the user") is True
+        assert session.cancel() is True
+        assert session.cancel("shutting down") is True
+        return await waiting
+
+    outcome = asyncio.run(go())
+    assert outcome.message == "stopped by the user"
+
+
 def test_cancel_between_tool_calls_answers_the_rest(ws):
     """A reply with two calls, cancelled after the first: the second
     gets a result saying it never ran, so the next request is valid."""
