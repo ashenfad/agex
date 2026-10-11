@@ -106,6 +106,58 @@ def test_only_an_interrupted_last_turn_resumes(ws):
         session.stream("both", resume=True)
 
 
+def test_an_abandoned_interruption_ends_with_its_note(ws):
+    provider = ScriptedProvider(
+        [writes("/workspace/a.txt", "A"), fails("provider"), says("ok")]
+    )
+    session = Agent(provider).session(ws)
+    first = session.say("write a")
+    run = session.abandon("the provider failed 4 times in a row")
+    assert run.status == "failed"
+    assert run.messages[-1].role == "assistant"
+    assert run.messages[-1].text.startswith(CLOSING_NOTE)
+    assert "failed 4 times in a row" in run.messages[-1].text
+    # stored: one run, no longer resumable, the commit saying how it ended
+    assert session.runs == [run]
+    with pytest.raises(ValueError, match="ended failed"):
+        session.resume()
+    assert [e.info for e in ws.log() if e.info.get("tool") == "turn"][0] == {
+        "tool": "turn",
+        "runs": {first.run_id: "failed"},
+        "message": "the provider failed 4 times in a row",
+    }
+    # the next turn's model reads the work and the note
+    assert session.say("go on").status == "completed"
+    sent = [
+        part.content
+        for m in provider.seen[-1]
+        for part in m.parts
+        if isinstance(getattr(part, "content", None), str)
+    ]
+    assert any("failed 4 times in a row" in text for text in sent)
+
+
+def test_an_abandoned_interruption_can_end_cancelled(ws):
+    session = agent(fails("provider")).session(ws)
+    session.say("go")
+    run = session.abandon("stopped by the user", status="cancelled")
+    assert session.runs[-1].status == run.status == "cancelled"
+    assert "stopped by the user" in run.messages[-1].text
+
+
+def test_only_an_interrupted_last_turn_is_abandoned(ws):
+    session = agent(says("done"), fails("provider")).session(ws)
+    with pytest.raises(ValueError, match="never ran"):
+        session.abandon("why")
+    session.say("go")
+    with pytest.raises(ValueError, match="ended completed"):
+        session.abandon("why")
+    session.say("again")
+    with pytest.raises(ValueError, match="not 'interrupted'"):
+        session.abandon("why", status="interrupted")  # type: ignore[arg-type]
+    assert session.runs[-1].status == "interrupted"
+
+
 def test_a_new_turn_after_an_interruption_carries_its_work(ws):
     provider = ScriptedProvider(
         [writes("/workspace/a.txt", "A"), fails("provider"), says("ok")]

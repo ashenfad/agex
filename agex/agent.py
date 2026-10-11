@@ -643,6 +643,34 @@ class Session:
         """Continue the last turn in place; its outcome."""
         return await self.stream(resume=True).wait()
 
+    def abandon(
+        self, reason: str, *, status: Literal["cancelled", "failed"] = "failed"
+    ) -> Run:
+        """End the last turn, which an interruption cut short, without
+        resuming it; the run as it now stands.
+
+        A harness that stops resuming (its retries spent, or a stop
+        pressed while it waited to try again) leaves an interrupted run
+        that reads as resumable, with nothing saying it stopped. This
+        ends it ``status`` instead, closed with a note saying ``reason``
+        as a cancelled or failed run is, so the next turn's model reads
+        that its work stopped there and is real.
+        """
+        if status not in ("cancelled", "failed"):
+            raise ValueError(
+                f"an abandoned run ends cancelled or failed, not {status!r}"
+            )
+        prior = self._last_interrupted()
+        run = replace(
+            prior,
+            status=status,
+            messages=(*prior.messages, closing_note(reason)),
+            ended_at=time.time(),
+        )
+        turn = self.ws.turn(prior.run_id, resume=True, harness=HARNESS)
+        turn.end(status, body=dump_run(run), message=reason)
+        return run
+
     def wake(self) -> Outcome:
         """Run a woken turn: one with no prompt, which opens with what is
         waiting to be delivered (answers the ``sessions`` helper has
