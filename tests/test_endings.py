@@ -358,6 +358,42 @@ def test_a_call_not_yet_running_when_the_stop_came_is_stopped_too(unbounded):
     assert time.monotonic() - started < 20  # not the 60s the code had
 
 
+def test_the_loop_stays_free_while_a_stopped_call_runs_out(unbounded):
+    """One long blocking call runs out though interrupted; the turn
+    waits for it off its loop, which goes on serving everything else
+    meanwhile (in a host, every other session)."""
+    from nontainer.conformance.corpus import calls
+
+    session = agent(
+        calls("run_python", code="import time\ntime.sleep(1.5)"), says("never said")
+    ).session(unbounded)
+    at_cancel = []
+    ticks = 0
+
+    def cancel():
+        at_cancel.append(ticks)
+        session.cancel()
+
+    async def go():
+        nonlocal ticks
+
+        async def tick():
+            nonlocal ticks
+            while True:
+                ticks += 1
+                await asyncio.sleep(0.05)
+
+        ticker = asyncio.ensure_future(tick())
+        async for event in session.stream("sleep"):
+            if isinstance(event, ToolStarted):
+                threading.Timer(0.1, cancel).start()
+        ticker.cancel()
+        return session.last
+
+    assert asyncio.run(go()).status == "cancelled"
+    assert ticks - at_cancel[0] >= 10  # it ticked through the wait
+
+
 def test_a_turn_left_running_at_loop_shutdown_still_lands(ws):
     """Cancelled from outside (the loop closing), the turn still ends:
     stored as cancelled, its workspace free for the next turn."""
