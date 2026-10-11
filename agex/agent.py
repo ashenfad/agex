@@ -92,7 +92,8 @@ CLOSING_NOTE = "[turn ended early:"
 the work it did, and the model reads that it was cut short."""
 
 STOPPED = "stopped"
-"""Why a turn :meth:`Session.cancel` stopped ended."""
+"""Why a turn :meth:`Session.cancel` stopped ended, when the cancel gave
+no reason."""
 
 WOKEN = "(You were woken, and nothing new is waiting.)"
 """The message a woken turn opens with when nothing is waiting after all:
@@ -497,6 +498,7 @@ class Session:
         """The outcome of the last turn that ended."""
         self._in_flight: set[asyncio.Task[Outcome]] = set()
         self._cancel_requested = False
+        self._cancel_reason: str | None = None
         self._live = False
 
     def __repr__(self) -> str:
@@ -693,7 +695,7 @@ class Session:
             raise ValueError("a turn takes a prompt, resumes the last one, or is woken")
         return RunStream(self, prompt, resume=resume, wake=wake)
 
-    def cancel(self) -> bool:
+    def cancel(self, reason: str | None = None) -> bool:
         """Stop the turn that is running; whether one was.
 
         The turn stops at the next point it can (between model calls and
@@ -701,10 +703,16 @@ class Session:
         ``cancelled``: its work so far is kept, with a closing note. A
         tool already running on its worker thread finishes there. Safe
         to call from any thread.
+
+        ``reason`` is why, in the closing note and the outcome's message
+        (:data:`STOPPED` when none is given): the next turn's model
+        reads it, and a model told only that its turn stopped guesses
+        at why.
         """
         running = [task for task in self._in_flight if not task.done()]
         if not running:
             return False
+        self._cancel_reason = reason
         self._cancel_requested = True
         try:
             here: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
@@ -959,7 +967,7 @@ class Session:
         except asyncio.CancelledError as exc:
             status = "cancelled"
             if self._cancel_requested:
-                message = STOPPED
+                message = self._cancel_reason or STOPPED
                 # a stop asked for is handled here, so the task ends with
                 # the outcome rather than cancelled (3.11+ counts requests)
                 uncancel = getattr(asyncio.current_task(), "uncancel", None)
@@ -1075,6 +1083,7 @@ class RunStream:
             loop = asyncio.get_running_loop()
             session._bind(loop)
             session._cancel_requested = False
+            session._cancel_reason = None
             task = loop.create_task(
                 session._run(
                     self._prompt,

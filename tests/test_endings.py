@@ -191,6 +191,32 @@ def test_cancel_stops_a_model_call_in_flight_and_returns_the_outcome(ws):
     assert not session.running and session.cancel() is False
 
 
+def test_a_cancel_says_why_in_the_closing_note(ws):
+    slow = Slow()
+    session = Agent(slow.provider()).session(ws)
+
+    async def cancelled(prompt, *reason):
+        slow.started.clear()
+        stream = session.stream(prompt)
+        waiting = asyncio.ensure_future(stream.wait())
+        await slow.started.wait()
+        assert session.cancel(*reason) is True
+        return await waiting
+
+    async def go():
+        return (
+            await cancelled("take your time", "stopped by the user"),
+            # the reason was that cancel's alone
+            await cancelled("and again"),
+        )
+
+    first, second = asyncio.run(go())
+    assert (first.status, first.message) == ("cancelled", "stopped by the user")
+    assert second.message == STOPPED
+    run = session.runs[0]
+    assert run.messages[-1].text.startswith(f"{CLOSING_NOTE} stopped by the user.")
+
+
 def test_cancel_between_tool_calls_answers_the_rest(ws):
     """A reply with two calls, cancelled after the first: the second
     gets a result saying it never ran, so the next request is valid."""
