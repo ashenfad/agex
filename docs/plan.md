@@ -45,6 +45,7 @@ a second loop needs (A), and agex was rebuilt as a loop over them (B).
 | B6 | the studio on both loops: `TurnDriver`, tool parity, three dogfood rounds | studio #92-#97, #104, #105, #107; agex #92-#102; nontainer #231-#235; dud #44; sandtrap #61 |
 | — | agent-defined tasks in the studio | agex #103, studio #108 |
 | — | docs and the 0.13.0 release | agex #107-#109 |
+| — | agents working with your code (docs); a task call typed by its return type (unreleased) | agex #111 |
 
 Releases along the way: nontainer 0.9.0 to 0.11.0, sandtrap 0.4.2 to
 0.4.4, dud 0.4.2 to 0.4.4, and agex 0.13.0 (2026-10-12). The 0.12 API
@@ -52,10 +53,8 @@ is at the `v0.12.4` tag.
 
 ## Next
 
-- **Docs:** agex #111 (agents working with your code, and a task call
-  typed by its return type). Then the rest of `docs/`, one page per
-  topic: sessions, tasks, agent-defined tasks, delegation, providers,
-  testing.
+- **Docs:** the rest of `docs/`, one page per topic: sessions, tasks,
+  agent-defined tasks, delegation, providers, testing.
 - **The splash page:** ashenfad.github.io/agex becomes one static
   `site/index.html` for the ecosystem, deployed by a small Pages
   workflow. It holds agex in a sentence with install and links, the
