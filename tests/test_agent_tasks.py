@@ -627,7 +627,7 @@ def test_a_task_says_which_of_its_callers_objects_its_helper_holds(
 
 
 OBJECTS_REFUSED = """\
-    for objects in (("nope",), ("agex",), "db"):
+    for objects in (("nope",), ("agex",), "db", (n for n in ["db"])):
         try:
             @agex.task(objects=objects)
             def f(word: str) -> str:
@@ -647,7 +647,9 @@ def test_objects_names_only_what_the_caller_holds(store):
             "doesn't hold" in lines[0],
             "helpers don't make helpers" in lines[1],
             "is names, as a tuple or list" in lines[2],
-        ] == [True, True, True], lead.printed
+            # read once by the check, a generator would hand on nothing
+            "is names, as a tuple or list" in lines[3],
+        ] == [True, True, True, True], lead.printed
 
 
 # -- a cancel stops the helpers ------------------------------------------------------
@@ -700,3 +702,91 @@ def test_cancelling_tasks_with_none_running_stops_nothing(store):
         assert cancel_tasks(ws) == 0
     finally:
         ws.close()
+
+
+def test_a_cancelled_helpers_store_closes_once_it_has_ended(store, monkeypatch):
+    """A helper in a call a cancel can't cut short runs on after the
+    caller hears it was cancelled, and its scratch store stays open under
+    it until it ends."""
+    import threading
+    import time
+
+    from nontainer.turns import RunEnded, ToolStarted
+
+    import agex.agent_tasks as tasks_mod
+
+    closed = []
+
+    class Recorded(tasks_mod.Store):
+        def close(self):
+            closed.append(time.monotonic())
+            super().close()
+
+    monkeypatch.setattr(tasks_mod, "Store", Recorded)
+    blocking = "import time\ntime.sleep(3)\ntask.success([])"
+    agent = routed(LEAD=[runs(CORNERS), says("never said")], HELPER=[runs(blocking)])
+    ws = world(store, agent, scratch=True)
+    chat = agent.session(ws)
+
+    ended = []
+
+    async def go():
+        try:
+            async for event in chat.stream("LEAD go"):
+                if isinstance(event, ToolStarted):
+                    threading.Timer(1.0, chat.cancel).start()
+                if isinstance(event, RunEnded):
+                    ended.append(time.monotonic())
+            return chat.last
+        finally:
+            await chat.aclose()
+
+    try:
+        started = time.monotonic()
+        # (asyncio.run returns only once the helper's thread is done)
+        assert asyncio.run(go()).status == "cancelled"
+        [ended] = ended
+        assert ended - started < 2.5  # the turn didn't wait the helper out
+        deadline = time.monotonic() + 10
+        while not closed and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert closed, "the scratch store never closed"
+        assert closed[0] > ended + 0.5  # once the helper had ended, not at the cancel
+    finally:
+        ws.close()
+
+
+def test_cancel_tasks_reads_the_registry_safely_while_worlds_open():
+    """A cancel reads the open ``agex`` objects from any thread while
+    others are built; neither may trip over the other."""
+    import threading
+
+    from agex.agent_tasks import AgentTasks, cancel_tasks
+
+    agent = routed()
+    stop = threading.Event()
+    errors = []
+
+    def build():
+        held = []  # kept a while, so the registry is long to read through
+        while not stop.is_set():
+            held.append(AgentTasks(agent, object()))  # type: ignore[arg-type]
+            if len(held) > 3000:
+                held.clear()
+
+    def cancel():
+        try:
+            for _ in range(3000):
+                cancel_tasks(object())  # type: ignore[arg-type]
+        except Exception as error:  # noqa: BLE001 - the failure under test
+            errors.append(error)
+        finally:
+            stop.set()
+
+    builders = [threading.Thread(target=build) for _ in range(3)]
+    for thread in builders:
+        thread.start()
+    cancel()
+    for thread in builders:
+        thread.join()
+    assert errors == []
