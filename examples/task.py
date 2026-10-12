@@ -26,6 +26,7 @@ def main(agent: Agent) -> None:
     def plan_dinner(ingredients: list[str]) -> Recipe:
         """A dinner recipe that uses only these ingredients, plus salt and
         oil. ``minutes`` is the total time, preparation included."""
+        ...
 
     try:
         recipe = plan_dinner(["eggs", "spinach", "feta"])

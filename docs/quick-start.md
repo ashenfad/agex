@@ -113,7 +113,7 @@ code already on an event loop.
 ## A task
 
 A task is a function whose signature is the contract and whose
-docstring is the job. The body stays empty:
+docstring is the job. The body holds no code:
 
 ```python
 from dataclasses import dataclass
@@ -127,12 +127,13 @@ class Recipe:
 @agent.task
 def plan_dinner(ingredients: list[str]) -> Recipe:
     """A dinner recipe using only these ingredients, plus salt and oil."""
+    ...
 
 recipe = plan_dinner(["eggs", "spinach", "feta"])
 ```
 
-A type checker wants a body for a function that declares a return
-type: `...` after the docstring satisfies it, and agex accepts it.
+The `...` is for a type checker, which wants a body in a function that
+declares a return type; agex accepts it (or `pass`, or nothing).
 
 The agent runs on a scratch world of its own, with the inputs bound by
 name, and its code ends the task with `task.success(value)`. The value

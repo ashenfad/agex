@@ -51,14 +51,16 @@ class Recipe:
 @agent.task
 def plan_dinner(ingredients: list[str]) -> Recipe:
     """A dinner recipe using only these ingredients, plus salt and oil."""
+    ...
 
 recipe = plan_dinner(["eggs", "spinach", "feta"])   # a Recipe
 ```
 
-The docstring is the job and the body stays empty. The agent works in a
-scratch world (or a fork of `world=`), and its code hands back the
-value with `task.success(...)`. The value is checked against the return
-type, so the caller gets a `Recipe` or a `TaskFailed`.
+The docstring is the job, and the body holds no code (`...` is for a
+type checker). The agent works in a scratch world (or a fork of
+`world=`), and its code hands back the value with `task.success(...)`.
+The value is checked against the return type, so the caller gets a
+`Recipe` or a `TaskFailed`.
 
 ## Agent-defined tasks
 
