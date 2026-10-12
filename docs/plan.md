@@ -923,10 +923,19 @@ tag.
 1. The docs PRs merge into `rebuild`.
 2. `rebuild` lands on `main`. `main` is its ancestor, so it is a
    fast-forward.
-3. **The old Pages site:** `main`'s mkdocs and its deploy workflow go
-   with it, but ashenfad.github.io/agex keeps serving the 0.12 docs
-   until Pages is turned off. Proposed: turn it off. The README
-   already points 0.12 users to the tag.
+3. **The Pages site becomes a splash page** for the ecosystem.
+   `main`'s mkdocs and its deploy workflow go with the fast-forward, and
+   ashenfad.github.io/agex keeps its URL, which 0.12's metadata and old
+   links point to. It is one static `site/index.html`, with no build
+   step, deployed by a small Pages workflow when it changes. It holds:
+   - agex in a sentence, with install and links to the repo, PyPI and
+     `docs/`;
+   - the ecosystem, a line each, grouped by layer:
+     - agents: agex, nontainer-studio;
+     - worlds: nontainer, kvgit, monkeyfs;
+     - running code: sandtrap, dud, termish, reprobate;
+     - in the browser: agex-ts, agex-studio;
+   - where 0.12 lives (the `v0.12.4` tag).
 4. A build PR takes the version from `0.13.0.dev0` to `0.13.0`. Then
    `gh release create v0.13.0`, which publishes to PyPI.
 5. The studio swaps its agex git source for `agex>=0.13.0`.
