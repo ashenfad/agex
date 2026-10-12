@@ -62,6 +62,36 @@ type checker). The agent works in a scratch world (or a fork of
 The value is checked against the return type, so the caller gets a
 `Recipe` or a `TaskFailed`.
 
+## Your code
+
+An agent works with your libraries and your live objects, not copies.
+They are granted to the workspace, so a fork or a delegate holds them
+too:
+
+```python
+from nontainer import Profile, PythonConfig
+from nontainer.presets import dataframes
+
+profile = Profile(python=PythonConfig(
+    modules=[dataframes()],          # pandas, numpy, pyarrow
+    host_objects={"db": my_pool},    # your real connection pool
+))
+ws = store.open("analyst", profile=profile)
+agent.session(ws).say("Which customers churned last month? db has the tables.")
+```
+
+A task can take a live object as an input too. Its agent calls it where
+it is, guided by the class's methods and docstrings:
+
+```python
+@agent.task
+def churned(month: str, db: Customers) -> list[str]:
+    """The customers who left in the month (YYYY-MM)."""
+    ...
+
+names = churned("2026-09", db=customers)
+```
+
 ## Agent-defined tasks
 
 A session's agent can define tasks of its own, for the judgment work in
@@ -93,8 +123,7 @@ labels = sentiment.map(reviews)   # helpers run them at once
 - [Design notes](docs/design.md): the shape, and why
 - [Plan](docs/plan.md): what is done and what is next
 
-agex 0.13 is a new API. The 0.12 line, agents working directly with an
-existing Python codebase, is at the
+agex 0.13 is a new API. The 0.12 API is at the
 [`v0.12.4`](https://github.com/ashenfad/agex/tree/v0.12.4) tag and on
 PyPI as `agex==0.12.4`.
 
