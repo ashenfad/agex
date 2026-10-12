@@ -1,9 +1,9 @@
 # agex rebuild: implementation plan
 
-Status: in progress (2026-10-11).
+Status: in progress (2026-10-12).
 - **Phase A** is merged and released through nontainer 0.11.0 (A0-A7 but the deferred A3c, and A8a-b), which is agex's floor and the studio's.
 - **Phase B is done through B6** on `rebuild`. The studio runs on both loops, its tests pass on both, and three dogfood rounds on agex are behind it. Agents and published apps in the studio call agent-defined tasks when it runs on agex. B7 can follow the freeze.
-- **Next: the async agent code round** (see Parallel tracks), the one thing the shape freeze still waits on. Then Phase C: the freeze and agex 0.13.0.
+- **Next: docs and the 0.13.0 release** (its own section, before Phase C). The async agent code round is parked until after it, and the shape freeze (Phase C) follows that round.
 - **Still open in Phase A:** A8c (large values spill to the plane), proposed for after the freeze, and A3c (deferred).
 
 This plan covers *when* and *in what order*. The *what* and *why* live
@@ -866,15 +866,92 @@ Known gaps, none blocking the freeze:
 `agex.debug` (view, token counts, pretty printing) and `agex.bench`,
 ported off the core surface. This can slip past the freeze.
 
+## Next: docs and the 0.13.0 release
+
+**Status: next (2026-10-12).** agex releases before the async round and
+the freeze, so the rebuild has users (the studio first) while the rest
+lands.
+
+**The docs turn.** No site: a short README that links into plain
+Markdown under `docs/`, read on GitHub, as nontainer's are. The old
+mkdocs site, its notebooks and the 0.12 examples stay at the `v0.12.4`
+tag.
+- **`README.md`, short:**
+  - what agex is: a loop over nontainer, with two front doors, a
+    session and a task;
+  - install, with the provider extras;
+  - one example of each front door;
+  - links into `docs/`;
+  - where 0.12 lives.
+- **`docs/`, one page per topic:**
+  - `quick-start.md`: install, a store and a workspace, a session's
+    turn, a task, reading the `Outcome`;
+  - `sessions.md`:
+    - `Agent`: model, primer, settings, limits and compaction;
+    - `agent.session`: `toolset`, `tools` and `sessions=True`;
+    - turns and their events;
+    - `cancel` and `abandon`;
+  - `tasks.md`:
+    - `@agent.task`, with typed inputs and returns;
+    - `world=` and `keep=`;
+    - `needs_input` and `resume`;
+    - the errors;
+    - the rungs;
+  - `agent-tasks.md`:
+    - `agent_tasks`, with `@agex.task` in agent code;
+    - `objects=`, `.map` and `cancel_tasks`;
+    - `stand_in_tasks`;
+    - tasks in app handlers;
+  - `delegation.md`: the `sessions` tool, delegates, `wake` and `close`;
+  - `providers.md`: model names and their extras, `Settings`
+    (`thinking`, `extra`), `describe`, the scripted provider;
+  - `testing.md`: the scripted provider, the stand-in, the conformance
+    corpus;
+  - `design.md` stays as the design notes; `plan.md` stays until the
+    freeze.
+- **`examples/`, a few runnable scripts:** a session, a typed task, a
+  task that asks, agent-defined tasks. Each runs on a real model with a
+  key, and in CI on the scripted provider, so none rots.
+- **No snippet goes unrun.** Each one in the README and `docs/` is run,
+  by a test where it can be.
+- **Docstrings:** the package docstring stops saying "in progress", and
+  every public name's docstring agrees with the docs.
+- **CHANGELOG:** `Unreleased` becomes 0.13.0, opening with a breaking
+  line: a new API, with 0.12 at its tag.
+
+**The release:**
+1. The docs PRs merge into `rebuild`.
+2. `rebuild` lands on `main`. `main` is its ancestor, so it is a
+   fast-forward.
+3. **The old Pages site:** `main`'s mkdocs and its deploy workflow go
+   with it, but ashenfad.github.io/agex keeps serving the 0.12 docs
+   until Pages is turned off. Proposed: turn it off. The README
+   already points 0.12 users to the tag.
+4. A build PR takes the version from `0.13.0.dev0` to `0.13.0`. Then
+   `gh release create v0.13.0`, which publishes to PyPI.
+5. The studio swaps its agex git source for `agex>=0.13.0`.
+
+**Exit:**
+- The README and every page in `docs/` match the code.
+- The examples run.
+- agex 0.13.0 is on PyPI, and the studio runs on it.
+
 ## Phase C: the shape freeze
 
 - Write the shape doc, with each Python signature next to its TS
   counterpart.
 - Pin the harness-corpus and shape-corpus versions.
-- Async agent code tier A must be done, so "scripts may await" holds
-  on both sides. That is a parallel track, below.
-- Release agex 0.13.0. The studio swaps its agex git source for the
-  release.
+- **Record that host calls stay sync in Python agent code.** A task
+  call, `sessions` and the rest are sync in Python and awaited in TS,
+  where every host call is a promise. Fan-out stays on the host
+  (`.map`, `ask` and `wait`). Async host objects (tier C) would come
+  later as an opt-in kind of method, which is additive.
+- Async agent code tier A lands first, so "scripts may await" holds on
+  both sides. That is a parallel track, below. It is additive (a script
+  without `await` runs as before), so the freeze doesn't change shape
+  for it.
+- Release the frozen shape: 0.14.0 if it changed anything since 0.13,
+  otherwise a 0.13.x.
 
 **Exit.** A tagged freeze: doc and corpus versions that TS can vendor.
 
@@ -900,13 +977,35 @@ None of these blocks Phase B except where noted.
 
   It must land before Phase C.
 
-  **Status (2026-10-11): next, not started.** sandtrap #55 is open;
-  only its first half shipped (top-level `await` comes back as an
-  error result instead of raising). It is its own round, released in
-  dependency order (sandtrap, then dud, then nontainer), and the last
-  thing Phase C waits on.
+  **Status (2026-10-12): parked until after agex 0.13.0.** sandtrap
+  #55 is open; only its first half shipped (top-level `await` comes
+  back as an error result instead of raising). It is its own round,
+  released in dependency order (sandtrap, then dud, then nontainer).
   B5 and B6 didn't need it: fan-out from code is a task's `.map`, run
   on the host.
+
+  Decided for the round (2026-10-12):
+  - **sandtrap first:** #55's four open items:
+    1. module semantics: `PyCF_ALLOW_TOP_LEVEL_AWAIT` and
+       `await eval(code, ns)` in place of the function wrapper;
+    2. the worker's async flavor;
+    3. a sync entry point that accepts `await`;
+    4. pending tasks settled inside the sandbox.
+
+    One PR or a short stack, released as **0.5.0**: item 1 changes
+    `aexec` for its callers.
+  - **A stop reaches an awaiting script.** A script parked in
+    `await asyncio.sleep(60)` runs no code, so no checkpoint sees a
+    cancel. In-process nothing would interrupt it, and under process
+    isolation the signal's effect on the loop is unproven. The script's
+    private loop gets a cancel hook (`call_soon_threadsafe` cancelling
+    the main task), with a stop-mid-`await` test on every rung.
+  - **The `asyncio` grant offers only what the running Python has:**
+    `TaskGroup` and `timeout` need 3.11, and the floor is 3.10.
+  - **Tier D (async app handlers) stays out:** nothing needs it, and a
+    task call from a handler is sync.
+  - **Host calls stay sync** (Phase C records it), so tier C waits for
+    an embedder that needs it.
 - **Capabilities** (the redesign's "Capabilities belong to the
   world"):
   - `HostObjectGrant`;
