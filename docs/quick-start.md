@@ -131,6 +131,9 @@ def plan_dinner(ingredients: list[str]) -> Recipe:
 recipe = plan_dinner(["eggs", "spinach", "feta"])
 ```
 
+A type checker wants a body for a function that declares a return
+type: `...` after the docstring satisfies it, and agex accepts it.
+
 The agent runs on a scratch world of its own, with the inputs bound by
 name, and its code ends the task with `task.success(value)`. The value
 is checked against the return type and comes back as a `Recipe`.

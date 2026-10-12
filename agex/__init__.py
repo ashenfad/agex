@@ -11,8 +11,8 @@ rewinds memory with the files and a fork carries it.
     chat = agent.session(ws)
     outcome = chat.say("make a flashcard app")
 
-This is the 0.13 rebuild, in progress. The 0.12 line is at the
-``v0.12.4`` tag.
+See the README and ``docs/quick-start.md``. The 0.12 line, a
+different API, is at the ``v0.12.4`` tag.
 """
 
 from __future__ import annotations

@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## Unreleased
+## [0.13.0] - 2026-10-12
+
+### Breaking
+- **A new API.** agex is now a loop over nontainer workspaces, driven through sessions and typed tasks; nothing of 0.12's API remains, and the 0.12 line stays at the `v0.12.4` tag.
 
 ### Added
 - **A task says what its helper holds: `@agex.task(objects=...)`.** By default a helper holds every host object its caller does but `agex`; `objects=` names the ones it may, and `objects=()` none, for a task working on input it shouldn't trust.
