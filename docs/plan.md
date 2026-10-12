@@ -1,968 +1,119 @@
-# agex rebuild: implementation plan
+# agex plan
 
-Status: in progress (2026-10-12).
-- **Phase A** is merged and released through nontainer 0.11.0 (A0-A7 but the deferred A3c, and A8a-b), which is agex's floor and the studio's.
-- **Phase B is done through B6** on `rebuild`. The studio runs on both loops, its tests pass on both, and three dogfood rounds on agex are behind it. Agents and published apps in the studio call agent-defined tasks when it runs on agex. B7 can follow the freeze.
-- **Next: docs and the 0.13.0 release** (its own section, before Phase C). The async agent code round is parked until after it, and the shape freeze (Phase C) follows that round.
-- **Still open in Phase A:** A8c (large values spill to the plane), proposed for after the freeze, and A3c (deferred).
+What is done and what comes next. The shape and the reasons for it are
+in `docs/design.md`.
 
-This plan covers *when* and *in what order*. The *what* and *why* live
-in:
-- `docs/design.md`: the shape, the decisions log, what
-  stays and what goes;
-- `~/git/nontainer/scratch/harness.md`: nontainer's harness contract,
-  the studio's `TurnDriver`, the loop corpus;
-- `~/git/nontainer/scratch/async.md`: async agent code.
+**Status (2026-10-12):** agex 0.13.0 is released, the first release of
+the rebuild. Next are the docs and studio follow-ups, then the async
+agent code round, then the shape freeze for TS.
 
 ## Ground rules
 
-- **Phase A is nontainer and the studio, and every step lands with no
-  behavior change.** The full nontainer and studio suites pass
-  unchanged unless the step names a fix. Production deployments run on
-  nontainer, so they must stay safe at every step.
 - **One step is one PR,** or a short stack. The user drives merges and
-  releases. A nontainer release closes each milestone, and the studio
-  raises its floor after it.
-- **Every step's exit names the corpus scenarios that pin it,** once
-  the corpus exists (A3 onward).
-- **The rest of the stack stays as it is:**
-  - Python >= 3.10, which nontainer and pydantic-ai already require;
-  - tests through `uv run pytest`;
-  - Conventional Commits.
-- **agex is a clean break, released as 0.13.0.** That is a breaking
-  minor, which 0.x allows, and the user is its only real user. Nothing
-  is published during Phase B: it stays `0.13.0.dev0`, and the studio
-  takes it as a git dependency pinned to a commit of `rebuild`, which
-  is also how its tests run over both loops in CI.
-  `0.13.0` goes out at the shape freeze. The CHANGELOG says plainly
-  that it is a new API.
-- **Phase B lands on `rebuild`, not `main`.** Each step is a PR into
-  `rebuild` (CI runs there too), so `main` stays the working 0.12 code.
-  At the shape freeze, `rebuild` merges into `main` with a merge commit,
-  keeping each step's history, and `0.13.0` is released from it.
-
-## The stages
-
-```
-A0 small bits ─┐
-A1 tool layer ─┼─► A3 turn API + TurnEvent + corpus ─► B0 skeleton ─► B1 sessions ─► B2 providers ─► B3 tasks
-A2 conv. index ┘          │                                                                         │
-                          ├─► A4 compaction contract ─────────────────────────► B4 compaction ◄─────┤
-                          ├─► A5 delegation ──────────────────────────────────► B5 delegation ◄─────┤
-                          └─► A7 kit ships (with A4/A5's scenarios)                                 │
-A6 early studio fixes (agno only; any time)                                                         │
-                                       B6 studio seam, both loops (needs B1-B3) ◄───────────────────┘
-                                                              ─► C freeze ─► D TS
-```
-
-Only A0-A3 come before agex starts. A4, A5 and A7 run alongside
-B1-B3. A8, the value encoding, lands between B3a and B3b. The studio's
-`TurnDriver` seam is built in B6, against both loops, rather than in
-Phase A.
-
-## Phase A: nontainer and the studio
-
-Each step follows `harness.md`'s build order.
-
-### A0. Small prerequisites (before B0)
-
-**Status: done.**
-- nontainer #196: the memory store, `Profile` (first built as `Env`)
-  and the agno instruction fix. Shipped in 0.9.1.
-- nontainer-studio #88: the stale comment. Merged 2026-10-07.
-- Built differently from what follows below:
-  - the bundle is `Profile`, not `Env`, because in nontainer `env`
-    already means a session's shell environment variables
-    (`ws.runtime.env`);
-  - `Profile` carries those variables too, as `variables`;
-  - the read-back is `Profile.of(ws)`, not a `ws` attribute.
-
-- **A first-class ephemeral store**: nothing on disk, registry
-  included. A plain `grade(rs)` needs a scratch world.
-- **`nontainer.Profile`**: today's open-time config as one frozen value
-  (python grants, host objects, mounts, commands, skills). It is
-  accepted by `Store.open`, and forks inherit it. It only bundles what
-  exists now. The new capability semantics (`provide`,
-  `HostObjectGrant`, scopes) come later, in the capabilities track.
-- **Fixes found while extracting the contract:**
-  - the turn-mode instruction line (agno.py:790-792);
-  - the stale `_resume_once` comment (studio sessions.py:968).
-
-  Dropped tool errors are fixed in A6, with `is_error`.
-
-**Exit.** A store opened with no path writes nothing to disk. `Profile`
-round-trips through `Store.open` and a fork. Suites pass.
-
-### A1. The neutral tool layer
-
-**Status: nontainer #198 merged 2026-10-07 (branch `refactor/a1-tool-layer`).**
-- It lives at `nontainer.adapters.tools`, not `nontainer.tools`: it
-  uses the descriptions and the sessions and apps layers, which the
-  layering test keeps core from importing.
-- The description surface is byte-identical, pinned by a golden file
-  recorded from `main` first.
-- `PYTHON_UI_NOTE` (the `ui=` teaching, which promises display beside
-  the reply) stays the agno toolkit's to append. Only a rendering host
-  can keep that promise.
-- MCP's `run_python` now reports saved artifacts. That is the named
-  fix.
-
-Each tool is defined once in `nontainer.adapters.tools`: name, description,
-schema, sync and async call, and a result carrying text, media and
-`is_error`. The instructions and skills catalog move into the shared
-render. agno's toolkit and the MCP server are rewrapped on the one
-set.
-
-**Exit.** Both adapters are built on `nontainer.adapters.tools`, and suites
-pass. MCP's `run_python` gains the ui-artifacts note, a named fix.
-Tool text is otherwise byte-identical: a snapshot test compares the
-rendered descriptions before and after.
-
-### A2. The conversation index and plane, with migration
-
-- `__conversation__/index` (core-owned) plus `runs/<id>`
-  (harness-owned).
-- Read fallback from `__agno__/`, and migration on first write, with
-  the legacy keys removed in the same commit.
-- Core fork (fresh or full), delete and "inherited only" run over the
-  index. `_rebind_conversation` stops writing agno's field names.
-- `KvgitSessionDb` / `KvgitStoreDb` read and write through the index.
-- The studio's four direct reads of agno storage move to core calls:
-  `_inherited`, `db.delete_session`, `fork_session`, and `agent.db`
-  in `_keep_aborted_run`.
-
-**Exit:**
-- A migration test on a fixture store written by 0.8.13, on both
-  disk and Postgres backends: read before a write, migrate on the
-  write, fork both ways, delete.
-- **A dry run on a copy of a real studio store and a copy of a production
-  store.** Production stores are the risk here.
-- Suites pass.
-- **Storage note:** once a session migrates, nontainer releases older
-  than this one can't read its conversation. That needs a CHANGELOG
-  warning and a minor version bump.
-
-**Status: done.** nontainer #199, shipped in 0.9.0.
-- **How it shipped:**
-  - **The plane.** Three keys: `__conversation__/index`, `/record` (the
-    harness's own session record, opaque to core) and `/runs/<id>`. Read
-    and written through `nontainer.conversation`.
-  - **No migrate API, no dry-run mode.** Migration is lazy: a head with
-    no index is read from `__agno__/`. The fallback is semi-permanent.
-  - **The agno db** refuses to write over another harness's
-    conversation. Both prefixes take `ours` in a merge.
-- **Exit, as met:**
-  - **Migration tests** (`tests/test_conversation.py`) seed the 0.8.x
-    `__agno__/` layout directly rather than using a stored 0.8.13
-    fixture. CI's Postgres job runs them on Postgres too.
-  - **Studio-store copy:** done. All 10 sessions read, migrated, forked
-    both ways and deleted cleanly.
-  - **Production-store copy:** the user runs it, with the read-only
-    `verify_conversations.py` in #199's description.
-- **The studio's four call sites** moved to core calls after the
-  release ("reach the conversation through nontainer's core", which
-  requires 0.9.0).
-
-### A3. The turn API, harness host objects, and the corpus machinery
-
-- `ws.turn(run_id)` / `ws.aturn(...)` over `turns.begin` / `end`,
-  covering:
-  - how a turn ended (completed, cancelled, failed, interrupted);
-  - resume in place;
-  - the reentrancy refusal;
-  - the turn stamp with `runs` and the `profile` fingerprint (built
-    from `PythonConfig` and the mounts until `Profile` is everywhere);
-  - **harness host objects**, attached for each session.
-- The agno adapter is re-expressed on it:
-  - `begin_turn`, `deliver` and `end_turn` plus the db's commit become
-    the turn API;
-  - `keep_aborted_run` and the cancel-path `settle` become the turn's
-    ending.
-- **`TurnEvent`**, the streamed vocabulary (`harness.md`, "Turn
-  events"). The agno adapter's harness-under-test maps agno's
-  `RunEvent`s onto it.
-- **Corpus machinery**, in `nontainer/conformance/`:
-  - the dataclasses, builders, loader, JSON export and drift test;
-  - **JSON Schema export** of the corpus schema and `TurnEvent`,
-    covered by the same drift test;
-  - the runner, and the agno adapter's harness-under-test with its
-    list-driven scripted agno `Model`.
-
-**Exit:**
-- Harness scenarios for tiers 0-3 pass on the agno adapter:
-  - completed;
-  - cancelled after a tool, with the closing note, the inbox settled
-    and one run commit;
-  - failed;
-  - interrupted then resumed, keeping its tool results;
-  - checkout rewinds the conversation;
-  - a fork carries or drops it;
-  - an inbox note delivered once, requeued after a discarded attempt,
-    restored after a failed attach.
-- The studio suites pass unchanged.
-- **Milestone: a nontainer release** (A1-A3; a minor bump because of
-  A2's storage change).
-
-**Status: done.** A3a (#200) and A3b (#201) shipped in 0.9.1; A3c is
-deferred (below).
-- **A3a: nontainer #200.**
-  - **What it adds:**
-    - `nontainer.turns`: `TurnEvent` (`kind` = class name) and `RunStatus`.
-    - `nontainer.conformance`: corpus format, runner, dependency-free codec and JSON Schema, export plus drift test.
-    - 11 tier 0-3 scenarios.
-    - `adapters/agno_conformance.AgnoHarness`, which runs the adapter as documented. It ends aborted runs the studio's way, and classifies errors by `RunError.error_type`.
-  - **Capabilities and known gaps:** `resume` / `keeps-aborted-runs`, found by feature check (`continue_run` takes `continue_from`, agno 2.8.5 and later). Known gaps are strict: a gap that closes fails until removed.
-  - **Reference harness:** in `tests/test_corpus.py`, on core's conversation plane. It passes every scenario with no gaps.
-- **A3b's to-do, the gaps the corpus recorded:**
-  1. A cancel lands two run commits: `keep_aborted_run` re-saves.
-  2. A failure is stamped `error` and commits twice.
-  3. An interruption is stamped `error`.
-  4. agno 2.1 runs no post hook for a streamed run, so notes are never settled there.
-
-  The turn API's ending (one commit, contract statuses, settle by construction) should close all four.
-- **Deferred:** the agno-specific inbox requeue and restore scenarios (they need run-level retries).
-- **A3b: nontainer #201.**
-  - **What it adds:**
-    - `ws.turn` / `ws.turns.begin` / `turn.end` (`nontainer.turns.Turn`), with one commit per turn stamped `{"tool": "turn", "runs": {id: status}}`.
-    - `TurnInProgress`.
-    - The agno db and `end_turn` stage under an open turn.
-    - `adapters.agno.finish_turn` / `status_of_error`.
-  - **Gaps:** `AgnoHarness` has no known gaps left.
-  - **The studio:** its suite passes unchanged (it opens no turns yet).
-- **Split out as A3c:** harness host objects (host objects are fixed at open via PythonConfig today) and the profile fingerprint in the turn stamp (manifest contents undecided). Neither blocks a loop that owns its turns; agex needs host objects by B3.
-- **Milestone release:** 0.9.1, A1-A3b. A3c can follow in a later release.
-- **A3c deferred (2026-10-07).** B3 doesn't need it: a task fork gets its `task` object through `Store.fork(..., profile=...)`, which already works. Why it waits, and what keeps it open, is in the redesign doc's decisions log (2026-10-07):
-  - attaching after open is additive per executor (the in-process policy and namespace, sandtrap RPC handlers, dud's hostcall allowlist);
-  - human-in-the-loop requests can use scopes checked at call time (nontainer #143) instead;
-  - the guardrails: agex declares its harness objects in one place and reads host objects per turn, and `PythonConfig.host_objects` is read-only after open (nontainer #204).
-
-  The profile fingerprint waits with it.
-
-### A4. The compaction contract
-
-**Status: done.** nontainer #209, merged 2026-10-08; ships in 0.10.0.
-Six tier 4 scenarios pass on agno (2.5.0, 2.8.5, 3.0.1) and on the
-reference harness, which folds in about fifty lines on the core's
-records and helpers.
-
-**nontainer keeps the record of a fold; each loop keeps its own
-folding.** The algorithm does not move into core (decided 2026-10-08,
-replacing the earlier `turn.context` plan).
-
-What nontainer owns, because every harness and the studio read it:
-- the `__compaction__/` plane and the `Fold` record, and the rule that
-  a fold is in force only while its anchor is in the history;
-- how folds behave in a world: a rewind takes them back, a fork
-  carries them, a fresh fork drops them, and a summary never enters a
-  stored run;
-- the `Compacted` event, and the person's view of a fold (the
-  studio's marker that opens to the summary).
-
-What each loop owns: when to fold, what to splice into the next
-request, how the summary is written, folding within a run, and
-chaptering. agno's adapter keeps its logic as it is. The helpers
-(the summary texts, `reduce`, `chunks`, `estimate_tokens`) stay in
-`nontainer.compaction` as a library a loop may use.
-
-The work:
-- `docs/compaction.md` describes the record and its rules as the
-  contract, and the folding as the agno adapter's;
-- the harness corpus gets compaction scenarios, which check only what
-  can be observed. Scripted model steps report token usage, so a
-  scenario can cross a budget on demand.
-
-**Exit.** Compaction scenarios pass on agno:
-- a fold over budget;
-- the fold in force in later requests;
-- no summary in stored runs;
-- a rewind takes back its folds;
-- a fresh fork drops them.
-
-The studio's compaction tests pass.
-
-### A5. Delegation
-
-**Status: nontainer side merged 2026-10-08; ships in 0.10.0. The
-studio's half is nontainer-studio #90, a draft until that release.**
-- **A5a, lock-free landing (#210).** Landing an answer reads committed
-  history through the child's handle, never the parent's workspace
-  lock, which a `run_python` waiting on the delegate holds. The
-  deadlock regression test runs on every rung, each case in a
-  subprocess.
-- **A5b, async runners (#211).** A runner whose `run` is `async def`
-  is scheduled on the embedder's loop (`Sessions(loop=)`), with
-  `max_workers` as a semaphore, and `cancel` stops it; `aask`,
-  `await_ready`, `answers()` and `aclose`.
-- **A5c, waiting (#212) and the tier 5 corpus (#213).**
-  `until_settled` / `auntil_settled` run a delegate's turns until
-  neither its own delegates nor a note in its inbox is outstanding,
-  within `max_wakes`; `Turn.opening()` / `aopening()` is a woken
-  turn's first message. The corpus scripts delegates
-  (`Scenario.delegates`, held until a `delegate_answers` event
-  releases each), and a harness supplies them through
-  `Harness.delegation()` (`adapters.corpus_delegates`), since the core
-  runner may not import `sessions`.
-- **Found by the studio PR (#214):** `until_settled` spun on a helper
-  that had closed (`Sessions.closed` now ends the wait), and its unread
-  note pointed the asker at a verb that cannot reach its delegate's
-  jobs.
-- **The studio (#90):** `StudioRunner` is an async runner on the
-  server's loop, waiting through `auntil_settled`; shutdown cancels
-  jobs through their helpers. The waker stays on `on_answer`:
-  `answers()` collects, and would take answers from the toolkit's
-  mid-turn delivery and the transcript's.
-
-The plan as written:
-- `sessions.until_settled(run_turn, max_wakes=)`;
-- async `SessionRunner`s scheduled on the embedder's loop, with
-  `max_workers` as a semaphore;
-- an awaitable answer stream;
-- lock-free landing reads;
-- an `aask` that forks off the loop.
-
-The studio's `_await_own_answers`, `_wake_on_answers` glue and
-per-delegate event loops are replaced.
-
-**Exit:**
-- Tier 5 scenarios pass:
-  - a runner commits before it returns;
-  - the wait loop names unread delegates when its budget runs out;
-  - an answer is delivered exactly once mid-turn.
-- **A regression test for the deadlock** where code waits on a
-  delegate inside `run_python`.
-- The studio's delegation tests pass.
-
-### A6. Early studio fixes (agno only)
-
-**Status: done** (studio #91).
-
-The first PR of the studio round (see B6). These don't need the seam:
-- **Make the event sink safe across loops and threads.** Delegate
-  turns emit from a fresh event loop on a worker thread into one
-  `asyncio.Condition`. A5's async runners remove those loops
-  (nontainer-studio #90 runs every delegate on the server's loop), but
-  the sink should be safe regardless: a registry outside a server
-  still runs delegates on a loop of its own.
-- **`tool_start` and `tool_end` gain `call_id` and `is_error`.** The
-  frontend pairs tool ends by id instead of by name, and agno's
-  `ToolCallError` stops being dropped.
-
-**Exit.** A test that emits from a worker-thread loop while a follower
-waits on the server loop. The frontend pairs tool calls by id. Suites
-pass.
-
-The `TurnDriver` seam itself moved to B6.
-
-### A7. The conformance kit ships
-
-The harness corpus is completed for tiers 0-5 and shipped in the
-package, the way `check_filesystem` is. It runs alongside B1-B3, once
-A4's and A5's scenarios exist.
-
-**Exit:** a nontainer release. That release is agex's floor.
-
-**Status:** tiers 0-5 are in `nontainer.conformance` on `main`;
-0.10.0 is the release.
-
-### A8. The value encoding (between B3a and B3b)
-
-**Status:**
-- **A8a, the module (`nontainer.values`):** merged (nontainer #205).
-- **A8b, the transport on each rung:** typed host data and classes
-  (#206), stubbed host objects (#207) and a spec standing for its
-  type (#208) are merged.
-- **A8c, still to do:** large values spilling to the plane, which
-  needs dud#39's binary frames (until then, one call off in-process
-  carries 6 MiB encoded), and converging the apps encoder
-  (`nt__Encoder`) onto it. Proposed (2026-10-11): after the freeze.
-  It changes how a value travels, not what code or a type says, so
-  the shape doc doesn't wait on it.
-
-The encoding from the redesign doc's "Task values":
-- **Kinds:** data (JSON), tables (Arrow IPC), arrays (`.npy`), bytes
-  and file refs. Embedders can register more.
-- **Encode in the kernel, decode on the host by the declared type.**
-  The encoder generalizes the handler-returns one (`nt__Encoder`): it
-  ships to a dud guest as source, and imports numpy, pandas and
-  pyarrow lazily.
-- **A JSON tree with tagged leaves**, a tag accepted only where the
-  declared type allows that kind.
-- **Large values spill to blobs in a reserved plane**, with a
-  transport for them on each rung.
-- **The kernel stub plus host half** that `task` needs: the stub
-  encodes before the host call, and passes the value through
-  in-process.
-- **Classification and the early check:** which kinds a type needs,
-  its schema when it is data, and a refusal that names the type, the
-  rung and the ways out.
-
-#110 (the return path of app handlers) becomes a special case.
-
-**Exit:**
-- Each kind round-trips on in-process, process isolation and dud, and
-  process and dud carry exactly the same set.
-- A payload whose tags the declared type doesn't allow is refused.
-- A large value spills and comes back on every rung.
-- The apps suites pass unchanged.
-
-## Phase B: the agex rebuild
-
-### B0. Skeleton
-
-- **Package layout and dependencies:** nontainer at the A3 release
-  (raised to A7 later), and `pydantic-ai-slim` with extras pinned to a
-  minor range.
-- **agex's provider protocol**:
-  `stream(turns, tools, settings) → events, final turn, usage`. Its
-  first implementation is over `pydantic_ai.direct`, plus a scripted
-  provider over `FunctionModel`.
-- **v0 of agex's stored run record.** It maps to and from
-  pydantic-ai messages at the edge, and every message gets a stable
-  id. The streamed events are nontainer's `TurnEvent`, not agex's
-  own.
-- **CI:** lint, typecheck, and the harness corpus.
-
-**Exit.** CI is green. A scripted provider round-trips a tool call
-with its provider id, and the run record round-trips through JSON.
-
-### B1. The session front door, on the scripted model
-
-- `Agent(model, primer, profile)`;
-- `agent.session(ws)` with `say` / `asay` / `stream`;
-- tools from `nontainer.adapters.tools` (`Toolset`), with
-  `PYTHON_UI_NOTE` appended when the host renders artifacts;
-- each run inside `ws.turn`;
-- inbox delivery through `turn.deliver`;
-- runs stored in `__conversation__` with `harness="agex"`;
-- `TurnEvent`s yielded directly.
-
-**Exit.** agex yields `TurnEvent`s and passes the harness corpus for
-tiers 0-3: the same scenarios, and the same event kinds, that agno
-passes.
-
-### B2. Real providers
-
-- Anthropic, OpenAI and OpenRouter first, through pydantic-ai. They
-  cover the studio. Google follows;
-- streaming;
-- thinking and reasoning round trips;
-- usage, including cache tokens;
-- prompt-cache settings;
-- provider-error classification into interrupted vs failed;
-- resume in place.
-
-**Exit:**
-- **Opt-in live smoke tests**, run only when keys are present:
-  - a tool round on each provider;
-  - the thinking signature round-tripped on Anthropic;
-  - a reasoning round trip on one OpenAI reasoning model.
-- The corpus's resume scenarios pass.
-- An air-gapped check against an OpenAI-compatible local endpoint.
-
-### B3. Tasks and the outcome host object
-
-The shape is the redesign doc's "Task calls" and "Task values". Four
-PRs, with A8 between the first two.
-
-**B3a. Tasks on in-process worlds.** Status: merged (agex #78).
-Checked live on the four providers' small models.
-- `@agent.task`: typed inputs and a validated return, sync and
-  `async def`.
-- **`TaskSpec`:** the Python types, the kinds each one needs, and a
-  schema for data types.
-- **The `task` host object** with `task.success` and `task.fail`, and
-  its swappable slot. Agent code sees each argument by name.
-- **Inputs are values:** tables as shallow copies, arrays as read-only
-  views, other data as deep copies. A live input is bound as a host
-  object of the fork, under the world's host-object policy. Narrowing
-  one with a `HostObjectGrant` around it waits for `HostObjectGrant`
-  itself (the capabilities track).
-- **Validation:** strict, by the declared type, with a `TypeError` at
-  the call site. A model that stops without finishing is nudged up to
-  twice, then the task fails.
-- **`Outcome` with `value`**, and the world arguments:
-  - a scratch world from `agent.profile` via the memory store;
-  - `world=` always forks, through `Store.fork(..., profile=...)`;
-  - `keep=`.
-- **The check, at call time:** against the world the task runs in. A
-  world off in-process is refused before any model call until B3b.
-
-**Exit.** Tests pass:
-- a task leaves the caller's world untouched;
-- a task that changes its inputs in place leaves the caller's objects
-  untouched;
-- a live input reaches agent code as it is;
-- a validation error is fixed within one script;
-- a model that stops is nudged, then the task fails;
-- each status: success, failed, cancelled, interrupted;
-- a live value comes back in-process;
-- a world off in-process is refused before any model call.
-
-**B3b-1. Tasks on every rung.** Status: merged (agex #79, on
-nontainer #208). Checked live on the four
-providers' small models, in-process and under process isolation.
-- **`task` is a stubbed host object:** `HostObject(TaskHost, stub=TaskStub)`.
-  The stub lives in `agex.stubs`, standard library only, so a dud
-  guest rebuilds it from source. It sends the value to the host half,
-  which decodes it by the return type, then stops the script. A value
-  that doesn't fit is a `TypeError` at the call, the same on every
-  rung.
-- **Inputs are typed host data:** `HostObject(value, type=spec)`, by
-  value on every rung, a fresh copy each run. A live input is a host
-  object as it is, reached through a proxy where the world's code runs
-  elsewhere. A value mixing data with live objects, which only
-  in-process can carry, gets one copy of its data for the task, its
-  live objects shared.
-- **Types are nontainer's** (`nontainer.values`): the kinds, the strict
-  check of inputs, and the decoding of the value. Each type is
-  compiled once with the names it needs and handed to nontainer as a
-  spec. pydantic stays only for data types' JSON schemas.
-- **The task's types go in `PythonConfig.classes`**, bound by name on
-  every rung.
-- **What can't cross is refused before any model call, off
-  in-process:**
-  - a return type with a live part;
-  - an input mixing data with a live part;
-  - a live object where an input's type allows anything.
-- **agex's package exports load lazily**, so a worker importing
-  `agex.stubs` doesn't load the loop. That brings a task under process
-  isolation down from about 0.5 s to 0.3 s, and on dud from 0.8 s to
-  0.4 s.
-
-**Exit.** Tests pass:
-- the same value comes back on in-process, process isolation and dud,
-  for data, tables, arrays and bytes;
-- a refusal reads the same on every rung, at the agent's line;
-- a live input is a capability on every rung;
-- a live return type, and an input mixing data with a live part, are
-  refused off in-process before any model call.
-
-**B3b-2. Needs input, the `__task__` plane, and resuming.** Status:
-merged (agex #80). Checked live on the four
-providers' small models: told to ask, each asks, then finishes from the
-answer.
-- `task.needs_input(question)`: the outcome ends `needs_input`, with
-  the question as its message. A plain call raises `NeedsInput`, whose
-  `outcome.resume(answer)` carries on.
-- **Resuming:**
-  - a `needs_input` outcome always keeps its world, and `out.ref` names
-    it;
-  - `grade.resume(ref, answer, world=ws, **live_inputs)` continues it
-    by ref, through the world the task ran on, after a restart too on
-    a store that persists;
-  - a scratch world is kept in the process, and resumes only there;
-  - `out.resume(answer)` is the in-process shortcut, reusing the call's
-    world and live inputs;
-  - the answer is the next message the model reads, after the
-    conversation the world holds;
-  - a task can ask again, and a resume run to its end drops the world
-    unless `keep=True`; one cut short (cancelled, interrupted) keeps it
-    waiting, to be resumed again. A first run whose caller is cancelled
-    keeps nothing, even after the task asked: no ref reached it.
-- **The `__task__` plane:** `spec` (the name, the instructions, each
-  type with its schema, and which inputs are stored), `inputs/<name>`
-  encoded, `state`, and `value` encoded when it can be. They are
-  written in the commits of the task's own runs.
-- **Resume with stored inputs.** Encodable inputs come back from the
-  plane, decoded by the task's types. A live input isn't stored, so it
-  is passed again, and a missing one is refused by name before any
-  model call.
-- **What a resume refuses:**
-  - a world that isn't this task's: by name, inputs and return, the
-    signature recorded in its plane;
-  - a world reached through another world than the one the task ran
-    on (the plane records its session);
-  - a world that isn't waiting for an answer;
-  - a stored input passed again;
-  - an input the task doesn't take.
-
-**Exit.** Tests pass:
-- needs input, then resume: in this process, by ref through a kept
-  fork, and by ref after a restart on a disk store with a live input
-  passed again;
-- a resume missing a live input is refused by name;
-- asking and resuming work on in-process, process isolation and dud;
-- the plane holds the spec, inputs, state and value.
-
-**The brief's live inputs.** Status: merged (agex #81). The brief
-describes each live input as agent code uses it: a function by its
-signature and docstring summary, any other object by its class's
-docstring summary and public methods, up to 20, each with its
-signature and summary. Checked live on the four providers' small
-models: given a class whose methods they can't guess, each finishes in
-one call, where without the description they took four to thirteen
-calls exploring the object.
-
-**B3b-3. The shape corpus.** Status: merged (agex #82). 18 scenarios
-pass on in-process, process isolation and dud.
-- **Task scenarios as data,** as agex's extension of nontainer's
-  corpus format, in `agex.conformance`:
-  - `shape`: the format. A task's signature with its types as JSON
-    schemas (`x-kind` for tables, arrays, bytes and live classes), the
-    acts (call, resume by outcome or by ref, restart), the model's
-    script in neutral task steps, where the scenario runs, and the
-    outcome expected;
-  - `scenarios`: the corpus; `runner`: `run` and `check`, owning the
-    script; `tasks`: `AgexTasks`, agex as a harness;
-  - generated as JSON for harnesses in other languages
-    (`python -m agex.conformance.export`), with its JSON Schema.
-
-**Exit:**
-- Shape scenarios pass:
-  - needs input, then resume, including by ref after a restart;
-  - a resume missing a live input is refused by name;
-  - the same value comes back on each rung, for data, tables, arrays
-    and bytes;
-  - a live type is refused off in-process.
-- The shape corpus JSON is generated, with its drift test.
-
-### B4. Compaction
-
-**Status: done.** agex #84, merged 2026-10-08.
-`Agent(compaction=Policy(...))`; `agex.compaction` folds
-within a run too, and each reply records the fold its request had
-(`Message.fold`), so a request is measured exactly from the latest
-report. The six tier 4 scenarios pass; a task folds within its run and
-finishes on every rung; checked live on the four providers' small
-models with a budget a little above a task's opening request.
-
-agex folds its own conversations, writing nontainer's records (A4):
-its own decision, splice and summary, using the core's helpers where
-they fit. It owns its loop, so it can send the model a folded history
-while storing every message.
-
-**Folding within a run.** Folds in agno's adapter cut only between
-runs, which leaves one long run unbounded. For agex that is the main
-case: a task is one run, and a long one is what outgrows the window.
-agex folds the run in progress too:
-- at a step boundary, never between a tool call and its result;
-- keeping the latest steps as they are;
-- with the fold's anchor in the run, so the record and its rules are
-  unchanged.
-
-**Chaptering waits for curation's trace projection.** That projection
-is what makes `/chapters` browsable. A chapter is a named fold with
-`first` set, using the agex chapter prompt, so it adds no new
-mechanism. It joins after the projection lands, which may be after the
-shape freeze.
-
-**Exit.**
-- The harness corpus's compaction scenarios pass on agex.
-- A task whose run outgrows its budget folds within the run and
-  finishes, in-process, under process isolation and on dud.
-
-### B5. Delegation
-
-Re-scoped 2026-10-08: side effects through the `sessions` tool (B5a),
-functions as agent-defined tasks (B5b). Code-level `ask(returns=,
-agent=)` is dropped; the redesign doc's "Agent-defined tasks" has the
-why.
-
-#### B5a. The `sessions` tool
-
-**Status: merged (agex #86).**
-- `agent.session(ws, sessions=True)`: the session delegates through
-  its `sessions` tool, and each delegate is an agex session of the
-  same agent on a fork (`agex.delegation.Runner`, an async
-  `SessionRunner`), with the parent's profile.
-- A delegate answers once nothing it waits on is outstanding
-  (`auntil_settled`), within `max_wakes`; `wake()` runs a turn that
-  opens with answers that landed between turns.
-- The helper is built by the first turn, on that turn's loop.
-
-**Exit (met).** Tier 5 scenarios pass on agex, and a live delegate
-round trip passes.
-
-#### B5b. Agent-defined tasks
-
-Status: done. The prerequisites below are merged and released (dud 0.4.2,
-sandtrap 0.4.2, nontainer #222-#225 in 0.11.0). Two more nontainer
-PRs turned up while building it: **#228**, `Sessions.of(ws)`, the
-helper a world's `agex` delegates through (the design's open
-question), and **#229**, the classes `load_specs` builds crossing every
-rung as their data (they have no module to import or ship). B5b is in
-two PRs:
-- **B5b-1** (agex #88, merged): the `agex` host object (`agent_tasks`), the
-  decorator and its refusals, the call and `.map`, `TaskFailed` and
-  `TaskNeedsInput`, shapes, and the helper's world (a delegate branch,
-  or a scratch world), with the exit's behaviours tested on every rung.
-- **B5b-2** (agex #89, merged): the shape corpus's code scenarios
-  (`CodeScenario`, on every rung), apps (a task in a module, the
-  preview's helpers as the session's delegates, and
-  `agex.stand_in_tasks` to bind in its place), and the live round
-  trips under agex and agno.
-- **A record holding itself** (agex #90, merged): a code scenario whose
-  task returns a record that holds itself. It needed agent code to run
-  in a module of its own, with its `from __future__` imports taking
-  effect, on every rung (sandtrap #59 and #60, released in 0.4.3;
-  nontainer #230, in 0.11.0). It also turned up dud's runner passing
-  its own future flags to guest code (dud #43, released in 0.4.3).
-
-**Prerequisites,** each its own small PR, in dependency order:
-- **Clean context for host-side async work** (nontainer). In-process,
-  a coroutine scheduled from a host call inherits the sandbox's
-  context variables, so its network is denied. Run host-side work in a
-  fresh `contextvars.Context()`.
-- **Waiting host calls don't count against the timeout.** sandtrap
-  moves its checkpoint's start time forward by the call's duration,
-  in-process and in the process worker; dud's supervisor pushes its
-  deadline back by the relay time; nontainer counts every host
-  object's calls as host time. Releases go sandtrap, then dud, then
+  releases.
+- **Dependencies release in order,** lowest first (sandtrap, dud,
+  nontainer, then agex), each user raising its floor after.
+- **nontainer stays safe at every step.** Its suite and the studio's
+  pass unchanged unless a step names a fix, since deployments run on
   nontainer.
-- **dud #40:** a dataclass defined in guest code fails, since
-  `__dud__` isn't in `sys.modules`.
-- **Spec export** (nontainer): a `values.Spec` written out as data and
-  read back, records and enums included, without evaluating anything.
-- **Host objects per world** (nontainer): `HostObject(factory=)`,
-  called with each world as it opens, forks included.
-- **Helpers as delegates** (nontainer):
-  - `Sessions.ask(..., runner=)`, a runner for one job;
-  - with `paths=[]`, the child forks from the last commit and lands
-    none of the caller's uncommitted writes.
+- **Each step's exit names the corpus scenarios that pin it,** where
+  the step changes behaviour the corpora cover.
+- **Python >= 3.10, `uv run pytest`, Conventional Commits.**
 
-**agex:**
-- **The `agex` host object:** a stub in the kernel, and a host half
-  per world, built by the factory, holding the embedder's `Agent`.
-  - `@agex.task` and `@agex.task(primer=)`; the call; `.map`, bounded.
-  - Refusals at the decorator: a lambda, a missing docstring or
-    annotation, code in the body, a live type (on every rung), a
-    parameter named like one of the world's host objects.
-  - `TaskFailed`, and `TaskNeedsInput` carrying the question.
-- **Shapes:** the stub sends the spec as data; the helper's world gets
-  generated classes; the stub decodes the result by the caller's own
-  annotations.
-- **The helper's world:** a delegate branch through the calling
-  world's `Sessions` (`paths=[]`, `runner=TaskRun(...)`), from the
-  caller's profile without `agex`; a scratch world where there is no
-  `Sessions` (a published app) or the embedder opts out.
-- **Apps:** module-level tasks register idempotently; the preview's
-  helpers are the session's delegates; a scripted stand-in for
-  `bind=`.
+## Done
 
-**Exit:**
-- Shape scenarios pass on every rung:
-  - an agent-defined task returns the caller's own record type, with a
-    class defined in the script;
-  - nested records, enums, tables and arrays come back as declared;
-  - each refusal at the decorator;
-  - `.map` returns in order, and runs at once;
-  - helper time doesn't end the caller's script under a short timeout;
-  - a helper is a delegate branch of its caller, its answer collected
-    by the calling code and never handed to the caller's model;
-  - the caller's `run_python` lands in one commit.
-- An app handler calls a task, in the preview and through `bind=`.
-- A live round trip under agex's loop, and one under agno with
-  nontainer, from the same host object.
+The rebuild ran in two phases: nontainer and the studio grew the seams
+a second loop needs (A), and agex was rebuilt as a loop over them (B).
 
-**Likely nontainer follow-ups** (0.10.x, as B5 finds them):
-- `SessionRunner` typed for an `async def run`: done in #225
-  (`AsyncSessionRunner`);
-- the open question carried from A5: a fork taken mid-`run_python`
-  splits that call's commit. B5b's empty-view forks avoid it; a
-  delegate that sees the caller's files still meets it.
+| step | what | PRs |
+|---|---|---|
+| A0 | small prerequisites: an ephemeral store, `nontainer.Profile` | nontainer #196, studio #88 |
+| A1 | the neutral tool layer: each tool defined once | nontainer #198 |
+| A2 | the harness-neutral conversation index and plane, with migration | nontainer #199 |
+| A3 | the turn API (`ws.turn`), `TurnEvent`, the corpus machinery | nontainer #200, #201, #204 |
+| A4 | the compaction contract: nontainer keeps the record of a fold | nontainer #209 |
+| A5 | delegation: async runners, landing without the parent's lock | nontainer #210-#214, studio #90 |
+| A6 | early studio fixes, on agno | studio #91 |
+| A7 | the conformance kit ships (tiers 0-5) | nontainer 0.10.0 |
+| A8a-b | the value encoding (`nontainer.values`) and its transport on each rung | nontainer #205-#208 |
+| B0-B1 | a clean slate, the provider protocol and run record, the session loop | agex #71-#74 |
+| B2 | real providers: OpenRouter, Anthropic, OpenAI, Google, local endpoints | agex #75, #76 |
+| B3 | tasks: worlds, every rung, asking and resuming, briefs, the shape corpus | agex #78-#82 |
+| B4 | compaction: agex folds its own conversations, within a run too | agex #84 |
+| B5a | delegation through the `sessions` tool | agex #86 |
+| B5b | agent-defined tasks, in apps too, with a stand-in | agex #88-#90; nontainer #222-#230; sandtrap #59, #60; dud #43 |
+| B6 | the studio on both loops: `TurnDriver`, tool parity, three dogfood rounds | studio #92-#97, #104, #105, #107; agex #92-#102; nontainer #231-#235; dud #44; sandtrap #61 |
+| — | agent-defined tasks in the studio | agex #103, studio #108 |
+| — | docs and the 0.13.0 release | agex #107-#109 |
 
-### B6. The studio seam, designed against both loops
+Releases along the way: nontainer 0.9.0 to 0.11.0, sandtrap 0.4.2 to
+0.4.4, dud 0.4.2 to 0.4.4, and agex 0.13.0 (2026-10-12). The 0.12 API
+is at the `v0.12.4` tag.
 
-**Status: done** (2026-10-11). All six steps are merged and
-released, and agent-defined tasks in the studio came after (below).
+## Next
 
-**The studio round.** A6 and B6 come before the next nontainer
-release, so the studio's use shakes out nontainer's unreleased work
-first:
-1. **A6** (studio #91, merged), whose PR also points the studio at nontainer
-   `main`: a `[tool.uv.sources]` git source, the lock pinning the
-   commit, as agex does.
-2. **B6a** (studio #92, merged): the `TurnDriver` protocol and the
-   agno driver, with no behavior change. `DriverSpec` waits for B6b,
-   where a second loop needs it.
-3. **B6b's agex prerequisites** (agex, merged: the seam #94, images
-   #95, with #92's richer events and #93's design), so an agex session
-   can offer the tools the studio's agent has (design, "Tools"):
-   - **The tool seam:** `agent.session(ws, toolset=..., tools=[...])`,
-     a nontainer `Toolset` of the embedder's (app runtime for
-     `test_app`, primers, `vision`) and tools of its own in the
-     MCP-shaped protocol, one named like a built-in replacing it.
-     `PYTHON_UI_NOTE`, promised in B1, rides along.
-   - **Images in tool results:** `ToolOutput.images` through agex's
-     record, provider mapping and loop, gated on `vision`, for
-     `view_image` and `test_app`'s screenshots.
-4. **B6b** (studio #93, merged): `DriverSpec` and the agex driver. The
-   studio adds agex as a git source on `rebuild`; its own nontainer
-   source is what agex resolves against, since a dependency's sources
-   don't carry over. A session runs on the loop that wrote its
-   conversation; a new one on the loop the knob picks. Parity needed
-   more in agex:
-   - **a cap on a run's tool calls** (agex #96), counted per call as
-     agno's `tool_call_limit` is, so a delegate's calls are bounded;
-   - **`session.abandon(reason)`** (agex #97; studio #96): a run the
-     studio stops resuming (its resumes spent, or a stop pressed while
-     it waits) ends with the studio's note, as on agno, instead of
-     staying `interrupted` with none.
+- **Docs:** agex #111 (agents working with your code, and a task call
+  typed by its return type). Then the rest of `docs/`, one page per
+  topic: sessions, tasks, agent-defined tasks, delegation, providers,
+  testing.
+- **The splash page:** ashenfad.github.io/agex becomes one static
+  `site/index.html` for the ecosystem, deployed by a small Pages
+  workflow. It holds agex in a sentence with install and links, the
+  ecosystem a line each by layer (agents: agex, nontainer-studio;
+  worlds: nontainer, kvgit, monkeyfs; running code: sandtrap, dud,
+  termish, reprobate; in the browser: agex-ts, agex-studio), and where
+  0.12 lives.
+- **The studio on the release:** its agex git source becomes
+  `agex>=0.13.0`, and it imports `from agex import cancel_tasks`.
+- **The repo description** still has 0.12's tagline.
+- **agex #105:** OpenAI reasoning models' summaries, so their thinking
+  shows on agex as on agno.
+- **B7, debug and bench:** `agex.debug` (a run's view, token counts,
+  pretty printing) and `agex.bench`, off the core surface.
 
-   **B6c** (studio #95, merged): the scripted test model runs on agex
-   too (`agex_dummy.DummyProvider`, the same script), and test_server,
-   test_delegates and test_e2e run on both loops. Tests of agno's own
-   machinery are marked `agno_only`.
+## The async agent code round
 
-   Building it turned up a bug on both loops: an answer that `sessions
-   ask` with `wait` returned as the tool's result wasn't recorded as
-   delivered, so a woken turn delivered it again (studio #94).
-5. **Dogfood** on both loops, fixing what turns up in nontainer.
-   Three rounds. What they turned up:
-   - **A stop reaches running code and the run's delegates** (dud #44,
-     nontainer #233, agex #100, studio #104), with a note saying why a
-     call was cut off (nontainer #234, agex #101, studio #105).
-   - **A stop could hang a sandbox's worker:** a signal handler setting
-     a `threading.Event` while the main thread cleared it deadlocked.
-     sandtrap #61 made the flag lock-free (0.4.4); exec-targeted
-     cancels are tracked as sandtrap #62.
-   The third round was clean.
-6. **Release nontainer 0.11.0** (build PR nontainer #235). The studio
-   drops its nontainer source and floors at `>=0.11.0` (studio #107),
-   as agex does (agex #102); the agex source stays until the freeze.
+Agent code may `await` at the top level of `run_python`, the way
+IPython allows. Host calls stay sync and run one at a time. It is its
+own round, released sandtrap, then dud, then nontainer, and the shape
+freeze waits for it. Nothing built so far needs it: fan-out from code
+is a task's `.map`, run on the host.
 
-**After B6: agent-defined tasks in the studio** (agex #103, studio
-#108). When the studio runs on agex, its agents and published apps hold
-`agex`, whose helpers run in scratch worlds, and `agex_stand_in` for
-tests, with an `agent-tasks` skill on writing tasks for apps. agex
-gained what it needed: `@agex.task(objects=...)`, so code says which
-host objects a helper holds (`()` for untrusted input), and a cancel
-that stops a session's helpers. A dogfood round on it fixed the skill:
-a published app's `cache` is read-only, so it caches results in `db`,
-and a field with fixed choices is a `Literal`, which the stand-in
-answers with its first choice.
-
-The pieces:
-- **A `TurnDriver` protocol plus `DriverSpec`**, yielding `TurnEvent`
-  (`harness.md`, "The studio's `TurnDriver`"). `turns.py` is
-  rewritten over it.
-- **The agno driver** wraps `arun`, `acontinue_run`, `acancel_run`
-  and `ais_cancelled`, maps agno's `RunEvent`s onto `TurnEvent`, and
-  moves `on_delivered` and `on_fold` into the stream. The `FakeAgent`
-  tests move under it.
-- **The agex driver** passes agex's `TurnEvent`s through. It sits
-  behind the studio's loop knob (for example
-  `NONTAINER_STUDIO_LOOP=agex`), and agno stays the default.
-
-**Exit:**
-- (met) The studio's pinned behaviors (test_server, test_delegates,
-  test_e2e) are parametrized over drivers and pass on **both**.
-- (met) **Tool parity:** an agex session in the studio offers what an
-  agno one does: `test_app`, `view_image` where the model takes images
-  (screenshots seen, not only named), and the studio's own `sessions`
-  (`published`, `others`, the depth cap). A delegate's tool calls are
-  bounded on both loops.
-- (met) Dogfood: real sessions on agex, including delegation and a
-  long session that folds.
-
-Known gaps, none blocking the freeze:
-- agex doesn't ask OpenAI's reasoning models for reasoning summaries,
-  so gpt-5.6's thinking (through OpenRouter, say) shows on agno and
-  not on agex.
-- A task helper's model is fixed when the studio session opens.
-
-### B7. Debug and bench
-
-`agex.debug` (view, token counts, pretty printing) and `agex.bench`,
-ported off the core surface. This can slip past the freeze.
-
-## Next: docs and the 0.13.0 release
-
-**Status: next (2026-10-12).** agex releases before the async round and
-the freeze, so the rebuild has users (the studio first) while the rest
-lands.
-
-**The docs turn.** No site: a short README that links into plain
-Markdown under `docs/`, read on GitHub, as nontainer's are. The old
-mkdocs site, its notebooks and the 0.12 examples stay at the `v0.12.4`
-tag.
-- **`README.md`, short:**
-  - what agex is: a loop over nontainer, with two front doors, a
-    session and a task;
-  - install, with the provider extras;
-  - one example of each front door;
-  - links into `docs/`;
-  - where 0.12 lives.
-- **`docs/`, one page per topic:**
-  - `quick-start.md`: install, a store and a workspace, a session's
-    turn, a task, reading the `Outcome`;
-  - `sessions.md`:
-    - `Agent`: model, primer, settings, limits and compaction;
-    - `agent.session`: `toolset`, `tools` and `sessions=True`;
-    - turns and their events;
-    - `cancel` and `abandon`;
-  - `tasks.md`:
-    - `@agent.task`, with typed inputs and returns;
-    - `world=` and `keep=`;
-    - `needs_input` and `resume`;
-    - the errors;
-    - the rungs;
-  - `agent-tasks.md`:
-    - `agent_tasks`, with `@agex.task` in agent code;
-    - `objects=`, `.map` and `cancel_tasks`;
-    - `stand_in_tasks`;
-    - tasks in app handlers;
-  - `delegation.md`: the `sessions` tool, delegates, `wake` and `close`;
-  - `providers.md`: model names and their extras, `Settings`
-    (`thinking`, `extra`), `describe`, the scripted provider;
-  - `testing.md`: the scripted provider, the stand-in, the conformance
-    corpus;
-  - `design.md` stays as the design notes; `plan.md` stays until the
-    freeze.
-- **`examples/`, a few runnable scripts:** a session, a typed task, a
-  task that asks, agent-defined tasks. Each runs on a real model with a
-  key, and in CI on the scripted provider, so none rots.
-- **No snippet goes unrun.** Each one in the README and `docs/` is run,
-  by a test where it can be.
-- **Docstrings:** the package docstring stops saying "in progress", and
-  every public name's docstring agrees with the docs.
-- **CHANGELOG:** `Unreleased` becomes 0.13.0, opening with a breaking
-  line: a new API, with 0.12 at its tag.
-
-**The release:**
-1. The docs PRs merge into `rebuild`.
-2. `rebuild` lands on `main`. `main` is its ancestor, so it is a
-   fast-forward.
-3. **The Pages site becomes a splash page** for the ecosystem.
-   `main`'s mkdocs and its deploy workflow go with the fast-forward, and
-   ashenfad.github.io/agex keeps its URL, which 0.12's metadata and old
-   links point to. It is one static `site/index.html`, with no build
-   step, deployed by a small Pages workflow when it changes. It holds:
-   - agex in a sentence, with install and links to the repo, PyPI and
-     `docs/`;
-   - the ecosystem, a line each, grouped by layer:
-     - agents: agex, nontainer-studio;
-     - worlds: nontainer, kvgit, monkeyfs;
-     - running code: sandtrap, dud, termish, reprobate;
-     - in the browser: agex-ts, agex-studio;
-   - where 0.12 lives (the `v0.12.4` tag).
-4. A build PR takes the version from `0.13.0.dev0` to `0.13.0`. Then
-   `gh release create v0.13.0`, which publishes to PyPI.
-5. The studio swaps its agex git source for `agex>=0.13.0`.
-
-**Exit:**
-- The README and every page in `docs/` match the code.
-- The examples run.
-- agex 0.13.0 is on PyPI, and the studio runs on it.
+- **sandtrap first** (#55, whose first half shipped: top-level `await`
+  under `exec` comes back as an error result). Four items, one PR or a
+  short stack, released as **0.5.0**, since the first changes `aexec`
+  for its callers:
+  1. module semantics: compile with `PyCF_ALLOW_TOP_LEVEL_AWAIT` and
+     run `await eval(code, ns)`, in place of the function wrapper;
+  2. the worker's async flavor, so process isolation runs it;
+  3. a sync entry point that accepts `await`, so host calls are still
+     served on the calling thread;
+  4. tasks still pending at the end settled inside the sandbox, and
+     reported.
+- **A stop reaches an awaiting script.** A script parked in
+  `await asyncio.sleep(60)` runs no code, so no checkpoint sees a
+  cancel. The script's private loop gets a cancel hook, with a
+  stop-mid-`await` test on every rung.
+- **The dud runner** compiles with the same flag and runs a coroutine
+  through `asyncio.run`.
+- **nontainer:** a narrow `asyncio` grant (no loop handle, `to_thread`
+  or subprocess; `TaskGroup` and `timeout` only where the running
+  Python has them), tool text, and a hint for "`asyncio.run()` cannot
+  be called from a running event loop".
+- **Out of the round:** async host objects (they wait for an embedder
+  that needs them) and async app handlers (nothing needs them).
 
 ## Phase C: the shape freeze
 
-- Write the shape doc, with each Python signature next to its TS
-  counterpart.
+- Write the shape doc, each Python signature beside its TS counterpart.
 - Pin the harness-corpus and shape-corpus versions.
-- **Record that host calls stay sync in Python agent code.** A task
-  call, `sessions` and the rest are sync in Python and awaited in TS,
-  where every host call is a promise. Fan-out stays on the host
-  (`.map`, `ask` and `wait`). Async host objects (tier C) would come
-  later as an opt-in kind of method, which is additive.
-- Async agent code tier A lands first, so "scripts may await" holds on
-  both sides. That is a parallel track, below. It is additive (a script
-  without `await` runs as before), so the freeze doesn't change shape
-  for it.
+- Record that host calls stay sync in Python agent code and are awaited
+  in TS, where every host call is a promise.
 - Release the frozen shape: 0.14.0 if it changed anything since 0.13,
   otherwise a 0.13.x.
+- Decide the studio's default loop (below).
 
-**Exit.** A tagged freeze: doc and corpus versions that TS can vendor.
+**Exit:** a tagged freeze, with doc and corpus versions TS can vendor.
 
 ## Phase D: the TS catch-up
 
@@ -975,86 +126,47 @@ Outline only; it gets its own plan at the freeze:
 
 ## Parallel tracks
 
-None of these blocks Phase B except where noted.
+None of these blocks the freeze.
 
-- **Async agent code** (`async.md`):
-  - sandtrap #55, the move to the `PyCF_ALLOW_TOP_LEVEL_AWAIT` flag,
-    and a sync entry point that accepts `await`;
-  - nontainer tier A, including the `asyncio` grant, tool text and
-    hints;
-  - the dud runner.
-
-  It must land before Phase C.
-
-  **Status (2026-10-12): parked until after agex 0.13.0.** sandtrap
-  #55 is open; only its first half shipped (top-level `await` comes
-  back as an error result instead of raising). It is its own round,
-  released in dependency order (sandtrap, then dud, then nontainer).
-  B5 and B6 didn't need it: fan-out from code is a task's `.map`, run
-  on the host.
-
-  Decided for the round (2026-10-12):
-  - **sandtrap first:** #55's four open items:
-    1. module semantics: `PyCF_ALLOW_TOP_LEVEL_AWAIT` and
-       `await eval(code, ns)` in place of the function wrapper;
-    2. the worker's async flavor;
-    3. a sync entry point that accepts `await`;
-    4. pending tasks settled inside the sandbox.
-
-    One PR or a short stack, released as **0.5.0**: item 1 changes
-    `aexec` for its callers.
-  - **A stop reaches an awaiting script.** A script parked in
-    `await asyncio.sleep(60)` runs no code, so no checkpoint sees a
-    cancel. In-process nothing would interrupt it, and under process
-    isolation the signal's effect on the loop is unproven. The script's
-    private loop gets a cancel hook (`call_soon_threadsafe` cancelling
-    the main task), with a stop-mid-`await` test on every rung.
-  - **The `asyncio` grant offers only what the running Python has:**
-    `TaskGroup` and `timeout` need 3.11, and the floor is 3.10.
-  - **Tier D (async app handlers) stays out:** nothing needs it, and a
-    task call from a handler is sync.
-  - **Host calls stay sync** (Phase C records it), so tier C waits for
-    an embedder that needs it.
-- **Capabilities** (the redesign's "Capabilities belong to the
-  world"):
-  - `HostObjectGrant`;
-  - the host-surface index and `help()` metadata;
-  - `provide` semantics: recursive by default, `unsafe=`, embedded
-    skills auto-mounted;
-  - scopes checked at call time (nontainer #143).
-
-  agex v1 works without them. The host index makes host objects usable
-  without hand-written primers.
-- **Curation** (`docs/curation.md` steps 2 onward). It starts after
-  A2: the trace projection reads `__conversation__/index`, and
-  `TraceSource` picks a renderer by harness. agex's chaptering follows
-  the projection.
-- **nontainer #110**, the typed codec for the return path of app
-  handlers. A8 generalizes it, and B3b and B5 need A8.
+- **Capabilities** (design, "Capabilities belong to the world"):
+  - the host-surface index and `help()` metadata, so a host object
+    needs no hand-written primer, and `help(db)` shows the class under
+    process isolation and on dud as it does in-process;
+  - `HostObjectGrant`, honoured by every transport;
+  - scopes checked at call time (nontainer #143);
+  - `provide`: recursive by default, `unsafe=`, embedded skills
+    mounted.
+- **A8c:** large values spill to the plane, and the apps encoder moves
+  onto the shared one. It needs dud #39's binary frames; until then one
+  call off in-process carries about 6 MiB encoded. It changes how a
+  value travels, not its shape, so it can follow the freeze.
+- **A3c:** harness host objects, attached after a world opens. Deferred
+  (design, decisions, 2026-10-07): a task's fork gets `task` when it
+  opens, and nothing needs more yet.
+- **Curation** (nontainer `docs/curation.md`, steps 2 onward): the
+  trace projection reads `__conversation__/index`, and agex's
+  chaptering follows it.
+- **Parked:** the harness running in the browser with a server as a
+  kvgit remote; a remote `KernelAdapter` letting agex-studio drive a
+  nontainer-studio server; world-format interop between Python and TS.
+  None is needed until a session has to cross languages.
 
 ## Risks
 
-- **A2's migration touches real stores, production ones included.** A
-  dry run on copies is a hard exit condition. Downgrading is not
-  possible after a migration write, so the release notes have to say
-  so.
-- **"No behavior change" across A1-A6 is a lot of surface.** The
-  studio's pinned tests and the corpus are the safety net. Where a
-  step can't hold the line, it names the change as a fix.
-- **Phase B's speed tempts shape drift before the freeze.** Old agex
-  went through four breaking rebuilds in about four months. Each
-  shape decision lands in the redesign doc's log as it is made.
+- **Shape drift before the freeze.** Old agex went through four
+  breaking rebuilds in about four months. Each shape decision lands in
+  the design's decisions as it is made, and the freeze pins the rest.
+- **Two loops double the studio's edge cases** (cancel, resume,
+  retries, compaction). Its tests run on both loops to keep that honest.
 - **pydantic-ai releases fast.** Keep it to a pinned minor range, and
-  keep the provider seam small.
+  the provider seam small.
 
 ## Open questions
 
+- **The studio's default loop.** agno is the default, and agex sits
+  behind `NONTAINER_STUDIO_LOOP=agex`. Whether agex becomes the
+  default, and when agno goes, is decided at the freeze.
 - **MCP servers.** The tool protocol is MCP's, so an MCP client could
-  hand agex a server's tools; whether and when is open (design, "Open
-  questions"). Not needed for B6.
-- **The studio's default loop.** agno is the default and agex sits
-  behind `NONTAINER_STUDIO_LOOP=agex`. Whether agex becomes the default,
-  and when agno goes, is open; the freeze is the natural point to
-  decide.
+  hand agex a server's tools; whether and when is open.
 
-New ones go here. Decisions go to the redesign doc's log.
+More, on the shape itself, are in the design's open questions.
