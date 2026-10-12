@@ -384,7 +384,7 @@ class TaskRun:
 class AgentTasks:
     """The host half of ``agex`` for one world (``ws``): it runs the
     tasks that world's code defines, each call on a helper of its own
-    (see :mod:`agex.agent_tasks`). Built by :func:`agent_tasks`'s
+    (see :mod:`agex.code_tasks`). Built by :func:`agent_tasks`'s
     factory as each world opens."""
 
     def __init__(

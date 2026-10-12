@@ -12,6 +12,7 @@ def test_agex_imports():
         "Outcome",
         "Session",
         "agent_tasks",
+        "cancel_tasks",
         "stand_in_tasks",
         "NeedsInput",
         "Task",
@@ -41,6 +42,28 @@ def test_the_stubs_import_without_the_loop():
 
     assert agex.Agent.__module__ == "agex.agent"
     assert agex.TaskSpec.__module__ == "agex.task"
+
+
+def test_each_name_is_itself_whatever_was_imported_first():
+    """No public name shares its module's name, so a module loaded first
+    (by ``stand_in_tasks``, say) can't take a name's place on the
+    package."""
+    import subprocess
+    import sys
+
+    import agex
+
+    for name in agex.__all__:
+        probe = (
+            "import importlib, agex\n"
+            "for home in sorted(set(agex._HOMES.values())):\n"
+            "    importlib.import_module(home, 'agex')\n"
+            f"print(type(getattr(agex, {name!r})).__name__)"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+        )
+        assert out.stdout.strip() != "module", name
 
 
 def test_the_dependencies_agex_builds_on_are_there():

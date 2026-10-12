@@ -31,7 +31,7 @@ from typing import Any
 
 from nontainer import HostObject, Workspace, values
 
-from .agent_tasks import _Called, _reply
+from .code_tasks import _Called, _reply
 from .stubs import AgexStub
 
 __all__ = ["StandInTasks", "stand_in_tasks"]
@@ -51,7 +51,7 @@ def stand_in_tasks(answer: Answer | None = None) -> HostObject:
 
 class StandInTasks:
     """The host half of a stand-in ``agex`` for one world: the same
-    calls as :class:`agex.agent_tasks.AgentTasks`, answered here."""
+    calls as :class:`agex.code_tasks.AgentTasks`, answered here."""
 
     def __init__(self, ws: Workspace, answer: Answer | None = None) -> None:
         self._ws = ws

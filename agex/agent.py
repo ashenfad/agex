@@ -1114,7 +1114,7 @@ def _interrupt(ws: Workspace) -> None:
     """Stop what ``ws``'s running call has going: its code
     (``ws.runtime.interrupt()``) and the helpers its agent-defined tasks
     run, which aren't that code."""
-    from .agent_tasks import cancel_tasks
+    from .code_tasks import cancel_tasks
 
     ws.runtime.interrupt()
     cancel_tasks(ws)

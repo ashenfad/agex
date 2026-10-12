@@ -15,7 +15,7 @@ import pytest
 from nontainer import Profile, PythonConfig, Store
 
 from agex import Agent
-from agex.agent_tasks import agent_tasks
+from agex.code_tasks import agent_tasks
 
 pytestmark = pytest.mark.live
 

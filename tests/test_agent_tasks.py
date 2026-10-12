@@ -1,6 +1,6 @@
 """Agent-defined tasks: agent code defines a task with ``agex``, and a
 helper agent runs each call as a delegate of the calling world
-(``agex.agent_tasks``)."""
+(``agex.agent_tasks``, in ``agex.code_tasks``)."""
 
 import asyncio
 import enum
@@ -13,7 +13,7 @@ from nontainer import Profile, PythonConfig, Store
 from nontainer.conformance.corpus import calls, says
 
 from agex import Agent
-from agex.agent_tasks import agent_tasks
+from agex.code_tasks import agent_tasks
 from agex.providers.scripted import ScriptedProvider
 
 
@@ -694,7 +694,7 @@ def test_a_cancel_stops_the_helpers_the_turns_code_is_waiting_on(store, scratch)
 
 
 def test_cancelling_tasks_with_none_running_stops_nothing(store):
-    from agex.agent_tasks import cancel_tasks
+    from agex.code_tasks import cancel_tasks
 
     agent = routed()
     ws = world(store, agent)
@@ -713,7 +713,7 @@ def test_a_cancelled_helpers_store_closes_once_it_has_ended(store, monkeypatch):
 
     from nontainer.turns import RunEnded, ToolStarted
 
-    import agex.agent_tasks as tasks_mod
+    import agex.code_tasks as tasks_mod
 
     closed = []
 
@@ -761,7 +761,7 @@ def test_cancel_tasks_reads_the_registry_safely_while_worlds_open():
     others are built; neither may trip over the other."""
     import threading
 
-    from agex.agent_tasks import AgentTasks, cancel_tasks
+    from agex.code_tasks import AgentTasks, cancel_tasks
 
     agent = routed()
     stop = threading.Event()
