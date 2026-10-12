@@ -369,7 +369,9 @@ module's top level. Each call carries its spec, so nothing is
 registered on the host.
 
 - **The session's preview** runs against the session's world, so its
-  helpers are the session's delegates.
+  helpers are the session's delegates once the session's helper is
+  open, which its first turn does. Before that, they run on scratch
+  worlds, which aren't listed, kept or swept as delegates.
 - **A stand-in answers without a model** (`stand_in_tasks`): each call
   at once, with an embedder's `answer(name, inputs)` or the simplest
   value of the return type (the first choice of a `Literal` or enum).
