@@ -27,6 +27,7 @@ def main(agent: Agent, answer: str = "Four of us.") -> None:
         plausible name), the day and the party size. If the request
         doesn't say how many people are coming, ask with
         ``task.needs_input`` first."""
+        ...
 
     out = book.run("Somewhere quiet for Friday dinner, Italian if you can.")
     if out.status == "needs_input":
