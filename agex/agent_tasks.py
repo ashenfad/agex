@@ -103,18 +103,33 @@ NEVER_RAN = "the helper never ran"
 CANCELLED = "it was cancelled: the code that called it was stopped"
 """Why a call a cancel stopped (:meth:`AgentTasks.cancel`) failed."""
 
-_CLOSING = 30.0
-"""How long, in seconds, a cancelled helper's world may take to close."""
+
+def _close_when_done(run: TaskRun, store: Store) -> None:
+    """Close ``store`` once ``run`` has ended, on a thread of its own:
+    a cancelled helper may still be using it."""
+
+    def close() -> None:
+        run.done.wait()
+        store.close()
+
+    threading.Thread(target=close, name="agex-scratch-close", daemon=True).start()
+
 
 _OPEN: "weakref.WeakSet[AgentTasks]" = weakref.WeakSet()
 """Every ``agex`` built for a world, so a cancel can find a world's."""
+
+_OPEN_LOCK = threading.Lock()
+"""Held to add to :data:`_OPEN` and to read it: a cancel reads it from
+any thread while worlds open, and add to it, on others."""
 
 
 def cancel_tasks(ws: Workspace) -> int:
     """Stop the helpers ``ws``'s code has running (its ``agex``'s
     :meth:`AgentTasks.cancel`); how many were running. ``Session.cancel``
     calls it for its world."""
-    return sum(tasks.cancel() for tasks in list(_OPEN) if tasks._ws is ws)
+    with _OPEN_LOCK:
+        open_now = list(_OPEN)
+    return sum(tasks.cancel() for tasks in open_now if tasks._ws is ws)
 
 
 def _given(base: Profile, called: _Called) -> Profile:
@@ -392,7 +407,8 @@ class AgentTasks:
         self._runs: set[Future[Any]] = set()
         self._jobs: dict[str, Sessions] = {}
         self._stopped = False
-        _OPEN.add(self)
+        with _OPEN_LOCK:
+            _OPEN.add(self)
 
     def __repr__(self) -> str:
         return f"<agex for {self._ws.session!r}>"
@@ -571,6 +587,7 @@ class AgentTasks:
 
         def one(c: _Called) -> dict[str, Any]:
             store = Store(memory=True)
+            owned = True  # whether closing the store is still this call's
             try:
                 run = TaskRun(
                     self._agent,
@@ -588,15 +605,19 @@ class AgentTasks:
                 try:
                     running.result()
                 except CancelledError:
-                    # the helper stops on its loop; its world closes there
-                    run.done.wait(_CLOSING)
+                    # The caller hears at once; the helper stops on its
+                    # loop, and a long blocking call can keep it running
+                    # a while, so its store closes once it has ended.
                     run.reply = _reply("failed", CANCELLED)
+                    _close_when_done(run, store)
+                    owned = False
                 finally:
                     with self._live_lock:
                         self._runs.discard(running)
                 return run.reply
             finally:
-                store.close()
+                if owned:
+                    store.close()
 
         if len(called) == 1:
             return [one(called[0])]

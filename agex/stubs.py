@@ -207,7 +207,11 @@ def _objects(name, objects, held):
     caller's host objects, or the names, each one the caller holds."""
     if objects is None:
         return None
-    if isinstance(objects, str) or not all(isinstance(o, str) for o in objects):
+    # a tuple or list, read once: a generator checked and then read again
+    # would arrive empty, and the helper hold nothing
+    if not isinstance(objects, (tuple, list)) or not all(
+        isinstance(o, str) for o in objects
+    ):
         raise TypeError(f"task {name!r}: objects= is names, as a tuple or list")
     unknown = sorted(set(objects) - held - {"agex"})
     if unknown:
