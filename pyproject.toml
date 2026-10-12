@@ -1,6 +1,6 @@
 [project]
 name = "agex"
-version = "0.13.0.dev0"
+version = "0.13.0"
 description = "Agents that work in a versioned world: a loop over nontainer, for functional tasks and long-running sessions alike."
 readme = "README.md"
 license = "MIT"
@@ -9,7 +9,7 @@ authors = [
 ]
 keywords = ["agents", "ai", "llm", "python", "sandbox", "workspace"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -62,12 +62,6 @@ dev = [
     "pytest-asyncio",
     "ruff",
 ]
-
-[tool.uv.sources]
-# During the rebuild agex tracks nontainer's main, which gains what agex
-# needs before it is released. At the shape freeze, nontainer releases
-# and this goes, leaving the floor above.
-nontainer = { git = "https://github.com/ashenfad/nontainer", branch = "main" }
 
 [build-system]
 requires = ["hatchling"]
