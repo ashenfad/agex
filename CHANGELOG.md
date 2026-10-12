@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **A task says what its helper holds: `@agex.task(objects=...)`.** By default a helper holds every host object its caller does but `agex`; `objects=` names the ones it may, and `objects=()` none, for a task working on input it shouldn't trust.
+- **A cancel stops a task's helpers.** `session.cancel()` stops the helpers its world's agent-defined tasks have running, on scratch worlds or as delegates, so a stop doesn't wait one out; `agex.agent_tasks.cancel_tasks(ws)` does it for an embedder's own world.
 - **A call the turn ended in says why.** A cut-off or unanswered call's result names the run's note (`cut_off(note)`, `unanswered(note)`, in place of `CUT_OFF` and `UNANSWERED`), so a model doesn't take a stop for a time limit.
 - **A failed request reads in the provider's words.** A provider may `describe(error)`; pydantic-ai's says "the model provider refused the request (400): …" with the provider's own message, rather than the SDK's dump.
 - **A cancel stops the tool call running.** `session.cancel()` interrupts the workspace's running code (`ws.runtime.interrupt()`), and the turn interrupts it again until it lets go, so a stop no longer waits out a long call.

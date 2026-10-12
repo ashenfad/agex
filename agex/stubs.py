@@ -202,15 +202,36 @@ def _compile(fn, names, held):
     return data, signature, specs
 
 
+def _objects(name, objects, held):
+    """``objects`` as the task's data says it: ``None`` for all of the
+    caller's host objects, or the names, each one the caller holds."""
+    if objects is None:
+        return None
+    if isinstance(objects, str) or not all(isinstance(o, str) for o in objects):
+        raise TypeError(f"task {name!r}: objects= is names, as a tuple or list")
+    unknown = sorted(set(objects) - held - {"agex"})
+    if unknown:
+        raise ValueError(
+            f"task {name!r}: objects= names {', '.join(map(repr, unknown))}, "
+            f"which this code doesn't hold; it holds {sorted(held - {'agex'})}"
+        )
+    if "agex" in objects:
+        raise ValueError(
+            f"task {name!r}: a helper can't have agex; helpers don't make helpers"
+        )
+    return sorted(set(objects))
+
+
 class AgentTask:
     """A task agent code defined with ``@agex.task``: call it for its
     value, built as the return annotation says, or ``.map`` it over many
     inputs at once."""
 
-    def __init__(self, remote, fn, primer, names, held) -> None:
+    def __init__(self, remote, fn, primer, names, held, objects=None) -> None:
         self._remote = remote
         self._primer = primer or ""
         self._data, self._signature, self._specs = _compile(fn, names, held)
+        self._data["objects"] = _objects(self._data["name"], objects, held)
         self.__name__ = self._data["name"]
         self.__doc__ = self._data["doc"]
         self.__wrapped__ = fn
@@ -317,14 +338,18 @@ class AgexStub:
     def __repr__(self) -> str:
         return "<agex: @agex.task defines a task>"
 
-    def task(self, fn=None, *, primer=None):
+    def task(self, fn=None, *, primer=None, objects=None):
         """Make ``fn`` a task. ``primer`` is added to what the helper
-        agent is told about how to work."""
+        agent is told about how to work. ``objects`` names the host
+        objects of yours the helper may use too; by default it has them
+        all, and ``objects=()`` gives it none, which a task working on
+        input it shouldn't trust wants."""
         import sys
 
         names = dict(sys._getframe(1).f_locals)
 
         def make(fn):
-            return AgentTask(self._remote, fn, primer, names, set(self._remote.held()))
+            held = set(self._remote.held())
+            return AgentTask(self._remote, fn, primer, names, held, objects)
 
         return make if fn is None else make(fn)

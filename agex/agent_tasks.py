@@ -34,7 +34,12 @@ worlds in memory instead.
 
 A helper holds what its caller holds: the caller's profile, with the
 inputs, ``task`` and the task's types added, and without ``agex``, so
-helpers don't make helpers. Inputs and the value are values on every
+helpers don't make helpers. A task can narrow that: ``objects=`` names
+the caller's host objects its helper may use (``objects=()`` none).
+
+A cancel of the caller's turn (``Session.cancel``, or
+:func:`cancel_tasks` for a world) stops the helpers it has running, and
+the calls they ran for fail, cancelled. Inputs and the value are values on every
 rung (data, records, enums, bytes, tables and arrays); a live type is
 refused where the task is defined.
 """
@@ -46,8 +51,9 @@ import contextvars
 import itertools
 import threading
 import time
+import weakref
 from collections.abc import Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any
 
@@ -64,7 +70,7 @@ from nontainer import (
 )
 from nontainer.sessions import Sessions
 
-from .agent import Agent, Outcome, _on_turn_loop
+from .agent import Agent, Outcome, _start_on_turn_loop
 from .delegation import _on_thread
 from .record import new_id
 from .stubs import AgexStub, TaskStub
@@ -80,7 +86,7 @@ from .task import (
     _with_objects,
 )
 
-__all__ = ["MAX_PARALLEL", "AgentTasks", "TaskRun", "agent_tasks"]
+__all__ = ["MAX_PARALLEL", "AgentTasks", "TaskRun", "agent_tasks", "cancel_tasks"]
 
 MAX_PARALLEL = 4
 """How many helpers one ``.map`` runs at once, unless the embedder says."""
@@ -91,6 +97,42 @@ SHAPES = "shapes"
 _NAME_TRIES = 8
 
 _LANDING = 0.01
+
+NEVER_RAN = "the helper never ran"
+
+CANCELLED = "it was cancelled: the code that called it was stopped"
+"""Why a call a cancel stopped (:meth:`AgentTasks.cancel`) failed."""
+
+_CLOSING = 30.0
+"""How long, in seconds, a cancelled helper's world may take to close."""
+
+_OPEN: "weakref.WeakSet[AgentTasks]" = weakref.WeakSet()
+"""Every ``agex`` built for a world, so a cancel can find a world's."""
+
+
+def cancel_tasks(ws: Workspace) -> int:
+    """Stop the helpers ``ws``'s code has running (its ``agex``'s
+    :meth:`AgentTasks.cancel`); how many were running. ``Session.cancel``
+    calls it for its world."""
+    return sum(tasks.cancel() for tasks in list(_OPEN) if tasks._ws is ws)
+
+
+def _given(base: Profile, called: _Called) -> Profile:
+    """``base`` narrowed to the host objects ``called`` names
+    (``objects=``), checked against those the caller holds."""
+    if called.objects is None:
+        return base
+    python = base.python
+    unknown = sorted(set(called.objects) - set(python.host_objects))
+    if unknown:
+        raise ValueError(
+            f"task {called.spec.name!r}: objects= names {', '.join(map(repr, unknown))}, "
+            "which its caller doesn't hold"
+        )
+    kept = {n: e for n, e in python.host_objects.items() if n in called.objects}
+    return replace(base, python=replace(python, host_objects=kept))
+
+
 """How often, in seconds, a call looks again for an answer still landing."""
 
 
@@ -113,6 +155,10 @@ class _Called:
     """One call, read back: the task as a :class:`~agex.task.TaskSpec`
     over shapes, and its inputs decoded into them."""
 
+    base: Profile
+    """The profile its helper starts from: the caller's, narrowed to
+    the task's ``objects=``."""
+
     def __init__(
         self, data: Mapping[str, Any], inputs: Mapping[str, bytes], primer: str
     ) -> None:
@@ -133,6 +179,13 @@ class _Called:
             raise ValueError(f"task {name!r}: {error}") from None
         if set(specs) != {*params, "return"} or set(inputs) != set(params):
             raise ValueError(f"task {name!r}: its inputs don't match its parameters")
+        objects = data.get("objects")
+        if objects is not None and not (
+            isinstance(objects, list) and all(isinstance(o, str) for o in objects)
+        ):
+            raise ValueError(f"task {name!r}: its objects aren't a list of names")
+        self.objects: list[str] | None = objects
+        """The caller's host objects its helper may use, or ``None`` for all."""
         self.primer = primer
         self.inputs: dict[str, Any] = {}
         for key in params:
@@ -211,7 +264,7 @@ class TaskRun:
         self.base = base
         self.origin = origin
         self._open_world = open_world
-        self.reply: dict[str, Any] = _reply("failed", "the helper never ran")
+        self.reply: dict[str, Any] = _reply("failed", NEVER_RAN)
         self.done = threading.Event()
         """Set once the run is over, however it ended."""
         self._value: Any = None
@@ -333,13 +386,50 @@ class AgentTasks:
         self._scratch = scratch
         self._count = itertools.count(1)
         self._count_lock = threading.Lock()
+        # what cancel() stops: scratch runs, by future, and delegate jobs,
+        # by name, with the helper that asked for them
+        self._live_lock = threading.Lock()
+        self._runs: set[Future[Any]] = set()
+        self._jobs: dict[str, Sessions] = {}
+        self._stopped = False
+        _OPEN.add(self)
 
     def __repr__(self) -> str:
         return f"<agex for {self._ws.session!r}>"
 
+    def cancel(self) -> int:
+        """Stop the helpers running now, and any a ``.map`` running now
+        would start next; how many were running. Each call they ran for
+        fails, cancelled. For an embedder stopping the turn whose code
+        called them: a helper's work isn't the caller's sandbox, which
+        ``ws.runtime.interrupt()`` stops."""
+        with self._live_lock:
+            runs, jobs = list(self._runs), dict(self._jobs)
+            self._stopped = True
+        for running in runs:
+            running.cancel()
+        for name, helper in jobs.items():
+            try:
+                helper.cancel(name)
+            except SessionsError:
+                pass  # answered or gone meanwhile
+        return len(runs) + len(jobs)
+
+    def _cancelled(self, runs: list[TaskRun]) -> bool:
+        """Whether a cancel came while ``runs`` were starting; the ones
+        not started yet fail, cancelled."""
+        with self._live_lock:
+            if not self._stopped:
+                return False
+        for run in runs:
+            if not run.done.is_set() and run.reply.get("message") == NEVER_RAN:
+                run.reply = _reply("failed", CANCELLED)
+        return True
+
     def held(self) -> list[str]:
         """The world's host objects, by name: what a task's parameters
-        can't be named, since its helper holds them too."""
+        can't be named, since its helper may hold them too, and what its
+        ``objects=`` can name."""
         return sorted(self._ws.runtime.python_config.host_objects)
 
     def call(
@@ -353,20 +443,24 @@ class AgentTasks:
     ) -> list[dict[str, Any]]:
         """Run the task ``spec`` once per item of ``calls``, at once up to
         the limit; the replies, in order."""
+        with self._live_lock:
+            self._stopped = False  # a cancel stops what ran then, not this
         replies: list[dict[str, Any] | None] = [None] * len(calls)
         work: list[tuple[int, _Called]] = []
+        base = self._base()
         for i, inputs in enumerate(calls):
             try:
-                work.append((i, _Called(spec, inputs, primer)))
+                called = _Called(spec, inputs, primer)
+                called.base = _given(base, called)
+                work.append((i, called))
             except ValueError as error:
                 replies[i] = _reply("failed", str(error))
         if work:
-            base = self._base()
             helper = None if self._scratch else Sessions.of(self._ws)
             if helper is None:
-                done = self._on_scratch(base, [c for _, c in work])
+                done = self._on_scratch([c for _, c in work])
             else:
-                done = self._as_delegates(helper, base, [c for _, c in work])
+                done = self._as_delegates(helper, [c for _, c in work])
             for (i, _), reply in zip(work, done):
                 replies[i] = reply
         return [r for r in replies if r is not None]
@@ -386,7 +480,7 @@ class AgentTasks:
         return replace(profile, python=replace(python, host_objects=kept))
 
     def _as_delegates(
-        self, helper: Sessions, base: Profile, called: list[_Called]
+        self, helper: Sessions, called: list[_Called]
     ) -> list[dict[str, Any]]:
         """Each call as a delegate of this world, ``max_parallel`` running
         at once; the replies, in order.
@@ -404,19 +498,29 @@ class AgentTasks:
             TaskRun(
                 self._agent,
                 c,
-                base,
+                c.base,
                 self._ws.session,
                 lambda name, profile: opener.open(name, profile=profile),
             )
             for c in called
         ]
         started: list[tuple[str, TaskRun]] = []
-        for run in runs:
-            if len(started) >= self._max_parallel:
-                started[len(started) - self._max_parallel][1].done.wait()
-            started.append((self._ask(helper, run), run))
-        for name, run in started:
-            self._collect(helper, name, run)
+        try:
+            for run in runs:
+                if len(started) >= self._max_parallel:
+                    started[len(started) - self._max_parallel][1].done.wait()
+                if self._cancelled(runs):
+                    break
+                name = self._ask(helper, run)
+                with self._live_lock:
+                    self._jobs[name] = helper
+                started.append((name, run))
+            for name, run in started:
+                self._collect(helper, name, run)
+        finally:
+            with self._live_lock:
+                for name, _ in started:
+                    self._jobs.pop(name, None)
         return [run.reply for run in runs]
 
     def _ask(self, helper: Sessions, run: TaskRun) -> str:
@@ -461,7 +565,7 @@ class AgentTasks:
                 run.reply = _reply("failed", str(error))
                 return
 
-    def _on_scratch(self, base: Profile, called: list[_Called]) -> list[dict[str, Any]]:
+    def _on_scratch(self, called: list[_Called]) -> list[dict[str, Any]]:
         """Each call on a scratch world of its own, in memory,
         ``max_parallel`` at once; the replies, in order."""
 
@@ -471,12 +575,25 @@ class AgentTasks:
                 run = TaskRun(
                     self._agent,
                     c,
-                    base,
+                    c.base,
                     None,
                     lambda name, profile: store.open(name, profile=profile),
                 )
                 name = f"{c.spec.name}-{new_id()[:8]}"
-                _on_turn_loop(run.run(name, c.label()), "agex task")
+                running = _start_on_turn_loop(run.run(name, c.label()), "agex task")
+                with self._live_lock:
+                    if self._stopped:
+                        running.cancel()
+                    self._runs.add(running)
+                try:
+                    running.result()
+                except CancelledError:
+                    # the helper stops on its loop; its world closes there
+                    run.done.wait(_CLOSING)
+                    run.reply = _reply("failed", CANCELLED)
+                finally:
+                    with self._live_lock:
+                        self._runs.discard(running)
                 return run.reply
             finally:
                 store.close()

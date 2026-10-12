@@ -518,6 +518,10 @@ def corners(shape: str) -> list[Point2D]:
 
 pts = corners("unit square")      # its own Point2D objects, or TaskFailed
 many = corners.map(["square", "hexagon"])   # run at once, results in order
+
+@agex.task(objects=())            # its helper holds none of this code's
+def summarize(text: str) -> str:  # host objects: the text isn't trusted
+    """A one-line summary of the text."""
 ```
 
 This is old agex's dogfood example (an architect building `Agent()`
@@ -533,7 +537,8 @@ The built-in tools stay `run_python`, `terminal` and the file tools.
   the embedder supplies (model, primer, limits), and agent code never
   reaches it. That answers the reasons for not handing agent code an
   `Agent` (see "Who defines tasks"): no model client, no embedder
-  profile, nothing to configure past a primer.
+  profile, nothing to configure past a primer and which of its own
+  host objects a helper holds (`objects=`).
 - **Any harness on nontainer can grant it,** agno included, since host
   objects are nontainer's. The worker is an agex agent, because "a
   spec in, a typed value out, by running code" is how agex runs tasks.

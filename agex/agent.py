@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import concurrent.futures
 import contextvars
 import logging
 import sys
@@ -270,26 +271,33 @@ _TURN_LOOP: contextvars.ContextVar[asyncio.AbstractEventLoop | None] = (
 tool call and a host call carry the turn's context with them."""
 
 
-def _on_turn_loop(coro: Any, instead: str) -> Any:
-    """Run ``coro`` to its end on the running turn's loop, from host
-    code a tool call is running (an agent-defined task's helper, say):
-    a model's client keeps its connections on the loop it opened them
-    on, and the turn's model opened them on this one. Outside a turn,
-    on agex's own loop (:func:`_block`)."""
+def _start_on_turn_loop(coro: Any, instead: str) -> concurrent.futures.Future[Any]:
+    """Start ``coro`` on the running turn's loop, from host code a tool
+    call is running (an agent-defined task's helper, say): a model's
+    client keeps its connections on the loop it opened them on, and the
+    turn's model opened them on this one. Outside a turn, on agex's own
+    loop. Its future comes back rather than its result, so a caller that
+    may need to cancel it (when the turn is stopped) can."""
     loop = _TURN_LOOP.get()
-    if loop is None or loop.is_closed():
-        return _block(coro, instead)
     try:
         running = asyncio.get_running_loop()
     except RuntimeError:
         running = None
-    if running is loop:
+    if loop is None or loop.is_closed():
+        if running is not None:
+            coro.close()
+            raise RuntimeError(
+                "this blocks, and this thread is running an event loop; "
+                f"use `await {instead}(...)` there"
+            )
+        loop = _SYNC.loop()
+    elif running is loop:
         coro.close()
         raise RuntimeError(
             "this blocks, and this thread is running the turn's event loop; "
             f"use `await {instead}(...)` there"
         )
-    return asyncio.run_coroutine_threadsafe(coro, loop).result()
+    return asyncio.run_coroutine_threadsafe(coro, loop)
 
 
 Status = Literal[
@@ -715,7 +723,9 @@ class Session:
         tool running on its worker thread is interrupted too
         (``ws.runtime.interrupt()``): its code stops at its next loop
         iteration or function call, or at once on dud, though a single
-        long blocking call still runs out. Safe to call from any thread.
+        long blocking call still runs out, and the helpers its
+        agent-defined tasks have running are cancelled. Safe to call from
+        any thread.
 
         ``reason`` is why, in the closing note and the outcome's message
         (:data:`STOPPED` when none is given): the next turn's model
@@ -731,7 +741,7 @@ class Session:
             # (a caller only making sure the turn stops) says nothing new
             self._cancel_reason = reason
         self._cancel_requested = True
-        self.ws.runtime.interrupt()
+        _interrupt(self.ws)
         try:
             here: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
         except RuntimeError:
@@ -1096,8 +1106,18 @@ def _stop_running_call(ws: Workspace) -> None:
     and a call that had not reached its sandbox when the stop came would
     otherwise run to its end."""
     while not ws.lock.acquire(timeout=0.25):
-        ws.runtime.interrupt()
+        _interrupt(ws)
     ws.lock.release()
+
+
+def _interrupt(ws: Workspace) -> None:
+    """Stop what ``ws``'s running call has going: its code
+    (``ws.runtime.interrupt()``) and the helpers its agent-defined tasks
+    run, which aren't that code."""
+    from .agent_tasks import cancel_tasks
+
+    ws.runtime.interrupt()
+    cancel_tasks(ws)
 
 
 _END: Any = object()
