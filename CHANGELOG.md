@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Breaking: a new API.** agex 0.13 is rebuilt as a loop over nontainer; none of the 0.12 API remains. The 0.12 line is at the `v0.12.4` tag; the design is in `docs/design.md`.
+- **Requires nontainer 0.11.0,** which agent-defined tasks and a cancel's interrupt run on.
 
 ## [v0.12.4] - 2026-05-29
 

@@ -25,9 +25,10 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     # The world: workspaces, turns, the conversation plane, the tools.
-    # 0.10.0: async delegate runners and auntil_settled, which
-    # delegation runs on.
-    "nontainer>=0.10.0",
+    # 0.11.0: what agent-defined tasks run on (specs as data, Sessions.of,
+    # HostObject factories, ask's own runner, an empty-view fork) and
+    # ws.runtime.interrupt, which a cancel stops a running call with.
+    "nontainer>=0.11.0",
     # The provider transport (pydantic_ai.direct); stable within 2.x.
     "pydantic-ai-slim>=2.54,<3",
     # Budgeted previews of a task's inputs, in the brief its model reads,
