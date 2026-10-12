@@ -2,7 +2,7 @@
 defines, :mod:`agex.conformance.code_scenarios`).
 
 :class:`AgexCodeTasks` runs each act as one turn of a lead session on a
-world granted ``agex`` (:func:`agex.agent_tasks.agent_tasks`), on each
+world granted ``agex`` (:func:`agex.agent_tasks`), on each
 rung it has. The lead's model writes the calling code, in Python, from
 the task's schemas:
 
@@ -39,7 +39,7 @@ from pydantic_ai import messages as pai
 from pydantic_ai.models.function import AgentInfo
 
 from ..agent import Agent
-from ..agent_tasks import agent_tasks
+from ..code_tasks import agent_tasks
 from ..providers.scripted import ScriptedProvider
 from .runner import RAN_OUT, _same
 from .shape import (

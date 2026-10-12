@@ -13,7 +13,7 @@ from nontainer import Profile, PythonConfig, Store, values
 from nontainer.apps import enable_apps, request
 from test_agent_tasks import SQUARE, routed, runs, says
 
-from agex.agent_tasks import agent_tasks
+from agex.code_tasks import agent_tasks
 from agex.stand_in import StandInTasks, stand_in_tasks
 
 TASKS = textwrap.dedent('''

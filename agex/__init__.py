@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .agent import Agent, Outcome, Session
-    from .agent_tasks import agent_tasks
+    from .code_tasks import agent_tasks, cancel_tasks
     from .stand_in import stand_in_tasks
     from .task import (
         NeedsInput,
@@ -37,7 +37,8 @@ _HOMES = {
     "Agent": ".agent",
     "Outcome": ".agent",
     "Session": ".agent",
-    "agent_tasks": ".agent_tasks",
+    "agent_tasks": ".code_tasks",
+    "cancel_tasks": ".code_tasks",
     "stand_in_tasks": ".stand_in",
     "NeedsInput": ".task",
     "Task": ".task",
@@ -65,6 +66,7 @@ __all__ = [
     "Outcome",
     "Session",
     "agent_tasks",
+    "cancel_tasks",
     "stand_in_tasks",
     "NeedsInput",
     "Task",
