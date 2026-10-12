@@ -72,7 +72,7 @@ import typing
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
 
 import reprobate
 from nontainer import HostObject, NotSupportedError, Profile, Store, Workspace, values
@@ -956,7 +956,10 @@ def _store_of(name: str, world: Workspace) -> Store:
 Resumer = Callable[..., Awaitable[Outcome]]
 
 
-class Task:
+T = TypeVar("T")
+
+
+class Task(Generic[T]):
     """A task: ``fn``'s signature and docstring, run by ``agent``.
 
     Call it for the value (``await`` it, for an ``async def`` task):
@@ -969,6 +972,11 @@ class Task:
     built from ``agent.profile``. ``keep=True`` keeps the fork, and the
     outcome's ``ref`` names it; otherwise it is deleted once the task
     ends.
+
+    A type checker reads a call as the function's return type ``T`` (for
+    an ``async def`` task, its coroutine, so ``await`` gives the value);
+    the arguments go unchecked there, and are checked when the call is
+    made.
 
     A task that asks for input (``needs_input``) keeps its world
     whatever ``keep`` says, and ``resume`` continues it there with the
@@ -989,12 +997,13 @@ class Task:
     def __repr__(self) -> str:
         return f"<Task {self.spec.name} of {self.agent!r}>"
 
-    def __call__(
-        self, *args: Any, world: Workspace | None = None, **kwargs: Any
-    ) -> Any:
+    def __call__(self, *args: Any, world: Workspace | None = None, **kwargs: Any) -> T:
         if self._async:
-            return self._value(args, kwargs, world)
-        return _block(self._value(args, kwargs, world), f"{self.spec.name}.arun")
+            # the coroutine the decorated ``async def`` would return
+            return cast(T, self._value(args, kwargs, world))
+        return cast(
+            T, _block(self._value(args, kwargs, world), f"{self.spec.name}.arun")
+        )
 
     async def _value(
         self, args: tuple[Any, ...], kwargs: dict[str, Any], world: Workspace | None

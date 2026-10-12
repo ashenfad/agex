@@ -27,7 +27,7 @@ import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 from nontainer import NotSupportedError, Profile, SessionRunner, Workspace, conversation
 from nontainer.adapters.render import toolkit_instructions
@@ -81,6 +81,8 @@ __all__ = [
 ]
 
 _logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 HARNESS = "agex"
 """The name agex's conversations are stored under, in the workspace's
@@ -416,10 +418,10 @@ class Agent:
             self, ws, inbox=inbox, sessions=sessions, toolset=toolset, tools=tools
         )
 
-    def task(self, fn: Callable[..., Any]) -> Task:
+    def task(self, fn: Callable[..., T]) -> Task[T]:
         """A task: ``fn``'s signature and docstring, run by this agent on
         a world of its own (see :mod:`agex.task`). Use it as a
-        decorator."""
+        decorator; a call is typed as ``fn``'s return type."""
         from .task import Task
 
         # the decorating code's names: a type defined in the same

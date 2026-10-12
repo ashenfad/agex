@@ -80,7 +80,7 @@ select = ["E4", "E7", "E9", "F", "I"]
 ignore = ["E731"]
 
 [tool.pyright]
-include = ["agex"]
+include = ["agex", "examples", "tests/typing"]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"
 
