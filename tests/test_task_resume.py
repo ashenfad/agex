@@ -3,6 +3,7 @@ answer carries on there, from this process or after a restart, its
 inputs coming back from the task's own plane."""
 
 import asyncio
+import threading
 import time
 
 import pytest
@@ -312,22 +313,30 @@ def test_a_same_named_task_with_another_contract_is_refused(store, ws):
     assert provider.seen == []
 
 
-def _slow_asking(monkeypatch, seconds: float) -> None:
+def _slow_asking(monkeypatch, seconds: float) -> threading.Event:
     """``task.needs_input`` that records the question, then holds its run
-    open, so a caller can be cancelled after the task asked."""
-    asked = TaskHost.needs_input
+    open, so a caller can be cancelled after the task asked; the event is
+    set as each task asks."""
+    ask = TaskHost.needs_input
+    asked = threading.Event()
 
     def slow(self, question: str) -> None:
-        asked(self, question)
+        ask(self, question)
+        asked.set()
         time.sleep(seconds)
 
     monkeypatch.setattr(TaskHost, "needs_input", slow)
+    return asked
 
 
-def _cancel_during(start, after: float = 0.2) -> None:
+def _cancel_during(start, asked: threading.Event) -> None:
+    """Start ``start()``, and cancel it once its task has asked: not after
+    a fixed wait, which a slow runner can outlast before the task asks."""
+
     async def go():
         running = asyncio.ensure_future(start())
-        await asyncio.sleep(after)
+        assert await asyncio.to_thread(asked.wait, 30), "the task never asked"
+        asked.clear()
         running.cancel()
         with pytest.raises(asyncio.CancelledError):
             await running
@@ -337,12 +346,12 @@ def _cancel_during(start, after: float = 0.2) -> None:
 
 def test_a_caller_cancelled_after_its_task_asked_keeps_nothing(store, ws, monkeypatch):
     """No ref reaches a caller that is gone, so nothing is kept for it."""
-    _slow_asking(monkeypatch, 0.4)
+    asked = _slow_asking(monkeypatch, 0.4)
     a, _ = agent(ASK, ASK)
     rank = rank_of(a)
     before = set(_KEPT)
-    _cancel_during(lambda: rank.arun(SCORES))
-    _cancel_during(lambda: rank.arun(SCORES, world=ws))
+    _cancel_during(lambda: rank.arun(SCORES), asked)
+    _cancel_during(lambda: rank.arun(SCORES, world=ws), asked)
     time.sleep(0.4)  # the runs' threads finish their sleep
     assert set(_KEPT) == before
     assert store.sessions() == ["main"]
@@ -353,8 +362,8 @@ def test_a_resume_cancelled_keeps_the_world_waiting(store, ws, monkeypatch):
     a, _ = agent(ASK, ASK, RANK)
     rank = rank_of(a)
     out = rank.run(SCORES, world=ws)
-    _slow_asking(monkeypatch, 0.4)
-    _cancel_during(lambda: rank.aresume(out.ref, "by total", world=ws))
+    asked = _slow_asking(monkeypatch, 0.4)
+    _cancel_during(lambda: rank.aresume(out.ref, "by total", world=ws), asked)
     time.sleep(0.4)
     assert out.ref in store.sessions()
     monkeypatch.undo()
