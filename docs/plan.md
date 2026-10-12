@@ -1,10 +1,10 @@
 # agex rebuild: implementation plan
 
 Status: in progress (2026-10-11).
-- **Phase A** is merged through delegation and released in nontainer 0.10.0/0.10.1 (A0-A5, A7, A8a-b); 0.10.0 is agex's floor. nontainer `main` also holds what B5b and the studio round needed (#222-#231), unreleased.
-- **Phase B** is under way on `rebuild`: B0-B5 are merged, and B6 is built: the studio runs on both loops, its tests pass on both, and an agex session offers the tools an agno one does.
-- **The studio round, before the next nontainer release:** everything is merged but the dogfooding (B6, steps 5 and 6). Then nontainer 0.11.0.
-- **Still open in Phase A:** A8c (large values spill to the plane) and A3c (deferred). The async agent code track must land before the shape freeze (see Parallel tracks).
+- **Phase A** is merged and released through nontainer 0.11.0 (A0-A7 but the deferred A3c, and A8a-b), which is agex's floor and the studio's.
+- **Phase B is done through B6** on `rebuild`. The studio runs on both loops, its tests pass on both, and three dogfood rounds on agex are behind it. Agents and published apps in the studio call agent-defined tasks when it runs on agex. B7 can follow the freeze.
+- **Next: the async agent code round** (see Parallel tracks), the one thing the shape freeze still waits on. Then Phase C: the freeze and agex 0.13.0.
+- **Still open in Phase A:** A8c (large values spill to the plane), proposed for after the freeze, and A3c (deferred).
 
 This plan covers *when* and *in what order*. The *what* and *why* live
 in:
@@ -374,7 +374,9 @@ A4's and A5's scenarios exist.
 - **A8c, still to do:** large values spilling to the plane, which
   needs dud#39's binary frames (until then, one call off in-process
   carries 6 MiB encoded), and converging the apps encoder
-  (`nt__Encoder`) onto it.
+  (`nt__Encoder`) onto it. Proposed (2026-10-11): after the freeze.
+  It changes how a value travels, not what code or a type says, so
+  the shape doc doesn't wait on it.
 
 The encoding from the redesign doc's "Task values":
 - **Kinds:** data (JSON), tables (Arrow IPC), arrays (`.npy`), bytes
@@ -674,7 +676,7 @@ round trip passes.
 #### B5b. Agent-defined tasks
 
 Status: done. The prerequisites below are merged and released (dud 0.4.2,
-sandtrap 0.4.2, nontainer #222-#225, unreleased). Two more nontainer
+sandtrap 0.4.2, nontainer #222-#225 in 0.11.0). Two more nontainer
 PRs turned up while building it: **#228**, `Sessions.of(ws)`, the
 helper a world's `agex` delegates through (the design's open
 question), and **#229**, the classes `load_specs` builds crossing every
@@ -693,7 +695,7 @@ two PRs:
   task returns a record that holds itself. It needed agent code to run
   in a module of its own, with its `from __future__` imports taking
   effect, on every rung (sandtrap #59 and #60, released in 0.4.3;
-  nontainer #230, unreleased). It also turned up dud's runner passing
+  nontainer #230, in 0.11.0). It also turned up dud's runner passing
   its own future flags to guest code (dud #43, released in 0.4.3).
 
 **Prerequisites,** each its own small PR, in dependency order:
@@ -761,9 +763,8 @@ two PRs:
 
 ### B6. The studio seam, designed against both loops
 
-**Status: built; dogfooding is next** (2026-10-11). Steps 1-4 are
-merged, with the tests over both loops (B6c) and the fixes they and
-review turned up; steps 5 and 6 remain.
+**Status: done** (2026-10-11). All six steps are merged and
+released, and agent-defined tasks in the studio came after (below).
 
 **The studio round.** A6 and B6 come before the next nontainer
 release, so the studio's use shakes out nontainer's unreleased work
@@ -807,8 +808,29 @@ first:
    ask` with `wait` returned as the tool's result wasn't recorded as
    delivered, so a woken turn delivered it again (studio #94).
 5. **Dogfood** on both loops, fixing what turns up in nontainer.
-6. **Release nontainer 0.11.0.** The studio drops its nontainer source
-   and floors at `>=0.11.0`; the agex source stays until the freeze.
+   Three rounds. What they turned up:
+   - **A stop reaches running code and the run's delegates** (dud #44,
+     nontainer #233, agex #100, studio #104), with a note saying why a
+     call was cut off (nontainer #234, agex #101, studio #105).
+   - **A stop could hang a sandbox's worker:** a signal handler setting
+     a `threading.Event` while the main thread cleared it deadlocked.
+     sandtrap #61 made the flag lock-free (0.4.4); exec-targeted
+     cancels are tracked as sandtrap #62.
+   The third round was clean.
+6. **Release nontainer 0.11.0** (build PR nontainer #235). The studio
+   drops its nontainer source and floors at `>=0.11.0` (studio #107),
+   as agex does (agex #102); the agex source stays until the freeze.
+
+**After B6: agent-defined tasks in the studio** (agex #103, studio
+#108). When the studio runs on agex, its agents and published apps hold
+`agex`, whose helpers run in scratch worlds, and `agex_stand_in` for
+tests, with an `agent-tasks` skill on writing tasks for apps. agex
+gained what it needed: `@agex.task(objects=...)`, so code says which
+host objects a helper holds (`()` for untrusted input), and a cancel
+that stops a session's helpers. A dogfood round on it fixed the skill:
+a published app's `cache` is read-only, so it caches results in `db`,
+and a field with fixed choices is a `Literal`, which the stand-in
+answers with its first choice.
 
 The pieces:
 - **A `TurnDriver` protocol plus `DriverSpec`**, yielding `TurnEvent`
@@ -830,10 +852,14 @@ The pieces:
   (screenshots seen, not only named), and the studio's own `sessions`
   (`published`, `others`, the depth cap). A delegate's tool calls are
   bounded on both loops.
-- Then dogfood: real sessions on agex, including delegation and a
-  long session that folds. One gap is known: agex doesn't ask OpenAI's
-  reasoning models for reasoning summaries, so gpt-5.6's thinking
-  (through OpenRouter, say) shows on agno and not on agex.
+- (met) Dogfood: real sessions on agex, including delegation and a
+  long session that folds.
+
+Known gaps, none blocking the freeze:
+- agex doesn't ask OpenAI's reasoning models for reasoning summaries,
+  so gpt-5.6's thinking (through OpenRouter, say) shows on agno and
+  not on agex.
+- A task helper's model is fixed when the studio session opens.
 
 ### B7. Debug and bench
 
@@ -847,7 +873,8 @@ ported off the core surface. This can slip past the freeze.
 - Pin the harness-corpus and shape-corpus versions.
 - Async agent code tier A must be done, so "scripts may await" holds
   on both sides. That is a parallel track, below.
-- Release agex.
+- Release agex 0.13.0. The studio swaps its agex git source for the
+  release.
 
 **Exit.** A tagged freeze: doc and corpus versions that TS can vendor.
 
@@ -873,12 +900,12 @@ None of these blocks Phase B except where noted.
 
   It must land before Phase C.
 
-  **Status (2026-10-08): not started.** sandtrap #55 is open; only its
-  first half shipped (top-level `await` comes back as an error result
-  instead of raising). Proposed: after the studio round, as its own
-  round, released in dependency order (sandtrap, then dud, then
-  nontainer).
-  B5 and B6 don't need it: fan-out from code is a task's `.map`, run
+  **Status (2026-10-11): next, not started.** sandtrap #55 is open;
+  only its first half shipped (top-level `await` comes back as an
+  error result instead of raising). It is its own round, released in
+  dependency order (sandtrap, then dud, then nontainer), and the last
+  thing Phase C waits on.
+  B5 and B6 didn't need it: fan-out from code is a task's `.map`, run
   on the host.
 - **Capabilities** (the redesign's "Capabilities belong to the
   world"):
@@ -917,5 +944,9 @@ None of these blocks Phase B except where noted.
 - **MCP servers.** The tool protocol is MCP's, so an MCP client could
   hand agex a server's tools; whether and when is open (design, "Open
   questions"). Not needed for B6.
+- **The studio's default loop.** agno is the default and agex sits
+  behind `NONTAINER_STUDIO_LOOP=agex`. Whether agex becomes the default,
+  and when agno goes, is open; the freeze is the natural point to
+  decide.
 
 New ones go here. Decisions go to the redesign doc's log.
