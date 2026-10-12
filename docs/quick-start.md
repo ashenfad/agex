@@ -168,6 +168,53 @@ if out.status == "needs_input":
 
 Called plainly, a task that asks raises `NeedsInput`.
 
+## Your code
+
+The sandbox grants a safe slice of the standard library by default.
+Anything more is granted to the workspace, in its profile: your
+libraries, your live objects, and the classes agent code builds values
+of. A fork or a delegate holds the same.
+
+```python
+from nontainer import ModuleGrant, Profile, PythonConfig
+from nontainer.presets import dataframes, plotting
+
+profile = Profile(python=PythonConfig(
+    modules=[dataframes(), plotting(), ModuleGrant(mylib)],
+    host_objects={"db": my_pool},    # live, in-process: your real pool
+    classes=[Customer],              # agent code builds these
+))
+ws = store.open("analyst", profile=profile)
+```
+
+The agent's tool instructions name each host object, and its code calls
+one as it is: no copy, and in-process no serialization either, so
+`help(db)` shows the agent your class's methods and docstrings. Under
+process isolation or on a dud machine the object is reached through a
+proxy, which `help` can't see past, so say in the primer what it
+offers. nontainer's [quick start](https://github.com/ashenfad/nontainer/blob/main/docs/quick-start.md)
+covers grants, mounts and isolation in full.
+
+**A live task input** works the same way. A task's input whose
+annotation is a class that isn't data is bound into the task's world as
+a host object, and the task's brief shows the agent its methods and
+docstrings, on every rung:
+
+```python
+class Customers:
+    """The customer table."""
+    def churned(self, month: str) -> list[str]:
+        """Names of the customers who left in the month (YYYY-MM)."""
+        ...
+
+@agent.task
+def churn_report(month: str, db: Customers) -> str:
+    """A paragraph on who churned in the month, and what they share."""
+    ...
+
+report = churn_report("2026-09", db=customers)
+```
+
 ## Agent-defined tasks
 
 A session's agent can define tasks of its own, for the parts of a
