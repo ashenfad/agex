@@ -590,3 +590,113 @@ def test_a_task_can_name_the_classes_its_world_provides(store):
     agent = routed(LEAD=[runs(PROFILED), says("done")], HELPER=[runs(RANKED)])
     with Lead(store, agent, classes=(Ranking, Score)) as lead:
         assert "True [True, True] ann" in lead.printed, lead.printed
+
+
+# -- what a helper holds: objects= ----------------------------------------------------
+
+HELD = """\
+    @agex.task{options}
+    def held(word: str) -> list[str]:
+        \"""HELPER Say what you hold.\"""
+
+    print(held("w"))
+"""
+
+HOLDS = """\
+    names = sorted(n for n in dir(__import__("host")) if not n.startswith("_"))
+    task.success([n for n in names if n in ("db", "notes")])
+"""
+
+
+@pytest.mark.parametrize(
+    "options, held",
+    [("", "['db', 'notes']"), ("(objects=())", "[]"), ('(objects=("db",))', "['db']")],
+)
+def test_a_task_says_which_of_its_callers_objects_its_helper_holds(
+    store, options, held
+):
+    """By default a helper holds every host object its caller does but
+    ``agex``; ``objects=`` names the ones it may, so a task working on
+    input it shouldn't trust can hold none."""
+    agent = routed(
+        LEAD=[runs(HELD.format(options=options)), says("done")], HELPER=[runs(HOLDS)]
+    )
+    objects = {"db": Lookup(), "notes": Lookup()}
+    with Lead(store, agent, objects=objects) as lead:
+        assert held in lead.printed, lead.printed
+
+
+OBJECTS_REFUSED = """\
+    for objects in (("nope",), ("agex",), "db"):
+        try:
+            @agex.task(objects=objects)
+            def f(word: str) -> str:
+                \"""HELPER No.\"""
+            print("ACCEPTED", objects)
+        except (TypeError, ValueError) as error:
+            print("REFUSED", error)
+"""
+
+
+def test_objects_names_only_what_the_caller_holds(store):
+    agent = routed(LEAD=[runs(OBJECTS_REFUSED), says("done")])
+    with Lead(store, agent, objects={"db": Lookup()}) as lead:
+        lines = [line for line in lead.printed.splitlines() if "REFUSED" in line]
+        assert "ACCEPTED" not in lead.printed, lead.printed
+        assert [
+            "doesn't hold" in lines[0],
+            "helpers don't make helpers" in lines[1],
+            "is names, as a tuple or list" in lines[2],
+        ] == [True, True, True], lead.printed
+
+
+# -- a cancel stops the helpers ------------------------------------------------------
+
+LONG = """\
+    import time
+    for i in range(6000):
+        time.sleep(0.01)
+    task.success([])
+"""
+
+
+@pytest.mark.parametrize("scratch", [True, False], ids=["scratch", "delegate"])
+def test_a_cancel_stops_the_helpers_the_turns_code_is_waiting_on(store, scratch):
+    """The turn's code waits in a task call while a helper works for a
+    minute; a cancel stops the helper too, so the turn ends rather than
+    waiting the helper out."""
+    import threading
+    import time
+
+    from nontainer.turns import ToolStarted
+
+    agent = routed(LEAD=[runs(CORNERS), says("never said")], HELPER=[runs(LONG)])
+    ws = world(store, agent, scratch=scratch, tick_limit=None, timeout=120)
+    chat = agent.session(ws, sessions=True)
+
+    async def go():
+        try:
+            async for event in chat.stream("LEAD go"):
+                if isinstance(event, ToolStarted):
+                    threading.Timer(1.5, chat.cancel).start()
+            return chat.last
+        finally:
+            await chat.aclose()  # on the loop its delegates ran on
+
+    started = time.monotonic()
+    try:
+        assert asyncio.run(go()).status == "cancelled"
+        assert time.monotonic() - started < 30  # not the helper's minute
+    finally:
+        ws.close()
+
+
+def test_cancelling_tasks_with_none_running_stops_nothing(store):
+    from agex.agent_tasks import cancel_tasks
+
+    agent = routed()
+    ws = world(store, agent)
+    try:
+        assert cancel_tasks(ws) == 0
+    finally:
+        ws.close()
