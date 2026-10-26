@@ -126,6 +126,13 @@ with how the run ended.
   result.
 - **A session reads only its own loop's conversations.** A workspace
   agno wrote is refused, because its runs are in agno's format.
+- **A session's conversation reads as files** through nontainer's
+  trace projection: `agex.traces.AgexTraces` reads a stored run into
+  nontainer's neutral trace shape, and a store given it
+  (`Store(..., traces={"agex": AgexTraces()})`) mounts any agex
+  session's conversation beside its files (`ws-git worktree add
+  --trace`). agex builds its system prompt per request and doesn't
+  store it, so a trace says it wasn't kept.
 
 ## Tasks
 

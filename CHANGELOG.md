@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **An agex session reads as a trace: `agex.traces.AgexTraces`.** A store given it (`Store(..., traces={"agex": AgexTraces()})`) mounts an agex session's runs as files beside its tree with nontainer's `ws-git worktree add --trace`; agex keeps no system prompt, so a trace shows none.
 - **A task call is typed by its return type.** `@agent.task` makes a `Task[T]`, so a type checker reads `plan_dinner(...)` as a `Recipe` (an `async def` task's call as its coroutine); arguments are still checked only when the call is made.
+
+### Changed
+- **Requires `nontainer>=0.11.6`,** for its trace projection.
 
 ## [0.13.0] - 2026-10-12
 

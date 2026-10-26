@@ -46,6 +46,7 @@ a second loop needs (A), and agex was rebuilt as a loop over them (B).
 | — | agent-defined tasks in the studio | agex #103, studio #108 |
 | — | docs and the 0.13.0 release | agex #107-#109 |
 | — | agents working with your code (docs); a task call typed by its return type (unreleased) | agex #111 |
+| — | `AgexTraces`: an agex session read as a trace (unreleased) | agex #? |
 
 Releases along the way: nontainer 0.9.0 to 0.11.0, sandtrap 0.4.2 to
 0.4.4, dud 0.4.2 to 0.4.4, and agex 0.13.0 (2026-10-12). The 0.12 API
@@ -143,8 +144,9 @@ None of these blocks the freeze.
   (design, decisions, 2026-10-07): a task's fork gets `task` when it
   opens, and nothing needs more yet.
 - **Curation** (nontainer `docs/curation.md`, steps 2 onward): the
-  trace projection reads `__conversation__/index`, and agex's
-  chaptering follows it.
+  trace projection reads agex's runs through `agex.traces.AgexTraces`
+  (nontainer 0.11.6), and agex's chaptering follows it. Whether agex
+  stores its system prompt, which a trace would show, is open.
 - **Parked:** the harness running in the browser with a server as a
   kvgit remote; a remote `KernelAdapter` letting agex-studio drive a
   nontainer-studio server; world-format interop between Python and TS.
