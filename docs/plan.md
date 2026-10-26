@@ -46,7 +46,7 @@ a second loop needs (A), and agex was rebuilt as a loop over them (B).
 | — | agent-defined tasks in the studio | agex #103, studio #108 |
 | — | docs and the 0.13.0 release | agex #107-#109 |
 | — | agents working with your code (docs); a task call typed by its return type (unreleased) | agex #111 |
-| — | `AgexTraces`: an agex session read as a trace (unreleased) | agex #? |
+| — | `AgexTraces`: an agex session read as a trace (unreleased) | agex #114 |
 
 Releases along the way: nontainer 0.9.0 to 0.11.0, sandtrap 0.4.2 to
 0.4.4, dud 0.4.2 to 0.4.4, and agex 0.13.0 (2026-10-12). The 0.12 API
