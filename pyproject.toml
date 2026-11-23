@@ -1,6 +1,6 @@
 [project]
 name = "agex"
-version = "0.13.0"
+version = "0.13.1"
 description = "Agents that work in a versioned world: a loop over nontainer, for functional tasks and long-running sessions alike."
 readme = "README.md"
 license = "MIT"

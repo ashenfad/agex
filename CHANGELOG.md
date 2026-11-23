@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## Unreleased
+## [0.13.1] - 2026-11-23
 
 ### Added
 - **An agex session reads as a trace: `agex.traces.AgexTraces`.** A store given it (`Store(..., traces={"agex": AgexTraces()})`) mounts an agex session's runs as files beside its tree with nontainer's `ws-git worktree add --trace`; agex keeps no system prompt, so a trace shows none.
