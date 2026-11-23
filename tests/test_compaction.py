@@ -198,3 +198,64 @@ def test_summary_calls_are_in_the_usage_streamed_and_stored(ws):
     assert run.compaction is not None and run.compaction.input_tokens == 777
     replies = sum(m.usage.input_tokens for m in run.messages if m.usage)
     assert run.usage.input_tokens == replies + 777
+
+
+def thoughts(request: list[pai.ModelMessage]) -> list[str]:
+    return [
+        part.content
+        for message in request
+        for part in message.parts
+        if isinstance(part, pai.ThinkingPart)
+    ]
+
+
+def test_reasoning_is_sent_only_under_the_fold_it_was_written_for(ws):
+    """Providers bind reasoning to the request it was written for, so a
+    fold drops the reasoning of the replies it keeps; a reply made
+    under the fold keeps its reasoning while that fold holds."""
+    a, provider = agent(
+        replace(STEPS[0], thinking="FIRST-THOUGHT"),
+        replace(STEPS[1], thinking="KEPT-THOUGHT"),
+        summarizes(SUMMARY),
+        replace(says("done"), thinking="LATE-THOUGHT"),
+        says("again"),
+    )
+    session = a.session(ws)
+    session.say("Do the work in two steps.")
+    # before any fold, reasoning goes back as it is
+    assert thoughts(provider.seen[1]) == ["FIRST-THOUGHT"]
+    # the summary request is the request before the fold, reasoning and all
+    assert thoughts(provider.seen[2]) == ["FIRST-THOUGHT"]
+    # after it: the kept step is sent, its reasoning is not
+    after = provider.seen[3]
+    assert "SECOND-OUTPUT" in texts(after) and thoughts(after) == []
+    # the reply made under the fold keeps its reasoning in the next turn
+    session.say("And now?")
+    assert thoughts(provider.seen[-1]) == ["LATE-THOUGHT"]
+
+
+def test_a_reply_settled_for_another_fold_loses_its_item_ids():
+    """Some providers pair a reply's items with its reasoning (OpenAI
+    refuses a stored call whose reasoning item is missing): without the
+    reasoning, the items go without their ids."""
+    from agex.compaction import _settled
+    from agex.record import Message, Text, Thinking, ToolCall
+
+    reply = Message(
+        id="m",
+        role="assistant",
+        parts=(
+            Thinking(text="t", signature="sig", id="rs_1"),
+            Text(text="checking", id="msg_1"),
+            ToolCall(call_id="c", name="f", id="fc_1", details={"keep": 1}),
+        ),
+        fold="old",
+    )
+    assert _settled(reply, "old") is reply
+    settled = _settled(reply, "new")
+    assert settled is not None
+    assert [type(p).__name__ for p in settled.parts] == ["Text", "ToolCall"]
+    assert all(p.id is None for p in settled.parts)
+    assert settled.parts[1].details == {"keep": 1}
+    only = Message(id="n", role="assistant", parts=(Thinking(text="t"),))
+    assert _settled(only, "new") is None
