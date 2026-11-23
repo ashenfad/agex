@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Requires `nontainer>=0.11.6`,** for its trace projection.
 
+### Fixed
+- **A fold no longer sends reasoning written for another request.** A reply made under a different fold goes without its thinking and its parts' item ids, which Claude would refuse as bound to a different conversation.
+
 ## [0.13.0] - 2026-10-12
 
 ### Breaking

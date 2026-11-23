@@ -12,7 +12,16 @@ its own, and this is agex's:
   ``ACK``). When the anchor is inside a run, that run's opening message
   (the person's prompt, or a task's brief) is sent again after the
   pair, so the model always has the request it is working on, and the
-  roles still alternate. Everything after the anchor is sent as it is.
+  roles still alternate. Everything after the anchor is sent as it is,
+  but for the reasoning in a reply made under another fold.
+- **Reasoning across a fold.** Providers bind reasoning to the exact
+  request it was written for (Claude checks each thinking block's
+  signature against it), so a reply's reasoning is sent only while the
+  fold its request had (``Message.fold``) is the one in force. A reply
+  made under another fold, or under none, is sent without its
+  reasoning, and without the item ids of its other parts, which some
+  providers pair with that reasoning (OpenAI refuses a stored call
+  whose reasoning item is missing).
 - **When it folds.** Before each model call, when the agent has a
   :class:`~nontainer.compaction.Policy` and the request would reach its
   budget. A request is measured from the provider's report for the
@@ -42,7 +51,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from nontainer import Workspace
 from nontainer.compaction import (
@@ -141,14 +150,35 @@ def _pair(fold: Fold) -> list[Message]:
     ]
 
 
+def _settled(message: Message, anchor: str | None) -> Message | None:
+    """``message`` as it can be sent with the fold ending at ``anchor``
+    in force: a reply made under another fold without its reasoning or
+    its parts' item ids; ``None`` when nothing else is left of it."""
+    if message.role != "assistant" or message.fold == anchor:
+        return message
+    parts = tuple(
+        replace(p, id=None) if isinstance(p, (Text, ToolCall)) else p
+        for p in message.parts
+        if not isinstance(p, Thinking)
+    )
+    if not parts:
+        return None
+    if parts == message.parts:
+        return message
+    return replace(message, parts=parts)
+
+
 def _view(seq: _Seq, fold: Fold | None, upto: int | None = None) -> list[Message]:
     """What the model is sent of the conversation with ``fold`` in force,
     up to message ``upto`` when given."""
-    removed = seq.removed(fold.through if fold else None)
+    anchor = fold.through if fold else None
+    removed = seq.removed(anchor)
     kept = [
-        m
+        settled
         for i, m in enumerate(seq.messages)
-        if i not in removed and (upto is None or i <= upto)
+        if i not in removed
+        and (upto is None or i <= upto)
+        and (settled := _settled(m, anchor)) is not None
     ]
     return (_pair(fold) if fold else []) + kept
 
